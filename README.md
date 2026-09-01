@@ -15,17 +15,11 @@ No third-party dependencies. Standard library only.
 
 ## Prerequisites
 
-Go 1.27 or later. On this machine Go is installed at `C:\Program Files\Go\bin\go.exe` and is **not**
-on the default shell `PATH`, so every command below is given in both forms.
+Go 1.27 or later, on `PATH`.
 
 ## Build
 
 ```sh
-# full path
-"/c/Program Files/Go/bin/go.exe" build ./...
-
-# or, after adding Go to PATH for the session
-export PATH="/c/Program Files/Go/bin:$PATH"
 go build ./...
 ```
 
@@ -34,7 +28,6 @@ A clean build prints nothing and exits `0`.
 ## Run
 
 ```sh
-export PATH="/c/Program Files/Go/bin:$PATH"
 go build -o processor.exe ./cmd/processor
 ./processor.exe
 ```
@@ -74,7 +67,6 @@ PROCESSOR_HTTP_ADDR=:9090 ./processor.exe
 ## Test
 
 ```sh
-export PATH="/c/Program Files/Go/bin:$PATH"
 go test -count=1 -v ./...
 ```
 
@@ -84,7 +76,6 @@ A passing run prints exactly two `ok` lines (one per package) and every `--- PAS
 ## Format and vet
 
 ```sh
-export PATH="/c/Program Files/Go/bin:$PATH"
 gofmt -l .
 go vet ./...
 ```
