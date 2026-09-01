@@ -64,9 +64,29 @@ the process; the graph *is* the process's state.
 
 **(3) The harness is configuration-free.**
 Briefings, agent roles, workflows, tool definitions, gates, policies — all of it lives in the graph as
-nodes. The binary needs exactly two things to boot: a DiVoid URL and an API key. Everything else is
-data it reads from the substrate it already depends on. No config file, no `.agents/` directory, no
-prompt folder drifting out of sync with reality.
+nodes. The binary boots on a graph URL, a graph key, and the credentials for whatever else it must
+authenticate to. Everything that is not a secret is data it reads from the substrate it already
+depends on. No config file, no `.agents/` directory, no prompt folder drifting out of sync with reality.
+
+> **Corrected 2026-09-01, at the first milestone that could test it.** This read *"exactly two things to
+> boot: a DiVoid URL and an API key"* — a claim M1's design showed cannot hold. A model provider's key
+> is a **secret**, and secrets never go in the graph, so the honest floor is three and it grows by one
+> per credential. The *spirit* is intact and is the part that matters: no configuration files, no prompt
+> folders, nothing to drift. But "exactly two" was a quotable sentence that would have been quoted, and
+> the count was wrong. Recorded rather than silently rewritten, because the difference between a claim
+> that survives contact with an implementation and one that does not is the whole point of writing them
+> down.
+>
+> **Sharpened the same day, once the model call was ruled provider-agnostic.** The corrected list is not
+> merely "more than two" — it is **complete and principled**, splitting boot inputs by a real property:
+> those that *cannot* live in the substrate (the graph URL, because you cannot read the graph to find
+> the graph; and secrets, which never go in it) versus those that merely *do not yet* (an endpoint
+> address, a model name — not secrets, just not graph-driven at this milestone). Against a **local**
+> model the third clause is empty, so the floor is genuinely two again in that case.
+>
+> One thing not to oversell: across the same milestone the **wired** members went *up* (4 → 6) while the
+> **irreducible** ones went *down*. Two quantities moving in opposite directions, and this section is a
+> claim about the second.
 
 ## 3. The loop
 
@@ -586,8 +606,15 @@ the point of our own architecture.
 
 ## 9. Milestones
 
-1. **Skeleton loop.** Input → mechanical assembly → one model call → write-back. One agent, one tool,
-   no workflows. Prove the assembled context is *legible* and the loop closes.
+1. **Skeleton loop.** Input → mechanical assembly → a single *judgement step* → write-back. One agent,
+   one tool, no workflows. Prove the assembled context is *legible* and the loop closes.
+
+   *Corrected 2026-09-01:* this read "one model call", which is inconsistent with "one tool" — if the
+   tool is ever used there are two calls. The unit is one **judgement step**, with the tool cycle
+   inside it. The tool is supplementary recall, and it exists because §5.2's worst failure mode
+   (a confident agent with a clean context missing the one node that mattered) is otherwise invisible:
+   a milestone that closes the loop with no way to see whether the mechanical floor was too low has
+   built the demo and skipped the experiment.
 2. **Retrieval eval harness.** The (input → required nodes) corpus and a recall@k score. Nothing
    downstream is tunable without it, so it comes second, not last.
 3. **Three-tier assembly.** Working set + episodic buffer + hybrid recall, with supersession
