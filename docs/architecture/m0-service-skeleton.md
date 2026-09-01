@@ -30,6 +30,28 @@
 > other, and the line now says what is true. (c) *W8* — §10.7's rule triggered on "spawns a process",
 > which its own §14 steps 5 and 6 require; it is rescoped to the harm C17 measured. The same rescoping
 > is being applied to #10440, which carries the same wording.
+> Revised a fourth time 2026-09-01 after the Processor code map (**#10454**, blueprint **#2928**) read
+> every file against this document, on one predicate: **what exists at each point during startup.** §6.1
+> listed the boot configuration as step 1 — "Nothing else has been constructed yet" — and the logger as
+> step 2. The entry point does the reverse, and must: the order §6.1 described leaves the loader's own
+> failure with no logger to report it, which §8.4 and §10.4 already required. §6.1 now states the order
+> the code implements and the false clause is gone. Sites found by sweeping the predicate rather than the
+> line: **§5.1** (owns-list order), **§8.4** (its "every non-zero exit is preceded by a log record" is
+> *entailed* by logger-first, and now says so), **§10.3** ("three points and no more" is true of the
+> lifecycle records, not of every record the process writes) and **§10.4**. **No decision changed** — fail
+> fast on bad configuration, name the offending variable, exit non-zero is right and is what ships; only
+> the described sequence was stale.
+>
+> Revised a fifth time 2026-09-01 after review **#10468**, on the predicate **what the process actually
+> writes, counted**. §10.3's closing paragraph — new in the fourth revision — split the records into a
+> successful path (the table) and a failure path (§10.4). That partition is false in both directions: the
+> table's row 3 already carries a failure at Error, and the drain-deadline path writes **two** records for
+> **one** non-zero exit — the lifecycle's, then the entry point's `serve`. §10.3 now partitions by
+> **component** instead, and states the site count so the claim is checkable. Sites found by sweeping the
+> same predicate: **§8.3**'s behaviour cell and **§6.3** step 4 named only shutdown *completion* and so hid
+> the same record; **§4** and its diagram listed the entry point's work without the logger that §5.1 and
+> §6.1 put first; **§6.1** now introduces `run()`, which §9.4 and §9.5 already used as a bare symbol.
+> **No decision changed** — only counted and scoped claims about logging.
 
 ---
 
@@ -38,12 +60,12 @@
 **What.** A Go module in this repo with one binary that starts an HTTP server, serves `GET /health`,
 and shuts down cleanly — plus a test suite that proves all three.
 
-**How.** Two packages, standard library only, zero dependencies. `cmd/processor` reads the environment,
-binds the listener, wires signals, owns exit codes. `internal/server` owns the route table and the
-serve/drain lifecycle. **The caller binds the listener and passes it in**, so tests bind port 0 and prove
-start–serve–shutdown in-process, with no subprocess and no signals. That covers the serve/drain lifecycle
-on every platform; it does **not** cover the signal wiring in `main`, which M0 leaves unpinned on purpose
-and #10439 closes in a container (§9.5, §10.7).
+**How.** Two packages, standard library only, zero dependencies. `cmd/processor` constructs the logger,
+reads the environment, binds the listener, wires signals, owns exit codes. `internal/server` owns the
+route table and the serve/drain lifecycle. **The caller binds the listener and passes it in**, so tests
+bind port 0 and prove start–serve–shutdown in-process, with no subprocess and no signals. That covers the
+serve/drain lifecycle on every platform; it does **not** cover the signal wiring in `main`, which M0 leaves
+unpinned on purpose and #10439 closes in a container (§9.5, §10.7).
 
 **Configuration boundary.** One boot input with a live consumer: `PROCESSOR_HTTP_ADDR`, default
 `127.0.0.1:8080`. The environment is read in exactly one place, and that place is `main`. The DiVoid URL
@@ -187,6 +209,7 @@ amount of correct plumbing.
   +---------------------------------------------------------------+
   |  cmd/processor  (package main)                                 |
   |                                                                |
+  |   constructs the logger, first and unconditionally             |
   |   boot config loader ---> boot configuration (1 member today)  |
   |   binds the listener                                           |
   |   derives a cancellable context from OS signals                |
@@ -234,12 +257,16 @@ It costs one parameter.
 
 | | |
 |---|---|
-| **Owns** | Environment access · boot configuration construction · logger construction · listener binding · signal-to-context wiring · exit codes |
+| **Owns** | Logger construction · environment access · boot configuration construction · listener binding · signal-to-context wiring · exit codes |
 | **Does not own** | Routing · handler behaviour · HTTP semantics · the serve/drain algorithm |
 | **Package-level state** | None |
 
 The environment is read here and nowhere else in the module. That single sentence is the configuration
 boundary; everything else in §8.1 is its mechanics.
+
+**The owns-list is in construction order, and the first entry is load-bearing.** The logger is built
+before anything that can fail, because it is the only one of these that needs nothing to succeed first —
+which is what gives every failure below it somewhere to be reported (§6.1, §8.4).
 
 ### 5.2 `internal/server` — the HTTP surface and its lifecycle
 
@@ -275,9 +302,16 @@ enforces. Cost: one directory segment.
 
 ### 6.1 Startup
 
-1. `main` builds the boot configuration by calling the loader with the real environment lookup.
-   On error: log it, exit non-zero. Nothing else has been constructed yet.
-2. `main` constructs the logger — structured records to **stderr**.
+**A note on `main`.** Throughout this document `main` names the entry point's *logic*. In the module that
+logic is a `run()` function returning an exit code, and `main` itself is the one expression that hands that
+code to the process. The split is not cosmetic: a direct exit call inside the logic would skip the deferred
+release of the signal registration (step 4).
+
+1. `main` constructs the logger — structured records to **stderr** — **first, and unconditionally.** It
+   is the one component that takes no configuration, so nothing has to succeed before it exists.
+2. `main` builds the boot configuration by calling the loader with the real environment lookup. On error:
+   log it, exit non-zero. Only the logger exists at this point — no listener is bound and no signal is
+   registered, so there is nothing to unwind.
 3. `main` binds a TCP listener at the configured address. On error (C15, the port-in-use case): log the
    address and the error, exit non-zero.
 4. `main` derives a context that is cancelled on interrupt and on `SIGTERM`.
@@ -285,6 +319,13 @@ enforces. Cost: one directory segment.
 6. The lifecycle logs **the listener's actual bound address** — not the configured one. When the
    configured address ends in port `0`, or when a container remaps, the actual address is the only useful
    one, and it is what the test reads.
+
+**Why the logger precedes the loader, and not the other way round.** The reverse order has no way to
+report its own first failure: a configuration error would arrive before anything existed to log it,
+leaving the process to exit silently or to write unstructured output on the one path where diagnosis
+matters most. §8.4's rule — every non-zero exit is preceded by a log record naming what failed — is
+satisfiable only if the logger is first. An earlier revision of this list had the two steps the other way
+round and kept §8.4's rule anyway; the two could not both hold, and the entry point implements this one.
 
 ### 6.2 Serving
 
@@ -297,7 +338,7 @@ line, no state touched.
 2. The lifecycle logs that shutdown has begun.
 3. It stops accepting, closes the listener, and drains in-flight requests under a **grace deadline**
    (§8.3).
-4. It logs completion and returns: `nil` on a clean drain, an error if the drain exceeded the deadline.
+4. It logs the outcome and returns: `nil` on a clean drain, an error if the drain exceeded the deadline.
 5. `main` exits 0 on `nil`, non-zero otherwise.
 
 **A second interrupt is not handled, and what happens instead is not specified here.** No extra handling is
@@ -406,7 +447,7 @@ endpoint reports on it and the body grows a member with a reader.
 | Aspect | Contract |
 |---|---|
 | **Inputs** | A context · an already-bound listener · a handler · a logger |
-| **Behaviour** | Log the listener's actual bound address · serve until the context is done · then stop accepting, close the listener, and drain in-flight requests under the grace deadline · log start and completion of shutdown |
+| **Behaviour** | Log the listener's actual bound address · serve until the context is done · then stop accepting, close the listener, and drain in-flight requests under the grace deadline · log the start of shutdown, and its outcome — completion, or the drain deadline exceeded |
 | **Returns `nil`** | The context was cancelled and the drain completed within the deadline |
 | **Returns an error** | Serving failed for any reason other than a deliberate shutdown, **or** the drain exceeded the grace deadline |
 | **Invariant 1** | The "server closed" sentinel is never returned as an error. It is the *expected* outcome of a deliberate shutdown (C13), and returning it makes a clean `Ctrl+C` exit non-zero. This is the single most common defect in this exact piece of Go |
@@ -427,7 +468,9 @@ has none to cap. The first endpoint with a real body brings its own deadline req
 ### 8.4 Process entry point
 
 Owns exit codes: `0` when the lifecycle returns `nil`; non-zero when configuration loading, binding, or
-the lifecycle fails. Every non-zero exit is preceded by a log record naming what failed.
+the lifecycle fails. Every non-zero exit is preceded by a log record naming what failed — **which is why
+the logger is constructed before the first thing that can fail** (§6.1 step 1). The rule and the startup
+order are one decision, not two.
 
 ### 8.5 The error envelope, deliberately absent
 
@@ -636,7 +679,7 @@ convention with a real navigation cost. Code Contracts §1 is a .NET rule — se
 
 ### 10.3 Observability
 
-Structured records to **stderr**, at three points and no more:
+Structured **lifecycle** records to **stderr**, at three points and no more:
 
 | Event | Level | Carries |
 |---|---|---|
@@ -651,6 +694,24 @@ shorter route: there is nothing worth logging per request yet.
 **Why the actual bound address rather than the configured one.** With port `0`, or a container remap, the
 configured value is not where anyone can reach the service. The log line's job is to be actionable.
 
+**The table is the lifecycle's record, not the process's.** Its three rows are everything `internal/server`
+writes, and row 3 is two of them: a clean drain logs completion at Info, a drain that outlives the deadline
+logs the failure at Error. "Three points and no more" counts points in the lifecycle's progression, not
+records emitted, and it bounds that component only.
+
+**The entry point writes the rest, and only on failure** — one record naming each of the three failures it
+decides on: configuration, binding, serving (§10.4). It writes nothing on the successful path.
+
+**One failure is therefore recorded twice.** A drain that outlives the deadline is logged by the lifecycle,
+where the drain-specific detail is, and again by the entry point as the `serve` failure, where the exit code
+is decided — two records, one non-zero exit. §8.4's rule is a floor (*every* non-zero exit is preceded by a
+record), not a count: the number of records is not the number of exits.
+
+**M0 specifies seven log sites in all** — the entry point's three, all at Error, and the lifecycle's four
+(three rows, with row 3's two outcomes counted separately: one Info, one Error). Four Error, three Info. A
+one-command search of the non-test sources for the logger's level calls returns exactly those seven, and an
+eighth is a design change rather than an implementation detail.
+
 **Why stderr.** It keeps the diagnostic stream separate from anything the process might later write to
 stdout, and it is where an operator looks.
 
@@ -658,7 +719,8 @@ stdout, and it is where an operator looks.
 
 Errors are values, returned upward and decided at the boundary that can act:
 
-- **The loader** returns an error naming the offending variable. `main` logs and exits non-zero.
+- **The loader** returns an error naming the offending variable. `main` logs and exits non-zero — the
+  logger already exists, which is the whole reason it is built first (§6.1 step 1).
 - **Binding** fails in `main`, which logs the address and the error and exits non-zero (C15 — the
   port-collision case, which will happen on a dev machine).
 - **The lifecycle** returns `nil` for the deliberate-shutdown sentinel and the real error otherwise
