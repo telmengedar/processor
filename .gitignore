@@ -1,0 +1,8 @@
+# Built binaries
+/processor
+/processor.exe
+*.exe
+
+# Local environment files
+.env
+.env.*
