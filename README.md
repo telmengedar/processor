@@ -11,8 +11,11 @@ credential and no per-token spend (design #10521's ruling).
 
 ## What's here
 
-- `cmd/processor` — the process entry point: reads the boot configuration, binds the listener, wires
+- `cmd/processor` — the process entry point: loads the boot configuration, binds the listener, wires
   OS signals, constructs the graph adapter, the model adapter and the loop, owns the exit code.
+- `internal/boot` — the boot configuration: the module's one environment read site, split into the
+  listen address, a graph half and a model half, so a caller that needs only graph configuration is
+  never asked for model configuration.
 - `internal/server` — the HTTP route table and the serve/drain lifecycle.
 - `internal/loop` — the turn: mechanical context assembly (`Assemble`, a pure function — no I/O, no
   clock, no randomness) and its sequencing (`Turn.Run`): fetch, assemble, judge — dispatching the one
@@ -92,8 +95,9 @@ decides how much of it is honoured.
 
 ### Configuration
 
-Six environment variables, read once, in `main` — still the module's one environment read site
-(`cmd/processor/config.go`):
+Six environment variables, read once — still the module's one environment read site
+(`internal/boot/config.go`). `cmd/processor` calls all three loaders, in the order the table lists, so
+the first offending variable is the one named:
 
 | Variable | Default | Behaviour |
 |---|---|---|
@@ -184,8 +188,8 @@ go test -count=1 -v ./...
 ```
 
 `-count=1` disables Go's test cache; without it a re-run can print `(cached)` and execute nothing.
-A passing run prints one `ok` line per package (`cmd/processor`, `internal/divoid`, `internal/loop`,
-`internal/openaicompat`, `internal/server`) and every `--- PASS:` line for each test. The default suite is
+A passing run prints one `ok` line per package (`cmd/processor`, `internal/boot`, `internal/divoid`,
+`internal/loop`, `internal/openaicompat`, `internal/server`) and every `--- PASS:` line for each test. The default suite is
 fully offline and hermetic: no network call, no credential, no live graph, no live model, no spend — every
 graph-facing and model-facing test runs against a local `httptest.Server`, deliberately (design §9.3): a
 live model is nondeterministic, so it can never be what a per-change suite asserts against. This is also
@@ -233,8 +237,8 @@ flags it.
     sh -c 'go vet ./... && go test -count=1 ./...'
   ```
 
-  Expects one `ok` line per package — **five**: `cmd/processor`, `internal/divoid`, `internal/loop`,
-  `internal/openaicompat`, `internal/server` — no `?`, exit `0`. One 1.32 GB `golang:1.27` image pull,
+  Expects one `ok` line per package — **six**: `cmd/processor`, `internal/boot`, `internal/divoid`,
+  `internal/loop`, `internal/openaicompat`, `internal/server` — no `?`, exit `0`. One 1.32 GB `golang:1.27` image pull,
   once.
 - **The drain is covered by an automated process-level test** (`cmd/processor/process_linux_test.go`):
   the real binary is launched against local graph and model test servers, the model endpoint is made

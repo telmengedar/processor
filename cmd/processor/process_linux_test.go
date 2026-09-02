@@ -35,6 +35,27 @@ func (s *syncBuffer) String() string {
 	return s.buf.String()
 }
 
+const (
+	envHTTPAddr  = "PROCESSOR_HTTP_ADDR"
+	envDivoidURL = "PROCESSOR_DIVOID_URL"
+	envDivoidKey = "PROCESSOR_DIVOID_KEY"
+	envModelURL  = "PROCESSOR_MODEL_URL"
+	envModelID   = "PROCESSOR_MODEL_ID"
+)
+
+func validEnv(overrides map[string]string) map[string]string {
+	env := map[string]string{
+		envDivoidURL: "https://graph.example/api",
+		envDivoidKey: "test-key-12345",
+		envModelURL:  "https://model.example/v1",
+		envModelID:   "test-model-id",
+	}
+	for k, v := range overrides {
+		env[k] = v
+	}
+	return env
+}
+
 func harnessEnv(addr string) []string {
 	return harnessEnvWith(map[string]string{envHTTPAddr: addr})
 }
