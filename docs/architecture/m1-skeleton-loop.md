@@ -54,7 +54,10 @@
 
 **What.** `POST /runs` takes a text input and the id of the node the run is about, assembles a context
 block **mechanically** from the graph, makes **one** model call, and writes a run record back. The
-response body *is* the record — every candidate, its score, and whether it was kept or cut.
+~~response body *is* the record~~ — every candidate, its score, and whether it was kept or cut.
+**CORRECTED 2026-09-02 (#10899, A3): the response body is the record ***plus exactly one key*** — the
+write receipt, which the stored copy structurally cannot carry. See `docs/architecture/run-record-fate.md`
+§8.1 for what is guaranteed instead.**
 
 **How.** Two graph reads: the subject by id, and one semantic query whose text is the input **verbatim**.
 A byte budget applied in score order. A block rendered **sorted by node id, never by score**. One tool —
@@ -660,7 +663,7 @@ is given.
 | Model output was truncated — terminal reason maps to `Truncated` | `200`, recorded | The answer is prose for a human, who can see it was cut off. §8.4's token cap is what binds, and this row is how a wrong cap becomes visible |
 | Call cap reached | `200`, recorded, **with `capReached` set** | §6.4, §8.2 |
 | **A supplementary round admits nothing** — every hit is larger than the round's budget (§6.4a) | `200`, recorded, the round carrying all its rows **cut** with the reason | Not an error and not silence: the model is told the round produced nothing usable, and the record says it was the budget rather than the graph. The alternative — admitting one oversized hit anyway — is §11 R4's anchor exemption repeated on the path that demonstrated why it is a defect |
-| **Write-back fails** | **`200`**, with the failure named in the record | The expensive artifact already exists and is in the body. A `5xx` invites the caller to retry, which re-spends the model call. The graph write is the second copy, not the first |
+| **Write-back fails** | **`200`**, with the failure named in the record | The expensive artifact already exists and is in the body. A `5xx` invites the caller to retry, which re-spends the model call. The graph write is the second copy, not the first. **AMENDED 2026-09-02 (#10863, A3): this row specifies the fully-failed write only and is silent on the half-succeeded one. `docs/architecture/run-record-fate.md` §6.1 carries the complete terminal-state table and §6.2 the partial-write ruling** |
 | Two runs concurrently | Both proceed | The loop holds no shared mutable state. Falsifier: any package-level variable in `internal/loop` |
 
 ---
@@ -721,7 +724,7 @@ Three entities. None is persisted by Processor; the graph is the store.
 | Entity | Owned by | Lives where |
 |---|---|---|
 | **Node** — id, type, name, status, content type, body, and on a recall hit a similarity score | DiVoid | Read-only to M1 |
-| **Run record** — the whole of one turn (§8.2) | `internal/loop` | Returned in the HTTP response **and** written as one graph node |
+| **Run record** — the whole of one turn (§8.2) | `internal/loop` | Returned in the HTTP response **and** written as one graph node. **CORRECTED 2026-09-02 (#10899, A3): the two artifacts are the same record in every key that describes the run; the response carries one key more (the write receipt) and the stored copy carries no key for it at all** |
 | **Candidate disposition** — one row per node a query returned: rank, score, size, content hash, admitted or cut | `internal/loop` | Inside the run record, on **both** paths — the assembled block's candidates and each supplementary round's hits carry the same columns, because they are the same event: graph rows admitted into a prompt under a byte budget (§6.4a, §8.2) |
 
 **The content hash is the only field whose value accrues later, and it is included deliberately.**
@@ -820,7 +823,7 @@ a second lookup does.
 | `model` | **The model id that was sent.** New in revision 2, and not optional: under provider-agnosticism the model is a boot member rather than a constant, so a record that omits it cannot be interpreted after the fact and milestone 2's corpus would be scoring answers without knowing what produced them. Same argument as the content hash in §7, and the same reader |
 | `usage` | **One entry per model call, in call order** — revision 3, from #10821 W-1. Each entry is the endpoint's two token counts as it reported them, **or absent**, never zero-filled (§6.5, §6.6, §8.3); the array's length always equals `modelCalls`. **The loop aggregates nothing.** A run total is the reader's sum of the present entries, and a run where some calls reported and others did not is legible as exactly that. **Rejected — the last call's counts:** under-reports a three-call run by up to two thirds, and reports *absent* for a run that measured something. **Rejected — one summed object:** a sum over a partially-reporting run is a number presented as a total that is not one, which is §6.5's own defect one level up, and it discards which call was expensive — the escalation signal milestone 2 is looking for |
 | `stopReason` | **Two values, deliberately.** The loop's neutral terminal reason, which is what the loop branched on, **and** the raw string the endpoint returned, which is what milestone 2 will want when a mapping turns out to be wrong. The loop never branches on the second (§8.3) |
-| `written` | The node id the record was written to, or the reason it was not |
+| ~~`written`~~ | ~~The node id the record was written to, or the reason it was not~~ **STRUCK 2026-09-02 (#10899, A2). The stored record carries neither: the body is serialised before the node exists, so the field renders as `{}` — a third value this row's own contract does not define, in every stored record. The write receipt is *not* a member of the record; it is a response-only key. `docs/architecture/run-record-fate.md` §7 recurses the consumer chain and §8.2 states the receipt's closed vocabulary** |
 | `limits` | **The constants that governed this run**: the candidate limit, the assembly byte budget, the supplementary byte budget, the model-call cap and the output-token cap. New in revision 3. Same argument as `model` above and the same reader: §8.4 names milestone 2 as the event at which the first three become measurable, so **the corpus will span a change to them**, and every record written before that change is uninterpretable without knowing which values were in force. It is also what makes `candidates[]` readable at all — **recall@k is uncomputable without k** |
 
 **Unit A's record has no `answer`, `model`, `toolCalls`, `modelCalls`, `usage`, `stopReason`, `written`
@@ -971,11 +974,18 @@ target into a service that never completes a run.
   `ReadHeaderTimeout` only and **no `WriteTimeout`**, so a long-running handler is not cut off —
   the shipped shape happens to be exactly right for this and nothing needs to change.
 - **One interaction is named and deliberately left alone:** `shutdownGrace` is 5 s, so a run in flight
-  against a slow local model is abandoned on `SIGTERM`. **M1 does not raise it.** The write-back is the
+  against a slow local model is abandoned on `SIGTERM`. ~~**M1 does not raise it.**~~ The write-back is the
   turn's last step, so an abandoned run writes nothing and costs one rerun by the human who started it;
-  raising the grace to cover a worst-case local generation would make every shutdown hang for minutes to
-  protect a single re-runnable request. **Falsifier:** the day a run is expensive or a non-human producer
+  ~~raising the grace to cover a worst-case local generation would make every shutdown hang for minutes to
+  protect a single re-runnable request.~~ **Falsifier:** the day a run is expensive or a non-human producer
   drives it, the trade reverses — and neither is true at M1.
+  **CORRECTED 2026-09-02 (#10890, A1) — the struck mechanism claim is false, and the conclusion reverses
+  with it.** `Shutdown` closes the listeners and then returns **as soon as connections are idle**; the
+  context it is given is a **ceiling, not a fixed wait**, so an idle shutdown is instantaneous at any
+  grace and the cost is paid only when there is a run to protect. This paragraph's own falsifier was met
+  by a route it did not predict — not by the run becoming expensive, but by the mechanism claim being
+  wrong. `docs/architecture/run-record-fate.md` §6.3 argues the three shutdown options and §8.4 derives
+  the grace from a stated run bound.
 
 ### 8.5 The error envelope — M0's deferred decision, taken
 
@@ -1594,8 +1604,12 @@ No code appears in this document by design. The order below is architectural, no
 11a. **The record's own shape, which is what milestone 2 actually consumes** — new in revision 3, and the
     part of this unit #10821 found unpinned end to end. Pin it **at the wire level, through a decode
     struct with literal JSON tags**, with fixture values distinctive enough that a wrong field cannot
-    pass: `answer`, `model`, `toolCalls`, `modelCalls`, `capReached`, `usage`, `stopReason`, `written`
-    and `limits`. Three of these are rules rather than fields and deserve their own assertions:
+    pass: `answer`, `model`, `toolCalls`, `modelCalls`, `capReached`, `usage`, `stopReason`, ~~`written`~~
+    and `limits`. **STRUCK 2026-09-02 (#10899, A4): `written` is no longer a member of the record, so
+    pinning it here would direct an implementer to assert a field that must not exist. The write receipt
+    is a response-only key; `docs/architecture/run-record-fate.md` §8.1 states what to pin instead — that
+    the stored body is the response body minus exactly that one key. Line 829's list is left standing:
+    it is a true statement about what unit A shipped, and history is not corrected.** Three of these are rules rather than fields and deserve their own assertions:
     **`usage` has exactly one entry per model call, in order, empty where a call reported nothing**;
     **`toolCalls[].results` carries every row the round returned, not the admitted subset**, with the
     same columns `candidates[]` has; and **`limits` reports the constants actually in force** — the one

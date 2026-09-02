@@ -5,12 +5,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/telmengedar/processor/internal/loop"
 )
@@ -30,9 +38,7 @@ type stubGraph struct {
 	candidates []loop.Candidate
 	recallErr  error
 
-	writeNodeID int64
-
-	writeErr error
+	writeReceipt loop.WriteReceipt
 
 	recallSeq []stubRecallResponse
 	recallIdx *int
@@ -58,11 +64,8 @@ func (s stubGraph) Recall(context.Context, string, int) ([]loop.Candidate, error
 	return s.candidates, s.recallErr
 }
 
-func (s stubGraph) WriteRun(context.Context, loop.Record) (int64, error) {
-	if s.writeErr != nil {
-		return 0, s.writeErr
-	}
-	return s.writeNodeID, nil
+func (s stubGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt {
+	return s.writeReceipt
 }
 
 type stubModel struct {
@@ -149,6 +152,54 @@ func postRuns(t *testing.T, turn *loop.Turn, body string) *httptest.ResponseReco
 	return rec
 }
 
+func postRunsWithContext(t *testing.T, ctx context.Context, turn *loop.Turn, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/runs", bytes.NewBufferString(body)).WithContext(ctx)
+	NewHandler(turn).ServeHTTP(rec, req)
+	return rec
+}
+
+type deadlineGraph struct {
+	nodeDeadline time.Time
+	nodeBounded  bool
+	writeBounded bool
+}
+
+func (g *deadlineGraph) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) {
+	g.nodeDeadline, g.nodeBounded = ctx.Deadline()
+	return loop.Anchor{ID: id, Type: "documentation", Name: "Subject", Content: "anchor body"}, true, nil
+}
+
+func (g *deadlineGraph) Recall(context.Context, string, int) ([]loop.Candidate, error) {
+	return nil, nil
+}
+
+func (g *deadlineGraph) WriteRun(ctx context.Context, _ loop.Record) loop.WriteReceipt {
+	_, g.writeBounded = ctx.Deadline()
+	return loop.WriteReceipt{State: loop.Stored, NodeID: 999}
+}
+
+type blockingGraph struct{ runContextEnded bool }
+
+func (g *blockingGraph) Node(ctx context.Context, _ int64) (loop.Anchor, bool, error) {
+	select {
+	case <-ctx.Done():
+		g.runContextEnded = true
+		return loop.Anchor{}, false, ctx.Err()
+	case <-time.After(5 * time.Second):
+		return loop.Anchor{}, false, errors.New("literal: the run context outlived the caller")
+	}
+}
+
+func (g *blockingGraph) Recall(context.Context, string, int) ([]loop.Candidate, error) {
+	return nil, nil
+}
+
+func (g *blockingGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt {
+	return loop.WriteReceipt{State: loop.NotStored}
+}
+
 // runRecordWire is a local, literal-tagged decode target for the record —
 // deliberately not loop.Record itself (CF-4). Decoding into the
 // production type would move both sides of an assertion together on a
@@ -208,8 +259,8 @@ type runRecordWire struct {
 		Raw    string `json:"raw"`
 	} `json:"stopReason"`
 	Written struct {
+		State  string `json:"state"`
 		NodeID int64  `json:"nodeId"`
-		Error  string `json:"error"`
 	} `json:"written"`
 	Limits struct {
 		CandidateLimit          int `json:"candidateLimit"`
@@ -274,10 +325,10 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 	t.Parallel()
 
 	graph := stubGraph{
-		anchor:      loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
-		found:       true,
-		candidates:  []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}},
-		writeNodeID: 4242,
+		anchor:       loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		found:        true,
+		candidates:   []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}},
+		writeReceipt: loop.WriteReceipt{State: loop.Stored, NodeID: 4242},
 	}
 	model := &stubModel{results: []loop.JudgeResult{
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing thing"},
@@ -351,8 +402,11 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 	if got.StopReason.Reason != "answered" || got.StopReason.Raw != "stop" {
 		t.Fatalf("record.stopReason = %+v, want {answered stop}", got.StopReason)
 	}
+	if got.Written.State != "stored" {
+		t.Fatalf("written.state = %q, want %q", got.Written.State, "stored")
+	}
 	if got.Written.NodeID != 4242 {
-		t.Fatalf("record.written.nodeId = %d, want 4242", got.Written.NodeID)
+		t.Fatalf("written.nodeId = %d, want 4242", got.Written.NodeID)
 	}
 	wantLimits := struct {
 		CandidateLimit          int
@@ -380,9 +434,8 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 			{candidates: []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}}},
 			{err: errors.New("literal: 500 from graph")},
 		},
-		recallIdx:   new(int),
-		writeNodeID: 4242,
-		writeErr:    errors.New(`divoid: request failed: Post "http://graph.internal:9099/api/nodes": dial tcp 10.4.4.4:9099: connect: connection refused`),
+		recallIdx:    new(int),
+		writeReceipt: loop.WriteReceipt{State: loop.NotStored},
 	}
 	model := &stubModel{results: []loop.JudgeResult{
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing budget row"},
@@ -426,16 +479,15 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), round3Wire) {
 		t.Fatalf("body does not contain %q — record.toolCalls[2].results must serialise as [] not null; body=%s", round3Wire, rec.Body.String())
 	}
-	if got.Written.Error != "write-back failed" {
-		t.Fatalf("record.written.error = %q, want the generic sentence %q — not the graph adapter's raw error", got.Written.Error, "write-back failed")
-	}
-	for _, secret := range []string{"graph.internal", "10.4.4.4", "/api/nodes"} {
-		if strings.Contains(rec.Body.String(), secret) {
-			t.Fatalf("response body discloses %q from the write-back error; body=%s", secret, rec.Body.String())
-		}
+	if got.Written.State != "notStored" {
+		t.Fatalf("written.state = %q, want %q — the closed vocabulary names the fate, no free text", got.Written.State, "notStored")
 	}
 	if got.Written.NodeID != 0 {
-		t.Fatalf("record.written.nodeId = %d, want 0 — the write failed, so no node id was assigned", got.Written.NodeID)
+		t.Fatalf("written.nodeId = %d, want 0 — no node holds the record", got.Written.NodeID)
+	}
+	const wantReceiptWire = `"written":{"state":"notStored"}`
+	if !strings.Contains(rec.Body.String(), wantReceiptWire) {
+		t.Fatalf("body does not contain %s — the receipt names the fate and carries nothing else; body=%s", wantReceiptWire, rec.Body.String())
 	}
 }
 
@@ -671,5 +723,245 @@ func assertErrorCode(t *testing.T, rec *httptest.ResponseRecorder, want string) 
 	}
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
 		t.Fatalf("Content-Type = %q, want %q", ct, "application/json")
+	}
+}
+
+func TestRunsReturns504WhenTheRunContextExpiresBeforeAnAnswerExists(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	graph := &blockingGraph{}
+	rec := postRunsWithContext(t, ctx, newTestTurn(graph), `{"input":"hello","subject":42}`)
+
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want %d — an expired run is the service hanging up, not an upstream failure, body=%s", rec.Code, http.StatusGatewayTimeout, rec.Body.String())
+	}
+	assertErrorCode(t, rec, codeRunDeadlineExceeded)
+}
+
+func TestRunsDoesNotReport502ForAnExpiredRunEvenThoughAGraphCallCarriedTheExpiry(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	graph := &blockingGraph{}
+	rec := postRunsWithContext(t, ctx, newTestTurn(graph), `{"input":"hello","subject":42}`)
+
+	if rec.Code == http.StatusBadGateway {
+		t.Fatalf("status = %d — the deadline surfaced disguised as the graph call in flight and was classified by error type; body=%s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode error envelope: %v; body=%s", err, rec.Body.String())
+	}
+	if envelope.Error.Code == codeGraphUnavailable || envelope.Error.Code == codeModelUnavailable {
+		t.Fatalf("error.code = %q, want the run's own bound named — reporting our ceiling as an upstream failure sends the caller to fix the wrong thing", envelope.Error.Code)
+	}
+}
+
+func TestRunsReports502NotTheDeadlineCodeWhenTheCallerMerelyDisconnects(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	graph := &blockingGraph{}
+	rec := postRunsWithContext(t, ctx, newTestTurn(graph), `{"input":"hello","subject":42}`)
+
+	if !graph.runContextEnded {
+		t.Fatal("the run context outlived the caller's cancellation — the handler's ceiling is not derived from the request's own context")
+	}
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d — a cancelled request is not an expired run, body=%s", rec.Code, http.StatusBadGateway, rec.Body.String())
+	}
+	assertErrorCode(t, rec, codeGraphUnavailable)
+}
+
+func parsePackageSources(t *testing.T, fset *token.FileSet) map[string]*ast.File {
+	t.Helper()
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("read package directory: %v", err)
+	}
+
+	files := map[string]*ast.File{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		files[name] = file
+	}
+	return files
+}
+
+func packageStringValues(files map[string]*ast.File) map[string]string {
+	values := map[string]string{}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || (gen.Tok != token.CONST && gen.Tok != token.VAR) {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				value, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, ident := range value.Names {
+					if i >= len(value.Values) {
+						continue
+					}
+					if literal, ok := stringValueOf(value.Values[i]); ok {
+						values[ident.Name] = literal
+					}
+				}
+			}
+		}
+	}
+	return values
+}
+
+func stringValueOf(expr ast.Expr) (string, bool) {
+	switch node := expr.(type) {
+	case *ast.BasicLit:
+		if node.Kind != token.STRING {
+			return "", false
+		}
+		unquoted, err := strconv.Unquote(node.Value)
+		return unquoted, err == nil
+	case *ast.BinaryExpr:
+		if node.Op != token.ADD {
+			return "", false
+		}
+		left, leftOK := stringValueOf(node.X)
+		right, rightOK := stringValueOf(node.Y)
+		return left + right, leftOK && rightOK
+	}
+	return "", false
+}
+
+func envelopeCodes(t *testing.T) []string {
+	t.Helper()
+
+	fset := token.NewFileSet()
+	files := parsePackageSources(t, fset)
+	values := packageStringValues(files)
+
+	var codes []string
+	for name, file := range files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			callee, ok := call.Fun.(*ast.Ident)
+			if !ok || callee.Name != "writeError" || len(call.Args) < 3 {
+				return true
+			}
+
+			where := fmt.Sprintf("%s:%d", name, fset.Position(call.Args[2].Pos()).Line)
+			if literal, ok := stringValueOf(call.Args[2]); ok {
+				codes = append(codes, literal)
+				return true
+			}
+			named, ok := call.Args[2].(*ast.Ident)
+			if !ok {
+				t.Fatalf("%s: the code handed to writeError is neither a name nor a string, so what this endpoint can emit is unreadable here", where)
+			}
+			literal, resolved := values[named.Name]
+			if !resolved {
+				t.Fatalf("%s: %s does not resolve to a string declared in this package", where, named.Name)
+			}
+			codes = append(codes, literal)
+			return true
+		})
+	}
+
+	slices.Sort(codes)
+	return slices.Compact(codes)
+}
+
+func TestTheErrorEnvelopeCanEmitExactlyFiveCodes(t *testing.T) {
+	t.Parallel()
+
+	want := []string{"graph_unavailable", "invalid_request", "model_unavailable", "run_deadline_exceeded", "subject_not_found"}
+
+	if got := envelopeCodes(t); !slices.Equal(got, want) {
+		t.Fatalf("the envelope can emit %v, want exactly %v — a sixth code is a design decision, not an addition", got, want)
+	}
+}
+
+func TestEachErrorCodeConstantCarriesItsWireValue(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		got  string
+		want string
+	}{
+		{codeInvalidRequest, "invalid_request"},
+		{codeSubjectNotFound, "subject_not_found"},
+		{codeGraphUnavailable, "graph_unavailable"},
+		{codeModelUnavailable, "model_unavailable"},
+		{codeRunDeadlineExceeded, "run_deadline_exceeded"},
+	}
+
+	for _, c := range cases {
+		if c.got != c.want {
+			t.Fatalf("an error code constant carries %q, want %q", c.got, c.want)
+		}
+	}
+}
+
+func TestRunsCeilsARunTheCallerNeverBoundedAtTenMinutes(t *testing.T) {
+	t.Parallel()
+
+	graph := &deadlineGraph{}
+
+	rec := postRuns(t, newTestTurn(graph), `{"input":"hello","subject":42}`)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d — the ceiling must not cut an ordinary run, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !graph.nodeBounded {
+		t.Fatal("the turn ran on a context carrying no deadline, and the request carried none of its own — the handler applies no ceiling at all")
+	}
+
+	const wantCeiling = 10 * time.Minute
+	const observationSlack = 1 * time.Second
+	if remaining := time.Until(graph.nodeDeadline); remaining <= wantCeiling-observationSlack || remaining > wantCeiling {
+		t.Fatalf("the run's ceiling leaves %v, want %v less at most the %v this observation itself can cost", remaining, wantCeiling, observationSlack)
+	}
+}
+
+func TestRunsCeilingStopsAtTheAnswerAndDoesNotReachTheWriteBack(t *testing.T) {
+	t.Parallel()
+
+	graph := &deadlineGraph{}
+
+	rec := postRuns(t, newTestTurn(graph), `{"input":"hello","subject":42}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !graph.nodeBounded {
+		t.Fatal("the run was never bounded, so this test cannot show what the bound excludes")
+	}
+	if graph.writeBounded {
+		t.Fatal("the write-back inherited the run's ceiling; design §8.4 bounds everything up to and including the answer, and the filing comes after it")
 	}
 }

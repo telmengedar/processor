@@ -24,7 +24,7 @@ func TestNodeConstructsTheListingQueryWithIDAndFields(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "test-key", srv.Client())
+	c := NewClient(srv.URL, "test-key", srv.Client(), testLogger())
 	if _, _, err := c.Node(context.Background(), 42); err != nil {
 		t.Fatalf("Node: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestNodeReturnsNotFoundOnEmptyResultWithStatus200(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", srv.Client())
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 	_, found, err := c.Node(context.Background(), 99999999)
 	if err != nil {
 		t.Fatalf("Node: %v", err)
@@ -94,7 +94,7 @@ func TestNodeDecodesAFoundResultIncludingContent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", srv.Client())
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 	anchor, found, err := c.Node(context.Background(), 42)
 	if err != nil {
 		t.Fatalf("Node: %v", err)
@@ -121,7 +121,7 @@ func TestNodeOnNon200TreatsItAsAnErrorNeverAsNotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "bad-key", srv.Client())
+	c := NewClient(srv.URL, "bad-key", srv.Client(), testLogger())
 	_, found, err := c.Node(context.Background(), 42)
 	if err == nil {
 		t.Fatal("Node returned nil error for a 401 response, want an error")
@@ -142,7 +142,7 @@ func TestRecallConstructsTheQueryWithTextAndCount(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", srv.Client())
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 	// Deliberately not already lowercase/trimmed/single-spaced (CF-1): a
 	// fixture that already satisfies those normalizations can't fail when
 	// the adapter silently applies one.
@@ -206,7 +206,7 @@ func TestRecallReturnsEveryCandidateTheServerSentUnfiltered(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", srv.Client())
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 	got, err := c.Recall(context.Background(), "q", 20)
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
@@ -241,7 +241,7 @@ func TestRecallPreservesReturnedOrderWithoutResorting(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", srv.Client())
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 	got, err := c.Recall(context.Background(), "q", 20)
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
@@ -271,7 +271,7 @@ func TestRecallDecodesSimilarityAndContent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", srv.Client())
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 	got, err := c.Recall(context.Background(), "q", 20)
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
@@ -297,7 +297,7 @@ func TestRecallOnNon200ReturnsAnError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", srv.Client())
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 	if _, err := c.Recall(context.Background(), "q", 20); err == nil {
 		t.Fatal("Recall returned nil error for a 500 response, want an error")
 	}
@@ -306,7 +306,7 @@ func TestRecallOnNon200ReturnsAnError(t *testing.T) {
 func TestNodeOnUnreachableHostReturnsAnError(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient("http://127.0.0.1:1", "k", nil)
+	c := NewClient("http://127.0.0.1:1", "k", nil, testLogger())
 	if _, _, err := c.Node(context.Background(), 1); err == nil {
 		t.Fatal("Node returned nil error against an unreachable host, want an error")
 	}
@@ -333,7 +333,7 @@ func TestNodeAnchorsOnTheRowMatchingTheRequestedIDNotResultZero(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", srv.Client())
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 	anchor, found, err := c.Node(context.Background(), 42)
 	if err != nil {
 		t.Fatalf("Node: %v", err)
@@ -363,7 +363,7 @@ func TestNodeReportsNotFoundWhenNoRowMatchesTheRequestedID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(srv.URL, "k", srv.Client())
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 	_, found, err := c.Node(context.Background(), 42)
 	if err != nil {
 		t.Fatalf("Node: %v", err)
@@ -380,9 +380,9 @@ func TestNodeReportsNotFoundWhenNoRowMatchesTheRequestedID(t *testing.T) {
 func TestNewClientDefaultsToATimeoutBoundHTTPClientWhenNoneIsSupplied(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient("http://example.invalid", "k", nil)
+	c := NewClient("http://example.invalid", "k", nil, testLogger())
 	if c.httpClient == http.DefaultClient {
-		t.Fatal("NewClient(nil) used http.DefaultClient, which has no timeout")
+		t.Fatal("NewClient(nil, testLogger()) used http.DefaultClient, which has no timeout")
 	}
 	if c.httpClient.Timeout <= 0 {
 		t.Fatalf("httpClient.Timeout = %v, want a positive timeout", c.httpClient.Timeout)

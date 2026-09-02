@@ -4,12 +4,17 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"testing"
 
 	"github.com/telmengedar/processor/internal/divoid"
 	"github.com/telmengedar/processor/internal/loop"
 )
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 type recordingTransport struct {
 	calls int
@@ -43,17 +48,17 @@ func TestClientBuiltByAnExternalKeyedLiteralSurvivesTheNilHTTPClientBranch(t *te
 	}
 }
 
-func TestClientBuiltByAnExternalKeyedLiteralSurvivesTheNilClockBranch(t *testing.T) {
+func TestClientBuiltByAnExternalKeyedLiteralSurvivesTheNilClockAndNilLoggerBranches(t *testing.T) {
 	t.Parallel()
 
 	c := divoid.Client{}
 
-	id, err := c.WriteRun(context.Background(), loop.Record{Input: "hello", Subject: 42})
-	if err == nil {
-		t.Fatal("WriteRun on a zero-value Client returned no error, want a transport error")
+	receipt := c.WriteRun(context.Background(), loop.Record{Input: "hello", Subject: 42})
+	if receipt.State != loop.NotStored {
+		t.Fatalf("WriteRun on a zero-value Client reported %q, want %q", receipt.State, loop.NotStored)
 	}
-	if id != 0 {
-		t.Fatalf("WriteRun on a zero-value Client returned id %d, want 0", id)
+	if receipt.NodeID != 0 {
+		t.Fatalf("WriteRun on a zero-value Client returned node id %d, want 0", receipt.NodeID)
 	}
 }
 
@@ -61,7 +66,7 @@ func TestNodeSendsItsRequestThroughTheHTTPClientSuppliedToNewClient(t *testing.T
 	t.Parallel()
 
 	rt := &recordingTransport{}
-	c := divoid.NewClient("http://divoid.invalid", "supplied-key", &http.Client{Transport: rt})
+	c := divoid.NewClient("http://divoid.invalid", "supplied-key", &http.Client{Transport: rt}, testLogger())
 
 	anchor, found, err := c.Node(context.Background(), 42)
 	if err != nil {

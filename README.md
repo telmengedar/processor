@@ -68,6 +68,28 @@ Content-Type: application/json
 signal exercised by the automated test described under "What is and isn't verified here" below, which
 measured the process logging `shutdown started` then `shutdown complete` and exiting `0`.
 
+**A shutdown drains an in-flight run rather than cancelling it.** The two numbers behind that are
+constants, not configuration (`docs/architecture/run-record-fate.md` §8.4):
+
+| Constant | Value | What it bounds |
+|---|---|---|
+| Run bound | **10 minutes** | Everything from the handler's entry up to and including the answer. Exceeding it is `504 run_deadline_exceeded` |
+| Drain grace | **11 minutes** | How long `Shutdown` is willing to wait for connections to go idle: the run bound, plus **45 s** for a write-back of at most three graph calls at 15 s each, plus **15 s** of stated margin so the grace does not sit exactly on its own bound. A test asserts the literal against both parts separately — the 45 s is derived, the 15 s is not |
+
+An **idle** shutdown still returns immediately — the grace is a ceiling, not a wait — so the longer number
+costs nothing when there is no run to protect.
+
+**The drain guarantee is conditional on the supervisor.** `docker stop` sends `SIGTERM` and then `SIGKILL`
+after **10 seconds** by default, which is long before the grace. A container expected to finish its run
+needs the kill timeout raised to at least the grace:
+
+```sh
+docker stop -t 660 <container>
+```
+
+Without that, a run in flight at shutdown is still killed — the process offers the ceiling, the supervisor
+decides how much of it is honoured.
+
 ### Configuration
 
 Six environment variables, read once, in `main` — still the module's one environment read site
@@ -121,10 +143,23 @@ error if the round was malformed or failed), how many model calls were made and 
 was reached (`capReached`), token usage as one entry per model call, in call order, named for the direction
 of travel (`inTokens`/`outTokens` — a `null` entry means that call's endpoint reported no usage object,
 absent, never zero-filled), the stop reason (both the loop's own neutral value and the endpoint's raw
-string), the write-back outcome (the written node's id, or the reason it was not written — a write-back
-failure does not fail the request; the record already carries everything of value), and the five constants
-that governed the run (`limits`: candidate limit, assembly byte budget, supplementary byte budget, max model
-calls, max output tokens).
+string), and the five constants that governed the run (`limits`: candidate limit, assembly byte budget,
+supplementary byte budget, max model calls, max output tokens).
+
+The response carries **one key more than the record**: `written`, the write receipt, which says where the
+record was filed. It is not a member of the record and never reaches the stored copy — a stored record is
+at the node it would be naming. **The stored node's body is the response body minus that one key, and
+nothing else differs** (`docs/architecture/run-record-fate.md` §8.1).
+
+| `written.state` | `written.nodeId` | Meaning | What the caller does |
+|---|---|---|---|
+| `stored` | present | The record is at that node, bodied and linked to the subject | nothing — the ordinary outcome |
+| `unlinked` | present | The record is at that node and complete; the edge to the subject is missing | nothing; the record is safe, the edge is repairable, and the operator's log names the node |
+| `notStored` | absent | No node holds this record — **the response is the only copy** | keep the body if it matters |
+
+A write-back failure does not fail the request: the record already carries everything of value, and the
+receipt names what happened. The receipt carries no reason string — every `notStored` cause produces the
+same caller decision, and the diagnosis goes to stderr.
 
 Errors use a small closed envelope, `{"error":{"code":"...","message":"..."}}`:
 
@@ -134,6 +169,7 @@ Errors use a small closed envelope, `{"error":{"code":"...","message":"..."}}`:
 | `subject_not_found` | 404 | The subject id resolves to nothing |
 | `graph_unavailable` | 502 | The graph could not be read |
 | `model_unavailable` | 502 | The model call did not complete (transport failure, non-2xx status, or an undecodable response) |
+| `run_deadline_exceeded` | 504 | The run did not produce an answer within the service's own ceiling. Retrying unchanged hits the same ceiling — something must change (a faster endpoint, a smaller subject, a different input) |
 
 ```sh
 curl -s -X POST http://127.0.0.1:8080/runs \
@@ -197,14 +233,35 @@ flags it.
     sh -c 'go vet ./... && go test -count=1 ./...'
   ```
 
-  Expects one `ok` line per package — **four** as of unit A, which adds `internal/divoid` and
-  `internal/loop` — no `?`, exit `0`. One 1.32 GB `golang:1.27` image pull, once.
+  Expects one `ok` line per package — **five**: `cmd/processor`, `internal/divoid`, `internal/loop`,
+  `internal/openaicompat`, `internal/server` — no `?`, exit `0`. One 1.32 GB `golang:1.27` image pull,
+  once.
+- **The drain is covered by an automated process-level test** (`cmd/processor/process_linux_test.go`):
+  the real binary is launched against local graph and model test servers, the model endpoint is made
+  slow, `SIGTERM` is sent while a run is genuinely in flight (the model server signals when it has been
+  reached), and the test asserts that the caller still receives the full record, that the graph still
+  receives the run node, and that the process exits `0` with the ordered shutdown records. **What it does
+  not establish:** that the process survives `SIGKILL` (nothing can), that a container supervisor honours
+  the grace (that is a deployment flag — see "Run" above), or the grace's *value* — the run it drives is
+  seconds long, and the 11-minute literal is pinned by the arithmetic assertion in
+  `internal/server/server_test.go` instead.
+- **The run's own ceiling is covered at the handler**: a request that carries no deadline of its own
+  still reaches the loop on a context bounded at ten minutes, and that ceiling stops at the answer —
+  the write-back runs on a context with no deadline at all. Both are observed from a graph double
+  reading `ctx.Deadline()`, so neither the bound's existence nor its value depends on waiting for it.
+  Separately, the `504` path and its ordering obligation (the handler tests the run context's expiry
+  *before* it classifies the error, so a deadline is never reported as an upstream `502`) are pinned
+  with a caller-supplied deadline.
+- **The per-run log pair is covered at both levels**: that `run started` precedes `run finished`, carries
+  the input's **length** and never its text, and that `run finished` carries the receipt state and the
+  wall clock. A `run started` with no matching `run finished` is the only trace a process killed mid-run
+  can leave.
 - **What is still not covered:** `run()`'s serve-error exit branch and a second interrupt arriving
   during the shutdown drain — both are structurally unreachable from outside the process without adding
   a slow route or a delay knob to shipping code, which is declined (design
-  `docs/architecture/process-boundary-test-harness.md` §2.4) — and the drain-failure axis (`server.go`'s
-  `shutdownGrace` / `ReadHeaderTimeout` / shutdown-error propagation), which is a different instrument
-  tracked separately as DiVoid **#10489**.
+  `docs/architecture/process-boundary-test-harness.md` §2.4) — and the remaining drain-failure axis
+  (`ReadHeaderTimeout` and shutdown-error propagation at the process level), which is a different
+  instrument tracked separately as DiVoid **#10489**.
 - **Mechanical context assembly (`POST /runs`, unit A):** `Assemble` is byte-pinned by an offline golden
   test (fixed candidate rows in, one exact block out), and separately: admission stops rather than
   back-fills, every candidate is hashed and sized including the cut ones, and the render order is by
@@ -222,7 +279,13 @@ flags it.
   recall failure produces no model call at all, and that a write-back failure does not fail the request)
   are pinned at the port level against canned graph and model doubles. `internal/divoid`'s write side (the
   three-POST sequence, the content-type header on the body POST, the bare-id body on the link POST, and
-  that the adapter alone supplies the written node's type, name and edge) is pinned at the wire level.
+  that the adapter alone supplies the written node's type, name and edge) is pinned at the wire level,
+  including every partial-failure branch: a failed create stores nothing and discards nothing, a failed
+  body write discards the bodyless shell it just created and no other node, a failed link keeps the
+  complete record and issues no `DELETE`, and a discard that itself fails still reports `notStored` while
+  naming the surviving node on stderr. The two-artifact relationship (`cmd/processor/artifacts_test.go`)
+  is asserted end-to-end: one turn through the real handler and the real graph adapter, both byte
+  sequences taken, and the stored body compared key-for-key against the response minus `written`.
   **Not verified here:** the OpenAI-compatible protocol's actual **200** response shape from a real
   implementation — no local runtime (Ollama, LM Studio, llama.cpp, vLLM, koboldcpp) was installed or
   listening on this machine when this was built (checked, not assumed: `ollama`/`lms`/`llama-server`/

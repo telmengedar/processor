@@ -17,6 +17,12 @@ const (
 	runNameInputRunes = 80
 )
 
+const (
+	logWriteBackFailed  = "write-back failed"
+	logRepairableOrphan = "repairable orphan"
+	logUncollectedShell = "uncollected shell"
+)
+
 type createNodeRequest struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
@@ -26,25 +32,38 @@ type createNodeResponse struct {
 	ID int64 `json:"id"`
 }
 
-// WriteRun creates the run node, sets its body and links it to the subject.
-func (c *Client) WriteRun(ctx context.Context, record loop.Record) (int64, error) {
+// WriteRun files the record as one node linked to the subject and reports how far it got.
+func (c *Client) WriteRun(ctx context.Context, record loop.Record) loop.WriteReceipt {
 	body, err := json.Marshal(record)
 	if err != nil {
-		return 0, fmt.Errorf("divoid: encode run record: %w", err)
+		c.log().Error(logWriteBackFailed, "subject", record.Subject, "error", fmt.Errorf("divoid: encode run record: %w", err))
+		return loop.WriteReceipt{State: loop.NotStored}
 	}
 
 	id, err := c.createRunNode(ctx, c.runName(record))
 	if err != nil {
-		return 0, err
-	}
-	if err := c.post(ctx, fmt.Sprintf("/api/nodes/%d/content", id), runContentType, body, nil); err != nil {
-		return 0, fmt.Errorf("divoid: set run node content: %w", err)
-	}
-	if err := c.linkRunNode(ctx, id, record.Subject); err != nil {
-		return 0, fmt.Errorf("divoid: link run node to subject: %w", err)
+		c.log().Error(logWriteBackFailed, "subject", record.Subject, "error", err)
+		return loop.WriteReceipt{State: loop.NotStored}
 	}
 
-	return id, nil
+	if err := c.post(ctx, fmt.Sprintf("/api/nodes/%d/content", id), runContentType, body, nil); err != nil {
+		c.log().Error(logWriteBackFailed, "subject", record.Subject, "node", id, "error", fmt.Errorf("divoid: set run node content: %w", err))
+		c.discardShell(ctx, id)
+		return loop.WriteReceipt{State: loop.NotStored}
+	}
+
+	if err := c.linkRunNode(ctx, id, record.Subject); err != nil {
+		c.log().Error(logRepairableOrphan, "node", id, "subject", record.Subject, "error", fmt.Errorf("divoid: link run node to subject: %w", err))
+		return loop.WriteReceipt{State: loop.Unlinked, NodeID: id}
+	}
+
+	return loop.WriteReceipt{State: loop.Stored, NodeID: id}
+}
+
+func (c *Client) discardShell(ctx context.Context, id int64) {
+	if err := c.remove(ctx, fmt.Sprintf("/api/nodes/%d", id)); err != nil {
+		c.log().Error(logUncollectedShell, "node", id, "error", err)
+	}
 }
 
 func (c *Client) createRunNode(ctx context.Context, name string) (int64, error) {

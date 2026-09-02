@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,7 +36,11 @@ func (s *syncBuffer) String() string {
 }
 
 func harnessEnv(addr string) []string {
-	m := validEnv(map[string]string{envHTTPAddr: addr})
+	return harnessEnvWith(map[string]string{envHTTPAddr: addr})
+}
+
+func harnessEnvWith(overrides map[string]string) []string {
+	m := validEnv(overrides)
 	env := make([]string, 0, len(m))
 	for k, v := range m {
 		env = append(env, k+"="+v)
@@ -127,6 +133,19 @@ func startServingProcess(t *testing.T, bin string, env []string) *servingProcess
 	_ = cmd.Wait()
 	t.Fatalf("GET /health against %s never returned 200 within 5s; stderr:\n%s", addr, stderr.String())
 	return nil
+}
+
+func awaitStderr(t *testing.T, stderr *syncBuffer, want string, deadline time.Duration) {
+	t.Helper()
+
+	until := time.Now().Add(deadline)
+	for time.Now().Before(until) {
+		if strings.Contains(stderr.String(), want) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("stderr never carried %q within %s; stderr:\n%s", want, deadline, stderr.String())
 }
 
 // awaitExit waits for cmd to exit within deadline. On timeout it kills and
@@ -281,5 +300,160 @@ func TestBindError(t *testing.T) {
 	}
 	if !strings.Contains(out, "addr="+first.addr) {
 		t.Fatalf("stderr missing listen error record carrying addr=%s; stderr:\n%s", first.addr, out)
+	}
+}
+
+type runCallResult struct {
+	status int
+	body   []byte
+	err    error
+}
+
+func TestSIGTERMDrainsAnInFlightRunInsteadOfDroppingIt(t *testing.T) {
+	t.Parallel()
+
+	bin := buildProcessorBinary(t)
+
+	stored := &storedBody{}
+	graphSrv := graphServer(t, stored, "")
+
+	const modelDelay = 6 * time.Second
+	entered := make(chan struct{}, 1)
+	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		time.Sleep(modelDelay)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"the drained answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":22}}`))
+	}))
+	t.Cleanup(modelSrv.Close)
+
+	rp := startServingProcess(t, bin, harnessEnvWith(map[string]string{
+		envHTTPAddr:  "127.0.0.1:0",
+		envDivoidURL: graphSrv.URL,
+		envModelURL:  modelSrv.URL,
+	}))
+
+	done := make(chan runCallResult, 1)
+	go func() {
+		client := &http.Client{Timeout: 60 * time.Second}
+		resp, err := client.Post("http://"+rp.addr+"/runs", "application/json", strings.NewReader(`{"input":"what changed","subject":42}`))
+		if err != nil {
+			done <- runCallResult{err: err}
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		body, err := io.ReadAll(resp.Body)
+		done <- runCallResult{status: resp.StatusCode, body: body, err: err}
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(15 * time.Second):
+		_ = rp.cmd.Process.Kill()
+		_ = rp.cmd.Wait()
+		t.Fatalf("the model endpoint was never reached, so no run was in flight when the signal was sent; stderr:\n%s", rp.stderr.String())
+	}
+
+	if err := rp.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("Signal(SIGTERM): %v", err)
+	}
+
+	var got runCallResult
+	select {
+	case got = <-done:
+	case <-time.After(60 * time.Second):
+		_ = rp.cmd.Process.Kill()
+		_ = rp.cmd.Wait()
+		t.Fatalf("the in-flight run never produced a response after SIGTERM; stderr:\n%s", rp.stderr.String())
+	}
+
+	if got.err != nil {
+		t.Fatalf("POST /runs across the drain failed: %v; stderr:\n%s", got.err, rp.stderr.String())
+	}
+	if got.status != http.StatusOK {
+		t.Fatalf("POST /runs status = %d, want %d; body=%s", got.status, http.StatusOK, got.body)
+	}
+	if !strings.Contains(string(got.body), `"answer":"the drained answer"`) {
+		t.Fatalf("the drained response does not carry the model's answer; body=%s", got.body)
+	}
+	if !strings.Contains(string(got.body), `"written":{"state":"stored"`) {
+		t.Fatalf("the drained response does not report the record as stored; body=%s", got.body)
+	}
+	if len(stored.get()) == 0 {
+		t.Fatalf("the graph never received the run record, so the drain delivered the answer but not the second copy; stderr:\n%s", rp.stderr.String())
+	}
+
+	awaitExit(t, rp.cmd, 30*time.Second, rp.stderr)
+
+	if code := rp.cmd.ProcessState.ExitCode(); code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, rp.stderr.String())
+	}
+
+	out := rp.stderr.String()
+	idxStarted := strings.Index(out, `msg="shutdown started"`)
+	idxComplete := strings.Index(out, `msg="shutdown complete"`)
+	if idxStarted == -1 || idxComplete == -1 || idxStarted > idxComplete {
+		t.Fatalf("shutdown lifecycle records missing or out of order across a drained run; stderr:\n%s", out)
+	}
+}
+
+func TestACompletedRunEmitsTheStartedAndFinishedPairInOrder(t *testing.T) {
+	t.Parallel()
+
+	bin := buildProcessorBinary(t)
+
+	stored := &storedBody{}
+	graphSrv := graphServer(t, stored, "")
+
+	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"the answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":22}}`))
+	}))
+	t.Cleanup(modelSrv.Close)
+
+	rp := startServingProcess(t, bin, harnessEnvWith(map[string]string{
+		envHTTPAddr:  "127.0.0.1:0",
+		envDivoidURL: graphSrv.URL,
+		envModelURL:  modelSrv.URL,
+	}))
+	defer func() {
+		_ = rp.cmd.Process.Kill()
+		_ = rp.cmd.Wait()
+	}()
+
+	const input = "INPUT-TEXT-MARKER what changed"
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Post("http://"+rp.addr+"/runs", "application/json", strings.NewReader(`{"input":"`+input+`","subject":42}`))
+	if err != nil {
+		t.Fatalf("POST /runs: %v; stderr:\n%s", err, rp.stderr.String())
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /runs status = %d, want %d; stderr:\n%s", resp.StatusCode, http.StatusOK, rp.stderr.String())
+	}
+
+	awaitStderr(t, rp.stderr, `msg="run started"`, 5*time.Second)
+	awaitStderr(t, rp.stderr, `msg="run finished"`, 5*time.Second)
+
+	out := rp.stderr.String()
+	idxStarted := strings.Index(out, `msg="run started"`)
+	idxFinished := strings.Index(out, `msg="run finished"`)
+	if idxStarted > idxFinished {
+		t.Fatalf("the run-finished record precedes the run-started record; stderr:\n%s", out)
+	}
+	if strings.Contains(out, "INPUT-TEXT-MARKER") {
+		t.Fatalf("stderr carries the input text; stderr:\n%s", out)
+	}
+	if !strings.Contains(out, "inputLength=30") {
+		t.Fatalf("run-started record does not carry inputLength=%d; stderr:\n%s", len(input), out)
+	}
+	if !strings.Contains(out, "receipt=stored") {
+		t.Fatalf("run-finished record does not carry the write receipt; stderr:\n%s", out)
+	}
+	if !strings.Contains(out, "elapsed=") {
+		t.Fatalf("run-finished record does not carry the wall clock; stderr:\n%s", out)
 	}
 }

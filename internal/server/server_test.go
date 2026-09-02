@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/telmengedar/processor/internal/divoid"
 )
 
 func discardLogger() *slog.Logger {
@@ -174,5 +176,45 @@ func TestServeOnUnusableListenerReturnsNonNilError(t *testing.T) {
 	}
 	if errors.Is(err, http.ErrServerClosed) {
 		t.Fatalf("Serve returned the shutdown sentinel for a startup failure: %v", err)
+	}
+}
+
+const (
+	writeBackCalls = 3
+	graceMargin    = 15 * time.Second
+)
+
+func TestTheDrainGraceIsElevenMinutesDerivedFromTheRunBoundTheWriteBackAndAStatedMargin(t *testing.T) {
+	t.Parallel()
+
+	const wantRunBound = 10 * time.Minute
+	const wantGrace = 11 * time.Minute
+	const wantWriteBackAllowance = 45 * time.Second
+
+	if runBound != wantRunBound {
+		t.Fatalf("runBound = %v, want %v", runBound, wantRunBound)
+	}
+	if shutdownGrace != wantGrace {
+		t.Fatalf("shutdownGrace = %v, want %v", shutdownGrace, wantGrace)
+	}
+
+	writeBackAllowance := writeBackCalls * divoid.DefaultTimeout
+	if writeBackAllowance != wantWriteBackAllowance {
+		t.Fatalf("%d write-back calls at the graph client's per-call timeout = %v, want %v (design §8.4a enumerates every path and its call count)", writeBackCalls, writeBackAllowance, wantWriteBackAllowance)
+	}
+	if derived := runBound + writeBackAllowance + graceMargin; derived != shutdownGrace {
+		t.Fatalf("runBound %v + write-back %v + margin %v = %v, but shutdownGrace is %v", runBound, writeBackAllowance, graceMargin, derived, shutdownGrace)
+	}
+}
+
+func TestTheDrainGraceKeepsAPositiveMarginOverTheBoundItMustCover(t *testing.T) {
+	t.Parallel()
+
+	if graceMargin <= 0 {
+		t.Fatalf("graceMargin = %v, want a positive headroom — the margin is the whole reason the grace does not sit on its own bound", graceMargin)
+	}
+	covered := runBound + writeBackCalls*divoid.DefaultTimeout
+	if shutdownGrace <= covered {
+		t.Fatalf("shutdownGrace = %v, but a run plus its write-back can take %v — the grace sits on its own bound with no headroom", shutdownGrace, covered)
 	}
 }

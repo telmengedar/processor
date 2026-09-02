@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -34,11 +35,17 @@ type runRequest struct {
 }
 
 const (
-	codeInvalidRequest   = "invalid_request"
-	codeSubjectNotFound  = "subject_not_found"
-	codeGraphUnavailable = "graph_unavailable"
-	codeModelUnavailable = "model_unavailable"
+	codeInvalidRequest      = "invalid_request"
+	codeSubjectNotFound     = "subject_not_found"
+	codeGraphUnavailable    = "graph_unavailable"
+	codeModelUnavailable    = "model_unavailable"
+	codeRunDeadlineExceeded = "run_deadline_exceeded"
 )
+
+type runResponse struct {
+	loop.Record
+	Written loop.WriteReceipt `json:"written"`
+}
 
 // maxRequestBodyBytes bounds POST /runs' request body (W-6): generous for
 // the two-field {input, subject} shape, small enough that an unbounded
@@ -67,9 +74,14 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			return
 		}
 
-		record, err := turn.Run(r.Context(), req.Input, req.Subject)
+		runCtx, cancel := context.WithTimeout(r.Context(), runBound)
+		defer cancel()
+
+		record, receipt, err := turn.Run(runCtx, req.Input, req.Subject)
 		if err != nil {
 			switch {
+			case errors.Is(runCtx.Err(), context.DeadlineExceeded):
+				writeError(w, http.StatusGatewayTimeout, codeRunDeadlineExceeded, "the run did not produce an answer within the service's time limit")
 			case errors.Is(err, loop.ErrSubjectNotFound):
 				writeError(w, http.StatusNotFound, codeSubjectNotFound, "the subject node was not found")
 			case errors.Is(err, loop.ErrModelUnavailable):
@@ -82,7 +94,7 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(record)
+		_ = json.NewEncoder(w).Encode(runResponse{Record: record, Written: receipt})
 	}
 }
 
