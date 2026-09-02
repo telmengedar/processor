@@ -32,7 +32,7 @@ type Client struct {
 // NewClient builds a Client against baseURL, requesting modelID on every call.
 func NewClient(baseURL, modelID, apiKey string, httpClient *http.Client) *Client {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: DefaultTimeout}
+		httpClient = defaultHTTPClient()
 	}
 	return &Client{
 		baseURL:    strings.TrimRight(baseURL, "/"),
@@ -40,6 +40,17 @@ func NewClient(baseURL, modelID, apiKey string, httpClient *http.Client) *Client
 		apiKey:     apiKey,
 		httpClient: httpClient,
 	}
+}
+
+func defaultHTTPClient() *http.Client {
+	return &http.Client{Timeout: DefaultTimeout}
+}
+
+func (c *Client) client() *http.Client {
+	if c.httpClient == nil {
+		return defaultHTTPClient()
+	}
+	return c.httpClient
 }
 
 // Judge runs one judgement step against the endpoint.
@@ -66,7 +77,7 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.client().Do(req)
 	if err != nil {
 		return loop.JudgeResult{}, fmt.Errorf("openaicompat: request failed: %w", err)
 	}

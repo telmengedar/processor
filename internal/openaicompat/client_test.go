@@ -525,6 +525,15 @@ func TestNewClientDefaultsToATimeoutBoundHTTPClientWhenNoneIsSupplied(t *testing
 	}
 }
 
+func TestTheNilHTTPClientFallbackYieldsATimeoutBoundClientNotMerelyANonNilOne(t *testing.T) {
+	t.Parallel()
+
+	c := Client{}
+	if got := c.client(); got.Timeout != DefaultTimeout {
+		t.Fatalf("zero-value Client's fallback client Timeout = %v, want DefaultTimeout (%v) — an unbounded fallback trades a panic for a hang", got.Timeout, DefaultTimeout)
+	}
+}
+
 func TestDefaultTimeoutIsNotDivoidsTimeout(t *testing.T) {
 	t.Parallel()
 
