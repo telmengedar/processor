@@ -9,9 +9,13 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
+// RunNodeType is the graph node type every run record is filed as.
+const RunNodeType = "session-log"
+
+// RunNamePrefix opens the name of every run node the loop writes.
+const RunNamePrefix = "processor-run"
+
 const (
-	runNodeType    = "session-log"
-	runNamePrefix  = "processor-run"
 	runContentType = "application/json"
 
 	runNameInputRunes = 80
@@ -67,7 +71,7 @@ func (c *Client) discardShell(ctx context.Context, id int64) {
 }
 
 func (c *Client) createRunNode(ctx context.Context, name string) (int64, error) {
-	reqBody, err := json.Marshal(createNodeRequest{Type: runNodeType, Name: name})
+	reqBody, err := json.Marshal(createNodeRequest{Type: RunNodeType, Name: name})
 	if err != nil {
 		return 0, fmt.Errorf("divoid: encode run node create: %w", err)
 	}
@@ -88,7 +92,7 @@ func (c *Client) linkRunNode(ctx context.Context, id, target int64) error {
 }
 
 func (c *Client) runName(record loop.Record) string {
-	return fmt.Sprintf("%s %s — %s", runNamePrefix, c.now().UTC().Format(time.RFC3339), truncateRunes(record.Input, runNameInputRunes))
+	return fmt.Sprintf("%s %s — %s", RunNamePrefix, c.now().UTC().Format(time.RFC3339), truncateRunes(record.Input, runNameInputRunes))
 }
 
 func truncateRunes(s string, limit int) string {
