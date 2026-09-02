@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"testing"
 	"time"
-
-	"github.com/telmengedar/processor/internal/loop"
 )
 
 func discardLogger() *slog.Logger {
@@ -30,7 +28,7 @@ func TestServeServesThenShutsDownCleanly(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- Serve(ctx, ln, NewHandler(loop.NewTurn(stubGraph{})), discardLogger())
+		done <- Serve(ctx, ln, NewHandler(newTestTurn(stubGraph{})), discardLogger())
 	}()
 
 	resp, err := http.Get("http://" + addr + "/health")
@@ -170,7 +168,7 @@ func TestServeOnUnusableListenerReturnsNonNilError(t *testing.T) {
 		t.Fatalf("Close: %v", err)
 	}
 
-	err = Serve(context.Background(), ln, NewHandler(loop.NewTurn(stubGraph{})), discardLogger())
+	err = Serve(context.Background(), ln, NewHandler(newTestTurn(stubGraph{})), discardLogger())
 	if err == nil {
 		t.Fatal("Serve returned nil for an already-closed listener, want a non-nil error")
 	}

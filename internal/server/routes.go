@@ -33,13 +33,11 @@ type runRequest struct {
 	Subject int64  `json:"subject"`
 }
 
-// The error envelope (design §8.5): four closed codes, each with a caller
-// decision behind it. model_unavailable is unit B's — it has no writer
-// here and is not declared (#1220 §2).
 const (
 	codeInvalidRequest   = "invalid_request"
 	codeSubjectNotFound  = "subject_not_found"
 	codeGraphUnavailable = "graph_unavailable"
+	codeModelUnavailable = "model_unavailable"
 )
 
 // maxRequestBodyBytes bounds POST /runs' request body (W-6): generous for
@@ -71,13 +69,14 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 
 		record, err := turn.Run(r.Context(), req.Input, req.Subject)
 		if err != nil {
-			if errors.Is(err, loop.ErrSubjectNotFound) {
+			switch {
+			case errors.Is(err, loop.ErrSubjectNotFound):
 				writeError(w, http.StatusNotFound, codeSubjectNotFound, "the subject node was not found")
-				return
+			case errors.Is(err, loop.ErrModelUnavailable):
+				writeError(w, http.StatusBadGateway, codeModelUnavailable, "the model call did not complete")
+			default:
+				writeError(w, http.StatusBadGateway, codeGraphUnavailable, "the graph could not be read")
 			}
-			// Every other outcome from Run — including the wrapped
-			// ErrGraphUnavailable — is a failure to read the graph.
-			writeError(w, http.StatusBadGateway, codeGraphUnavailable, "the graph could not be read")
 			return
 		}
 

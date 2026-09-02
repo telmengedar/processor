@@ -29,8 +29,16 @@ const cutReasonByteBudget = "byte budget exceeded"
 // would go flaky) the moment two scores tie or one shifts in the ninth
 // decimal, for a reason that has nothing to do with the code.
 func Assemble(anchor Anchor, candidates []Candidate, budget int) (block string, dispositions []Disposition) {
+	admitted, dispositions := admit(candidates, budget)
+
+	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
+
+	return renderBlock(anchor, admitted), dispositions
+}
+
+func admit(candidates []Candidate, budget int) (admitted []Candidate, dispositions []Disposition) {
 	dispositions = make([]Disposition, len(candidates))
-	admitted := make([]Candidate, 0, len(candidates))
+	admitted = make([]Candidate, 0, len(candidates))
 
 	cumulative := 0
 	stopped := false
@@ -59,14 +67,7 @@ func Assemble(anchor Anchor, candidates []Candidate, budget int) (block string, 
 		dispositions[i] = d
 	}
 
-	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
-
-	// dispositions is already non-nil from the make() above for any
-	// len(candidates), including zero, so no nil-guard is needed here — the
-	// wire-shape guarantee (a nil []Disposition would serialize as JSON
-	// null, not []) is pinned where it's a real risk: at the wire level, in
-	// TestRunsCandidatesIsAnEmptyArrayNeverNullWhenThereAreNone (W-14).
-	return renderBlock(anchor, admitted), dispositions
+	return admitted, dispositions
 }
 
 // renderBlock renders the fixed layout of design §6.3: the anchor first

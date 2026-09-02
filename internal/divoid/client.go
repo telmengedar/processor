@@ -5,6 +5,7 @@
 package divoid
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -40,6 +41,8 @@ type Client struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
+
+	clock func() time.Time
 }
 
 // NewClient builds a Client against baseURL, authenticating with apiKey.
@@ -53,6 +56,7 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) *Client {
 	return &Client{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		apiKey:     apiKey,
+		clock:      time.Now,
 		httpClient: httpClient,
 	}
 }
@@ -157,6 +161,34 @@ func (c *Client) get(ctx context.Context, query url.Values, out any) error {
 		return fmt.Errorf("divoid: unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("divoid: decode response: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) post(ctx context.Context, path, contentType string, body []byte, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("divoid: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("divoid: request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode/100 != 2 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("divoid: unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+	if out == nil {
+		return nil
+	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("divoid: decode response: %w", err)
 	}

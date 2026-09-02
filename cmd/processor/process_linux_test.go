@@ -33,6 +33,15 @@ func (s *syncBuffer) String() string {
 	return s.buf.String()
 }
 
+func harnessEnv(addr string) []string {
+	m := validEnv(map[string]string{envHTTPAddr: addr})
+	env := make([]string, 0, len(m))
+	for k, v := range m {
+		env = append(env, k+"="+v)
+	}
+	return env
+}
+
 // buildProcessorBinary builds the package under test into a per-test
 // temporary directory and returns the path to the built binary.
 func buildProcessorBinary(t *testing.T) string {
@@ -164,7 +173,7 @@ func TestGracefulShutdown(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			rp := startServingProcess(t, bin, []string{"PROCESSOR_HTTP_ADDR=127.0.0.1:0"})
+			rp := startServingProcess(t, bin, harnessEnv("127.0.0.1:0"))
 
 			if err := rp.cmd.Process.Signal(tc.signal); err != nil {
 				t.Fatalf("Signal(%v): %v", tc.signal, err)
@@ -238,7 +247,7 @@ func TestBindError(t *testing.T) {
 
 	bin := buildProcessorBinary(t)
 
-	first := startServingProcess(t, bin, []string{"PROCESSOR_HTTP_ADDR=127.0.0.1:0"})
+	first := startServingProcess(t, bin, harnessEnv("127.0.0.1:0"))
 	defer func() {
 		_ = first.cmd.Process.Kill()
 		_ = first.cmd.Wait()
@@ -246,7 +255,7 @@ func TestBindError(t *testing.T) {
 
 	stderr := &syncBuffer{}
 	cmd := exec.Command(bin)
-	cmd.Env = []string{"PROCESSOR_HTTP_ADDR=" + first.addr}
+	cmd.Env = harnessEnv(first.addr)
 	cmd.Stderr = stderr
 
 	if err := cmd.Start(); err != nil {

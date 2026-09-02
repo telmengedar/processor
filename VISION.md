@@ -224,6 +224,27 @@ The conclusion is structural, and it is the most valuable thing we own:
   what actually clustered and ratifies it — grouping saturated fans into thematic children, re-homing
   orphans, merging duplicates, marking supersession, pruning dead ends.
 
+**A third failure mode, found by building M1 rather than by reasoning: the loop writes into the pool it
+reads from.**
+
+Every run writes a record to the graph. Every run also retrieves from that graph, unfiltered — which
+§5.2 argues for, because a retriever whose failures were filtered away cannot be scored. Both positions
+are right and they compose into something neither anticipated: **the harness's own output competes with
+human knowledge for the context budget**, and it competes from a position of strength, because a run
+record is *large* — measured at 10–19× the median node in our graph, since its body is a verbatim copy
+of an earlier prompt. Under stop-at-the-first-thing-that-does-not-fit admission, **one admitted record
+can consume an entire budget and cut everything behind it.**
+
+The mechanism is certain; the severity is not yet measured — whether records actually rank high enough
+to be admitted is an open question, answerable by doing ten runs and reading the eleventh's candidate
+set. But note what makes it structural rather than a tuning problem: §5.2's no-filtering argument was
+made about **human-authored** content, and self-produced content is a case it does not cover. A memory
+substrate that records its own operation is *feeding its exhaust back into its intake*, and nothing in
+the two-phase write path addresses volume — only quality.
+
+This is the shape of defect this project exists to find, and it is worth noticing that it was invisible
+from the design chair and obvious the moment something wrote a record.
+
 Consolidation is a **day-one subsystem**, not a follow-up. It is what makes the memory still good in
 six months, and it is the part nobody else is building.
 

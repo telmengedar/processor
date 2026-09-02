@@ -11,6 +11,7 @@ import (
 
 	"github.com/telmengedar/processor/internal/divoid"
 	"github.com/telmengedar/processor/internal/loop"
+	"github.com/telmengedar/processor/internal/openaicompat"
 	"github.com/telmengedar/processor/internal/server"
 )
 
@@ -33,13 +34,9 @@ func run() int {
 		return 1
 	}
 
-	// httpClient is nil so the graph client applies its own default
-	// (divoid.DefaultTimeout) — the timeout policy lives in exactly one
-	// place, not duplicated here and in the adapter (W-13). That default
-	// still bounds a hung graph read; it is never http.DefaultClient,
-	// which carries no timeout (W-7).
 	graph := divoid.NewClient(cfg.divoidURL, cfg.divoidKey, nil)
-	turn := loop.NewTurn(graph)
+	model := openaicompat.NewClient(cfg.modelURL, cfg.modelID, cfg.modelKey, nil)
+	turn := loop.NewTurn(graph, model, systemText, cfg.modelID, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

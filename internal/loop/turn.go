@@ -4,14 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 )
 
-// CandidateLimit and AssemblyByteBudget are constants, not configuration
-// (design §8.4): no operator tunes them, and milestone 2 is the named
-// event at which they become measurable.
 const (
-	CandidateLimit     = 20
-	AssemblyByteBudget = 60_000
+	CandidateLimit          = 20
+	AssemblyByteBudget      = 60_000
+	MaxModelCalls           = 3
+	SupplementaryByteBudget = 20_000
+	MaxOutputTokens         = 4_096
+)
+
+const (
+	errSupplementaryRecallFailed = "supplementary recall failed"
+	errWriteBackFailed           = "write-back failed"
+	errCallCapReached            = "call cap reached"
 )
 
 // ErrSubjectNotFound is returned when the subject id resolves to nothing —
@@ -22,10 +29,11 @@ var ErrSubjectNotFound = errors.New("subject not found")
 // authentication, or a non-2xx status.
 var ErrGraphUnavailable = errors.New("graph unavailable")
 
+// ErrModelUnavailable wraps any failure completing the model call itself.
+var ErrModelUnavailable = errors.New("model unavailable")
+
 // GraphPort is the seam between the loop and the graph. Declared here,
 // implemented by internal/divoid, constructed in main (design §5.2, §8.3).
-// Unit A needs only the two read operations; the write operation arrives
-// with unit B, together with its own consumer (design §2.3).
 type GraphPort interface {
 	// Node fetches the subject node by id, with its content. found is
 	// false when the id resolves to nothing.
@@ -34,28 +42,44 @@ type GraphPort interface {
 	// Recall runs one semantic query and returns up to limit candidates in
 	// the rank order the graph returned them. The port does not re-sort.
 	Recall(ctx context.Context, query string, limit int) ([]Candidate, error)
+
+	// WriteRun records what happened; the adapter alone chooses the node's type, name and edge.
+	WriteRun(ctx context.Context, record Record) (nodeID int64, err error)
 }
 
-// Turn is one run: fetch the anchor, recall candidates, assemble the
-// block. Unit A stops there — no model call, no write-back (design §2.3).
-// A Turn holds no mutable state, so two runs never interfere (design §6.5
-// falsifier: any package-level mutable variable in internal/loop).
+// ModelPort is the seam between the loop and the model.
+type ModelPort interface {
+	// Judge runs one judgement step. One attempt; no retry.
+	Judge(ctx context.Context, in JudgeInput) (JudgeResult, error)
+}
+
+// Turn is one run: anchor, recall, assemble, judge, write back.
 type Turn struct {
 	Graph GraphPort
+	Model ModelPort
+
+	// System is the system text sent with every judgement step.
+	System string
+
+	// ModelID is the model id sent with every judgement step, echoed into Record.Model.
+	ModelID string
+
+	logger *slog.Logger
 }
 
-// NewTurn builds a Turn over graph.
-func NewTurn(graph GraphPort) *Turn {
-	return &Turn{Graph: graph}
+// NewTurn builds a Turn over graph and model, judging with system and modelID.
+func NewTurn(graph GraphPort, model ModelPort, system, modelID string, logger *slog.Logger) *Turn {
+	return &Turn{Graph: graph, Model: model, System: system, ModelID: modelID, logger: logger}
 }
 
-// Run executes one turn for input against subject. Request decoding and
-// validation are the caller's job (design §5.5 — the handler owns policy,
-// the loop does not); Run starts from an already-validated input and
-// subject id.
-//
-// The query text passed to recall is input, verbatim — no rewriting, no
-// expansion, no model (design S3).
+func (t *Turn) log() *slog.Logger {
+	if t.logger == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return t.logger
+}
+
+// Run executes one turn for input against subject.
 func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, error) {
 	anchor, found, err := t.Graph.Node(ctx, subject)
 	if err != nil {
@@ -72,12 +96,107 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, er
 
 	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget)
 
-	return Record{
+	record := Record{
 		Input:      input,
 		Subject:    subject,
 		Query:      input,
 		Anchor:     summarizeAnchor(anchor),
 		Candidates: dispositions,
 		Block:      block,
-	}, nil
+		Limits: Limits{
+			CandidateLimit:          CandidateLimit,
+			AssemblyByteBudget:      AssemblyByteBudget,
+			SupplementaryByteBudget: SupplementaryByteBudget,
+			MaxModelCalls:           MaxModelCalls,
+			MaxOutputTokens:         MaxOutputTokens,
+		},
+	}
+
+	answer, stop, toolCalls, modelCalls, capReached, usages, err := t.judge(ctx, block, input)
+	if err != nil {
+		return Record{}, err
+	}
+
+	record.Answer = answer
+	record.Model = t.ModelID
+	record.ToolCalls = toolCalls
+	record.ModelCalls = modelCalls
+	record.CapReached = capReached
+	record.Usage = usages
+	record.StopReason = stop
+
+	if nodeID, werr := t.Graph.WriteRun(ctx, record); werr != nil {
+		t.log().Error("write-back failed", "subject", subject, "error", werr)
+		record.Written = WriteOutcome{Error: errWriteBackFailed}
+	} else {
+		record.Written = WriteOutcome{NodeID: nodeID}
+	}
+
+	return record, nil
+}
+
+func (t *Turn) judge(ctx context.Context, block, input string) (answer string, stop StopReason, toolCalls []ToolCallRecord, modelCalls int, capReached bool, usages []*Usage, err error) {
+	var recalls []RecallExchange
+
+	for {
+		modelCalls++
+
+		result, jerr := t.Model.Judge(ctx, JudgeInput{
+			System:       t.System,
+			Block:        block,
+			Input:        input,
+			PriorRecalls: recalls,
+		})
+		if jerr != nil {
+			return "", StopReason{}, nil, 0, false, nil, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
+		}
+
+		answer = result.Answer
+		stop = StopReason{Reason: result.Reason, Raw: result.RawReason}
+		usages = append(usages, result.Usage)
+
+		if result.Reason != WantsRecall {
+			break
+		}
+		if modelCalls >= MaxModelCalls {
+			capReached = true
+			exchange := RecallExchange{Query: result.RecallQuery, Error: errCallCapReached}
+			if result.RecallError != "" {
+				exchange = RecallExchange{Error: result.RecallError}
+			}
+			recalls = append(recalls, exchange)
+			break
+		}
+
+		recalls = append(recalls, t.dispatchRecall(ctx, result))
+	}
+
+	return answer, stop, toolCallRecords(recalls), modelCalls, capReached, usages, nil
+}
+
+func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult) RecallExchange {
+	if result.RecallError != "" {
+		return RecallExchange{Error: result.RecallError, Dispositions: []Disposition{}}
+	}
+
+	candidates, err := t.Graph.Recall(ctx, result.RecallQuery, CandidateLimit)
+	if err != nil {
+		t.log().Error("supplementary recall failed", "query", result.RecallQuery, "error", err)
+		return RecallExchange{Query: result.RecallQuery, Error: errSupplementaryRecallFailed, Dispositions: []Disposition{}}
+	}
+
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget)
+	return RecallExchange{Query: result.RecallQuery, Results: admitted, Dispositions: dispositions}
+}
+
+func toolCallRecords(recalls []RecallExchange) []ToolCallRecord {
+	records := make([]ToolCallRecord, len(recalls))
+	for i, r := range recalls {
+		results := r.Dispositions
+		if results == nil {
+			results = []Disposition{}
+		}
+		records[i] = ToolCallRecord{Query: r.Query, Error: r.Error, Results: results}
+	}
+	return records
 }
