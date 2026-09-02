@@ -1,6 +1,4 @@
-// Package loop implements the Processor turn: mechanical context assembly
-// and, in a later unit, the model call and write-back. Unit A implements
-// assembly only — see docs/architecture/m1-skeleton-loop.md §2.3.
+// Package loop implements the Processor turn: context assembly, judgement, and write-back.
 package loop
 
 // Anchor is the subject node a run is about, fetched with its full body.

@@ -69,7 +69,7 @@ func (c *Client) linkRunNode(ctx context.Context, id, target int64) error {
 }
 
 func (c *Client) runName(record loop.Record) string {
-	return fmt.Sprintf("%s %s — %s", runNamePrefix, c.clock().UTC().Format(time.RFC3339), truncateRunes(record.Input, runNameInputRunes))
+	return fmt.Sprintf("%s %s — %s", runNamePrefix, c.now().UTC().Format(time.RFC3339), truncateRunes(record.Input, runNameInputRunes))
 }
 
 func truncateRunes(s string, limit int) string {
