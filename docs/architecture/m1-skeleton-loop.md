@@ -6,14 +6,20 @@
 > Predecessor designs: **#10437** (M0 service skeleton) and **#10488** (process-boundary test harness),
 > whose configuration boundary, listener-injection shape and container venue this document consumes
 > unchanged.
-> Standards applied: Design Contracts **#1136**, Code Contracts **#114 §0**, DRY threshold **#1267**,
+> Standards applied: Design Contracts **#1136**, Code Contracts **#114 §0 and §4** (§4 via the Go annex
+> **#10861** — see the correction directly below), DRY threshold **#1267**,
 > anti-seed-complexity **#1184**, vocabulary rule **#1220 §2 addendum 2026-08-17**, falsifiable-universals
 > rule **#1220 §5 addendum 2026-08-28**, container rule **#10440**, edge conventions **#7216**.
-> **Code Contracts #114's Go annex is still not a ruling** (#10437 §13.1, #10488 §13.2, task **#10495** —
+> ~~**Code Contracts #114's Go annex is still not a ruling** (#10437 §13.1, #10488 §13.2, task **#10495** —
 > this is the third consecutive design to record it). Nothing here leans on it: only the
 > language-independent sections are used — §0's principles, §11's logging discipline, §13's
 > parallel-by-default and no-shared-fixture-state, and §13.1.1's guard-axis rule. No decision below waits
-> on it.
+> on it.~~
+> **CORRECTED 2026-09-02 — the annex now exists, and the scoping struck above was wrong where it counted.**
+> **#114 §4 (Comments) binds Go code on this repo**, per the ruling **#10861**, which supersedes that
+> scoping insofar as it excluded §4. The applied set is **§0, §4, §11, §13, §13.1.1**. §4 and #10861 are
+> **cited, not restated** — read them at the nodes. Question 3 of **#10495** (what replaces §16's pre-PR
+> checklist for a Go module) **remains open**. §13.5 carries the correction in full.
 > **Every fact in §3 was measured on this machine on 2026-09-01, with the commands and outputs quoted.**
 > Two hypotheses this document was going to assert were measured before being written: one held (C36) and
 > one was **wrong in its strong form and is recorded in its weakened, measured form** (C38).
@@ -1217,6 +1223,27 @@ a field that would be there; under the ruling it is a field that usually is not.
 
 No key value, **no endpoint URL** (§10.2), no input text beyond its length, at any level.
 
+**The logger is a required dependency, and the one guard around it is deliberate — recorded 2026-09-02
+from #10868 W-2.** The turn's constructor takes a logger and does not default one, because a defaulted
+logger silently swallows the channel this section has just partitioned — a worse outcome than a build
+that will not start. That mirrors `internal/server`, whose serve function takes a required logger and
+dereferences it with no guard. **The mirror is imperfect in exactly the way that matters.** Serve logs on
+its first line, so a missing logger fails at boot, immediately, in every environment. The turn
+dereferences its logger **only on failure branches** — a supplementary recall that could not be reached
+(§6.5), a write-back that did not land (§8.2) — so the same omission survives every green run and panics
+in production months later, on the branch least likely to have been exercised. And the turn is an
+**exported type with exported fields**: a keyed literal builds a structurally valid turn with no logger
+and never touches the constructor. That literal is the exposure. **The decision: the constructor stays
+required — upheld twice (#10829 ruling 2, #10862 W-4) and not re-opened here — and the turn's internal
+logging accessor discards when the field is nil.** Discarding rather than substituting a real logger: the
+constructed path keeps its channel, the bypassing path degrades to silence instead of a crash, and
+neither path invents an output the operator did not configure. Pinned by
+`TestTurnBuiltByAnExternalKeyedLiteralSurvivesTheNilLoggerBranch`, which drives a keyed-literal turn
+through the recall-failure branch. **This paragraph exists because the reasoning was deleted from the
+code rather than moved here** — #114 §4's remedy for a load-bearing comment is relocation to this
+document, and #10868 W-2 measured the one place the comment sweep took the first half and dropped the
+second.
+
 ### 10.4 Error handling
 
 M0 §10.4's shape carries: errors travel up as values and are decided at the boundary that owns the
@@ -1451,10 +1478,37 @@ A defensible alternative exists: poll the graph for a node of a given type and t
 which would make the harness graph-driven on both ends. It costs a poll loop and a marker convention, and
 it makes the run harder to observe. One endpoint to change if the answer is different.
 
-### 13.5 Code Contracts #114's Go annex — raised for the **third** time, still not a ruling
+### 13.5 Code Contracts #114's Go annex — **ruled 2026-09-02 in part**; one question of it stays open
 
-#10437 §13.1 raised it, #10488 §13.2 restated it, task **#10495** is open. This design leans on nothing
-from it (see the header). Three consecutive designs recording the same gap is itself the finding.
+~~#10437 §13.1 raised it, #10488 §13.2 restated it, task **#10495** is open. This design leans on nothing
+from it (see the header). Three consecutive designs recording the same gap is itself the finding.~~
+
+**CORRECTED 2026-09-02.** The annex exists — **#10861**, ruled by Toni on PR #6 — and it **supersedes the
+scoping struck above insofar as that scoping excluded §4**. The paragraph is retained struck rather than
+rewritten because PRs #1–#3 shipped under it and a reader needs to see what was believed and when.
+
+**What binds on this repo:** #114 **§0** (principles), **§4** (comments), **§11** (logging discipline),
+**§13** (parallel-by-default, no shared fixture state), **§13.1.1** (guard-axis rule). §4 is the
+correction: the struck list named four sections and omitted the one that was contested.
+
+**§4 and #10861 are cited, not restated.** Read §4 at #114 and the ruling at #10861 — the ruling carries
+the channel-by-channel table, the Go replacement for §4's `[Description]` escape hatch, and the fact that
+no Go tool in this repo's gates enforces any of it. A design that transcribes a contract loses the
+contract's exceptions; #10861 was itself revised on the day it was written for exactly that reason, so
+this document does not repeat the mistake by paraphrasing either one.
+
+**Why this stays an open question:** **question 3 of #10495** is unresolved — what replaces §16's pre-PR
+checklist for a Go module. §16 is written against XML docs, `var`, `Pooshit.Json`, `[TestFixture]`,
+`Assert.That` and `WebApplicationFactory`, none of which have Go referents, so QA still has nothing
+Go-shaped to check against. Questions 1 and 2 are settled by #10861; #10495 stays open on question 3
+alone.
+
+**What the wrong scoping cost, recorded rather than glossed.** Four QA reviews (#10493, #10821, #10829,
+#10835) passed over the comment channel on the authority of the struck paragraph, and none was wrong
+under the authority it had. QA **#10862**, run under the ruling, measured the result on this branch: 890
+comment lines in 185 groups against 3,603 added Go lines — **24.7% of the diff** — of which 2 of 137
+doc-comment groups meet §4's bar. "Our design mandates the text" is not a defence; where it is true, the
+design is the defect and gets fixed here too.
 
 ### 13.6 The window class M1 targets — for Toni, and it is a number rather than a preference
 
