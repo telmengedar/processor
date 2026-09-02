@@ -13,9 +13,6 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
-// capturingServer returns an httptest.Server that records the last
-// request's body and headers and answers with respBody (already valid
-// JSON) on every call.
 func capturingServer(t *testing.T, respBody string) (*httptest.Server, *capturedRequest) {
 	t.Helper()
 	captured := &capturedRequest{}
@@ -56,9 +53,6 @@ func TestJudgePostsToChatCompletions(t *testing.T) {
 	}
 }
 
-// TestJudgeSendsNoAuthorizationHeaderWhenKeyIsEmpty pins design §8.1: an
-// absent key means an absent header, not an empty one — the local-runtime
-// case the ruling exists for.
 func TestJudgeSendsNoAuthorizationHeaderWhenKeyIsEmpty(t *testing.T) {
 	t.Parallel()
 
@@ -88,10 +82,6 @@ func TestJudgeSendsAuthorizationBearerWhenKeyIsSet(t *testing.T) {
 	}
 }
 
-// TestJudgeRequestBodyCarriesModelSystemBlockInputAndTool pins the
-// request construction (design §6.6 D1-D6) at the wire level: the model
-// id sent is exactly what NewClient was given, the system/user messages
-// carry the framing, and exactly one tool is declared.
 func TestJudgeRequestBodyCarriesModelSystemBlockInputAndTool(t *testing.T) {
 	t.Parallel()
 
@@ -122,11 +112,6 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndTool(t *testing.T) {
 		t.Fatalf("decode request body: %v; body=%s", err, captured.Body)
 	}
 
-	// Every "want" value below is a literal, not the package's own
-	// constant (design §14 step 1): a shared constant moves both sides of
-	// the assertion together on a value change and the test can never
-	// fail — see TestDefaultTimeoutIsNotDivoidsTimeout's comment for the
-	// same discipline applied to the timeout (CF-2).
 	const (
 		wantMaxTokens         = 4096
 		wantToolName          = "recall"
@@ -149,10 +134,6 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndTool(t *testing.T) {
 	if got.Messages[1].Role != "user" {
 		t.Fatalf("messages[1].Role = %q, want %q", got.Messages[1].Role, "user")
 	}
-	// Byte-exact (design §9.1 stage 3a, §14 step 9), not a substring
-	// check: a substring check cannot catch the "===== INPUT ====="
-	// separator being removed and the two halves collapsed into one run
-	// of text (W-3).
 	if got.Messages[1].Content != wantBlockInputContent {
 		t.Fatalf("messages[1].Content = %q, want %q byte-exact", got.Messages[1].Content, wantBlockInputContent)
 	}
@@ -162,9 +143,6 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndTool(t *testing.T) {
 	if got.Tools[0].Type != "function" || got.Tools[0].Function.Name != wantToolName {
 		t.Fatalf("tools[0] = %+v, want the recall function tool named %q", got.Tools[0], wantToolName)
 	}
-	// The tool's description and parameter schema are the whole of what
-	// the model is told the tool does — previously asserted nowhere
-	// (W-3).
 	if got.Tools[0].Function.Description != wantToolDescription {
 		t.Fatalf("tools[0].function.description = %q, want %q", got.Tools[0].Function.Description, wantToolDescription)
 	}
@@ -195,15 +173,6 @@ func contains(haystack, needle string) bool {
 	})()
 }
 
-// TestJudgeReconstructsPriorRecallsAsAssistantAndToolMessages pins design
-// §9.1 stage 3a/3c: the whole conversation is rebuilt from PriorRecalls on
-// every call, as an assistant tool-call message followed by a matching
-// tool-result message — for both a successful round and an error-flagged
-// one. Round 1 carries two candidates, not one (W-1): a single-candidate
-// fixture cannot tell "renders everything it was given" from "renders a
-// subset" — §6.4a's closing paragraph forbids exactly that gap, and a
-// renderer that quietly truncated to the first hit would still pass a
-// one-candidate fixture.
 func TestJudgeReconstructsPriorRecallsAsAssistantAndToolMessages(t *testing.T) {
 	t.Parallel()
 
@@ -242,7 +211,6 @@ func TestJudgeReconstructsPriorRecallsAsAssistantAndToolMessages(t *testing.T) {
 		t.Fatalf("decode request body: %v; body=%s", err, captured.Body)
 	}
 
-	// system, user, then 2 rounds * (assistant + tool) = 6 total.
 	if len(got.Messages) != 6 {
 		t.Fatalf("messages has %d entries, want 6", len(got.Messages))
 	}
@@ -251,8 +219,9 @@ func TestJudgeReconstructsPriorRecallsAsAssistantAndToolMessages(t *testing.T) {
 	if round1Assistant.Role != "assistant" || len(round1Assistant.ToolCalls) != 1 {
 		t.Fatalf("messages[2] = %+v, want an assistant message with one tool call", round1Assistant)
 	}
-	if round1Assistant.ToolCalls[0].Function.Name != recallToolName {
-		t.Fatalf("messages[2] tool call function = %q, want %q", round1Assistant.ToolCalls[0].Function.Name, recallToolName)
+	const wantRecallToolName = "recall"
+	if round1Assistant.ToolCalls[0].Function.Name != wantRecallToolName {
+		t.Fatalf("messages[2] tool call function = %q, want %q", round1Assistant.ToolCalls[0].Function.Name, wantRecallToolName)
 	}
 	if !contains(round1Assistant.ToolCalls[0].Function.Arguments, "first query") {
 		t.Fatalf("messages[2] tool call arguments = %q, want it to carry the original query", round1Assistant.ToolCalls[0].Function.Arguments)
@@ -264,7 +233,7 @@ func TestJudgeReconstructsPriorRecallsAsAssistantAndToolMessages(t *testing.T) {
 		t.Fatalf("messages[3].Content = %q, want it to carry the recalled body", round1Tool.Content)
 	}
 	if !contains(round1Tool.Content, "second found body") {
-		t.Fatalf("messages[3].Content = %q, want it to carry the SECOND candidate's body too — a renderer that truncated to one hit would still pass without this assertion (W-1)", round1Tool.Content)
+		t.Fatalf("messages[3].Content = %q, want it to carry the SECOND candidate's body too — a renderer that truncated to one hit would still pass without this assertion", round1Tool.Content)
 	}
 
 	round2Tool := got.Messages[5]
@@ -327,10 +296,6 @@ func TestJudgeDecodesAContentFilterResponseAsRefused(t *testing.T) {
 	}
 }
 
-// TestJudgeMapsAnUnknownFinishReasonToUnrecognisedAndPreservesTheRawValue
-// pins design §6.6's D5: M1 depends on the field existing, not on its
-// values — an endpoint inventing its own vocabulary must not error the
-// call, and the raw string must survive for the record.
 func TestJudgeMapsAnUnknownFinishReasonToUnrecognisedAndPreservesTheRawValue(t *testing.T) {
 	t.Parallel()
 
@@ -349,9 +314,6 @@ func TestJudgeMapsAnUnknownFinishReasonToUnrecognisedAndPreservesTheRawValue(t *
 	}
 }
 
-// TestJudgeDecodesAToolCallAsWantsRecallWithTheParsedQuery pins the
-// presence-of-a-tool-call signal (design §6.6 D6): WantsRecall follows the
-// tool call, not the finish_reason string.
 func TestJudgeDecodesAToolCallAsWantsRecallWithTheParsedQuery(t *testing.T) {
 	t.Parallel()
 
@@ -374,9 +336,6 @@ func TestJudgeDecodesAToolCallAsWantsRecallWithTheParsedQuery(t *testing.T) {
 	}
 }
 
-// TestJudgeFlagsUnparseableToolArgumentsAsAMalformedRecallRequest pins
-// design §6.4: a malformed tool input must not be a Judge error — it is
-// an error-flagged result the loop dispatches as a recorded round.
 func TestJudgeFlagsUnparseableToolArgumentsAsAMalformedRecallRequest(t *testing.T) {
 	t.Parallel()
 
@@ -399,9 +358,6 @@ func TestJudgeFlagsUnparseableToolArgumentsAsAMalformedRecallRequest(t *testing.
 	}
 }
 
-// TestJudgeFlagsAnEmptyQueryArgumentAsAMalformedRecallRequest covers the
-// well-formed-JSON-but-useless-value case: {"query":""} parses fine but
-// carries nothing to search for.
 func TestJudgeFlagsAnEmptyQueryArgumentAsAMalformedRecallRequest(t *testing.T) {
 	t.Parallel()
 
@@ -418,11 +374,6 @@ func TestJudgeFlagsAnEmptyQueryArgumentAsAMalformedRecallRequest(t *testing.T) {
 	}
 }
 
-// TestJudgeLeavesUsageAbsentWhenTheResponseHasNoUsageObject and
-// TestJudgeDecodesUsageWhenPresentEvenIfAllZero together pin design §6.5:
-// usage is absent, never zero-filled. A decoder that defaults a missing
-// usage object to a populated struct of zeros would pass the first test
-// only by coincidence and would fail to distinguish it from the second.
 func TestJudgeLeavesUsageAbsentWhenTheResponseHasNoUsageObject(t *testing.T) {
 	t.Parallel()
 
@@ -465,20 +416,11 @@ func TestJudgeDecodesNonZeroUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
-	// W-4: named for the direction of travel — in/out — and there is no
-	// total. total_tokens (15 in the fixture) must not survive into
-	// either field: it is the sum of the other two on every endpoint that
-	// reports it, so the ruling drops it rather than let an adapter
-	// fabricate it on an endpoint that reports two counts and no total.
 	if result.Usage == nil || result.Usage.InTokens != 10 || result.Usage.OutTokens != 5 {
 		t.Fatalf("Usage = %+v, want {InTokens:10 OutTokens:5}", result.Usage)
 	}
 }
 
-// TestJudgeTreatsAUsageObjectReportingOnlyOneCountAsAbsentInWhole pins
-// design §8.3's revision 3 ruling (W-4): an endpoint reporting one count
-// and not the other has not been observed on any runtime, so until one is,
-// such an object is recorded absent in whole rather than half zero-filled.
 func TestJudgeTreatsAUsageObjectReportingOnlyOneCountAsAbsentInWhole(t *testing.T) {
 	t.Parallel()
 
@@ -495,19 +437,6 @@ func TestJudgeTreatsAUsageObjectReportingOnlyOneCountAsAbsentInWhole(t *testing.
 	}
 }
 
-// TestJudgeOnNon2xxReturnsAnError pins the status check itself (W-2). The
-// fixture body deliberately decodes as a perfectly valid completion — the
-// previous 401 fixture had zero choices, so `translate` errored on the
-// empty-choices path regardless of whether the status check ran at all,
-// and the test passed for the wrong reason (M18: disabling the status
-// check outright left this test green). A 500 whose body is a valid
-// `chatResponse` can only fail here if the status is actually checked.
-// TestJudgeReadsOnlyTheFirstChoiceIgnoringAnyOthers pins D4 (design §6.6):
-// "reads the first choice and no other." Every other fixture in this file
-// has exactly one choice, so none of them can discriminate an
-// implementation that read the wrong index (W-5) — this one carries two
-// choices with different content and a different finish_reason so a wrong
-// index fails both assertions.
 func TestJudgeReadsOnlyTheFirstChoiceIgnoringAnyOthers(t *testing.T) {
 	t.Parallel()
 
@@ -527,14 +456,6 @@ func TestJudgeReadsOnlyTheFirstChoiceIgnoringAnyOthers(t *testing.T) {
 	}
 }
 
-// TestJudgeDecodesAToolCallAsWantsRecallEvenWhenFinishReasonSaysStop pins
-// the ruling on WantsRecall's discriminator (design §6.6 D5/D6, QA's M10):
-// several local runtimes send finish_reason:"stop" alongside a populated
-// tool_calls array, so the decision must follow the tool call's presence,
-// not the finish_reason string. Every other tool-call fixture in this file
-// sets finish_reason:"tool_calls" together with the tool call, so none of
-// them can discriminate a finish_reason-driven implementation from a
-// tool-call-presence one — this is the fixture that can.
 func TestJudgeDecodesAToolCallAsWantsRecallEvenWhenFinishReasonSaysStop(t *testing.T) {
 	t.Parallel()
 
@@ -589,9 +510,6 @@ func TestJudgeOnEmptyChoicesReturnsAnError(t *testing.T) {
 	}
 }
 
-// TestNewClientDefaultsToATimeoutBoundHTTPClientWhenNoneIsSupplied pins
-// design §8.4a: the model adapter's timeout is its own constant — never
-// http.DefaultClient, which has none.
 func TestNewClientDefaultsToATimeoutBoundHTTPClientWhenNoneIsSupplied(t *testing.T) {
 	t.Parallel()
 
@@ -607,14 +525,6 @@ func TestNewClientDefaultsToATimeoutBoundHTTPClientWhenNoneIsSupplied(t *testing
 	}
 }
 
-// TestDefaultTimeoutIsNotDivoidsTimeout pins design §8.4a's whole point
-// against a literal, not merely against its own constant (which would
-// move with any mutation to its value and catch nothing): the model
-// adapter's timeout must be generous — sized for a slow local
-// generation — and specifically must not be 15 seconds, which is
-// divoid.DefaultTimeout and would turn the ruling's own target (a local
-// model on CPU, which can take minutes) into a service that never
-// completes a run.
 func TestDefaultTimeoutIsNotDivoidsTimeout(t *testing.T) {
 	t.Parallel()
 

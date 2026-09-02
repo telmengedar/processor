@@ -9,10 +9,6 @@ import (
 	"testing"
 )
 
-// testLogger is a *slog.Logger that discards everything — the right
-// default for tests that are not themselves about logging (design §6.4a's
-// operator-log requirement is pinned separately, against a logger that
-// captures instead of discards).
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
@@ -26,20 +22,13 @@ type fakeGraph struct {
 	nodeFound bool
 	nodeErr   error
 
-	// candidates/recallErr answer every Recall call that has no queued
-	// response waiting — the common case of one relevant call per test.
 	candidates []Candidate
 	recallErr  error
 
-	// recallQueue, when non-empty, is consumed one entry per Recall call,
-	// in call order — for tests where the initial recall and a
-	// supplementary recall must answer differently.
 	recallQueue []recallResponse
 
-	recallCalls []recallCall // every Recall call, in order
+	recallCalls []recallCall
 
-	// recallQuery/recallLimit mirror the most recent Recall call — kept
-	// for the existing single-call tests below that read them directly.
 	recallQuery string
 	recallLimit int
 
@@ -82,18 +71,11 @@ func (f *fakeGraph) WriteRun(_ context.Context, record Record) (int64, error) {
 	return f.writeRunNodeID, f.writeRunErr
 }
 
-// fakeModel is a ModelPort test double, justified the same way as
-// fakeGraph (design §9.2 seam 1, re-run under the ruling): it lets the
-// loop's dispatch, cap and write-back logic be tested offline without a
-// live, nondeterministic model.
 type fakeModel struct {
-	// results is consumed one per Judge call, in order; once exhausted the
-	// last entry repeats, so a single-entry fixture is enough for the
-	// common one-call case.
 	results []JudgeResult
 	err     error
 
-	calls []JudgeInput // every call's input, in order
+	calls []JudgeInput
 }
 
 func (f *fakeModel) Judge(_ context.Context, in JudgeInput) (JudgeResult, error) {
@@ -111,9 +93,6 @@ func (f *fakeModel) Judge(_ context.Context, in JudgeInput) (JudgeResult, error)
 	return f.results[idx], nil
 }
 
-// newTurnWithGraph builds a Turn over graph with a model double that
-// answers immediately with no tool use — the right default for tests that
-// are about assembly or the graph, not the model.
 func newTurnWithGraph(graph GraphPort) *Turn {
 	return NewTurn(graph, &fakeModel{}, "system text", "test-model", testLogger())
 }
@@ -174,11 +153,6 @@ func TestTurnRunWrapsRecallFailureAsGraphUnavailable(t *testing.T) {
 	}
 }
 
-// TestTurnRunDoesNotCallModelWhenRecallFails pins design §6.5's own
-// standout row: "Recall fails | 502, no model call, nothing written" —
-// "assembly failure is run failure", so a model call on an empty context
-// (the confident-answer-from-nothing failure this project exists to
-// prevent) must never happen.
 func TestTurnRunDoesNotCallModelWhenRecallFails(t *testing.T) {
 	t.Parallel()
 
@@ -288,16 +262,10 @@ func TestTurnRunTwoTurnsDoNotShareState(t *testing.T) {
 	}
 }
 
-// --- unit B: the model call and write-back ---
-
 func baseGraph() *fakeGraph {
 	return &fakeGraph{node: Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"}, nodeFound: true}
 }
 
-// TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered pins the
-// ordinary path: a model that answers immediately ends the turn in one
-// call, and every unit-B field the design assigns to that step is
-// populated.
 func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T) {
 	t.Parallel()
 
@@ -327,11 +295,6 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	if record.CapReached {
 		t.Fatal("record.CapReached = true, want false — the model answered on the first call, the cap never fired")
 	}
-	// The record's Limits field carries the five constants that governed
-	// this run (design §8.2, revision 3 from #10821 CF-4) — literals on the
-	// expected side (design §14 step 1), not the package's own constants,
-	// so a rename or a value change on either side of the assertion cannot
-	// move both sides together.
 	wantLimits := Limits{CandidateLimit: 20, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 3, MaxOutputTokens: 4_096}
 	if record.Limits != wantLimits {
 		t.Fatalf("record.Limits = %+v, want %+v", record.Limits, wantLimits)
@@ -350,10 +313,6 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	}
 }
 
-// TestTurnRunDispatchesRecallAndJudgesAgain pins the tool cycle (design
-// §6.4): a WantsRecall result is dispatched through Graph.Recall, the
-// result is handed back on the next Judge call, and the turn ends when
-// the model then answers.
 func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 	t.Parallel()
 
@@ -393,24 +352,17 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 	if len(record.ToolCalls[0].Results) != 1 || record.ToolCalls[0].Results[0].ID != 99 || record.ToolCalls[0].Results[0].Similarity != 0.8 {
 		t.Fatalf("record.ToolCalls[0].Results = %+v, want [{99 0.8}]", record.ToolCalls[0].Results)
 	}
-	// W-7: toolCalls[].results now carries the same columns candidates[]
-	// does — a small well-under-budget hit must be admitted and reported so.
 	if !record.ToolCalls[0].Results[0].Included {
 		t.Fatal("record.ToolCalls[0].Results[0].Included = false, want true — the hit is well under SupplementaryByteBudget")
 	}
 	if record.CapReached {
 		t.Fatal("record.CapReached = true, want false — the model answered on the second call, the cap never fired")
 	}
-	// The second Judge call must see the completed round.
 	if len(model.calls[1].PriorRecalls) != 1 || model.calls[1].PriorRecalls[0].Query != "the missing thing" {
 		t.Fatalf("second Judge call's PriorRecalls = %+v, want the completed round", model.calls[1].PriorRecalls)
 	}
 }
 
-// TestTurnRunRecordsAMalformedToolRequestAsAnErrorFlaggedRoundAndContinues
-// pins design §6.4: "A malformed tool input returns an error-flagged tool
-// result and the turn continues; it is counted, not dropped." The
-// malformed round must not reach Graph.Recall at all.
 func TestTurnRunRecordsAMalformedToolRequestAsAnErrorFlaggedRoundAndContinues(t *testing.T) {
 	t.Parallel()
 
@@ -448,12 +400,6 @@ func TestTurnRunRecordsAMalformedToolRequestAsAnErrorFlaggedRoundAndContinues(t 
 	}
 }
 
-// TestTurnRunRecordsASupplementaryRecallTransportFailureAsAnErrorFlaggedRound
-// covers the case design §6.4 does not name explicitly by number but whose
-// shape it establishes: a well-formed tool request whose recall itself
-// fails must not abort a turn that has already produced a judgement — it
-// is recorded the same way a malformed request is (an autonomous decision;
-// see the implementation notes).
 func TestTurnRunRecordsASupplementaryRecallTransportFailureAsAnErrorFlaggedRound(t *testing.T) {
 	t.Parallel()
 
@@ -480,10 +426,6 @@ func TestTurnRunRecordsASupplementaryRecallTransportFailureAsAnErrorFlaggedRound
 	}
 }
 
-// TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall pins
-// design §6.4/§8.4: reaching MaxModelCalls while the model still wants
-// recall is not an error — the turn ends, and record.modelCalls ==
-// MaxModelCalls is how the record shows the cap fired.
 func TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall(t *testing.T) {
 	t.Parallel()
 
@@ -499,33 +441,27 @@ func TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall(t *testing.
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	// A literal, not MaxModelCalls (design §14 step 1; CF-2): asserting
-	// the production constant against itself on both sides means the
-	// test passes for any cap >= 2 — TestDefaultTimeoutIsNotDivoidsTimeout
-	// is the model for this discipline (I-3), applied here.
-	const wantModelCallCap = 3
+	const (
+		wantModelCallCap      = 3
+		wantInitialRecalls    = 1
+		wantDispatchedRecalls = wantModelCallCap - 1
+	)
 	if record.ModelCalls != wantModelCallCap {
 		t.Fatalf("record.ModelCalls = %d, want %d", record.ModelCalls, wantModelCallCap)
 	}
 	if len(model.calls) != wantModelCallCap {
 		t.Fatalf("model was called %d times, want %d", len(model.calls), wantModelCallCap)
 	}
-	// One initial recall plus (cap-1) dispatched supplementary rounds —
-	// the recall requested by the *last* call is never dispatched.
-	wantRecallCalls := wantModelCallCap // 1 initial + (cap-1) supplementary
+	wantRecallCalls := wantInitialRecalls + wantDispatchedRecalls
 	if len(graph.recallCalls) != wantRecallCalls {
 		t.Fatalf("Recall was called %d times, want %d", len(graph.recallCalls), wantRecallCalls)
 	}
 	if record.StopReason.Reason != WantsRecall {
 		t.Fatalf("record.StopReason.Reason = %q, want WantsRecall (the cap fired mid-request)", record.StopReason.Reason)
 	}
-	// W-7: capReached is its own explicit field, not left for a reader to
-	// derive from ModelCalls == MaxModelCalls.
 	if !record.CapReached {
 		t.Fatal("record.CapReached = false, want true — the cap fired while the model still wanted recall")
 	}
-	// CF-3: the model's final query is still recorded even though it was
-	// never dispatched — counted, not dropped (design §2.4, §6.4).
 	if len(record.ToolCalls) != wantModelCallCap {
 		t.Fatalf("record.ToolCalls has %d entries, want %d (the cap-reached round counted too)", len(record.ToolCalls), wantModelCallCap)
 	}
@@ -538,13 +474,6 @@ func TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall(t *testing.
 	}
 }
 
-// TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch pins
-// CF-3 directly (design §2.4, §6.4): the recall query the model asked for
-// on the call that hits the cap is still recorded as a round — counted,
-// not dropped — even though it is never dispatched through Graph.Recall.
-// Before the fix, the loop broke before appending this round at all, so
-// the query the model asked hardest for (the one that hit the cap) was
-// the one datum silently discarded.
 func TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch(t *testing.T) {
 	t.Parallel()
 
@@ -578,13 +507,6 @@ func TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch(t *test
 	}
 }
 
-// TestTurnRunDoesNotLeakTheGraphErrorDetailIntoTheSupplementaryRecallRound
-// pins W-6: a Graph.Recall transport failure during the tool cycle must
-// not echo the underlying error's text — which can embed the graph's
-// request URL — into the record or the next model prompt. Not a
-// credential leak (the DiVoid key travels as a header, never a query
-// parameter), but still an internal address that should not propagate to
-// a model prompt or a written record.
 func TestTurnRunDoesNotLeakTheGraphErrorDetailIntoTheSupplementaryRecallRound(t *testing.T) {
 	t.Parallel()
 
@@ -614,13 +536,6 @@ func TestTurnRunDoesNotLeakTheGraphErrorDetailIntoTheSupplementaryRecallRound(t 
 	}
 }
 
-// TestTurnRunLogsTheDetailedRecallErrorWhileTheRecordStaysGeneric pins
-// #10521's open finding: the W-6 fix made the detailed transport error
-// disappear everywhere, because turn.go had no logger at all. Generic in
-// the model prompt and the record (design §8.5's rule, extended by
-// §6.4a) — an untrusted reader and a shared graph — and detailed on the
-// operator's own diagnostic channel, so a DNS failure, a timeout and a
-// 500 stay distinguishable to whoever operates the deployment.
 func TestTurnRunLogsTheDetailedRecallErrorWhileTheRecordStaysGeneric(t *testing.T) {
 	t.Parallel()
 
@@ -642,17 +557,15 @@ func TestTurnRunLogsTheDetailedRecallErrorWhileTheRecordStaysGeneric(t *testing.
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if record.ToolCalls[0].Error != errSupplementaryRecallFailed {
-		t.Fatalf("record.ToolCalls[0].Error = %q, want the generic sentence %q", record.ToolCalls[0].Error, errSupplementaryRecallFailed)
+	const wantGenericRecallError = "supplementary recall failed"
+	if record.ToolCalls[0].Error != wantGenericRecallError {
+		t.Fatalf("record.ToolCalls[0].Error = %q, want the generic sentence %q", record.ToolCalls[0].Error, wantGenericRecallError)
 	}
 	if !strings.Contains(logBuf.String(), "10.0.0.55") {
 		t.Fatalf("operator log = %q, want it to carry the detailed error (including the address) that the record and prompt must not", logBuf.String())
 	}
 }
 
-// TestTurnRunPreservesBothTheMappedAndRawStopReason pins design §8.2:
-// "Two values, deliberately." Dropping the raw value from the record and
-// keeping only the mapped one must fail this test.
 func TestTurnRunPreservesBothTheMappedAndRawStopReason(t *testing.T) {
 	t.Parallel()
 
@@ -672,12 +585,6 @@ func TestTurnRunPreservesBothTheMappedAndRawStopReason(t *testing.T) {
 	}
 }
 
-// TestTurnRunLeavesUsageAbsentWhenTheModelReportedNone and
-// TestTurnRunCarriesUsageWhenTheModelReportedIt together pin design §6.5:
-// usage is absent, never zero-filled — a zero is a measurement, an
-// absence is the truth. Revision 3 (W-1) widens Record.Usage to one entry
-// per model call, so "absent" is a nil entry at that call's index, not a
-// nil slice.
 func TestTurnRunLeavesUsageAbsentWhenTheModelReportedNone(t *testing.T) {
 	t.Parallel()
 
@@ -714,10 +621,6 @@ func TestTurnRunCarriesUsageWhenTheModelReportedIt(t *testing.T) {
 	}
 }
 
-// TestTurnRunUsageArrayLengthAlwaysEqualsModelCalls pins design §8.2, W-1:
-// the loop aggregates nothing — one usage entry per model call, in order,
-// with a run where some calls report and others do not left legible as
-// exactly that, rather than under- or over-counted.
 func TestTurnRunUsageArrayLengthAlwaysEqualsModelCalls(t *testing.T) {
 	t.Parallel()
 
@@ -748,8 +651,6 @@ func TestTurnRunUsageArrayLengthAlwaysEqualsModelCalls(t *testing.T) {
 	}
 }
 
-// TestTurnRunWrapsModelFailureAsModelUnavailableAndWritesNothing pins
-// design §6.5: "Model call fails ... | 502, nothing written."
 func TestTurnRunWrapsModelFailureAsModelUnavailableAndWritesNothing(t *testing.T) {
 	t.Parallel()
 
@@ -766,9 +667,6 @@ func TestTurnRunWrapsModelFailureAsModelUnavailableAndWritesNothing(t *testing.T
 	}
 }
 
-// TestTurnRunWritesTheRecordAndReportsTheNodeID pins the successful
-// write-back path (design §8.3's write port): the loop supplies the
-// record; the adapter's reported node id lands in Written.
 func TestTurnRunWritesTheRecordAndReportsTheNodeID(t *testing.T) {
 	t.Parallel()
 
@@ -792,10 +690,6 @@ func TestTurnRunWritesTheRecordAndReportsTheNodeID(t *testing.T) {
 	}
 }
 
-// TestTurnRunReturns200EquivalentWhenWriteBackFailsWithTheFailureNamed
-// pins design §6.5: "Write-back fails | 200, with the failure named in
-// the record" — Run must return the record with no error, not fail the
-// whole request over a write-back problem.
 func TestTurnRunReturns200EquivalentWhenWriteBackFailsWithTheFailureNamed(t *testing.T) {
 	t.Parallel()
 
@@ -816,27 +710,104 @@ func TestTurnRunReturns200EquivalentWhenWriteBackFailsWithTheFailureNamed(t *tes
 	}
 }
 
-// --- CF-4: the supplementary-recall budget (design §6.4a) ---
+func TestTurnRunWriteBackFailureNamesTheFailureWithTheGenericSentence(t *testing.T) {
+	t.Parallel()
 
-// TestTurnRunAdmitsSupplementaryHitsByRankOrderAndCutsTheRest pins design
-// §6.4a: the same admission rule as the assembled block — rank order, stop
-// rather than skip, no back-fill — applied per round, with position
-// staying rank order (not re-sorted by id, unlike the block). Every row is
-// still recorded, admitted or cut, with the size that caused the cut.
+	graph := baseGraph()
+	graph.writeRunErr = errors.New("literal: graph write timed out")
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, "system", "test-model", testLogger())
+
+	record, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	const wantGenericWriteError = "write-back failed"
+	if record.Written.Error != wantGenericWriteError {
+		t.Fatalf("record.Written.Error = %q, want the generic sentence %q", record.Written.Error, wantGenericWriteError)
+	}
+}
+
+func TestTurnRunWriteBackFailureDoesNotPutTheGraphsRequestURLInTheRecord(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.writeRunErr = errors.New(`divoid: request failed: Post "http://graph.internal:9099/api/nodes": dial tcp 10.4.4.4:9099: connect: connection refused`)
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, "system", "test-model", testLogger())
+
+	record, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, secret := range []string{"graph.internal", "9099", "10.4.4.4", "/api/nodes"} {
+		if strings.Contains(record.Written.Error, secret) {
+			t.Fatalf("record.Written.Error = %q, want no internal address disclosed (found %q)", record.Written.Error, secret)
+		}
+	}
+	if record.Written.Error == "" {
+		t.Fatal("record.Written.Error is empty, want the failure still named")
+	}
+}
+
+func TestTurnRunWriteBackFailureDoesNotPutTheUpstreamResponseBodyInTheRecord(t *testing.T) {
+	t.Parallel()
+
+	const upstreamBody = "UPSTREAM-BODY-MARKER unauthenticated caller 7f3a; internal detail nobody outside should read"
+	graph := baseGraph()
+	graph.writeRunErr = errors.New("divoid: unexpected status 500: " + upstreamBody + strings.Repeat("x", 4_000))
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, "system", "test-model", testLogger())
+
+	record, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if strings.Contains(record.Written.Error, "UPSTREAM-BODY-MARKER") {
+		t.Fatalf("record.Written.Error = %q, want none of the upstream response body echoed", record.Written.Error)
+	}
+	if len(record.Written.Error) > 200 {
+		t.Fatalf("record.Written.Error is %d bytes, want a short bounded sentence", len(record.Written.Error))
+	}
+	if record.Written.Error == "" {
+		t.Fatal("record.Written.Error is empty, want the failure still named")
+	}
+}
+
+func TestTurnRunLogsTheDetailedWriteBackErrorWhileTheRecordStaysGeneric(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.writeRunErr = errors.New(`divoid: request failed: Post "http://graph.internal:9099/api/nodes": dial tcp 10.4.4.4:9099: connect: connection refused`)
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, "system", "test-model", logger)
+
+	record, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if strings.Contains(record.Written.Error, "10.4.4.4") {
+		t.Fatalf("record.Written.Error = %q, want the address kept out of the record", record.Written.Error)
+	}
+	if !strings.Contains(logBuf.String(), "10.4.4.4") {
+		t.Fatalf("operator log = %q, want it to carry the detailed write-back error the record must not", logBuf.String())
+	}
+}
+
 func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndCutsTheRest(t *testing.T) {
 	t.Parallel()
 
 	graph := baseGraph()
-	// rank 1 and 2 fit comfortably; rank 3 alone exceeds what's left of a
-	// 20,000-byte round budget, so it and rank 4 (which would otherwise
-	// fit in the leftover space) must both be cut — a stop, not a skip.
 	graph.recallQueue = []recallResponse{
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{
-			{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", 9_000)}, // rank 1: fits, cumulative 9,000
-			{ID: 92, Similarity: 0.8, Content: strings.Repeat("b", 9_000)}, // rank 2: fits, cumulative 18,000
-			{ID: 93, Similarity: 0.7, Content: strings.Repeat("c", 5_000)}, // rank 3: 18,000+5,000 > 20,000, cut
-			{ID: 94, Similarity: 0.6, Content: strings.Repeat("d", 100)},   // rank 4: would fit the 2,000 leftover, must still be cut
+			{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", 9_000)},
+			{ID: 92, Similarity: 0.8, Content: strings.Repeat("b", 9_000)},
+			{ID: 93, Similarity: 0.7, Content: strings.Repeat("c", 5_000)},
+			{ID: 94, Similarity: 0.6, Content: strings.Repeat("d", 100)},
 		}},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -876,22 +847,12 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndCutsTheRest(t *testing.T) {
 		t.Fatalf("round.Results[2].Size = %d, want 5000 — a cut row must still carry the size that caused the cut", round.Results[2].Size)
 	}
 
-	// What the model actually saw (the next Judge call's PriorRecalls) must
-	// carry only the admitted subset, in rank order — the loop admits, the
-	// adapter renders (design §6.4a).
 	seen := model.calls[1].PriorRecalls[0].Results
 	if len(seen) != 2 || seen[0].ID != 91 || seen[1].ID != 92 {
 		t.Fatalf("PriorRecalls[0].Results = %+v, want the two admitted candidates [91 92], in rank order", seen)
 	}
 }
 
-// TestTurnRunSupplementaryAdmissionStaysInRankOrderEvenWhenIDsDescend is the
-// test that actually discriminates rank order from id order (design
-// §6.4a): the admitted set above happened to arrive with ascending ids, so
-// an implementation that (wrongly) re-sorted by id, like the block does,
-// would have passed it by coincidence. Here every admitted id is smaller
-// than the one before it, so an id-sort and a rank-order return produce
-// visibly different sequences.
 func TestTurnRunSupplementaryAdmissionStaysInRankOrderEvenWhenIDsDescend(t *testing.T) {
 	t.Parallel()
 
@@ -934,12 +895,6 @@ func TestTurnRunSupplementaryAdmissionStaysInRankOrderEvenWhenIDsDescend(t *test
 	}
 }
 
-// TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRowCut
-// pins design §6.5's new row: when every hit in a round is larger than
-// SupplementaryByteBudget, the round admits nothing — not an error, and
-// not silence. The record carries all rows cut with the reason, and no
-// oversized hit is admitted anyway (the anchor's R4 exemption, repeated on
-// the path that demonstrated why it is a defect, must not reappear here).
 func TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRowCut(t *testing.T) {
 	t.Parallel()
 
@@ -947,7 +902,7 @@ func TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRo
 	graph.recallQueue = []recallResponse{
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{
-			{ID: 91, Content: strings.Repeat("a", 25_000)}, // alone exceeds the 20,000 round budget
+			{ID: 91, Content: strings.Repeat("a", 25_000)},
 		}},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -974,16 +929,12 @@ func TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRo
 		t.Fatal("round.Results[0].CutReason is empty, want the budget cut recorded")
 	}
 
-	// The model must not see the oversized body — PriorRecalls' admitted
-	// set is empty for this round.
 	seen := model.calls[1].PriorRecalls[0].Results
 	if len(seen) != 0 {
 		t.Fatalf("PriorRecalls[0].Results has %d entries, want 0 — nothing was admitted", len(seen))
 	}
 }
 
-// TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget pins the same
-// inclusive boundary design §6.4a states is identical to §6.3's: <=, not <.
 func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 	t.Parallel()
 
@@ -1008,13 +959,7 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 	}
 }
 
-// TestTheCeilingArithmeticEqualsTheStatedLiteral pins design §8.4's stated
-// ceiling — 100,000 bytes — against the arithmetic of the three constants
-// that produce it (design §14 step 10, §6.4a). The literal is the design's
-// defended value; the right-hand side uses the real production constants,
-// so moving any one of AssemblyByteBudget, SupplementaryByteBudget or
-// MaxModelCalls without re-deriving §8.4's window table turns this red.
-func TestTheCeilingArithmeticEqualsTheStatedLiteral(t *testing.T) {
+func TestTheWorstCaseGraphDerivedPromptCeilingIsOneHundredThousandBytes(t *testing.T) {
 	t.Parallel()
 
 	const wantCeiling = 100_000

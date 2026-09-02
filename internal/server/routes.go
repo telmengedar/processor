@@ -33,8 +33,6 @@ type runRequest struct {
 	Subject int64  `json:"subject"`
 }
 
-// The error envelope (design §8.5): four closed codes, each with a caller
-// decision behind it.
 const (
 	codeInvalidRequest   = "invalid_request"
 	codeSubjectNotFound  = "subject_not_found"
@@ -77,8 +75,6 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			case errors.Is(err, loop.ErrModelUnavailable):
 				writeError(w, http.StatusBadGateway, codeModelUnavailable, "the model call did not complete")
 			default:
-				// Every other outcome from Run — including the wrapped
-				// ErrGraphUnavailable — is a failure to read the graph.
 				writeError(w, http.StatusBadGateway, codeGraphUnavailable, "the graph could not be read")
 			}
 			return

@@ -35,12 +35,6 @@ func (m *probeModel) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeR
 func TestTurnBuiltByAnExternalKeyedLiteralSurvivesTheNilLoggerBranch(t *testing.T) {
 	t.Parallel()
 
-	// A keyed composite literal from ANOTHER package may omit an unexported
-	// field — Go forbids setting one, not omitting one — so this compiles
-	// with Turn.logger unexported and leaves it nil. NewTurn is the only
-	// production constructor, but the exported struct is reachable, and
-	// dispatchRecall's transport-failure branch is the one dereference
-	// site. Without log()'s discard fallback this panics (QA #10835 §1).
 	turn := loop.Turn{Graph: &probeGraph{}, Model: &probeModel{}, System: "sys", ModelID: "m"}
 
 	rec, err := turn.Run(context.Background(), "hello", 42)

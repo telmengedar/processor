@@ -13,18 +13,12 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
-// recordedPost is one POST the write path made, captured in call order —
-// the shape TestWriteRunIssuesTheThreePOSTsInOrder pins design C32's
-// "three POSTs" against.
 type recordedPost struct {
 	Path        string
 	ContentType string
 	Body        []byte
 }
 
-// writeServer answers every POST /api/nodes with a fixed new id, and every
-// other POST with 200 and an empty body — enough for WriteRun's happy
-// path — while recording each call in order.
 func writeServer(t *testing.T, newNodeID int64) (*httptest.Server, *[]recordedPost) {
 	t.Helper()
 	var calls []recordedPost
@@ -48,8 +42,6 @@ func sampleRecord(subject int64) loop.Record {
 	return loop.Record{Input: "what changed", Subject: subject, Answer: "the answer"}
 }
 
-// TestWriteRunIssuesTheThreePOSTsInOrder pins design C32: create, then set
-// content, then link — against the id the create call returned.
 func TestWriteRunIssuesTheThreePOSTsInOrder(t *testing.T) {
 	t.Parallel()
 
@@ -75,8 +67,6 @@ func TestWriteRunIssuesTheThreePOSTsInOrder(t *testing.T) {
 	}
 }
 
-// TestWriteRunSetsContentTypeOnTheContentPOST pins C32's "content type as
-// a header" on the body-setting call specifically, not on every call.
 func TestWriteRunSetsContentTypeOnTheContentPOST(t *testing.T) {
 	t.Parallel()
 
@@ -86,11 +76,6 @@ func TestWriteRunSetsContentTypeOnTheContentPOST(t *testing.T) {
 	if _, err := c.WriteRun(context.Background(), sampleRecord(42)); err != nil {
 		t.Fatalf("WriteRun: %v", err)
 	}
-	// A literal, not runContentType (design §14 step 1): a shared constant
-	// moves both sides together and can never fail on a value change.
-	// This one is an external contract besides — application/json is
-	// what makes the written record decodable by the graph at all (CF-2,
-	// design §14 step 11).
 	const wantContentType = "application/json"
 	contentCall := (*calls)[1]
 	if contentCall.ContentType != wantContentType {
@@ -98,8 +83,6 @@ func TestWriteRunSetsContentTypeOnTheContentPOST(t *testing.T) {
 	}
 }
 
-// TestWriteRunContentBodyIsTheRecordAsJSON pins §7/§8.3: "Body: The run
-// record."
 func TestWriteRunContentBodyIsTheRecordAsJSON(t *testing.T) {
 	t.Parallel()
 
@@ -120,9 +103,6 @@ func TestWriteRunContentBodyIsTheRecordAsJSON(t *testing.T) {
 	}
 }
 
-// TestWriteRunLinkBodyIsTheBareSubjectID pins C32: "link (POST
-// /api/nodes/{id}/links with the bare target id as the body)" — not an
-// object wrapping it.
 func TestWriteRunLinkBodyIsTheBareSubjectID(t *testing.T) {
 	t.Parallel()
 
@@ -138,12 +118,6 @@ func TestWriteRunLinkBodyIsTheBareSubjectID(t *testing.T) {
 	}
 }
 
-// TestWriteRunCreateBodyCarriesTheAdapterChosenTypeAndNameNotTheCaller
-// pins design §8.3: "The adapter chooses type, name and edge. The caller
-// supplies no structure." loop.Record carries no type or name field at
-// all — this test would fail to compile if WriteRun tried to source
-// either from the record, which is itself evidence the caller supplies
-// none.
 func TestWriteRunCreateBodyCarriesTheAdapterChosenTypeAndNameNotTheCaller(t *testing.T) {
 	t.Parallel()
 
@@ -159,21 +133,15 @@ func TestWriteRunCreateBodyCarriesTheAdapterChosenTypeAndNameNotTheCaller(t *tes
 	if err := json.Unmarshal((*calls)[0].Body, &created); err != nil {
 		t.Fatalf("decode create body: %v; body=%s", err, (*calls)[0].Body)
 	}
-	// A literal, not runNodeType (design §14 step 1): this is an external
-	// contract — #10424 §5.7's own name for the narrative tier — that can
-	// be silently changed today with a green suite if asserted against
-	// the constant that defines it (CF-2).
 	const wantNodeType = "session-log"
 	if created.Type != wantNodeType {
-		t.Fatalf("create Type = %q, want %q (§10424 §5.7's narrative tier)", created.Type, wantNodeType)
+		t.Fatalf("create Type = %q, want %q (design §8.3's written node contract)", created.Type, wantNodeType)
 	}
 	if created.Name == "" {
 		t.Fatal("create Name is empty, want a deterministic name")
 	}
 }
 
-// TestRunNameIsDeterministicFromPrefixTimestampAndInput pins design §8.3:
-// "a fixed prefix, the timestamp, and a bounded prefix of the input."
 func TestRunNameIsDeterministicFromPrefixTimestampAndInput(t *testing.T) {
 	t.Parallel()
 
@@ -192,7 +160,6 @@ func TestRunNameIsDeterministicFromPrefixTimestampAndInput(t *testing.T) {
 	if err := json.Unmarshal((*calls)[0].Body, &created); err != nil {
 		t.Fatalf("decode create body: %v", err)
 	}
-	// A literal prefix, not runNamePrefix (design §14 step 1; CF-2).
 	const wantNamePrefix = "processor-run"
 	want := wantNamePrefix + " " + fixed.Format(time.RFC3339) + " — what changed in the assembler"
 	if created.Name != want {
@@ -200,11 +167,6 @@ func TestRunNameIsDeterministicFromPrefixTimestampAndInput(t *testing.T) {
 	}
 }
 
-// TestRunNameTruncatesALongInputWithABoundedPrefix pins the "bounded
-// prefix" half of §8.3's name contract — a fixture whose input is longer
-// than the bound, so a truncation that silently stopped truncating would
-// fail this test (the record's raw Input is unbounded; only the name
-// excerpt is bounded).
 func TestRunNameTruncatesALongInputWithABoundedPrefix(t *testing.T) {
 	t.Parallel()
 
@@ -212,9 +174,6 @@ func TestRunNameTruncatesALongInputWithABoundedPrefix(t *testing.T) {
 	c := NewClient(srv.URL, "k", srv.Client())
 	c.clock = func() time.Time { return time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC) }
 
-	// A literal bound, not runNameInputRunes (design §14 step 1; CF-2):
-	// the previous version asserted the constant against itself on both
-	// sides, so M7b (80 -> 40) stayed green.
 	const wantNameInputRuneBound = 80
 
 	record := sampleRecord(42)
@@ -235,9 +194,6 @@ func TestRunNameTruncatesALongInputWithABoundedPrefix(t *testing.T) {
 	}
 }
 
-// TestWriteRunOnCreateFailureMakesNoFurtherCalls pins that a failure at
-// any step stops the sequence rather than attempting the next call on a
-// node that may not exist.
 func TestWriteRunOnCreateFailureMakesNoFurtherCalls(t *testing.T) {
 	t.Parallel()
 
@@ -257,8 +213,6 @@ func TestWriteRunOnCreateFailureMakesNoFurtherCalls(t *testing.T) {
 	}
 }
 
-// TestWriteRunOnContentFailureDoesNotAttemptTheLink pins the same
-// stop-on-failure rule at the second step.
 func TestWriteRunOnContentFailureDoesNotAttemptTheLink(t *testing.T) {
 	t.Parallel()
 

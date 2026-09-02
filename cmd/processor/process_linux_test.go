@@ -33,23 +33,6 @@ func (s *syncBuffer) String() string {
 	return s.buf.String()
 }
 
-// harnessEnv turns validEnv (config_test.go) — the single map every
-// loadBootConfig "happy path" test in this package already builds its
-// environment from — into the KEY=VALUE slice exec.Cmd.Env wants, with
-// addr substituted for PROCESSOR_HTTP_ADDR. Every launch site below goes
-// through here instead of hand-listing the required boot set a second
-// time, for one reason: the moment config.go grows a new required boot
-// member, config_test.go's own happy-path tests go red the instant
-// validEnv is not updated to match — on every platform, in milliseconds,
-// with no subprocess involved. Once validEnv is fixed to make those
-// green again, this harness inherits the fix for free, instead of
-// silently staying stale here until someone happens to run the
-// Linux-only container gate this file requires (see the package
-// comment in process_linux_test.go and config.go's boot member list).
-// None of validEnv's values are reachable: NewClient in both
-// internal/divoid and internal/openaicompat does no I/O, and the only
-// network call this harness ever drives is GET /health against the
-// process's own listener.
 func harnessEnv(addr string) []string {
 	m := validEnv(map[string]string{envHTTPAddr: addr})
 	env := make([]string, 0, len(m))

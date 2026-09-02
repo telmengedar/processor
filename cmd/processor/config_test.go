@@ -14,22 +14,6 @@ func fixedLookup(values map[string]string) lookupFunc {
 	}
 }
 
-// validEnv returns an environment with every required member present
-// (both DiVoid members and unit B's two required model members —
-// PROCESSOR_MODEL_KEY is optional and deliberately left absent here), so
-// tests that are about one member don't also have to fight another
-// required member's error. overrides wins over the defaults, and a key
-// mapped to "" still counts as present (matching os.LookupEnv's own
-// present-but-empty semantics) — only deleting the key from the returned
-// map makes it absent.
-//
-// This is also the process-boundary harness's boot environment
-// (process_linux_test.go's harnessEnv reads it directly) — the coupling
-// this doc comment exists to make discoverable: config.go growing a new
-// required boot member without a matching addition here fails every
-// "happy path" test below immediately, on every platform this package
-// builds on, not just on the Linux-only container gate that hosts the
-// real subprocess tests. Keep it in sync with loadBootConfig.
 func validEnv(overrides map[string]string) map[string]string {
 	env := map[string]string{
 		"PROCESSOR_DIVOID_URL": "https://graph.example/api",
@@ -201,8 +185,6 @@ func TestLoadBootConfigErrorNeverContainsAPresentSecretValue(t *testing.T) {
 	}
 }
 
-// --- PROCESSOR_MODEL_URL (required, new in unit B) ---
-
 func TestLoadBootConfigErrorsWhenModelURLAbsent(t *testing.T) {
 	t.Parallel()
 
@@ -247,8 +229,6 @@ func TestLoadBootConfigUsesModelURLVerbatimWhenPresent(t *testing.T) {
 	}
 }
 
-// --- PROCESSOR_MODEL_ID (required, new in unit B) ---
-
 func TestLoadBootConfigErrorsWhenModelIDAbsent(t *testing.T) {
 	t.Parallel()
 
@@ -292,13 +272,6 @@ func TestLoadBootConfigUsesModelIDVerbatimWhenPresent(t *testing.T) {
 		t.Fatalf("modelID = %q, want %q", cfg.modelID, want)
 	}
 }
-
-// --- PROCESSOR_MODEL_KEY (optional, new in unit B) ---
-//
-// design §8.1's whole point: present-but-empty is an error for every
-// member, without exception — what differs is only what *absent* means.
-// A test that only covers absent-and-present would not catch a silent
-// auth downgrade (design §14 step 7), so all three cases are pinned here.
 
 func TestLoadBootConfigLeavesModelKeyEmptyWhenAbsent(t *testing.T) {
 	t.Parallel()

@@ -42,14 +42,6 @@ type Client struct {
 	apiKey     string
 	httpClient *http.Client
 
-	// clock stands in for time.Now in the write side's run-node naming
-	// (write.go), overridable per-instance from within the package's own
-	// tests so a written node's name can be asserted exactly. It is a
-	// field, not a package-level variable, deliberately: a package-level
-	// mutable var would be shared across every parallel test in this
-	// package, which is exactly the shared-mutable-state shape the design
-	// warns against elsewhere (design §6.5's falsifier, applied here on
-	// the same principle even though it names internal/loop specifically).
 	clock func() time.Time
 }
 
@@ -175,11 +167,6 @@ func (c *Client) get(ctx context.Context, query url.Values, out any) error {
 	return nil
 }
 
-// post issues one POST against path with body, decoding the response into
-// out when out is non-nil. Any 2xx status is accepted — C32 measured the
-// three write-side calls without pinning an exact success code, unlike the
-// listing route's strict 200 (C20, C29) — and a non-2xx surfaces the
-// upstream body, mirroring get's own error shape.
 func (c *Client) post(ctx context.Context, path, contentType string, body []byte, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {

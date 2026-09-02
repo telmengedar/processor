@@ -1,18 +1,5 @@
 package main
 
-// systemText is sent as the system-role message on every judgement step
-// (design §8.6): a value constructed in main, not read from the graph —
-// the one departure from #10424's inversion 3, with its seam named there.
-// Its wording is a prompt-engineering deliverable against §8.6's
-// requirements (routed to kim-prompt-engineer per design §14 step 8, filed
-// with its rationale at DiVoid #10750): it establishes that the assembled
-// block is what mechanical retrieval selected, not a transcript and not
-// necessarily complete; that the recall tool exists for what the block is
-// missing; and that the answer is prose for a human. It deliberately never
-// mentions memory, writing, or graph structure — asking the model to think
-// about persistence is exactly what this text must not do — and it names
-// no vendor or protocol, because the target now includes small local
-// models as well as frontier ones (design §9.2, §14 step 8's note).
 const systemText = `You are answering a question for a human reader.
 
 A context block is provided with this request. It was assembled by an automatic memory search, not by you. It begins with the subject of this request, followed by other material the search found related. Each part has an id, a type, a name, and a body.
