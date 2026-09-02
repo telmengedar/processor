@@ -22,6 +22,14 @@ func fixedLookup(values map[string]string) lookupFunc {
 // mapped to "" still counts as present (matching os.LookupEnv's own
 // present-but-empty semantics) — only deleting the key from the returned
 // map makes it absent.
+//
+// This is also the process-boundary harness's boot environment
+// (process_linux_test.go's harnessEnv reads it directly) — the coupling
+// this doc comment exists to make discoverable: config.go growing a new
+// required boot member without a matching addition here fails every
+// "happy path" test below immediately, on every platform this package
+// builds on, not just on the Linux-only container gate that hosts the
+// real subprocess tests. Keep it in sync with loadBootConfig.
 func validEnv(overrides map[string]string) map[string]string {
 	env := map[string]string{
 		"PROCESSOR_DIVOID_URL": "https://graph.example/api",
