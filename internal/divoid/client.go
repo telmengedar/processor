@@ -1,7 +1,4 @@
-// Package divoid is the graph adapter: a client for the DiVoid API's node
-// listing endpoint, used for the two read operations Unit A needs. It
-// implements loop.GraphPort, which is declared in internal/loop and
-// constructed here only as a value passed into main (design §5.2, §8.3).
+// Package divoid is the DiVoid API client implementing loop.GraphPort: the run's graph reads and write-back.
 package divoid
 
 import (
@@ -51,7 +48,7 @@ type Client struct {
 // which carries no timeout.
 func NewClient(baseURL, apiKey string, httpClient *http.Client) *Client {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: DefaultTimeout}
+		httpClient = defaultHTTPClient()
 	}
 	return &Client{
 		baseURL:    strings.TrimRight(baseURL, "/"),
@@ -59,6 +56,24 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) *Client {
 		clock:      time.Now,
 		httpClient: httpClient,
 	}
+}
+
+func defaultHTTPClient() *http.Client {
+	return &http.Client{Timeout: DefaultTimeout}
+}
+
+func (c *Client) client() *http.Client {
+	if c.httpClient == nil {
+		return defaultHTTPClient()
+	}
+	return c.httpClient
+}
+
+func (c *Client) now() time.Time {
+	if c.clock == nil {
+		return time.Now()
+	}
+	return c.clock()
 }
 
 // row is the shape of one entry in the listing response's result array.
@@ -150,7 +165,7 @@ func (c *Client) get(ctx context.Context, query url.Values, out any) error {
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.client().Do(req)
 	if err != nil {
 		return fmt.Errorf("divoid: request failed: %w", err)
 	}
@@ -176,7 +191,7 @@ func (c *Client) post(ctx context.Context, path, contentType string, body []byte
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.client().Do(req)
 	if err != nil {
 		return fmt.Errorf("divoid: request failed: %w", err)
 	}
