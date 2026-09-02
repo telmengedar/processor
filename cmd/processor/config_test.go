@@ -14,16 +14,20 @@ func fixedLookup(values map[string]string) lookupFunc {
 	}
 }
 
-// validEnv returns an environment with both required DiVoid members
-// present, so tests that are about httpAddr (or about one DiVoid member)
-// don't also have to fight the other required member's error. overrides
-// wins over the defaults, and a key mapped to "" still counts as present
-// (matching os.LookupEnv's own present-but-empty semantics) — only
-// deleting the key from the returned map makes it absent.
+// validEnv returns an environment with every required member present
+// (both DiVoid members and unit B's two required model members —
+// PROCESSOR_MODEL_KEY is optional and deliberately left absent here), so
+// tests that are about one member don't also have to fight another
+// required member's error. overrides wins over the defaults, and a key
+// mapped to "" still counts as present (matching os.LookupEnv's own
+// present-but-empty semantics) — only deleting the key from the returned
+// map makes it absent.
 func validEnv(overrides map[string]string) map[string]string {
 	env := map[string]string{
 		"PROCESSOR_DIVOID_URL": "https://graph.example/api",
 		"PROCESSOR_DIVOID_KEY": "test-key-12345",
+		"PROCESSOR_MODEL_URL":  "https://model.example/v1",
+		"PROCESSOR_MODEL_ID":   "test-model-id",
 	}
 	for k, v := range overrides {
 		env[k] = v
@@ -186,5 +190,148 @@ func TestLoadBootConfigErrorNeverContainsAPresentSecretValue(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), secret) {
 		t.Fatalf("error = %q, must not contain the secret value %q", err.Error(), secret)
+	}
+}
+
+// --- PROCESSOR_MODEL_URL (required, new in unit B) ---
+
+func TestLoadBootConfigErrorsWhenModelURLAbsent(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(nil)
+	delete(env, "PROCESSOR_MODEL_URL")
+
+	_, err := loadBootConfig(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadBootConfig returned nil error with PROCESSOR_MODEL_URL absent, want an error")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_MODEL_URL") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_MODEL_URL", err.Error())
+	}
+}
+
+func TestLoadBootConfigErrorsWhenModelURLPresentButEmpty(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_URL": ""})
+
+	_, err := loadBootConfig(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadBootConfig returned nil error for an empty PROCESSOR_MODEL_URL, want an error")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_MODEL_URL") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_MODEL_URL", err.Error())
+	}
+}
+
+func TestLoadBootConfigUsesModelURLVerbatimWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	const want = "https://custom.model.internal/v1"
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_URL": want})
+
+	cfg, err := loadBootConfig(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadBootConfig: %v", err)
+	}
+	if cfg.modelURL != want {
+		t.Fatalf("modelURL = %q, want %q", cfg.modelURL, want)
+	}
+}
+
+// --- PROCESSOR_MODEL_ID (required, new in unit B) ---
+
+func TestLoadBootConfigErrorsWhenModelIDAbsent(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(nil)
+	delete(env, "PROCESSOR_MODEL_ID")
+
+	_, err := loadBootConfig(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadBootConfig returned nil error with PROCESSOR_MODEL_ID absent, want an error")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_MODEL_ID") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_MODEL_ID", err.Error())
+	}
+}
+
+func TestLoadBootConfigErrorsWhenModelIDPresentButEmpty(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_ID": ""})
+
+	_, err := loadBootConfig(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadBootConfig returned nil error for an empty PROCESSOR_MODEL_ID, want an error")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_MODEL_ID") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_MODEL_ID", err.Error())
+	}
+}
+
+func TestLoadBootConfigUsesModelIDVerbatimWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	const want = "llama-3.1-8b-instruct"
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_ID": want})
+
+	cfg, err := loadBootConfig(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadBootConfig: %v", err)
+	}
+	if cfg.modelID != want {
+		t.Fatalf("modelID = %q, want %q", cfg.modelID, want)
+	}
+}
+
+// --- PROCESSOR_MODEL_KEY (optional, new in unit B) ---
+//
+// design §8.1's whole point: present-but-empty is an error for every
+// member, without exception — what differs is only what *absent* means.
+// A test that only covers absent-and-present would not catch a silent
+// auth downgrade (design §14 step 7), so all three cases are pinned here.
+
+func TestLoadBootConfigLeavesModelKeyEmptyWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(nil)
+	delete(env, "PROCESSOR_MODEL_KEY")
+
+	cfg, err := loadBootConfig(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadBootConfig: %v", err)
+	}
+	if cfg.modelKey != "" {
+		t.Fatalf("modelKey = %q, want empty when PROCESSOR_MODEL_KEY is absent (no Authorization header is sent)", cfg.modelKey)
+	}
+}
+
+func TestLoadBootConfigErrorsWhenModelKeyPresentButEmpty(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_KEY": ""})
+
+	_, err := loadBootConfig(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadBootConfig returned nil error for an empty PROCESSOR_MODEL_KEY, want an error — an empty value is a mistake, never a way to spell \"no auth\"")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_MODEL_KEY") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_MODEL_KEY", err.Error())
+	}
+}
+
+func TestLoadBootConfigUsesModelKeyVerbatimWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	const want = "local-runtime-key-1"
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_KEY": want})
+
+	cfg, err := loadBootConfig(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadBootConfig: %v", err)
+	}
+	if cfg.modelKey != want {
+		t.Fatalf("modelKey = %q, want %q", cfg.modelKey, want)
 	}
 }

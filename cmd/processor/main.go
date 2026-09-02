@@ -11,6 +11,7 @@ import (
 
 	"github.com/telmengedar/processor/internal/divoid"
 	"github.com/telmengedar/processor/internal/loop"
+	"github.com/telmengedar/processor/internal/openaicompat"
 	"github.com/telmengedar/processor/internal/server"
 )
 
@@ -33,13 +34,20 @@ func run() int {
 		return 1
 	}
 
-	// httpClient is nil so the graph client applies its own default
-	// (divoid.DefaultTimeout) — the timeout policy lives in exactly one
-	// place, not duplicated here and in the adapter (W-13). That default
-	// still bounds a hung graph read; it is never http.DefaultClient,
-	// which carries no timeout (W-7).
+	// httpClient is nil so each adapter applies its own default timeout —
+	// the timeout policy lives in exactly one place per adapter, not
+	// duplicated here (W-13). The model adapter's default is its own
+	// constant, generous by intent, and deliberately not the graph
+	// adapter's (design §8.4a): a local model on CPU can take minutes,
+	// where divoid.DefaultTimeout would turn the ruling's own target into
+	// a service that never completes a run.
 	graph := divoid.NewClient(cfg.divoidURL, cfg.divoidKey, nil)
-	turn := loop.NewTurn(graph)
+	model := openaicompat.NewClient(cfg.modelURL, cfg.modelID, cfg.modelKey, nil)
+	// logger is the same value server.Serve already receives (design
+	// §10.3's one diagnostic channel) — a supplementary-recall transport
+	// failure's detail goes here, never into the model prompt or the
+	// written record (design §6.4a, #10821's open finding).
+	turn := loop.NewTurn(graph, model, systemText, cfg.modelID, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

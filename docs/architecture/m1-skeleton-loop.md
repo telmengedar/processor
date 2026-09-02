@@ -26,6 +26,19 @@
 > (§9.2), **the dependency's quantitative cost nearly evaporated while its structural cost did not**
 > (§10.9), and **the no-retry rule lost its spend argument in the local case** (§10.5). The credential
 > blocker (§13.1) is withdrawn outright.
+> **Revision 3, 2026-09-02 — the budget system made whole, from QA review #10821.** Revision 2 bounded the
+> assembly path and left the supplementary-recall path unbounded; measured, one recall round renders
+> **3.3× the entire assembly budget** into the same prompt (#10821 CF-4, on C23's own 20-row set). The
+> defect was not a missing number on one path — it was that **the budget was stated as a fraction of an
+> unnamed window** (§8.4), so no path had an absolute ceiling to be checked against. Revision 3 states the
+> ceiling in bytes (§8.4), applies §6.3's admission discipline to the recall path (§6.4a), gives the two
+> paths **the same record columns** because they are the same event (§8.2), and re-derives §8.4's own
+> "1.5% of the window" figure, which was arithmetic against the provider revision 2 removed. Three
+> contract questions the review raised are settled in place: the usage type stops being one provider's
+> object (§8.3), usage is recorded **per model call** rather than overwritten (§8.2), and the record
+> carries the constants that governed the run so it stays interpretable after they change (§8.2).
+> **Unit A is untouched again** — where the sweep landed on shipped assembly code, §11 R4, R13 and R14
+> record the finding, its number and its falsifier rather than changing it.
 
 ---
 
@@ -39,8 +52,9 @@ response body *is* the record — every candidate, its score, and whether it was
 
 **How.** Two graph reads: the subject by id, and one semantic query whose text is the input **verbatim**.
 A byte budget applied in score order. A block rendered **sorted by node id, never by score**. One tool —
-supplementary recall — whose results append at the message tail and never enter the block. Write-back is
-a harness step: the harness picks the type, name and edge; the model contributes prose only.
+supplementary recall — whose results append at the message tail, **under a byte budget of their own**,
+and never enter the block. **Every graph body that reaches the model is under a stated ceiling: 100,000
+bytes per run, plus the anchor** (§8.4). Write-back is a harness step: the harness picks the type, name and edge; the model contributes prose only.
 
 **Cost.** Five environment variables, each arriving with its consumer, at the one existing read site.
 Measured ~2 s and ~206 KB of graph traffic per run. **No new dependency.** Ships as **two PRs**: A =
@@ -541,11 +555,89 @@ tail* is the loop's. Two reasons, and the second is the one that matters:
 **Bounds and outcomes:**
 
 - A constant cap on model calls per run (§8.4). Reaching it is not an error: the turn ends, and the record
-  says the cap was reached.
+  says the cap was reached — **explicitly, as its own field** (§8.2), not by a derivation that needs a
+  constant the record does not carry.
 - A malformed tool input returns an error-flagged tool result and the turn continues; it is counted, not
   dropped.
 - Every supplementary query, and every node it returned, is recorded — that is the measurement the tool
-  exists for (§2.4).
+  exists for (§2.4). **Returned, not admitted:** §6.4a admits a subset into the prompt, and the record
+  carries every row either way with its admit-or-cut decision, exactly as `candidates[]` does.
+- **A byte budget on the result itself — §6.4a.**
+
+### 6.4a The supplementary result is under a budget — the same one discipline, on the second path
+
+**New in revision 3, from #10821 CF-4.** Revision 2 said where a tool result goes and never said how big
+it may be. Measured on C23's own 20-row set, the answer was **199,608 bytes of bodies in a single round**
+— 3.3× the entire assembly budget, 6.6× across the two rounds the call cap allows — injected into the
+same prompt the budget exists to keep small.
+
+**The defect is not that one path was missing a number. It is that no path had an absolute ceiling.**
+§8.4 justified the assembly budget as *"roughly 1.5% of the model's window"*, and under the ruling there
+is no such window: every endpoint has a different one and none of them is known at design time. **A
+budget stated as a fraction of an unmeasured quantity bounds nothing and cannot be checked** — which is
+exactly how a path shipped at 3.3× over it with nobody able to say so. §8.4 now states the ceiling in
+bytes; this section spends part of it.
+
+**The rule, and it is §6.3's rule with nothing added:**
+
+| Aspect | The assembled block (§6.3) | A supplementary result (this section) |
+|---|---|---|
+| Budget | `AssemblyByteBudget`, per run | `SupplementaryByteBudget`, **per round** |
+| Admission | Rank order, stop at the first that does not fit, **no back-fill** | Identical |
+| Position | Sorted by node id ascending | **Rank order as returned** |
+| Exemption | The anchor (§11 R4) | **None** |
+| Recorded | Every row, admitted or cut, with the reason | Identical (§8.2) |
+
+**Why the position differs, and why that is not an inconsistency.** §6.3 sorts by id for one reason that
+binds today — a block byte-identical across reruns is assertable byte-for-byte — and one that binds
+later: a stability order is what a cache can hold. **Neither applies here.** A tool result is rendered
+once, for one call, and is never re-rendered or reused, so there is nothing to keep stable across runs;
+and rank order *is* a total order over distinct ids given C22's bit-stable ranking, so it is just as
+assertable. What rank order additionally buys is that the model reads the best answer to its own question
+first. Sorting a tool result by id would spend that for nothing.
+
+**Why there is no exemption.** The anchor's exemption from the assembly budget is this design's one
+unbounded input (§11 R4), and it is the shape of the defect this section exists to fix. Repeating it here
+— *"admit the best hit whatever its size"* — would reintroduce it on the very path that demonstrated why
+it matters. **If nothing fits, the round admits nothing:** the model is told the round produced nothing
+usable, and the record carries all twenty rows cut with the reason. That is an unhelpful round; it is not
+a dishonest one, and the record is what makes the difference readable. **Falsifier:** if records
+repeatedly show rounds admitting zero because the single best hit is larger than the budget, the budget
+is too small — and the number to change is in §8.4, with the evidence in hand.
+
+**The error branch is under the same bound.** A round that failed renders its error instead of its rows,
+and that text reaches both the model's prompt and the written record. It is **bounded to a short sentence
+and carries no address**. §8.5's rule — no key, no URL, no upstream body — was written for the
+caller-facing envelope; it applies here for the same reason and one more, because these two surfaces are
+read by a model and written to a shared graph rather than returned to the operator who owns the
+deployment. (#10821's W-6 reaches the same site from the implementation side. This is the rule that fix
+should be made against, not a second instruction.)
+
+**Per round or per run — both, because the call cap makes them one instrument.** They are genuinely
+different bounds with different failure modes, and the reason a single number settles it here is
+specific: **the conversation is rebuilt from scratch on every call, so tool results accumulate.** The
+third call's prompt carries both earlier rounds, not just the last one, so a per-round bound on its own
+would bound a quantity nobody reads. But the number of rounds is itself capped by a constant, so a
+per-round budget composes into a stated per-run ceiling:
+
+```
+  per round              SupplementaryByteBudget          =   20,000 B
+  per run                × (MaxModelCalls − 1)            =   40,000 B
+  with the block         + AssemblyByteBudget             =  100,000 B   ← the ceiling (§8.4)
+  and the anchor on top  + |anchor|, unbounded                           ← §11 R4
+```
+
+**The mechanism is per-round; the claim is per-run.** §8.4 states the ceiling as a literal so that a test
+can assert it against the arithmetic of the three constants, and §14 requires exactly that — they cannot
+drift apart from the number this design defends without something going red.
+
+**Where the bound is applied, and it is not a free choice.** The loop admits; the adapter renders. §6.4
+already says the *spelling* of a tool message is the adapter's business and that stays true — but the
+*selection* cannot be, because the record must say which rows the model actually saw (§8.2, §9.4
+obligation 3). An adapter that quietly truncated would leave the record claiming twenty hits for a call
+that showed five, and the record would then be wrong in the one direction milestone 2 has no way to
+detect. So the loop decides admission before the round is handed over, and the adapter renders what it
+is given.
 
 ### 6.5 Failure paths, decided rather than defaulted
 
@@ -557,10 +649,11 @@ tail* is the loop's. Two reasons, and the second is the one that matters:
 | Model call fails — transport, non-2xx, or a body that will not decode | `502`, nothing written | §10.5 — one attempt. The upstream status is logged; the upstream body is not echoed to the caller (§8.5) |
 | **The endpoint does not honour part of the depended subset** — rejects the tool field, rejects the token cap, or answers in a shape that will not decode | `502`, nothing written, upstream status logged | §6.6. It is indistinguishable from any other failed call *to the caller*, and deliberately so: the operator pointed the service at an endpoint that cannot serve it, and the fix is the endpoint, not a retry |
 | **The endpoint silently ignores the tool** rather than rejecting it | `200`, recorded, with **zero tool calls** | Not detectable and not treated as an error. It is indistinguishable from a model that did not need supplementary recall — which is honest, because at M1 those two really are the same observation. Named so nobody later reads a zero as proof the floor was high enough |
-| **The endpoint reports no usage** | `200`, recorded with usage **absent** | Absent, never zero. A zero in milestone 2's corpus is a measurement; an absence is the truth |
+| **The endpoint reports no usage** | `200`, recorded with that call's usage entry **absent** | Absent, never zero. A zero in milestone 2's corpus is a measurement; an absence is the truth. **Per call, not per run** (§8.2, revision 3): on a multi-call run the calls that did report are still recorded, and a run is never reported as having measured nothing merely because its last call did not |
 | Model declines to answer — the endpoint's terminal reason maps to the loop's `Refused` | `200`. It is an **outcome**, recorded with the raw reason the endpoint gave alongside the loop's neutral one | A refusal is information, not an error. The loop branches on its own reason; the record carries both (§8.3) |
 | Model output was truncated — terminal reason maps to `Truncated` | `200`, recorded | The answer is prose for a human, who can see it was cut off. §8.4's token cap is what binds, and this row is how a wrong cap becomes visible |
-| Call cap reached | `200`, recorded | §6.4 |
+| Call cap reached | `200`, recorded, **with `capReached` set** | §6.4, §8.2 |
+| **A supplementary round admits nothing** — every hit is larger than the round's budget (§6.4a) | `200`, recorded, the round carrying all its rows **cut** with the reason | Not an error and not silence: the model is told the round produced nothing usable, and the record says it was the budget rather than the graph. The alternative — admitting one oversized hit anyway — is §11 R4's anchor exemption repeated on the path that demonstrated why it is a defect |
 | **Write-back fails** | **`200`**, with the failure named in the record | The expensive artifact already exists and is in the body. A `5xx` invites the caller to retry, which re-spends the model call. The graph write is the second copy, not the first |
 | Two runs concurrently | Both proceed | The loop holds no shared mutable state. Falsifier: any package-level variable in `internal/loop` |
 
@@ -623,7 +716,7 @@ Three entities. None is persisted by Processor; the graph is the store.
 |---|---|---|
 | **Node** — id, type, name, status, content type, body, and on a recall hit a similarity score | DiVoid | Read-only to M1 |
 | **Run record** — the whole of one turn (§8.2) | `internal/loop` | Returned in the HTTP response **and** written as one graph node |
-| **Candidate disposition** — one row per node the query returned: rank, score, size, content hash, admitted or cut | `internal/loop` | Inside the run record |
+| **Candidate disposition** — one row per node a query returned: rank, score, size, content hash, admitted or cut | `internal/loop` | Inside the run record, on **both** paths — the assembled block's candidates and each supplementary round's hits carry the same columns, because they are the same event: graph rows admitted into a prompt under a byte budget (§6.4a, §8.2) |
 
 **The content hash is the only field whose value accrues later, and it is included deliberately.**
 #10424 §5.7 names the defect it prevents: a record of node ids rots, because the nodes change afterwards,
@@ -716,16 +809,19 @@ a second lookup does.
 | `candidates[]` | **Every** row the query returned, in rank order: rank, id, type, name, similarity, size, content hash, `included` or `cut`, and the cut reason |
 | `block` | The assembled context, verbatim |
 | `answer` | The model's final text |
-| `toolCalls[]` | Per supplementary recall: the query the model asked, and the ids and scores it got back |
-| `modelCalls` | How many, and whether the cap was reached |
+| `toolCalls[]` | Per supplementary recall round: the query the model asked, and **every** row it returned — with the same columns `candidates[]` carries: rank, id, type, name, similarity, size, content hash, `included` or `cut`, and the cut reason. **Widened in revision 3** (#10821 CF-4, W-7): the two paths are the same event under §6.4a, a cut is unreadable without the size that caused it, and §9.4 obligation 3 was simply false for any run that used the tool |
+| `modelCalls` | How many. **And `capReached`, as its own field** — revision 3, from #10821 W-7. This row promised the fact and left it derivable from `stopReason` plus a comparison against `MaxModelCalls`, a constant the record does not carry; and the derivation holds only under one of the two sanctioned fixes for the at-cap recall query, so it is contingent on an implementation choice made later. **A fact this record promises is not delivered by a derivation the reader cannot perform and the design cannot guarantee** |
 | `model` | **The model id that was sent.** New in revision 2, and not optional: under provider-agnosticism the model is a boot member rather than a constant, so a record that omits it cannot be interpreted after the fact and milestone 2's corpus would be scoring answers without knowing what produced them. Same argument as the content hash in §7, and the same reader |
-| `usage` | Token counts as the endpoint reported them, **or absent** — never zero-filled (§6.5, §6.6) |
+| `usage` | **One entry per model call, in call order** — revision 3, from #10821 W-1. Each entry is the endpoint's two token counts as it reported them, **or absent**, never zero-filled (§6.5, §6.6, §8.3); the array's length always equals `modelCalls`. **The loop aggregates nothing.** A run total is the reader's sum of the present entries, and a run where some calls reported and others did not is legible as exactly that. **Rejected — the last call's counts:** under-reports a three-call run by up to two thirds, and reports *absent* for a run that measured something. **Rejected — one summed object:** a sum over a partially-reporting run is a number presented as a total that is not one, which is §6.5's own defect one level up, and it discards which call was expensive — the escalation signal milestone 2 is looking for |
 | `stopReason` | **Two values, deliberately.** The loop's neutral terminal reason, which is what the loop branched on, **and** the raw string the endpoint returned, which is what milestone 2 will want when a mapping turns out to be wrong. The loop never branches on the second (§8.3) |
 | `written` | The node id the record was written to, or the reason it was not |
+| `limits` | **The constants that governed this run**: the candidate limit, the assembly byte budget, the supplementary byte budget, the model-call cap and the output-token cap. New in revision 3. Same argument as `model` above and the same reader: §8.4 names milestone 2 as the event at which the first three become measurable, so **the corpus will span a change to them**, and every record written before that change is uninterpretable without knowing which values were in force. It is also what makes `candidates[]` readable at all — **recall@k is uncomputable without k** |
 
-**Unit A's record has no `answer`, `model`, `toolCalls`, `modelCalls`, `usage`, `stopReason` or
-`written`.** Those fields arrive in unit B, together with their writers. That is #1220 §2 applied within
-the milestone, and unit A's shipped `Record` already reflects it.
+**Unit A's record has no `answer`, `model`, `toolCalls`, `modelCalls`, `usage`, `stopReason`, `written`
+or `limits`.** Those fields arrive in unit B, together with their writers. That is #1220 §2 applied
+within the milestone, and unit A's shipped `Record` already reflects it. **`limits` arrives in unit B
+even though two of its members governed unit A**, because unit A is shipped and revision 3 does not touch
+it — and because the corpus milestone 2 reads begins when the loop closes, not at PR 1.
 
 ### 8.3 The two ports
 
@@ -736,7 +832,7 @@ Declared by `internal/loop`; implemented by the adapters; constructed in `main`.
 | **graph** | subject fetch | node id | node with body, or not-found | Not-found is a distinct outcome, not an error (C30) |
 | | recall | query text, limit | ranked rows with bodies and scores | Rank order as returned. The adapter does not re-sort |
 | | write run | a run record | the new node id | **The adapter chooses type, name and edge. The caller supplies no structure.** Three POSTs (C32) |
-| **model** | judge | the system text, the assembled block, the input, the conversation so far, and whether supplementary recall is offered | the final prose; zero or more **supplementary-recall requests**, each a query string with an id to answer against; **one terminal reason from the loop's closed set**; the raw reason verbatim; usage-if-reported | One attempt. No retry. No interpretation of the prose. **Nothing in this column is a provider's word** |
+| **model** | judge | the system text, the assembled block, the input, the conversation so far, and whether supplementary recall is offered | the final prose; zero or more **supplementary-recall requests**, each a query string with an id to answer against; **one terminal reason from the loop's closed set**; the raw reason verbatim; **the two token counts if reported, or their absence** (revision 3, below) | One attempt. No retry. No interpretation of the prose. **Nothing in this column is a provider's word** |
 
 **The model port's vocabulary is the whole of provider-agnosticism, and it is the part that is easy to
 get wrong.** An interface whose method is `Complete` and whose return type has fields called
@@ -749,6 +845,35 @@ stated as a rule an implementer and a reviewer can both check:
 loop never sees the strings** an endpoint used. The record carries both (§8.2) because the record is data
 for milestone 2, not control flow — and when a mapping turns out to be wrong, the raw values are the
 evidence that shows it.
+
+**The one place this contract still spoke a wire format — revision 3, from #10821 W-4.** The terminal
+reasons are the loop's own closed set and the supplementary-recall requests are the loop's own
+vocabulary; those were the hard parts and they hold. The token counts were not. They were carried as
+**three fields copied name-for-name from one provider family's usage object** — a prompt count, a
+completion count and a total — which is a wire format with a port drawn around it, in the one type where
+the mistake is cheap to make and easy to miss.
+
+**Two things are wrong with it and only one is obvious.** The obvious one: a second adapter must invent
+the total, because the family reporting two counts and no total is at least as common as the one
+reporting three — and a field the adapter must fabricate is precisely §6.5's *"a zero is a measurement,
+an absence is the truth"* defect, moved from the object down to the field, where that rule does not
+reach. The less obvious one: **the total is not a measurement at all.** It is the sum of the other two in
+every endpoint that reports it, so it carries nothing a reader cannot compute, and its only effect is to
+create the fabrication.
+
+**The ruling:**
+
+- **The total is dropped.** A reader sums. Nothing is lost and the fabrication has nowhere left to happen.
+- **The two counts are named for the direction of travel** — tokens *in*, tokens *out* — and the record's
+  keys follow. *Prompt* and *completion* are not neutral words in disguise: M1 does not send a prompt, it
+  sends a system message, a block, an input and a tool tail, so "prompt tokens" names a field of a format
+  the loop does not have. The test stated above applies to itself here — a reader who has never seen any
+  provider's API can say what *in* and *out* mean.
+- **Absence stays at the object level, and the conservative reading is stated rather than left open.** An
+  endpoint reporting one count and not the other has not been observed on any runtime; until one is, such
+  an object is recorded **absent in whole** rather than half zero-filled. **Falsifier:** the first runtime
+  that reports one count and not the other proves this discards a real measurement, and the two counts
+  become independently optional. That is one type's shape, decided the day there is a measurement.
 
 **Two things this does not mean.** It is not an anti-corruption layer, and it is not a plugin system:
 there is one adapter, one mapping, no registry, no selection. It is the ordinary port the loop already
@@ -773,9 +898,47 @@ milestone 5's memory core replaces — the adapter, not its callers.
 | Constant | Value | Why it is not a knob |
 |---|---|---|
 | Candidate limit | **20** | Measured C23: one round trip, 206 KB, ~1.5 s — and the whole Processor neighbourhood is ~22 nodes (C25), so 20 sees the region. No operator tunes it; milestone 2 is where it becomes measurable |
-| Assembly byte budget | **60,000 UTF-8 bytes** | ≈15,000 tokens — bytes, not tokens, because a tokenizer is a dependency (§10.9) and the ratio is stable enough for a floor. Roughly: **1.5% of the model's window, by intent** — the design's premise is that a small precise context beats a large one, so the budget is small by choice, not by capacity. Measured on C23's real 20-row set: it admits ranks 1–5, uses 44,931 B, and **cuts 15 of 20**, so the cut path runs on ordinary production runs and not only in tests |
+| Assembly byte budget | **60,000 UTF-8 bytes** | ≈15,000 tokens — bytes, not tokens, because a tokenizer is a dependency (§10.9) and the ratio is stable enough for a floor. **Revision 3 corrects the justification, not the value.** Revision 1 called it *"roughly 1.5% of the model's window, by intent"*. That figure is arithmetic against a **one-million-token** window — the provider revision 2 removed — and under the ruling there is no single window to take a fraction of. The premise it was expressing still stands: a small precise context beats a large one, so the budget is small by choice, not by capacity. But **a budget stated as a fraction of an unmeasured quantity bounds nothing and cannot be checked**, which is how the recall path shipped at 3.3× over it with nobody able to say so (#10821 CF-4, §6.4a). The number is 60,000 bytes; what fraction of a window that is, is stated below against named window classes instead of assumed. Measured on C23's real 20-row set: it admits ranks 1–5, uses 44,931 B, and **cuts 15 of 20**, so the cut path runs on ordinary production runs and not only in tests |
 | Model call cap per run | **3** | One judgement call plus two supplementary rounds. Enough to observe the escalation path; small enough that a loop cannot run away |
 | Output-token cap (`max_tokens`) | **4,096** | **Re-derived in revision 2; it was 16,000.** The old value came from the Anthropic reference's non-streaming default, and that justification is gone with the provider. Re-derived against the ruling's actual target: many local models cap output well below 16,000 and either clamp silently or reject the request, and the answer here is *prose for a human*, which does not need 16,000 tokens. 4,096 is inside every plausible local runtime's capability and generous for the job. **Falsifier:** the §6.5 *truncated* row is exactly how a wrong value announces itself — if real runs report truncation, the number is too small and the record says so |
+| **Supplementary byte budget** | **20,000 UTF-8 bytes, per recall round** | New in revision 3 (§6.4a). **Derived, not picked:** it is the largest per-round figure that keeps a whole run's graph-derived prompt inside a 32,768-token window with the output cap reserved — the derivation is below. Against C23's real distribution it admits **3 median bodies** (5,758 B each), 6 of the smallest (2,872 B), and **none** of the largest (42,978 B) — which the record reports as a cut rather than hiding |
+
+**The ceiling, in bytes, against named windows — revision 3.**
+
+The constants above are not independent. Two bound bytes and a third multiplies one of them, so together
+they state how large a run's prompt can get — and that number is what an endpoint has to be able to hold:
+
+```
+  the block        AssemblyByteBudget                             =   60,000 B
+  supplementary    SupplementaryByteBudget × (MaxModelCalls − 1)  =   40,000 B
+                                                                    ──────────
+  graph-derived prompt, per run — THE CEILING                     =  100,000 B   ≈ 25,000 tokens
+  + the system text and framing                                   ~    2,000 B   ≈    500 tokens
+  + the anchor     |anchor| — unbounded (§11 R4)
+  + reserved for the answer, maxOutputTokens                                     ≈  4,096 tokens
+```
+
+At the same four-bytes-per-token ratio this table already uses for the budget itself:
+
+| Endpoint window | The block alone | A worst-case run, anchor excluded | Verdict |
+|---|---|---|---|
+| **8,192 tokens** | **183%** | does not fit | **M1 cannot run here at all** — and the tool is not why. §11 R14 |
+| **32,768 tokens** | 46% | ≈ 29,600 tokens, **90%** | Fits, leaving ≈ 3,200 tokens — about **12,500 bytes** — for the anchor |
+| **131,072 tokens** | 11% | 23% | Comfortable |
+| **1,000,000 tokens** | 1.5% | 3% | The figure revision 1 quoted, and the window it was quoting |
+
+**Two things this table is for.** First, `SupplementaryByteBudget` is the free variable, and 20,000 is
+what solving the 32,768 row gives — a derivation, not a taste. Second, the row that matters is the one
+with the smallest window: **the ruling's own target is small local runtimes, and 8,192 is a real window
+size among them.** M1 does not fit it — because of the *assembly* budget, which is unit A's shipped
+constant and outside this revision. §11 R14 records that with its falsifier rather than repairing it
+here, and §13.6 asks the one question that would settle it.
+
+**`100,000` is a literal this design defends, not an incidental product.** §14 requires it asserted as a
+literal against the arithmetic of the three constants, so that moving any one of them without
+re-deriving the window table above turns a test red. The alternative — a test computing the same
+expression production computes — is the assertion #10466 names as one that can never fail, and #10821
+CF-2 found seven of those in this milestone already.
 
 **Model id is no longer here.** It was `claude-opus-5`, justified as having "no environment difference".
 The ruling makes that false by construction — every endpoint serves different model names — so it is a
@@ -825,7 +988,12 @@ M0 §8.5 deferred this to *"the first endpoint that can fail"*. Here it is, mini
 fix the id, 502 means retry later. A refusal is **not** in this table — it is a `200` outcome. A
 write-back failure is **not** in this table — §6.5.
 
-`message` is for a human and carries no key, no URL with credentials, and no upstream body.
+`message` is for a human and carries no key, no URL with credentials, and no upstream body. **The same
+rule governs every other surface an error string reaches** — revision 3: the tool-result message the
+model reads and the run record written to the graph (§6.4a). It was stated here for the caller and
+applies there for the same reason and one more, because those two surfaces are read by a model and
+written to a shared substrate rather than returned to the operator who owns the deployment, so an
+internal address in them travels further than one in a 502 body.
 
 ### 8.6 The system text — the one departure from inversion 3, stated
 
@@ -966,8 +1134,21 @@ misses. Three obligations:
    wrong and impossible to fix later.
 2. **The query text is recorded verbatim** and as its own field (§8.2), so that the day it stops equalling
    the input is visible rather than inferred.
-3. **The assembled block is reproducible from the record** — the block plus the per-candidate hashes are
-   sufficient to reconstruct what the model saw and to detect whether a node has changed since.
+3. **What the model saw is reconstructible from the record — on both paths.** The block is stored
+   verbatim, and the per-candidate hashes say whether a node has changed since. **Revision 3 extends this
+   to the tool rounds, where it was simply false:** the model saw full bodies for every admitted
+   supplementary hit, and revision 2's record carried those hits as an id and a score with no size, no
+   hash and no admission flag — so a run that used the tool could not be reconstructed, and could not
+   even be *detected* as unreconstructible. `toolCalls[]` now carries the same columns as `candidates[]`
+   (§8.2).
+   **The honest limit, and it is weaker here than for the block.** The rendered tool text is *not* stored
+   verbatim the way the block is. A reader reconstructs it from the admitted ids, their hashes and
+   §6.4a's rendering rule — which detects a changed body but cannot recover the old one. The block earns
+   its verbatim copy because a human reads it to judge S2 (§11 R12); the tool text has no such reader
+   today, and storing it would roughly double a record already 10–19× the size of a median node in this
+   graph (§11 R5). **Falsifier:** if milestone 2 finds it cannot score tool rounds without the bodies,
+   the rendered text joins the record and the record doubles — a decision to take with the corpus in
+   hand, not now.
 
 **The honest limit, stated rather than implied.** "Replayable" at M1 means *replayable from the record*,
 not *reproducible against the live graph*. The same input a day later may return a different candidate
@@ -984,6 +1165,8 @@ distinguish those two cases, the record is not doing its job.
 | Assembly's behaviour against a real 20-row set is inferred from C23/C24's byte distribution, not run | Post one real input through unit A and read the cut column |
 | Latency per run against a *local* model is completely unmeasured, and §8.4a's timeout is sized on judgement rather than data | One live run reports it. This is the single largest unknown the ruling introduces |
 | Flake behaviour of the wire-level tests over many runs | Run the suite 20 times. Not run here, and not claimed as run |
+| **The four-bytes-per-token ratio** every figure in §8.4's ceiling table rests on. It is an assumption inherited from the assembly budget, and it varies by tokenizer and by language | One live run reports the input count for a prompt of known byte length — that *is* the ratio, measured. §14 step 14 already collects it |
+| **The window sizes in §8.4's table**, and that an endpoint **rejects** rather than silently truncating a prompt over its window | §6.5 assumes it fails loudly and nothing has confirmed which. Point it at a runtime whose window is smaller than the run needs; §14 step 14 records the advertised window |
 
 ---
 
@@ -1025,7 +1208,7 @@ absent key means an absent header, not an empty one (§8.1).
 M0's partition holds: **stderr carries operational events; the graph carries content.**
 
 Per run, two structured records on stderr: run started (subject id, input length) and run finished (node
-id written, candidate count, cut count, model calls, **the model id**, token usage, outcome). **The
+id written, candidate count, cut count, model calls, **the model id**, token usage summed across the calls that reported it — or its absence, never a zero (§8.2) — outcome). **The
 assembled block is never logged** — it is up to 60,000 bytes and it has a home (§8.2). On a failed
 external call, log the upstream status and, **when the endpoint volunteers a request id, that** — but do
 not require one: C41 measured the reference implementation returning an error with **no** request id at
@@ -1168,8 +1351,8 @@ section just learned about itself.
 | R1 | **Retrieval noise makes the context useless.** Measured: an unrelated project's node at rank 7 (C28) | The record shows it, per run, with scores. §6.2's falsifier is a ten-run experiment on unit A. Milestone 2 is the durable answer |
 | R2 | **The budget starves a run.** One 42,978 B node (C23) can consume most of 60,000 | Legible in the cut column. §6.3 states the back-fill alternative and why it loses. If the record shows it repeatedly, the rule changes with evidence |
 | R3 | **Deictic input retrieves noise.** Measured, spectacularly (C27) | Stated, not hidden. M1 does not claim to solve deixis; #10424 §5.1 assigns it to the tiers and to `intent`, both milestone 3. The anchor gives every run *something* stable regardless |
-| R4 | **The anchor is exempt from the budget**, so a pathologically large subject node is an unbounded input | Measured ceiling in this graph today: 42,978 B (C23). Cheap later fix: truncate the anchor with an explicit marker. Not built now — no instance exists |
-| R5 | **Run records flood the graph.** One node per request | Deliberate and visible at M1, where a human drives every run. #10424 §5.7's retention tiering is the durable answer and belongs with the milestone that has volume to tier |
+| R4 | **The anchor is exempt from the budget**, so a pathologically large subject node is an unbounded input — and after §6.4a bounded the recall path, **it is the only one left** | **Re-derived in revision 3, and it changed direction.** The measured ceiling in this graph is unchanged — 42,978 B (C23) — but revision 2 judged it against the *budget*, where an oversized anchor merely crowds the candidates, and concluded *"no instance exists"*. §8.4 now judges it against the *window*, where the anchor is the one term that can push a run past what the endpoint can hold: on a 32,768-token window a worst-case run leaves about **12,500 bytes** for it, and this graph already contains a node **3.4× that**. **The instance exists and is measured.** The fix is unchanged and still cheap — truncate with an explicit marker and record the truncation — but it is a change to unit A's shipped assembly, so revision 3 records it with the number rather than making it. **Falsifier, now answerable rather than hypothetical:** run any node over ≈ 12,500 B as the subject against a 32K-window endpoint |
+| R5 | **Run records flood the graph.** One node per request | Deliberate and visible at M1, where a human drives every run. #10424 §5.7's retention tiering is the durable answer and belongs with the milestone that has volume to tier. **Revision 3 adds the size, which nobody had stated:** a record carries the block verbatim, so one run writes a node of roughly **50,000–110,000 B** — **10 to 19× the median node in this graph** (C23: 5,758 B). Ten runs put more bytes into this neighbourhood than the ≈22 nodes it currently holds (C25). That is a fact about the graph; **R13 is the fact about the runs that follows from it** |
 | R6 | **The success response shape is unmeasured** (§9.5; C41 measured only the route, the auth header and the error shape) | Fixture-driven decoding, isolated in one adapter, blast radius one file. **And the mitigation got stronger under the ruling:** confirming it needs a local runtime rather than a credential, so §14 makes it a condition of hand-off instead of a post-merge hope |
 | R7 | **Cost per run is unmeasured** — and after the ruling, *cost* means two different things | Against a local endpoint the marginal cost is machine time, not money, which is the ruling's point. Against a paid endpoint it is ~15,000 input tokens plus the anchor per call. The record carries usage, so ten runs turn either estimate into a number. #10424's framing still applies: *"more expensive per task but better/faster results is a valid outcome and a business decision"* |
 | **R11** | **An endpoint does not honour §6.6's subset** — the family is a de facto standard with no conformance suite | §6.6 states the subset, keeps it deliberately small, and §6.5 makes the failure loud and immediate rather than silent. **Falsifier:** point it at two different runtimes; if D1–D6 do not both hold, the subset is too large and must shrink |
@@ -1177,6 +1360,8 @@ section just learned about itself.
 | R8 | **The model treats the block as a transcript** and answers from position rather than relevance | §8.6's system text establishes what the block is. Falsifiable on the first live runs by reading the answers |
 | R9 | **Graph latency dominates.** ~2 s per run before the model is reached (C20, C23, C29) | Accepted at M1. The two reads are independent and could run concurrently — one obvious optimisation, deliberately not taken until a measurement says it matters |
 | R10 | **The seams get load-bearing** and the design drifts toward interface-per-service | §9.2's falsifier is checkable by inspection: any interface without an experiment behind it goes |
+| **R13** | **Run records are unfiltered recall candidates, and they are copies of earlier prompts.** M1 writes a `session-log` node per run (§8.3) into the same graph its recall query reads, and nothing scopes that query (§6.2). So run *n*'s candidate set can contain run *n−1*'s record — a node 10–19× median size (R5) whose body is a **verbatim copy of a block the run already has**, and which under §6.3's stop-don't-skip admission can consume the entire assembly budget and cut all nineteen other candidates | **Named in revision 3; not fixed here, and the distinction matters.** §6.2's argument against filtering was made about *human-authored* content and it still holds; **self-produced content is a case it does not cover**, and this design did not notice that writing into the pool it reads from changes that premise. The remedy is measured and cheap — C25 confirms `type=` composes with `query=`, so excluding the run-record type is one query parameter — but it is a change to unit A's shipped read path, and **no run record has ever been written, so the evidence for it does not exist yet.** **Falsifier, and it produces that evidence in ten runs:** run ten, then read the eleventh's candidate set. If `session-log` nodes appear above rank 5, or if one is admitted and cuts the rest, the exclusion goes in with a measurement behind it — the same standard R1 and R2 are held to |
+| **R14** | **M1 does not fit an 8,192-token window, and that is a real size among the ruling's own target runtimes.** §8.4's ceiling table: the assembly budget alone is ≈ 15,000 tokens, **183%** of such a window, before the anchor and before any tool use | **Named rather than repaired, because the constant that causes it is unit A's and is shipped.** The tool path is not the cause — §6.4a bounds it, and a run with zero tool calls overflows an 8K window just as badly. The fix, when there is evidence for it, is `AssemblyByteBudget`. The honest position today is that **M1's floor is a 32,768-token endpoint**, and §13.6 asks whether that is acceptable. **Falsifier:** point it at an 8K runtime. The first call fails or truncates, §6.5's rows carry it, and the number to change is in §8.4 |
 
 ---
 
@@ -1271,6 +1456,19 @@ it makes the run harder to observe. One endpoint to change if the answer is diff
 #10437 §13.1 raised it, #10488 §13.2 restated it, task **#10495** is open. This design leans on nothing
 from it (see the header). Three consecutive designs recording the same gap is itself the finding.
 
+### 13.6 The window class M1 targets — for Toni, and it is a number rather than a preference
+
+§8.4's ceiling table says M1's floor is a **32,768-token** endpoint, and that an **8,192-token** one
+cannot run it at all (§11 R14). That is derived, not measured: **no runtime has been pointed at this yet**
+(C40), so the window sizes come from what local runtimes commonly serve rather than from what the one you
+install actually reports, and the four-bytes-per-token ratio underneath them is an assumption (§9.5).
+
+**The question is one line: is a 32K floor acceptable, or does M1 need to run on 8K?** If 8K, the number
+that has to move is `AssemblyByteBudget` — unit A's, shipped — which is exactly why this is a question
+here rather than a decision taken here. **Low stakes and cheaply answered:** §14 step 14's live run
+reports the real numbers, and it now records the endpoint's advertised context window alongside the wall
+clock for this reason.
+
 ---
 
 ## 14. Implementation Guidance for the Next Agent
@@ -1318,16 +1516,38 @@ No code appears in this document by design. The order below is architectural, no
    only, a tool call, a truncated answer, and a terminal reason the mapping does not recognise.
    **Pin the translation, not just the decoding** — assert that an unrecognised reason maps to the loop's
    unrecognised value *and* that the raw string survives into the record, and that a missing usage object
-   yields absent rather than zero.
+   yields absent rather than zero. **Revision 3 (§8.3):** the counts are *in* and *out* and there is no
+   total — assert that an endpoint reporting three fields yields two, and that an endpoint reporting a
+   usage object carrying only one of the two counts yields **absent**, not a half-zero-filled object.
     **Then check the neutrality falsifier before going further** (§9.2): grep `internal/loop` for any
     provider vocabulary — wire field names, finish-reason strings. It must return nothing. Two minutes,
     and it catches the one way this design fails quietly.
 10. **The tool cycle.** Definition, dispatch, cap. Pin from canned port responses: a clean single call, a
     single tool round trip, the cap firing, and a malformed tool input producing an error-flagged result
     that does not abort the turn.
+    **And the budget (§6.4a), which revision 3 adds and which is where this unit was rejected once.** The
+    loop admits hits in rank order against `SupplementaryByteBudget`, stops at the first that does not
+    fit, back-fills nothing, and exempts nothing. Pin a round whose hits straddle the budget and assert
+    **both** the admitted set and that *every* row still reaches the record with its admit-or-cut
+    decision. Pin the round that admits **zero** because its best hit is oversized (§6.5's new row). Pin
+    that the error branch is bounded and carries no address (§8.5). **And assert the ceiling as a
+    literal:** `100,000` against `AssemblyByteBudget + SupplementaryByteBudget × (MaxModelCalls − 1)` —
+    the literal on the expected side per step 1, so that moving any constant without re-deriving §8.4's
+    window table turns this red.
 11. **`internal/divoid`, write side.** The three-POST sequence (C32). Pin at the wire level: the order,
     the content-type header on the body POST, the bare-id body on the link POST, and that the **adapter**
     supplies the type, name and edge. Pin at the port level that the loop supplies none of them.
+11a. **The record's own shape, which is what milestone 2 actually consumes** — new in revision 3, and the
+    part of this unit #10821 found unpinned end to end. Pin it **at the wire level, through a decode
+    struct with literal JSON tags**, with fixture values distinctive enough that a wrong field cannot
+    pass: `answer`, `model`, `toolCalls`, `modelCalls`, `capReached`, `usage`, `stopReason`, `written`
+    and `limits`. Three of these are rules rather than fields and deserve their own assertions:
+    **`usage` has exactly one entry per model call, in order, empty where a call reported nothing**;
+    **`toolCalls[].results` carries every row the round returned, not the admitted subset**, with the
+    same columns `candidates[]` has; and **`limits` reports the constants actually in force** — the one
+    place in this suite where asserting against the production constant is correct, because that field
+    exists to *be* their value. Everywhere else, literals (step 1).
+
 12. **The §6.5 table, every row.** Each is a test. The `graph_unavailable`-before-the-model row is the one
     that matters most: assert that a recall failure produces **no model call at all**.
 13. **Mutate and watch it redden**, same discipline as step 5. In particular: make a recall failure fall
@@ -1340,14 +1560,18 @@ No code appears in this document by design. The order below is architectural, no
     Install a local OpenAI-compatible runtime (C40 says none is installed here), point
     `PROCESSOR_MODEL_URL` and `PROCESSOR_MODEL_ID` at it, leave `PROCESSOR_MODEL_KEY` **unset** — that
     path is the ruling's own target and must be the one exercised. Record what came back: the answer,
-    the usage (or its absence), the raw terminal reason, and the wall clock, which §9.5 names as the
-    largest unmeasured quantity in the milestone. **This closes R6 and feeds §8.4a's timeout a real
+    the usage (or its absence), the raw terminal reason, the wall clock — which §9.5 names as the largest
+    unmeasured quantity in the milestone — and, **new in revision 3, the endpoint's advertised context
+    window and the input-token count for a prompt of known byte length.** Those two close §9.5's other
+    open rows: they turn §8.4's window table and its four-bytes-per-token ratio from derivation into
+    measurement, and they answer §13.6. **This closes R6 and feeds §8.4a's timeout a real
     number instead of a judgement.** It is a manual command; it does **not** become a gate (§10.6).
 
 ### Do not add
 
 Retries · backoff · a circuit breaker · streaming · caching or cache breakpoints · a config knob for any
-constant in §8.4 · middleware · a `/health` dependency check · an `intent` field · anything from §2.2's
+constant in §8.4 · **a back-fill or a size exemption on either budget (§6.3, §6.4a)** · **a type filter on
+the recall query (§11 R13 — it needs a measurement first)** · middleware · a `/health` dependency check · an `intent` field · anything from §2.2's
 prose list · a second environment read site · a dependency (§10.9) · **a second provider, a
 provider-selection member, or capability probing of the endpoint (§6.6)** · **a provider's field names
 anywhere in `internal/loop` (§9.2)**.
