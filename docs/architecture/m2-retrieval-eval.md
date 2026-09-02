@@ -97,7 +97,7 @@ made against that test, and §11 records where it lost to something else.
 
 | # | Criterion | How it is judged |
 |---|---|---|
-| S1 | A sweep costs no model calls | Grep the eval packages for `ModelPort`, `openaicompat`, or any HTTP POST — must return nothing (§13 F-1) |
+| S1 | A sweep costs no model calls | **`go list -deps ./cmd/eval` does not contain `internal/openaicompat`**, while `./cmd/processor` does. The only `ModelPort` implementation in the module is not linked into the eval binary, so a model call is not merely unwritten but **unreachable** (§13 G-26a) |
 | S2 | A miss at retrieval and a miss at admission are never reported as the same thing | Two rates, and a per-required-node verdict from a closed set of four (§5, §8.2) |
 | S3 | The harness cannot report a plausible score while measuring nothing | Four independent guards, one of which runs on every sweep (§9.2) |
 | S4 | The instrument does not mutate the substrate it measures | The sweep calls `Node` and `Recall` and nothing else; grep falsifier (§9.1) |
@@ -112,7 +112,7 @@ made against that test, and §11 records where it lost to something else.
 - A corpus format for `(input, subject) → required nodes`, living in the repository.
 - A command that sweeps the corpus against the live graph using the loop's own retrieval and admission,
   and stops before the model.
-- Two rates, four per-node verdicts, five diagnostics, one machine-readable result, one human summary.
+- Two rates, four per-node verdicts, six diagnostics, one machine-readable result, one human summary.
 - The split of `cmd/processor/config.go` into a graph half and a model half, so the eval binary does not
   require a credential it never dereferences.
 
@@ -637,9 +637,17 @@ here are **linux/arm64** (`GOARCH=arm64`, per #10440's measured toolchain trap).
 
 ### 8.2 The result
 
-**Header:** `corpusHash`, `sweptAt`, `limits` (read from `internal/loop`'s exported constants, never
-copied), `rowCount`. **No graph URL** — #10466 §5 treats an operator-supplied endpoint as a secret because
-it may carry credentials, and the same reasoning binds here.
+**Header:** `corpusHash`, `sweptAt`, `limits`, `rowCount`. **No graph URL** — #10466 §5 treats an
+operator-supplied endpoint as a secret because it may carry credentials, and the same reasoning binds here.
+
+**`limits` carries two members, not `loop.Limits`' five.** The values are read from `internal/loop`'s
+exported constants and never copied, but only the two the sweep actually applies are reported:
+`candidateLimit` and `assemblyByteBudget`. `supplementaryByteBudget`, `maxModelCalls` and `maxOutputTokens`
+govern the model path, which a model-free sweep never exercises — and **reporting a constant the run never
+applied is §7.3's dishonesty one level up**: a reader diffing two results would be invited to attribute a
+change to a number that was never in force. So the eval declares its own two-member type rather than
+embedding the loop's five. That is a **narrowing of what is reported, not a copy of the values**, and G-14b
+is the guard that says so.
 
 **Per row**, in corpus order so results diff cleanly:
 
@@ -651,12 +659,14 @@ it may carry credentials, and the same reasoning binds here.
 | `anchorWasCandidate`, `anchorAdmittedAsCandidate` | **§3.3's shipped defect**, made countable |
 | `selfProducedCandidates` | **§3.4 / R13**, made countable |
 | `shutout` | `admittedCount == 0` while `candidateCount > 0` — §3.4's catastrophic shape, which a recall number alone reports as an ordinary miss |
+| `topSimilarity` | **§3.2's discriminator at the other end.** It separates *the required node was lost inside a near-tied top-20* (measured spread 0.0316) from *recall returned nothing useful at all* — a distinction a rank-less `notRetrieved` verdict cannot make. Read by whoever is deciding whether the retriever or the input is at fault |
 | `required[]` → `{node, verdict, rank, stale}` | the attribution that makes the number actionable |
 
-Every one of the five diagnostics survives the delete test: remove `anchorWasCandidate` and a shipped defect
+Every one of the six diagnostics survives the delete test: remove `anchorWasCandidate` and a shipped defect
 stays invisible; remove `selfProducedCandidates` and the first sweep's low score is inexplicable; remove
 `shutout` and an admission catastrophe reads as a retrieval failure; remove the byte pair and the two cut
-regimes are indistinguishable; remove `stale` and the corpus rots silently.
+regimes are indistinguishable; remove `topSimilarity` and a `notRetrieved` verdict cannot say whether the
+retriever was close or nowhere near; remove `stale` and the corpus rots silently.
 
 **Classifying a self-produced candidate** uses *both* the run node type and the run name prefix — type alone
 over-counts, because other agents write `session-log` nodes into this graph. Both constants live in
@@ -701,9 +711,21 @@ diagnostics:
 The sweep calls `Node` and `Recall` and nothing else. It never calls `WriteRun`, so it never adds to the
 pool §3.4 shows is already self-polluting.
 
-**Enforced by a grep falsifier, not by an interface.** A `ReadOnlyGraphPort` with one implementation is the
-"abstraction with one implementation" anti-pattern (#1136 §6). The falsifier: grep `internal/eval` and
-`cmd/eval` for `WriteRun`, `http.MethodPost`, `http.MethodDelete` — must return nothing.
+**Enforced by a test, with a grep as the weaker backstop.** A `ReadOnlyGraphPort` with one implementation is
+the "abstraction with one implementation" anti-pattern (#1136 §6), so the sweep consumes `loop.GraphPort`
+whole — and that has a consequence revision 1 of this section missed. **Every test double must therefore
+implement `WriteRun`**, so a grep for `WriteRun` across `internal/eval` and `cmd/eval` returns a hit in test
+sources **by construction, on a fully compliant implementation**. Revision 1's falsifier could never come
+back clean, and *a falsifier that fires on compliant code is worse than none* — the next reader runs it,
+finds the hit, concludes the property is violated, and learns to disregard the column.
+
+The falsifier that exists is a strict strengthening:
+
+1. **The fake's `WriteRun` calls `t.Fatal`.** A grep could only ever prove a *string* absent; the fatal
+   proves the *call never happens*, across every sweep test at once. Inserting one `WriteRun` into `sweepRow` was
+   observed red across the sweep tests.
+2. **The grep survives as a cheap backstop, scoped to non-test sources**: `WriteRun`, `http.MethodPost` and
+   `http.MethodDelete` must return nothing in production code.
 
 ### 9.2 It must not report a plausible score while measuring nothing
 
@@ -727,10 +749,26 @@ quoted:
 
 - **Behavioural:** the dispositions the sweep produces for a given `(input, subject)` are identical to those
   a real run's record carries. Pinned by a test (§13 G-14).
-- **Structural:** admission and the limit constants are not reimplemented. **A test cannot pin this** — a
-  correct reimplementation passes the behavioural test. Pinned by grep falsifiers: no byte-budget
-  accumulation loop and no numeric literal equal to any `loop` limit constant, anywhere in `internal/eval`
-  or `cmd/eval`.
+- **Structural:** admission and the limit constants are not reimplemented. **No single test pins this** — a
+  correct reimplementation passes the behavioural test. Pinned by **two mutations** (§13 G-14b): mutate
+  `loop.AssemblyByteBudget` and both the admitted counts and the reported limits must move; mutate
+  `Assemble`'s admission rule and `admittedCount` must move. Revision 1 asked for a grep instead, and §13
+  G-14b records why that grep can never come back clean.
+
+**One rule collision worth settling here rather than rediscovering it.** #10466 requires **literals on the
+expected side** of an assertion — *"if the expected value comes from a production constant the handler also
+consumes, mutating that constant moves both sides together and the assertion can never fail"*. G-14b requires
+the eval to reference `loop`'s constants rather than re-type their values. Applied to the same assertion those
+two rules contradict each other, and the resolution is that **each applies where its property lives**:
+
+| Package | Property it owns | Therefore |
+|---|---|---|
+| `internal/loop` | *the limit is 20 / 60,000* | pins it with **literals** — `internal/loop/turn_test.go` already does |
+| `internal/eval` | *I read the loop's constant rather than a copy of it* | references **the constant**; a literal here would invert the property into the exact drift G-14b forbids |
+
+There is no residual gap: the values are pinned one package over, at the layer that owns them. Discrimination
+in the eval's own assertion is re-established by mutation instead — swapping the two reported members is
+detectable because the constants hold different values. (Surfaced and confirmed by QA #10945 ruling E.)
 
 ### 9.4 It must not be a `go test`
 
@@ -849,7 +887,7 @@ name the cause beside it.
 | E3 | **Graph drift makes two sweeps incomparable** | stale/unresolved counts for the corpus's own referents; §11.2 states the residual honestly | a comparison reverses on re-run days later |
 | E4 | **Self-produced content dominates and the number says nothing about retrieval** | reported by name per sweep (§8.2), not hidden; §11.3 makes it M3's first decision | `selfProducedCandidates` exceeds ~25% of candidate slots, or shutouts exceed ~10% of rows |
 | E5 | **The harness reports plausible numbers while broken** | four independent guards, one running every sweep (§9.2) | the control stratum reads below 1.0 |
-| E6 | **The eval drifts from the loop** as M3 changes assembly | behavioural test plus two grep falsifiers (§9.3) | a `loop` constant changes and no eval test notices |
+| E6 | **The eval drifts from the loop** as M3 changes assembly | behavioural test (G-14) plus two mutations on the loop's own constants and admission rule (§9.3, G-14b) | a `loop` constant changes and no eval test notices |
 | E7 | **The anchor duplication (§3.3) distorts every number** | rejected at load where it would be a free hit (§6.2); reported per row where it is budget cost (§8.2) | `anchorWasCandidate` is true on a majority of rows and the admitted byte totals are correspondingly inflated |
 
 ---
@@ -863,6 +901,23 @@ Per **#1220 §5 addendum** (origin: my own #10904 §9, corrected after QA #10918
 
 Two rows below fail that question by construction and are therefore split into a behavioural test **plus**
 a structural grep falsifier, rather than being left as a name that reads like evidence.
+
+**Citation format: a name and a file, never a line number.** A test name is stable under edits and is
+**mechanically resolvable** — check 1 below diffs every name in this document against the tree in one
+command, and a file path is verifiable the same way. A line number is neither: nothing mechanical resolves
+it, and it rots on every edit made *above* the cited line, in a file this document does not track. Revision 4
+cited a guard one line off from where its function actually sits, and all four checks passed it, because they
+verify names and paths and cannot verify lines. (The instance is in §16; it is not repeated here, so that a
+residual-citation sweep over this section stays clean.)
+
+The rule that follows is the general one, and it is why the fix is the format rather than the digit:
+
+> **Do not mix a checked claim with an unchecked one in the same citation.** A row that is half-verified
+> reads as fully verified — the verified half lends its credibility to the half nobody can check. Either
+> every part of a citation is resolvable by the checks the document runs, or the unresolvable part comes out.
+
+Line numbers therefore appear nowhere in this table. Where one would have pointed — `internal/eval/corpus.go`'s
+`maxRequiredPerRow`, for instance — the row names the **identifier** instead, which greps.
 
 | # | Property | Guard |
 |---|---|---|
@@ -880,7 +935,7 @@ a structural grep falsifier, rather than being left as a name that reads like ev
 | G-12 | Every miss is named, never only counted. **Premise that makes it discriminate:** the fixture carries more misses than any plausible truncation limit, so an implementation that prints "the first five" fails it | `TestReportNamesAllTwelveMissesInAFixtureWithTwelveMisses` |
 | G-13 | The labelled and control strata are reported as separate rates and never summed | `TestReportKeepsTheLabelledAndControlRatesSeparate` |
 | G-14 | **Behavioural half of §9.3:** the sweep's dispositions equal what a real run's record carries for the same inputs | `TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidates` |
-| G-14b | **Structural half of §9.3** — a correct reimplementation would pass G-14, so this is not a test | **Grep falsifier:** no byte-budget accumulation loop, and no numeric literal equal to any `loop` limit constant, in `internal/eval` or `cmd/eval` |
+| G-14b | **Structural half of §9.3** — a correct reimplementation would pass G-14, so this is not a test. **Revision 1's grep cannot come back clean:** it forbade "any numeric literal equal to a `loop` limit", while §4.3 of this same document mandates a required-node cap of **3**, which equals `loop.MaxModelCalls`. `internal/eval/corpus.go` — `const maxRequiredPerRow = 3` — violates it on a fully compliant implementation | **Two mutations, not a grep.** (a) Mutate `loop.AssemblyByteBudget`: the sweep's admitted counts **and** its reported limits must follow — a re-typed value does not. (b) Mutate `Assemble`'s admission from stop-not-skip to skip: `admittedCount` must follow — a reimplementation does not. The grep survives only in its checkable form: **every limit the eval reports resolves through the exported constant**, no re-typed limit *value* |
 | G-15 | A corpus row demanding a node the query cannot surface is reported as a miss | `TestSweepReportsAMissForARequiredNodeTheQueryCannotSurface` |
 | G-16 | `shutout` is reported when candidates were retrieved and none admitted | `TestSweepReportsAShutoutWhenAnOversizedRankOneCandidateAdmitsNothing` |
 | G-17 | Whether the anchor also appeared as a candidate, and whether it was admitted, is recorded per row | `TestSweepRecordsThatTheAnchorAlsoAppearedAmongTheCandidates` |
@@ -888,12 +943,17 @@ a structural grep falsifier, rather than being left as a name that reads like ev
 | G-19 | A candidate written by the loop's own write path is counted as self-produced; a foreign `session-log` is not | `TestSweepCountsOnlyRunRecordsAsSelfProducedAndNotOtherSessionLogs` |
 | G-20 | The result carries the corpus hash and the loop's limits, so a result names what produced it | `TestResultHeaderCarriesTheCorpusHashAndTheLoopLimits` |
 | G-21 | Result rows are emitted in corpus order, so two results diff | `TestResultRowsAreEmittedInCorpusOrder` |
-| G-22 | The machine result goes to stdout and the human summary to stderr | `TestSweepWritesTheResultToStdoutAndTheSummaryToStderr` |
+| G-22a | **`Render`'s parameter contract** — the result goes to its machine writer, the summary to its human writer. **Premise:** this sits one call-layer *below* the stream binding and structurally cannot observe it — `go list -deps ./internal/eval` contains no `cmd/eval` | `TestRenderWritesTheResultToItsMachineWriterAndTheSummaryToItsHumanWriter` (`internal/eval/report_test.go`) |
+| G-22b | **The binding is not swapped.** `run()` passes stdout as machine and stderr as human, so `> result.json` captures the JSON and not the summary | `TestRunWritesTheMachineResultToItsFirstStreamAndTheHumanSummaryToItsSecond` (`cmd/eval/main_test.go`). **Falsifier:** swap the two arguments at the `Render` call. Observed surviving green before this test existed |
+| G-22c | **The log never contaminates the machine stream.** A logger bound to the machine writer interleaves text into the JSON on the happy path | `TestRunKeepsItsLogOutOfTheMachineStreamWhenAStepBeforeTheSweepFails` (`cmd/eval/main_test.go`). **Falsifier:** `slog.NewTextHandler(machine, nil)` |
+| G-22d | **A render failure exits non-zero**, rather than exiting 0 having emitted no measurement — §9.2's own failure mode at the output boundary | `TestRunExitsNonZeroWhenTheMeasurementCannotBeWritten` (`cmd/eval/main_test.go`). **Falsifier:** weaken the error check to `err != nil && false`. Observed surviving green before this test existed |
 | G-23 | The graph boot half loads with **no** model variable present | `TestGraphBootConfigLoadsWhenNoModelVariableIsSet` |
 | G-24 | The model boot half still errors when a required model variable is absent | `TestModelBootConfigErrorsWhenTheModelUrlIsAbsent` |
 | G-25a | A secret never appears in the **graph** half's boot error. **Premise that makes it discriminate:** after the split no single loader reads both a secret and the member that fails, so the pre-split scenario is vacuous; this is re-pinned on the co-located pair — `PROCESSOR_DIVOID_KEY` present, `PROCESSOR_DIVOID_URL` empty | `TestBootConfigErrorsNameTheVariableAndNeverItsValue`, graph scenario |
 | G-25b | A secret never appears in the **model** half's boot error — `PROCESSOR_MODEL_KEY` present, `PROCESSOR_MODEL_ID` empty. **Premise:** the split created a second secret in a second loader, so this half had no guard before it | `TestBootConfigErrorsNameTheVariableAndNeverItsValue`, model scenario |
-| G-26 | **§9.1 — the instrument never writes.** No test can pin an absence of calls that are absent | **Grep falsifier:** `WriteRun`, `http.MethodPost`, `http.MethodDelete` return nothing in `internal/eval` or `cmd/eval` |
+| G-26a | **§1 S1 — no model call is reachable.** Stronger than any grep, because it is a fact about the binary rather than about spellings | **Linker falsifier:** `go list -deps ./cmd/eval` does not contain `internal/openaicompat`; `go list -deps ./cmd/processor` does. Confirmed by QA #10945 ruling B |
+| G-26b | **§9.1 — the instrument never writes.** A grep cannot pin this: consuming `loop.GraphPort` forces every double to implement `WriteRun`, so a literal grep hits test sources on compliant code | `fakeGraph.WriteRun` calls `t.Fatal`, observed red by inserting one `WriteRun` into `sweepRow`. The grep remains as a backstop **scoped to non-test sources** |
+| G-27 | **`main()` binds the real streams in the right order.** `os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))` is one line no in-process test can reach — `main()` is not callable and the real file descriptors are not substitutable from inside the process | **Grep falsifier, admissible here:** exactly one hit for `os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))` in non-test source, and **zero** for the swapped spelling. See the admissibility note below |
 
 Applying the table's own falsifier to the rows most at risk: G-4's empty-corpus half fails against code that
 returns `0/0` and exits 0 — the test asserts an error, so it discriminates. G-9 fails against code that
@@ -901,6 +961,68 @@ never reads hashes — the fixture's hash differs, so it discriminates. G-12 fai
 reporter **only because** the fixture carries twelve misses; that premise is stated in the row rather than
 left for the reader to re-derive. G-14 and G-26 do **not** discriminate for the structural property they
 appear to claim, which is why each is split.
+
+**Revision 3 ran the table's falsifier over the falsifiers themselves and found two of a second, distinct
+kind** — revision 1's G-26 grep and revision 1's G-14b grep. Both are replaced above. The shape deserves its
+own statement, because #1220 §5 names the opposite defect:
+
+> A row that **cannot discriminate** is a wish. A row that **fires on a compliant implementation** is worse
+> than absent, because a reader who runs it, sees the hit and finds the code correct learns to disregard the
+> whole column. Both are unfalsifiable; only the second is actively misleading.
+
+Both instances were greps, and both failed the same way: **a string search can express a property about
+spellings, never about calls or values.** Where the property is *this call never happens*, the guard is a
+fatal in a double; where it is *this value is not re-typed*, the guard is a mutation on the constant. Neither
+is a pattern, and reaching for one is the tell. The second instance is the sharper warning of the two — it
+was **self-inflicted across sections**: §4.3 mandates a required-node cap of three and G-14b forbade the
+literal `3`, so the document required and prohibited the same constant without either section noticing.
+
+### Why a grep is admissible for G-27 and was not for G-14b or G-26b
+
+The distinction is not "greps are bad". It is **what kind of property a string search can express**:
+
+| Property | Expressible by a pattern? |
+|---|---|
+| *this call never happens* (G-26b) | **No** — a call site can be spelled many ways, and the interface forces the identifier into every double |
+| *this value is not re-typed* (G-14b) | **No** — the digit is legal elsewhere, and §4.3 mandates one instance of it |
+| *these identifiers appear in this one call expression* (G-27) | **Yes** — the property genuinely is about the spelling of a single line |
+
+G-27 also passes both later checks where the revoked two failed: exactly one hit on compliant code, zero on
+the swapped variant, and **the swap was observed surviving the full suite green**, so it is falsifiable and
+has been seen to fail. It is admissible and proportionate to one unreachable line.
+
+**Proportionate — with an expiry.** The repo already owns the better instrument: `cmd/processor` is observed
+from outside by a process-boundary harness (`process_linux_test.go`). **The grep is owed that harness the
+moment `main()` grows a second line.** Recorded as a trigger, because a proportionality argument that is not
+written down expires silently and leaves a pattern standing in place of a test.
+
+### The falsifier is four checks, not one — and two of them are commands
+
+Revision 3 ran the falsifier over the whole column, replaced two rows, canonised the rule above — and left
+**G-22 naming a test that did not exist**, on the very row the round's critical fail was about. The sweep
+asked *would this guard fire wrongly?* and never asked *is this guard there at all?*
+
+The falsifier is therefore four checks, not one, and **the two added here are mechanical**:
+
+| # | Check | How |
+|---|---|---|
+| 1 | **Does the named test exist, and in the file cited?** | `sed '/^## 16\./,$d'` this document, extract every backticked `Test*`, diff against `grep -rh '^func Test' --include='*_test.go'`; then resolve each name to its file and compare with the path in the row. **Both halves are one command each, and the first is the check that would have caught CF-A.** The `sed` is load-bearing, not tidiness: §16 quotes dead names as *history*, and a check run over the whole file fires on the revision log — which would make check 1 itself a falsifier that fires on a compliant document, the defect §13 revokes rows for. **A name before §16 is a claim; a name inside §16 is a record** |
+| 2 | **Can the guard's package observe the property?** | `go list -deps <guard package>` must contain the package holding the property. `internal/eval`'s closure contains no `cmd/eval` |
+| 3 | Would it pass against an implementation lacking the property? | revision 1's original |
+| 4 | Does it fire on a compliant implementation? | revision 3's addition |
+
+**Check 2 is the one that reframes the G-22 split.** The measurement said the old guard appeared in none of
+the red sets; the reason is stronger than that and is categorical. No mutation of `cmd/eval/main.go` *could*
+redden an `internal/eval` test, because `cmd/eval` is not in that package's dependency closure. The old guard
+sat in a package **structurally incapable of observing the property it was named for**. Widening it was never
+available — **the split was forced, not preferred**, and a row can be a wish for reasons of topology and not
+only of wording.
+
+**And the meta-lesson, which is the one that generalises.** A verification pass finds the defect shape it is
+looking for. Revision 3 was looking for guards that fire wrongly and swept past a guard that was not there,
+on a row it read three times. **A checklist of checks beats a sharper eye**, which is why the four above are
+written down as a procedure rather than left as judgement — and why two of them are commands rather than
+questions.
 
 ---
 
@@ -962,8 +1084,8 @@ Five steps. Each is independently reviewable and each ends with something observ
 | 1 | **Move the boot config** to `internal/boot` and split it into the three loaders of §7.3, over the existing helpers. `cmd/processor` calls all three, in the order address → graph → model. | **Every assertion of the pre-split config tests survives**, with the same environments and the same expected strings; plus G-23, G-24, G-25a, G-25b. Retargeting and renaming a test to its new call surface does not violate this; deleting or weakening an assertion does |
 | 2 | **Export `RunNodeType` and `RunNamePrefix`** from `internal/divoid`. | The write path uses the exported names; no literal survives |
 | 3 | **`internal/eval` — corpus and scorer.** The row type, the loader with §6.2's validation, and the pure scorer. **No graph access in this step at all.** | G-1..G-8 |
-| 4 | **`internal/eval` — reporter**, over hand-built results. | G-11, G-12, G-13, G-16..G-22 |
-| 5 | **`cmd/eval` — the sweep.** Boot, load, per-row `Node` → `Recall` → `Assemble` → score, stale/unresolved resolution, render. | G-9, G-10, G-14, G-15; both grep falsifiers (G-14b, G-26) return nothing |
+| 4 | **`internal/eval` — reporter**, over hand-built results. | G-11, G-12, G-13, G-16..G-21, **G-22a**. G-22b/c/d cannot land here — they are about `cmd/eval`'s stream binding, which this package's dependency closure cannot reach |
+| 5 | **`cmd/eval` — the sweep.** Boot, load, per-row `Node` → `Recall` → `Assemble` → score, stale/unresolved resolution, render. | G-9, G-10, G-14, G-15, **G-22b, G-22c, G-22d**; G-26a's linker check excludes `internal/openaicompat`; G-26b's fatal fake and G-14b's two mutations each observed **red**; G-27's grep returns one hit and zero on the swap |
 
 **On step 1's completion condition, corrected (gap 2 of #10928).** Revision 1 required *"the existing config
 tests pass unchanged in their new home"* — which the same row's own **split** makes unsatisfiable, because the
@@ -1019,7 +1141,77 @@ fact that the property had changed underneath it. The row was not false when wri
 it was implemented, and nothing in its wording could surface that. A named guard plus a stated premise would
 have.
 
----
+### Revision 3 — 2026-09-02, after steps 3–5 were implemented and reviewed (#10945)
+
+The implementation was found faithful to the design (48 of 51 independent mutations red on the named guard).
+Four corrections, and **three of the four are the same defect in different clothes**: a guard the document
+described in prose that the implementation could not satisfy as written.
+
+| Correction | Where it was wrong | Now |
+|---|---|---|
+| **§9.1's grep was unsatisfiable** | consuming `loop.GraphPort` forces every double to implement `WriteRun`, so the grep hits test sources on compliant code | §9.1 and **G-26b**: the fake's `WriteRun` calls `t.Fatal` — proving the *call* never happens, not that a *string* is absent. Grep demoted to a non-test-scoped backstop |
+| **§13 G-14b's grep was self-colliding** | it forbade any numeric literal equal to a `loop` limit, while §4.3 of this document mandates a required-node cap of **3** = `loop.MaxModelCalls` | **two mutations** on `AssemblyByteBudget` and on the admission rule. The grep survives only as *no re-typed limit value* |
+| **§1 S1's grep was weaker than a free fact** | it searched for `ModelPort` / `openaicompat` / POST, and carried a dangling `§13 F-1` reference to a row that never existed | **G-26a**: `go list -deps ./cmd/eval` excludes `internal/openaicompat`. The model adapter is not linked, so the call is unreachable rather than merely unwritten |
+| **§8.2's field table was missing `topSimilarity`** | it appeared only in §8.3's specimen — a seam between two sections of one document | a row with its reader named, and the delete-test sentence extended from five diagnostics to six |
+
+**The lesson revision 3 adds**, and it is a different one from revision 2's: revision 2 found a row that
+*described a mechanism*; revision 3 found rows that *named a check which fires on correct code*. The first
+teaches a reader nothing; the second teaches them to ignore the column. A grep was the instrument in all
+three, and the tell is uniform — **a string search expresses properties about spellings, and every one of
+these properties was about a call or a value.** Where the document reaches for a pattern to pin behaviour,
+it is reaching for the wrong instrument.
+
+Two further things this round settled and folded in rather than leaving in a PR body: **§8.2** now states why
+the result reports two limits instead of `loop.Limits`' five, and **§9.3** now settles the collision between
+#10466's *literals on the expected side* and G-14b's *reference the constant* by assigning each to the
+package that owns the property.
+
+### Revision 4 — 2026-09-02, after CF-1 was closed and the ledger re-audited (#10952)
+
+**The critical fail this round was in this document, not in the code**, and it was on a row revision 3 read
+three times while sweeping the column it sits in. Four corrections, all in §13 and §15.
+
+| Correction | Where it was wrong | Now |
+|---|---|---|
+| **§13 G-22 named a test that does not exist** | the test was renamed when CF-1 was closed; a repo-wide grep for `TestSweepWritesTheResultToStdoutAndTheSummaryToStderr` returned exactly one hit — the design line itself. Neither the renamed guard nor any of the four new `cmd/eval` guards appeared in the document | split into **G-22a** (`internal/eval`, `Render`'s parameter contract) and **G-22b/c/d** (`cmd/eval`: the binding is not swapped, the log does not contaminate the machine stream, a render failure exits non-zero), every name verified against the tree with its file and line |
+| **§15 step 4 assigned G-22 to `internal/eval`** | that package **structurally cannot hold it** — `go list -deps ./internal/eval` contains no `cmd/eval` | G-22a stays in step 4; b/c/d move to step 5, with the topological reason stated in both rows |
+| **The `main()` binding was not in the ledger at all** | it was covered by a grep living only in the implementer's report, so §13 — the ledger §9's thesis rests on — did not carry it | **G-27**, with the admissibility argument (this property *is* about the spelling of one line) and an expiry trigger: it is owed the process-boundary harness the moment `main()` grows a second line |
+| **§13's falsifier was one check where it needed four** | it asked *would this guard fire wrongly?* and never *is this guard there at all?* | four checks, **two of them mechanical commands** rather than judgement — existence, observability, discrimination, false-firing |
+
+**Why this one is worse than revisions 2 and 3, stated plainly.** Those found rows whose wording was weak.
+This found a row that pointed at nothing — the failure mode "name the guard, not the mechanism" exists to
+prevent, occurring inside the table that rule built. **An unverified test name is a mechanism description
+wearing a test's clothes**: it reads as evidence, it is checkable in principle, and nobody checked it. The
+name is the entire value of the row, and a name nobody resolved is worth less than the prose it replaced,
+because prose does not claim to be falsifiable.
+
+**And the transferable half:** a verification pass finds the defect shape it is hunting. Revision 3 hunted
+guards that fire wrongly and swept past a guard that was absent. The remedy is not more care — it is that
+checks 1 and 2 are now **commands you run**, not questions you remember to ask.
+
+### Revision 5 — 2026-09-02, after the ledger was approved with warnings (#10961)
+
+**No critical fail.** One warning, and the fix taken is the **format** rather than the instance.
+
+| Correction | Where it was wrong | Now |
+|---|---|---|
+| **§13 cited `report_test.go:245` for a function at `:246`** | the same class as revision 4's CF-A at a fraction of the severity, and with the property that makes the class dangerous: **check 1 verifies names and paths, never lines**, so nothing mechanical would ever catch it and it rots on every edit above the cited line | **line numbers dropped from every row.** §13 states why: a name and a path are mechanically resolvable, a line is not, and mixing a checked claim with an unchecked one in one citation makes the unchecked half read as verified |
+| **Check 1 verified names but not paths** | this round verified all five cited paths by hand and found them correct — but the *procedure* did not include it, so the next round would not have | check 1 now resolves each name to its file and compares it against the row |
+| **§13 and §9.1 cited mutation-matrix indices (M41, M44/M45, M46) as evidence** | the matrix is a point-in-time measurement of one round and exists in neither the graph nor the repo, so a reader cannot resolve the citation | replaced with the **mutation each row owns, described**: *insert one `WriteRun` into `sweepRow`*, *swap the two arguments at the `Render` call*, *weaken the error check to `err != nil && false`*. Reproducible by anyone, forever |
+
+**All five cited file paths were verified correct** — only the line number was wrong. So the format change is
+preventive rather than a second repair.
+
+**The lesson, and it is the same one revision 4 reached from the other side.** Revision 4 made two checks
+mechanical because judgement had missed a defect. Revision 5 removes a claim **because no check can reach
+it** — the complement of the same rule. A document that runs checks over itself must not carry assertions
+outside their range: an unverifiable claim sitting beside verified ones does not merely fail to help, it
+**borrows credibility from its neighbours**. Drop it, or bring it in range — here, by naming the identifier
+instead of the line.
+
+The mutation-index correction is the same shape a third time: **a citation is only worth what a reader can
+resolve.** `M44` resolves against a document that was never durable; *"swap the two arguments"* resolves
+against the code.
 
 ---
 
