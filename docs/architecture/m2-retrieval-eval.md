@@ -557,16 +557,50 @@ is all the harness needs. **No change to `internal/loop`.**
 module — one read site is the invariant, and it is checkable with one grep."* `cmd/eval` needs
 `PROCESSOR_DIVOID_URL` and `PROCESSOR_DIVOID_KEY`, so it cannot do its own lookups.
 
-`cmd/processor/config.go` moves to `internal/boot`, split into two loaders over the same `lookupFunc` and
-the same `requireEnv` / `optionalEnv` helpers: a **graph** loader returning the two graph members, and a
-**model** loader returning the three model members. `cmd/processor` calls both; `cmd/eval` calls only the
-first.
+`cmd/processor/config.go` moves to `internal/boot` and splits over the same `lookupFunc` and the same
+`requireEnv` / `optionalEnv` helpers. **The count of loaders is three, not two**, and the rule that fixes the
+count matters more than the count:
+
+> **A loader returns exactly what one caller dereferences. The number of loaders is the number of
+> independently-dereferenced groups — not a fixed two. A new member joins the group whose caller reads it, or
+> starts a group of its own.**
+
+| Loader | Returns | Called by |
+|---|---|---|
+| `LoadHTTPAddr` | the listen address — a bare string with a default, not a half | `cmd/processor` |
+| `LoadGraph` | `GraphConfig{URL, Key}` | `cmd/processor`, `cmd/eval` |
+| `LoadModel` | `ModelConfig{URL, ID, Key}` | `cmd/processor` |
+
+**Ruling on the sixth member (gap 1 of #10928).** Revision 1 of this section said *"a graph loader returning
+the two graph members, and a model loader returning the three model members"*. Two plus three is five and the
+contract has six — `PROCESSOR_HTTP_ADDR` is neither. **The third one-member loader is right, and this section
+was under-counted rather than mis-shaped.** The implementer's reason — folding it into the graph half hands
+`cmd/eval` an address it will never bind — points the right way but is one notch too strong: the address is
+the *optional-with-a-default* class (#10466), so the eval would not have **failed** without it, merely carried
+a field it ignores. A rule stated more strongly than it holds gets applied where it does not, so the
+load-bearing reason is recorded as **naming and ownership**: a `GraphConfig` that also carries the server's
+listen address is not a graph config, which #6836 forbids, and the next reader of `cmd/eval` would have to
+work out why a populated field goes unused. The two config **types** stay exactly as designed.
+
+**Call order in `cmd/processor` is a contract, not a style choice: address → graph → model.** The
+process-boundary harness starts a child with only `PROCESSOR_HTTP_ADDR=` set and asserts the boot error names
+**that** variable (`TestConfigurationError`, `cmd/processor/process_linux_test.go`). Load the graph half first
+and the child dies naming `PROCESSOR_DIVOID_URL`, and the harness then fails for a reason unrelated to what it
+tests. Verified red by mutation in the container.
+
+**The process-boundary harness spells its own environment constants rather than importing the moved ones**,
+and that is the correct direction for an observer of a process contract: it should state the contract it
+asserts, so renaming an internal identifier breaks it loudly instead of letting it follow silently. A later
+refactor that "helpfully" re-imports them deletes the guard without touching a test.
 
 | Alternative | Rejected because |
 |---|---|
 | `cmd/eval` calls the existing whole-config loader | it would then **require `PROCESSOR_MODEL_URL` and `PROCESSOR_MODEL_ID` to run a sweep that never dereferences either.** That is exactly the dishonesty #10424 round 7 corrected about boot inputs, and it blocks the scenario that makes M2 valuable — sweeping retrieval when no model is available, which was M1's actual state for most of a day |
 | `cmd/eval` reads the two variables itself | breaks the one-read-site invariant #10466 names as checkable by grep, to avoid a file move |
 | Pass the URL and key as flags | a key on a command line is visible in process listings — worse than the error-message leak #10466 §5 already forbids |
+| `PROCESSOR_HTTP_ADDR` folded into `GraphConfig` | the type stops being what its name says (#6836), and `cmd/eval` carries a populated field it never reads |
+| `PROCESSOR_HTTP_ADDR` folded into `ModelConfig` | strictly worse — a model-free sweep is the exact case this split exists to enable |
+| A one-field `ServerConfig` type instead of a bare string | a struct wrapping a single string is an indirection, not a boundary (#1136 §4 can-it-be-merged) |
 
 The split also happens to be the seam #10424 needs when configuration eventually comes from the graph. That
 is a **consequence, not a justification** — the justification is the invariant above.
@@ -717,6 +751,12 @@ line per package; test intent carried by the test name. And the row that is not 
 messages. A design-section reference (`§6.2`) in a failure message is permitted and is the right way to make
 a validation error traceable back to this document.
 
+**A move is not comment-neutral.** Moving a file re-adds every one of its lines into diff scope, so a file
+predating the #10861 ruling delivers its violations as **new** ones — *"it was already like that"* stops being
+true the moment the lines are in your diff. Drop them in the move rather than carrying them across. Found in
+practice when the boot config's test file moved (#10928): three fencing banners and two multi-line doc
+comments.
+
 ---
 
 ## 10. Cost
@@ -851,7 +891,8 @@ a structural grep falsifier, rather than being left as a name that reads like ev
 | G-22 | The machine result goes to stdout and the human summary to stderr | `TestSweepWritesTheResultToStdoutAndTheSummaryToStderr` |
 | G-23 | The graph boot half loads with **no** model variable present | `TestGraphBootConfigLoadsWhenNoModelVariableIsSet` |
 | G-24 | The model boot half still errors when a required model variable is absent | `TestModelBootConfigErrorsWhenTheModelUrlIsAbsent` |
-| G-25 | A secret never appears in a boot error message (the standing test survives the move) | `TestBootConfigErrorsNameTheVariableAndNeverItsValue` |
+| G-25a | A secret never appears in the **graph** half's boot error. **Premise that makes it discriminate:** after the split no single loader reads both a secret and the member that fails, so the pre-split scenario is vacuous; this is re-pinned on the co-located pair — `PROCESSOR_DIVOID_KEY` present, `PROCESSOR_DIVOID_URL` empty | `TestBootConfigErrorsNameTheVariableAndNeverItsValue`, graph scenario |
+| G-25b | A secret never appears in the **model** half's boot error — `PROCESSOR_MODEL_KEY` present, `PROCESSOR_MODEL_ID` empty. **Premise:** the split created a second secret in a second loader, so this half had no guard before it | `TestBootConfigErrorsNameTheVariableAndNeverItsValue`, model scenario |
 | G-26 | **§9.1 — the instrument never writes.** No test can pin an absence of calls that are absent | **Grep falsifier:** `WriteRun`, `http.MethodPost`, `http.MethodDelete` return nothing in `internal/eval` or `cmd/eval` |
 
 Applying the table's own falsifier to the rows most at risk: G-4's empty-corpus half fails against code that
@@ -918,11 +959,27 @@ Five steps. Each is independently reviewable and each ends with something observ
 
 | # | Step | Ends when |
 |---|---|---|
-| 1 | **Move the boot config** to `internal/boot`, split into a graph loader and a model loader over the existing helpers. `cmd/processor` calls both. | The existing config tests pass unchanged in their new home, plus G-23, G-24, G-25 |
+| 1 | **Move the boot config** to `internal/boot` and split it into the three loaders of §7.3, over the existing helpers. `cmd/processor` calls all three, in the order address → graph → model. | **Every assertion of the pre-split config tests survives**, with the same environments and the same expected strings; plus G-23, G-24, G-25a, G-25b. Retargeting and renaming a test to its new call surface does not violate this; deleting or weakening an assertion does |
 | 2 | **Export `RunNodeType` and `RunNamePrefix`** from `internal/divoid`. | The write path uses the exported names; no literal survives |
 | 3 | **`internal/eval` — corpus and scorer.** The row type, the loader with §6.2's validation, and the pure scorer. **No graph access in this step at all.** | G-1..G-8 |
 | 4 | **`internal/eval` — reporter**, over hand-built results. | G-11, G-12, G-13, G-16..G-22 |
 | 5 | **`cmd/eval` — the sweep.** Boot, load, per-row `Node` → `Recall` → `Assemble` → score, stale/unresolved resolution, render. | G-9, G-10, G-14, G-15; both grep falsifiers (G-14b, G-26) return nothing |
+
+**On step 1's completion condition, corrected (gap 2 of #10928).** Revision 1 required *"the existing config
+tests pass unchanged in their new home"* — which the same row's own **split** makes unsatisfiable, because the
+split deletes the function every one of those tests calls. Both halves could not hold. Proceeding and flagging
+it was the right call; stopping would have made the step unimplementable rather than surfacing a behaviour
+change. The general shape is worth more than the fix:
+
+> **A completion condition must be satisfiable by the change it gates.** *"The existing tests pass unchanged"*
+> is a condition on a **move** — meaningful only while the change is behaviour-preserving at the call surface.
+> A **split** destroys that surface by construction. Where a step changes the call surface, the condition names
+> the property that survives it — every assertion, the same environments, the same expected strings — never the
+> artifact that cannot.
+
+This is #1220 §5's coverage rule one level up: a condition that reads like evidence versus one that names
+something falsifiable. The clause **"with the same environments and the same expected strings"** is what makes
+the replacement checkable — a reviewer diffs the assertion bodies, and a rename is visibly not a weakening.
 
 **Then, and not as part of the implementation PR: author the corpus.** Thirty labelled rows and about four
 control rows, by a human, against §4.3's definition. That is the milestone's real work and it cannot be
@@ -944,6 +1001,25 @@ reader does not have to diff:
 | **#10532 §9.4** — *"milestone 2 scores `input → the node ids that must be in scope`"* | It scores it at **two boundaries**, not one, and the *"recall@k is uncomputable without k"* argument for the `limits` field is the right argument for the wrong reason: the byte budget makes `k` **data-dependent**, so `limits` is necessary but not sufficient — `admittedCount` per run is what makes the denominator legible. `limits` already carries what is needed; no record change follows |
 | **#10904** — *"the stored node body ... reader: milestone 2's corpus"* | Precise correction: M2's **corpus** is authored in the repo; the stored node bodies are M2's **subject of study** and its regression material, not its corpus. The record-fate design's field decisions are all still right; the label on the reader was one word off |
 | **#10822 R13** — *"do not build it before the measurement"* | The measurement has been taken (§3.4) and the trigger has fired, harder than R13 anticipated: the record is larger than the budget, so it produces a **shutout** rather than merely crowding. The instruction stands — M2 still does not build the fix — and §11.3 explains why measuring it first is the point |
+
+### Revision 2 — 2026-09-02, after steps 1–2 were implemented (#10928)
+
+Three corrections to **this** document: two raised by the implementer, the third falling out of the second.
+Recorded rather than quietly patched, because a design that is silently corrected teaches nobody.
+
+| Correction | Where it was wrong | Now |
+|---|---|---|
+| **§7.3 split five of six boot members** | *"a graph loader … and a model loader"*; `PROCESSOR_HTTP_ADDR` is neither and the section did not say where it goes | §7.3 states the **rule** that fixes the count — a loader returns what one caller dereferences — names three loaders, and records the call-order contract the process-boundary harness depends on |
+| **§15 step 1's completion condition was not jointly satisfiable** | it asked for a **split** and for *"the existing config tests pass unchanged"*; the split deletes the function those tests call | replaced with the property that survives a split, plus the general shape: a completion condition must be satisfiable by the change it gates |
+| **§13 G-25 claimed the secrets guard *"survives the move"*** | it did not. After the split no single loader reads both a secret and the member that fails, so the pre-split scenario went **vacuous** and was re-pinned on co-located pairs | split into **G-25a / G-25b**, one per half, each carrying the premise that makes it discriminate. Coverage **widened** — the split created a second secret in a second loader, and the guard now covers both halves where it covered one |
+
+The third row is the one worth keeping. It is **#1220 §5's own lesson landing on the document that cites it**:
+a row describing a *mechanism* (*"survives the move"*) rather than naming a falsifiable property concealed the
+fact that the property had changed underneath it. The row was not false when written and was false by the time
+it was implemented, and nothing in its wording could surface that. A named guard plus a stated premise would
+have.
+
+---
 
 ---
 
