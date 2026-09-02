@@ -57,9 +57,9 @@ Content-Type: application/json
 {"status":"ok"}
 ```
 
-**Shutdown on `Ctrl+C`:** in an interactive terminal, pressing `Ctrl+C` drives the same `os.Interrupt`
-path as the automated console-interrupt probe described below, which measured the process logging
-`shutdown started` then `shutdown complete` and exiting `0` (see "What is and isn't verified here").
+**Shutdown on `Ctrl+C`:** in an interactive terminal, pressing `Ctrl+C` sends `os.Interrupt`, the same
+signal exercised by the automated test described under "What is and isn't verified here" below, which
+measured the process logging `shutdown started` then `shutdown complete` and exiting `0`.
 
 ### Configuration
 
@@ -139,18 +139,39 @@ flags it.
 - **Start, serve, shut down cleanly:** proven by an automated test over a real socket
   (`internal/server/server_test.go`), and confirmed manually on this machine (build, run, `curl`
   `/health`, `200` returned).
-- **Signal-triggered shutdown (`Ctrl+C`):** covered by no automated test in M0 — not because it can't
-  be, but because of where it would have to run. A console-interrupt test was built and measured to
-  work on Windows: it drives a real `CTRL_BREAK_EVENT` into the process, ran 5/5 green, and kills the
-  one mutant nothing else in the suite kills — the deletion of the `signal.NotifyContext` wiring. It is
-  declined here because running it pops a console window on whoever's interactive desktop the tests run
-  on, not because it is infeasible (design `docs/architecture/m0-service-skeleton.md` §9.5, §10.7). The
-  containerised replacement — run where that side effect doesn't land on a person's desktop — is DiVoid
-  **#10439**. The build/run/`curl` check above (under "Start, serve, shut down cleanly") is human
-  corroboration of the HTTP path on this dev platform, not "the only reliable check" — and it says
-  nothing about this signal path. The signal path carries no human corroboration here, and needs none:
-  the out-of-tree C16 probe measured the interrupt-driven shutdown directly, which is what grounds the
-  outcome described above.
+- **Signal-triggered shutdown (`Ctrl+C` / `SIGTERM`) is covered**, by an automated test, for both
+  `os.Interrupt` and `SIGTERM`, which runs in a Linux container
+  (`cmd/processor/process_linux_test.go`). It builds the real binary and launches two independent child
+  processes in parallel, one signal per process (`os.Interrupt` and `SIGTERM` respectively), and asserts
+  exit code `0` plus the ordered `listening` / `shutdown started` / `shutdown complete` records on
+  stderr for each.
+- **The exit codes for the configuration-error and bind-error branches are covered by the same file**:
+  a set-but-empty `PROCESSOR_HTTP_ADDR` exits `1` naming the variable, and a second instance pointed at
+  an already-bound address exits `1` naming that address.
+- **On a non-Linux host, the default `go test ./...` does not run these** — the file is named
+  `process_linux_test.go`, so Go's toolchain excludes it at the `GOOS` level, not behind a runtime skip.
+  On a Linux host the default run *does* include it. Either way, run the container command below for the
+  full, host-independent certification.
+- **The Linux gate:**
+
+  ```sh
+  # PowerShell
+  $env:DOCKER_HOST=''
+  docker run --rm -v "${PWD}:/src:ro" -w /src golang:1.27 sh -c 'go vet ./... && go test -count=1 ./...'
+
+  # Git Bash
+  MSYS_NO_PATHCONV=1 DOCKER_HOST= docker run --rm -v "$PWD":/src:ro -w /src golang:1.27 \
+    sh -c 'go vet ./... && go test -count=1 ./...'
+  ```
+
+  Expects one `ok` line per package — **four** as of unit A, which adds `internal/divoid` and
+  `internal/loop` — no `?`, exit `0`. One 1.32 GB `golang:1.27` image pull, once.
+- **What is still not covered:** `run()`'s serve-error exit branch and a second interrupt arriving
+  during the shutdown drain — both are structurally unreachable from outside the process without adding
+  a slow route or a delay knob to shipping code, which is declined (design
+  `docs/architecture/process-boundary-test-harness.md` §2.4) — and the drain-failure axis (`server.go`'s
+  `shutdownGrace` / `ReadHeaderTimeout` / shutdown-error propagation), which is a different instrument
+  tracked separately as DiVoid **#10489**.
 - **Mechanical context assembly (`POST /runs`, unit A):** `Assemble` is byte-pinned by an offline golden
   test (fixed candidate rows in, one exact block out), and separately: admission stops rather than
   back-fills, every candidate is hashed and sized including the cut ones, and the render order is by
