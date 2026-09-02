@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -21,6 +22,7 @@ type fakeGraph struct {
 	node      Anchor
 	nodeFound bool
 	nodeErr   error
+	onNode    func()
 
 	candidates []Candidate
 	recallErr  error
@@ -32,10 +34,10 @@ type fakeGraph struct {
 	recallQuery string
 	recallLimit int
 
-	writeRunCalled bool
-	writeRunRecord Record
-	writeRunNodeID int64
-	writeRunErr    error
+	writeRunCalled  bool
+	writeRunRecord  Record
+	writeRunCtx     context.Context
+	writeRunReceipt WriteReceipt
 }
 
 type recallCall struct {
@@ -49,6 +51,9 @@ type recallResponse struct {
 }
 
 func (f *fakeGraph) Node(_ context.Context, _ int64) (Anchor, bool, error) {
+	if f.onNode != nil {
+		f.onNode()
+	}
 	return f.node, f.nodeFound, f.nodeErr
 }
 
@@ -65,21 +70,27 @@ func (f *fakeGraph) Recall(_ context.Context, query string, limit int) ([]Candid
 	return f.candidates, f.recallErr
 }
 
-func (f *fakeGraph) WriteRun(_ context.Context, record Record) (int64, error) {
+func (f *fakeGraph) WriteRun(ctx context.Context, record Record) WriteReceipt {
 	f.writeRunCalled = true
 	f.writeRunRecord = record
-	return f.writeRunNodeID, f.writeRunErr
+	f.writeRunCtx = ctx
+	return f.writeRunReceipt
 }
 
 type fakeModel struct {
 	results []JudgeResult
 	err     error
 
+	beforeReturn func()
+
 	calls []JudgeInput
 }
 
 func (f *fakeModel) Judge(_ context.Context, in JudgeInput) (JudgeResult, error) {
 	f.calls = append(f.calls, in)
+	if f.beforeReturn != nil {
+		f.beforeReturn()
+	}
 	if f.err != nil {
 		return JudgeResult{}, f.err
 	}
@@ -103,7 +114,7 @@ func TestTurnRunReturnsSubjectNotFound(t *testing.T) {
 	graph := &fakeGraph{nodeFound: false}
 	turn := newTurnWithGraph(graph)
 
-	_, err := turn.Run(context.Background(), "hello", 42)
+	_, _, err := turn.Run(context.Background(), "hello", 42)
 	if !errors.Is(err, ErrSubjectNotFound) {
 		t.Fatalf("Run() err = %v, want ErrSubjectNotFound", err)
 	}
@@ -115,7 +126,7 @@ func TestTurnRunWrapsNodeTransportFailureAsGraphUnavailable(t *testing.T) {
 	graph := &fakeGraph{nodeErr: errors.New("literal: connection refused")}
 	turn := newTurnWithGraph(graph)
 
-	_, err := turn.Run(context.Background(), "hello", 42)
+	_, _, err := turn.Run(context.Background(), "hello", 42)
 	if !errors.Is(err, ErrGraphUnavailable) {
 		t.Fatalf("Run() err = %v, want ErrGraphUnavailable", err)
 	}
@@ -129,7 +140,7 @@ func TestTurnRunDoesNotRecallWhenTheAnchorIsNotFound(t *testing.T) {
 	graph := &fakeGraph{nodeFound: false}
 	turn := newTurnWithGraph(graph)
 
-	if _, err := turn.Run(context.Background(), "hello", 42); err == nil {
+	if _, _, err := turn.Run(context.Background(), "hello", 42); err == nil {
 		t.Fatal("Run() returned nil error for a missing subject, want ErrSubjectNotFound")
 	}
 	if graph.recallQuery != "" || graph.recallLimit != 0 {
@@ -147,7 +158,7 @@ func TestTurnRunWrapsRecallFailureAsGraphUnavailable(t *testing.T) {
 	}
 	turn := newTurnWithGraph(graph)
 
-	_, err := turn.Run(context.Background(), "hello", 42)
+	_, _, err := turn.Run(context.Background(), "hello", 42)
 	if !errors.Is(err, ErrGraphUnavailable) {
 		t.Fatalf("Run() err = %v, want ErrGraphUnavailable", err)
 	}
@@ -164,7 +175,7 @@ func TestTurnRunDoesNotCallModelWhenRecallFails(t *testing.T) {
 	}
 	turn := NewTurn(graph, model, "system text", "test-model", testLogger())
 
-	if _, err := turn.Run(context.Background(), "hello", 42); !errors.Is(err, ErrGraphUnavailable) {
+	if _, _, err := turn.Run(context.Background(), "hello", 42); !errors.Is(err, ErrGraphUnavailable) {
 		t.Fatalf("Run() err = %v, want ErrGraphUnavailable", err)
 	}
 	if len(model.calls) != 0 {
@@ -187,7 +198,7 @@ func TestTurnRunPassesInputVerbatimAsTheRecallQuery(t *testing.T) {
 	// fixture that already satisfies those normalizations can't fail when
 	// Run silently applies one, so this pins that none of them happen.
 	const input = "  Why DOES   the Assembler ignore SCOPE?  "
-	record, err := turn.Run(context.Background(), input, 42)
+	record, _, err := turn.Run(context.Background(), input, 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -208,7 +219,7 @@ func TestTurnRunUsesTheCandidateLimitConstant(t *testing.T) {
 	graph := &fakeGraph{node: Anchor{ID: 42}, nodeFound: true}
 	turn := newTurnWithGraph(graph)
 
-	if _, err := turn.Run(context.Background(), "q", 42); err != nil {
+	if _, _, err := turn.Run(context.Background(), "q", 42); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if graph.recallLimit != CandidateLimit {
@@ -225,7 +236,7 @@ func TestTurnRunSummarizesTheFetchedAnchorIntoTheRecord(t *testing.T) {
 	}
 	turn := newTurnWithGraph(graph)
 
-	record, err := turn.Run(context.Background(), "q", 42)
+	record, _, err := turn.Run(context.Background(), "q", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -248,11 +259,11 @@ func TestTurnRunTwoTurnsDoNotShareState(t *testing.T) {
 	turnA := newTurnWithGraph(&fakeGraph{node: Anchor{ID: 1, Content: "a"}, nodeFound: true})
 	turnB := newTurnWithGraph(&fakeGraph{node: Anchor{ID: 2, Content: "b"}, nodeFound: true})
 
-	recA, err := turnA.Run(context.Background(), "qa", 1)
+	recA, _, err := turnA.Run(context.Background(), "qa", 1)
 	if err != nil {
 		t.Fatalf("turnA.Run: %v", err)
 	}
-	recB, err := turnB.Run(context.Background(), "qb", 2)
+	recB, _, err := turnB.Run(context.Background(), "qb", 2)
 	if err != nil {
 		t.Fatalf("turnB.Run: %v", err)
 	}
@@ -273,7 +284,7 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, "the system text", "test-model-id", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -327,7 +338,7 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -373,7 +384,7 @@ func TestTurnRunRecordsAMalformedToolRequestAsAnErrorFlaggedRoundAndContinues(t 
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -414,7 +425,7 @@ func TestTurnRunRecordsASupplementaryRecallTransportFailureAsAnErrorFlaggedRound
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -437,7 +448,7 @@ func TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall(t *testing.
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -485,7 +496,7 @@ func TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch(t *test
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -521,7 +532,7 @@ func TestTurnRunDoesNotLeakTheGraphErrorDetailIntoTheSupplementaryRecallRound(t 
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -553,7 +564,7 @@ func TestTurnRunLogsTheDetailedRecallErrorWhileTheRecordStaysGeneric(t *testing.
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", logger)
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -573,7 +584,7 @@ func TestTurnRunPreservesBothTheMappedAndRawStopReason(t *testing.T) {
 	model := &fakeModel{results: []JudgeResult{{Reason: Unrecognised, RawReason: "some-vendor-string"}}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -592,7 +603,7 @@ func TestTurnRunLeavesUsageAbsentWhenTheModelReportedNone(t *testing.T) {
 	model := &fakeModel{results: []JudgeResult{{Reason: Answered, RawReason: "stop", Usage: nil}}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -612,7 +623,7 @@ func TestTurnRunCarriesUsageWhenTheModelReportedIt(t *testing.T) {
 	model := &fakeModel{results: []JudgeResult{{Reason: Answered, RawReason: "stop", Usage: usage}}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -636,7 +647,7 @@ func TestTurnRunUsageArrayLengthAlwaysEqualsModelCalls(t *testing.T) {
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -658,7 +669,7 @@ func TestTurnRunWrapsModelFailureAsModelUnavailableAndWritesNothing(t *testing.T
 	model := &fakeModel{err: errors.New("literal: connection reset")}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	_, err := turn.Run(context.Background(), "hello", 42)
+	_, _, err := turn.Run(context.Background(), "hello", 42)
 	if !errors.Is(err, ErrModelUnavailable) {
 		t.Fatalf("Run() err = %v, want ErrModelUnavailable", err)
 	}
@@ -667,133 +678,134 @@ func TestTurnRunWrapsModelFailureAsModelUnavailableAndWritesNothing(t *testing.T
 	}
 }
 
-func TestTurnRunWritesTheRecordAndReportsTheNodeID(t *testing.T) {
+func TestTurnRunWritesTheRecordAndReportsTheReceiptTheAdapterReturned(t *testing.T) {
 	t.Parallel()
 
 	graph := baseGraph()
-	graph.writeRunNodeID = 999
+	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: 999}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	_, receipt, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if !graph.writeRunCalled {
 		t.Fatal("WriteRun was not called")
 	}
-	if record.Written.NodeID != 999 || record.Written.Error != "" {
-		t.Fatalf("record.Written = %+v, want {NodeID:999}", record.Written)
+	if receipt != (WriteReceipt{State: Stored, NodeID: 999}) {
+		t.Fatalf("receipt = %+v, want {stored 999} verbatim from the adapter", receipt)
 	}
 	if graph.writeRunRecord.Answer != "ok" || graph.writeRunRecord.Subject != 42 {
 		t.Fatalf("the record handed to WriteRun = %+v, want the completed record", graph.writeRunRecord)
 	}
 }
 
-func TestTurnRunReturns200EquivalentWhenWriteBackFailsWithTheFailureNamed(t *testing.T) {
+func TestTurnRunReportsEachWriteStateVerbatimAndInterpretsNone(t *testing.T) {
 	t.Parallel()
 
-	graph := baseGraph()
-	graph.writeRunErr = errors.New("literal: graph write timed out")
-	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, "system", "test-model", testLogger())
+	cases := []WriteReceipt{
+		{State: Stored, NodeID: 999},
+		{State: Unlinked, NodeID: 999},
+		{State: NotStored},
+	}
 
-	record, err := turn.Run(context.Background(), "hello", 42)
-	if err != nil {
-		t.Fatalf("Run() returned an error for a write-back failure, want nil error and the failure named in the record: %v", err)
-	}
-	if record.Written.NodeID != 0 {
-		t.Fatalf("record.Written.NodeID = %d, want 0 on a write failure", record.Written.NodeID)
-	}
-	if record.Written.Error == "" {
-		t.Fatal("record.Written.Error is empty, want the write failure named")
+	for _, want := range cases {
+		t.Run(string(want.State), func(t *testing.T) {
+			t.Parallel()
+
+			graph := baseGraph()
+			graph.writeRunReceipt = want
+			model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+			turn := NewTurn(graph, model, "system", "test-model", testLogger())
+
+			_, receipt, err := turn.Run(context.Background(), "hello", 42)
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if receipt != want {
+				t.Fatalf("receipt = %+v, want %+v", receipt, want)
+			}
+		})
 	}
 }
 
-func TestTurnRunWriteBackFailureNamesTheFailureWithTheGenericSentence(t *testing.T) {
+func TestTurnRunRecordSerialisesWithNoKeyAboutItsOwnFiling(t *testing.T) {
 	t.Parallel()
 
 	graph := baseGraph()
-	graph.writeRunErr = errors.New("literal: graph write timed out")
+	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: 4242}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	const wantGenericWriteError = "write-back failed"
-	if record.Written.Error != wantGenericWriteError {
-		t.Fatalf("record.Written.Error = %q, want the generic sentence %q", record.Written.Error, wantGenericWriteError)
-	}
-}
 
-func TestTurnRunWriteBackFailureDoesNotPutTheGraphsRequestURLInTheRecord(t *testing.T) {
-	t.Parallel()
-
-	graph := baseGraph()
-	graph.writeRunErr = errors.New(`divoid: request failed: Post "http://graph.internal:9099/api/nodes": dial tcp 10.4.4.4:9099: connect: connection refused`)
-	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, "system", "test-model", testLogger())
-
-	record, err := turn.Run(context.Background(), "hello", 42)
+	body, err := json.Marshal(record)
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf("marshal record: %v", err)
 	}
-	for _, secret := range []string{"graph.internal", "9099", "10.4.4.4", "/api/nodes"} {
-		if strings.Contains(record.Written.Error, secret) {
-			t.Fatalf("record.Written.Error = %q, want no internal address disclosed (found %q)", record.Written.Error, secret)
+	for _, absent := range []string{`"written"`, `"state"`, `"nodeId"`, "4242"} {
+		if strings.Contains(string(body), absent) {
+			t.Fatalf("record JSON contains %q, want a record that says nothing about its own filing; body=%s", absent, body)
 		}
 	}
-	if record.Written.Error == "" {
-		t.Fatal("record.Written.Error is empty, want the failure still named")
+	if !strings.Contains(string(body), `"answer":"ok"`) {
+		t.Fatalf("record JSON = %s, want it to still carry the turn's own keys", body)
 	}
 }
 
-func TestTurnRunWriteBackFailureDoesNotPutTheUpstreamResponseBodyInTheRecord(t *testing.T) {
+func TestTurnRunFilesTheRecordAfterTheRequestContextIsCancelled(t *testing.T) {
 	t.Parallel()
 
-	const upstreamBody = "UPSTREAM-BODY-MARKER unauthenticated caller 7f3a; internal detail nobody outside should read"
+	ctx, cancel := context.WithCancel(context.Background())
+
 	graph := baseGraph()
-	graph.writeRunErr = errors.New("divoid: unexpected status 500: " + upstreamBody + strings.Repeat("x", 4_000))
+	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: 999}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	model.beforeReturn = cancel
+	turn := NewTurn(graph, model, "system", "test-model", testLogger())
+
+	_, receipt, err := turn.Run(ctx, "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !graph.writeRunCalled {
+		t.Fatal("WriteRun was not called after the caller went away, want the record filed anyway")
+	}
+	if graph.writeRunCtx.Err() != nil {
+		t.Fatalf("WriteRun was handed a context reporting %v, want one detached from the request's cancellation", graph.writeRunCtx.Err())
+	}
+	if receipt.State != Stored {
+		t.Fatalf("receipt.State = %q, want %q", receipt.State, Stored)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("the request context was never cancelled, so this run never exercised the detachment")
+	}
+}
+
+func TestTurnRunDoesNotFailTheRunWhenNoNodeHoldsTheRecord(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.writeRunReceipt = WriteReceipt{State: NotStored}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, receipt, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf("Run() returned an error for an unfiled record, want nil error and the fate named in the receipt: %v", err)
 	}
-	if strings.Contains(record.Written.Error, "UPSTREAM-BODY-MARKER") {
-		t.Fatalf("record.Written.Error = %q, want none of the upstream response body echoed", record.Written.Error)
+	if receipt.State != NotStored {
+		t.Fatalf("receipt.State = %q, want %q", receipt.State, NotStored)
 	}
-	if len(record.Written.Error) > 200 {
-		t.Fatalf("record.Written.Error is %d bytes, want a short bounded sentence", len(record.Written.Error))
+	if receipt.NodeID != 0 {
+		t.Fatalf("receipt.NodeID = %d, want 0 — no node holds the record", receipt.NodeID)
 	}
-	if record.Written.Error == "" {
-		t.Fatal("record.Written.Error is empty, want the failure still named")
-	}
-}
-
-func TestTurnRunLogsTheDetailedWriteBackErrorWhileTheRecordStaysGeneric(t *testing.T) {
-	t.Parallel()
-
-	var logBuf strings.Builder
-	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
-
-	graph := baseGraph()
-	graph.writeRunErr = errors.New(`divoid: request failed: Post "http://graph.internal:9099/api/nodes": dial tcp 10.4.4.4:9099: connect: connection refused`)
-	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, "system", "test-model", logger)
-
-	record, err := turn.Run(context.Background(), "hello", 42)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if strings.Contains(record.Written.Error, "10.4.4.4") {
-		t.Fatalf("record.Written.Error = %q, want the address kept out of the record", record.Written.Error)
-	}
-	if !strings.Contains(logBuf.String(), "10.4.4.4") {
-		t.Fatalf("operator log = %q, want it to carry the detailed write-back error the record must not", logBuf.String())
+	if record.Answer != "ok" {
+		t.Fatalf("record.Answer = %q, want the answer still returned to the caller", record.Answer)
 	}
 }
 
@@ -816,7 +828,7 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndCutsTheRest(t *testing.T) {
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -871,7 +883,7 @@ func TestTurnRunSupplementaryAdmissionStaysInRankOrderEvenWhenIDsDescend(t *test
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -911,7 +923,7 @@ func TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRo
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -949,7 +961,7 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 	}}
 	turn := NewTurn(graph, model, "system", "test-model", testLogger())
 
-	record, err := turn.Run(context.Background(), "hello", 42)
+	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -966,5 +978,163 @@ func TestTheWorstCaseGraphDerivedPromptCeilingIsOneHundredThousandBytes(t *testi
 	gotCeiling := AssemblyByteBudget + SupplementaryByteBudget*(MaxModelCalls-1)
 	if gotCeiling != wantCeiling {
 		t.Fatalf("AssemblyByteBudget + SupplementaryByteBudget*(MaxModelCalls-1) = %d, want %d (design §8.4's stated ceiling)", gotCeiling, wantCeiling)
+	}
+}
+
+func TestTurnRunLogsRunStartedBeforeTheAnchorRead(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	atNode := ""
+	graph.onNode = func() { atNode = logBuf.String() }
+	turn := NewTurn(graph, &fakeModel{}, "system", "test-model", logger)
+
+	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(atNode, `msg="run started"`) {
+		t.Fatalf("the log at the moment of the anchor read was %q, want the run-started record already in it", atNode)
+	}
+}
+
+func TestTurnRunStartedRecordCarriesTheInputLengthAndNeverTheInputText(t *testing.T) {
+	t.Parallel()
+
+	const secretInput = "INPUT-TEXT-MARKER what the caller actually asked"
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	turn := NewTurn(baseGraph(), &fakeModel{}, "system", "test-model", logger)
+
+	if _, _, err := turn.Run(context.Background(), secretInput, 42); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	out := logBuf.String()
+	if strings.Contains(out, "INPUT-TEXT-MARKER") {
+		t.Fatalf("operator log carries the input text; log:\n%s", out)
+	}
+	if !strings.Contains(out, "inputLength=48") {
+		t.Fatalf("operator log does not carry inputLength=48 for a %d-byte input; log:\n%s", len(secretInput), out)
+	}
+	if !strings.Contains(out, "subject=42") {
+		t.Fatalf("run-started record does not carry the subject id; log:\n%s", out)
+	}
+}
+
+func TestTurnRunFinishedRecordCarriesTheReceiptCountsAndWallClock(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{
+		{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
+		{ID: 8, Type: "task", Name: "Large", Similarity: 0.8, Content: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 9, Type: "task", Name: "AlsoLarge", Similarity: 0.7, Content: strings.Repeat("y", AssemblyByteBudget+1)},
+	}
+	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: 999}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop", Usage: &Usage{InTokens: 11, OutTokens: 22}}}}
+	turn := NewTurn(graph, model, "system", "test-model-id", logger)
+
+	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	out := logBuf.String()
+	for _, want := range []string{
+		`msg="run finished"`,
+		"receipt=stored",
+		"node=999",
+		"candidates=3",
+		"cut=2",
+		"modelCalls=1",
+		"model=test-model-id",
+		"usageReports=1",
+		"inTokens=11",
+		"outTokens=22",
+		"elapsed=",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("run-finished record does not carry %q; log:\n%s", want, out)
+		}
+	}
+}
+
+func TestTurnRunFinishedRecordNamesANodeOnlyWhenOneExists(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.writeRunReceipt = WriteReceipt{State: NotStored}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, "system", "test-model", logger)
+
+	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	out := logBuf.String()
+	if !strings.Contains(out, "receipt=notStored") {
+		t.Fatalf("run-finished record does not carry receipt=notStored; log:\n%s", out)
+	}
+	if strings.Contains(out, "node=") {
+		t.Fatalf("run-finished record names a node although none holds the record; log:\n%s", out)
+	}
+}
+
+func TestTurnRunFinishedRecordSumsUsageAcrossCallsAndCountsTheCallsThatReportedIt(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{{ID: 7, Type: "task", Name: "C", Similarity: 0.9, Content: "body"}}
+	model := &fakeModel{results: []JudgeResult{
+		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "more"},
+		{Answer: "ok", Reason: Answered, RawReason: "stop", Usage: &Usage{InTokens: 100, OutTokens: 7}},
+	}}
+	turn := NewTurn(graph, model, "system", "test-model", logger)
+
+	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	out := logBuf.String()
+	for _, want := range []string{"modelCalls=2", "usageReports=1", "inTokens=100", "outTokens=7"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("run-finished record does not carry %q; log:\n%s", want, out)
+		}
+	}
+}
+
+func TestTurnRunLogsNoRunFinishedWhenTheRunNeverReachedAnAnswer(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	model := &fakeModel{err: errors.New("literal: connection reset")}
+	turn := NewTurn(graph, model, "system", "test-model", logger)
+
+	if _, _, err := turn.Run(context.Background(), "hello", 42); err == nil {
+		t.Fatal("Run returned no error although the model call failed")
+	}
+
+	out := logBuf.String()
+	if !strings.Contains(out, `msg="run started"`) {
+		t.Fatalf("operator log has no run-started record; log:\n%s", out)
+	}
+	if strings.Contains(out, `msg="run finished"`) {
+		t.Fatalf("operator log carries a run-finished record for a run that never reached an answer; log:\n%s", out)
 	}
 }

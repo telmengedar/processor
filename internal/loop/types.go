@@ -82,10 +82,22 @@ type StopReason struct {
 	Raw    string         `json:"raw"`
 }
 
-// WriteOutcome is the run record's write-back result: the node id, or why there is none.
-type WriteOutcome struct {
-	NodeID int64  `json:"nodeId,omitempty"`
-	Error  string `json:"error,omitempty"`
+// WriteState is the closed set of ways one record's filing can end.
+type WriteState string
+
+const (
+	// Stored means the record is at the node, bodied and linked to its subject.
+	Stored WriteState = "stored"
+	// Unlinked means the record is at the node and complete, with no edge to its subject.
+	Unlinked WriteState = "unlinked"
+	// NotStored means no node holds the record.
+	NotStored WriteState = "notStored"
+)
+
+// WriteReceipt is where a record was filed: a response-only key, never a member of the record.
+type WriteReceipt struct {
+	State  WriteState `json:"state"`
+	NodeID int64      `json:"nodeId,omitempty"`
 }
 
 // Limits records the five constants that governed one run.
@@ -113,10 +125,9 @@ type Record struct {
 	// CapReached is true exactly when the call cap was hit while the model still wanted recall.
 	CapReached bool `json:"capReached"`
 	// Usage carries one entry per model call, in call order, nil where the endpoint reported none.
-	Usage      []*Usage     `json:"usage"`
-	StopReason StopReason   `json:"stopReason"`
-	Written    WriteOutcome `json:"written"`
-	Limits     Limits       `json:"limits"`
+	Usage      []*Usage   `json:"usage"`
+	StopReason StopReason `json:"stopReason"`
+	Limits     Limits     `json:"limits"`
 }
 
 // RecallExchange is one supplementary-recall round already completed in this turn.

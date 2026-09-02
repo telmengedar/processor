@@ -20,7 +20,9 @@ func (g *probeGraph) Recall(ctx context.Context, q string, limit int) ([]loop.Ca
 	}
 	return nil, errors.New("literal: transport blew up")
 }
-func (g *probeGraph) WriteRun(ctx context.Context, r loop.Record) (int64, error) { return 1, nil }
+func (g *probeGraph) WriteRun(ctx context.Context, r loop.Record) loop.WriteReceipt {
+	return loop.WriteReceipt{State: loop.Stored, NodeID: 1}
+}
 
 type probeModel struct{ n int }
 
@@ -37,11 +39,14 @@ func TestTurnBuiltByAnExternalKeyedLiteralSurvivesTheNilLoggerBranch(t *testing.
 
 	turn := loop.Turn{Graph: &probeGraph{}, Model: &probeModel{}, System: "sys", ModelID: "m"}
 
-	rec, err := turn.Run(context.Background(), "hello", 42)
+	rec, receipt, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(rec.ToolCalls) != 1 || rec.ToolCalls[0].Error == "" {
 		t.Fatalf("record.ToolCalls = %+v, want one error-flagged round", rec.ToolCalls)
+	}
+	if receipt.State != loop.Stored {
+		t.Fatalf("receipt.State = %q, want %q — the per-run log pair must not panic on the nil-logger path either", receipt.State, loop.Stored)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 )
 
 const (
@@ -17,7 +18,6 @@ const (
 
 const (
 	errSupplementaryRecallFailed = "supplementary recall failed"
-	errWriteBackFailed           = "write-back failed"
 	errCallCapReached            = "call cap reached"
 )
 
@@ -43,8 +43,8 @@ type GraphPort interface {
 	// the rank order the graph returned them. The port does not re-sort.
 	Recall(ctx context.Context, query string, limit int) ([]Candidate, error)
 
-	// WriteRun records what happened; the adapter alone chooses the node's type, name and edge.
-	WriteRun(ctx context.Context, record Record) (nodeID int64, err error)
+	// WriteRun files the record and reports where it landed; the adapter alone chooses type, name and edge.
+	WriteRun(ctx context.Context, record Record) WriteReceipt
 }
 
 // ModelPort is the seam between the loop and the model.
@@ -79,19 +79,22 @@ func (t *Turn) log() *slog.Logger {
 	return t.logger
 }
 
-// Run executes one turn for input against subject.
-func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, error) {
+// Run executes one turn for input against subject, returning the record and where it was filed.
+func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, WriteReceipt, error) {
+	started := time.Now()
+	t.log().Info("run started", "subject", subject, "inputLength", len(input))
+
 	anchor, found, err := t.Graph.Node(ctx, subject)
 	if err != nil {
-		return Record{}, fmt.Errorf("%w: %v", ErrGraphUnavailable, err)
+		return Record{}, WriteReceipt{}, fmt.Errorf("%w: %v", ErrGraphUnavailable, err)
 	}
 	if !found {
-		return Record{}, ErrSubjectNotFound
+		return Record{}, WriteReceipt{}, ErrSubjectNotFound
 	}
 
 	candidates, err := t.Graph.Recall(ctx, input, CandidateLimit)
 	if err != nil {
-		return Record{}, fmt.Errorf("%w: %v", ErrGraphUnavailable, err)
+		return Record{}, WriteReceipt{}, fmt.Errorf("%w: %v", ErrGraphUnavailable, err)
 	}
 
 	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget)
@@ -114,7 +117,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, er
 
 	answer, stop, toolCalls, modelCalls, capReached, usages, err := t.judge(ctx, block, input)
 	if err != nil {
-		return Record{}, err
+		return Record{}, WriteReceipt{}, err
 	}
 
 	record.Answer = answer
@@ -125,14 +128,55 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, er
 	record.Usage = usages
 	record.StopReason = stop
 
-	if nodeID, werr := t.Graph.WriteRun(ctx, record); werr != nil {
-		t.log().Error("write-back failed", "subject", subject, "error", werr)
-		record.Written = WriteOutcome{Error: errWriteBackFailed}
-	} else {
-		record.Written = WriteOutcome{NodeID: nodeID}
+	receipt := t.Graph.WriteRun(context.WithoutCancel(ctx), record)
+
+	t.logFinished(record, receipt, time.Since(started))
+
+	return record, receipt, nil
+}
+
+func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Duration) {
+	reports, inTokens, outTokens := summarizeUsage(record.Usage)
+
+	attrs := []any{
+		"subject", record.Subject,
+		"receipt", string(receipt.State),
+		"candidates", len(record.Candidates),
+		"cut", cutCount(record.Candidates),
+		"modelCalls", record.ModelCalls,
+		"model", record.Model,
+		"usageReports", reports,
+		"inTokens", inTokens,
+		"outTokens", outTokens,
+		"elapsed", elapsed,
+	}
+	if receipt.NodeID != 0 {
+		attrs = append(attrs, "node", receipt.NodeID)
 	}
 
-	return record, nil
+	t.log().Info("run finished", attrs...)
+}
+
+func cutCount(dispositions []Disposition) int {
+	cut := 0
+	for _, d := range dispositions {
+		if !d.Included {
+			cut++
+		}
+	}
+	return cut
+}
+
+func summarizeUsage(usages []*Usage) (reports, inTokens, outTokens int) {
+	for _, u := range usages {
+		if u == nil {
+			continue
+		}
+		reports++
+		inTokens += u.InTokens
+		outTokens += u.OutTokens
+	}
+	return reports, inTokens, outTokens
 }
 
 func (t *Turn) judge(ctx context.Context, block, input string) (answer string, stop StopReason, toolCalls []ToolCallRecord, modelCalls int, capReached bool, usages []*Usage, err error) {

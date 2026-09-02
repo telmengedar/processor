@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -40,13 +41,12 @@ type Client struct {
 	httpClient *http.Client
 
 	clock func() time.Time
+
+	logger *slog.Logger
 }
 
-// NewClient builds a Client against baseURL, authenticating with apiKey.
-// httpClient is used verbatim when non-nil; otherwise a new *http.Client
-// with DefaultTimeout applied is built (W-7) — never http.DefaultClient,
-// which carries no timeout.
-func NewClient(baseURL, apiKey string, httpClient *http.Client) *Client {
+// NewClient builds a Client against baseURL with apiKey, httpClient (nil for the default) and logger.
+func NewClient(baseURL, apiKey string, httpClient *http.Client, logger *slog.Logger) *Client {
 	if httpClient == nil {
 		httpClient = defaultHTTPClient()
 	}
@@ -55,6 +55,7 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) *Client {
 		apiKey:     apiKey,
 		clock:      time.Now,
 		httpClient: httpClient,
+		logger:     logger,
 	}
 }
 
@@ -67,6 +68,13 @@ func (c *Client) client() *http.Client {
 		return defaultHTTPClient()
 	}
 	return c.httpClient
+}
+
+func (c *Client) log() *slog.Logger {
+	if c.logger == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return c.logger
 }
 
 func (c *Client) now() time.Time {
@@ -187,8 +195,20 @@ func (c *Client) post(ctx context.Context, path, contentType string, body []byte
 	if err != nil {
 		return fmt.Errorf("divoid: build request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", contentType)
+	return c.send(req, out)
+}
+
+func (c *Client) remove(ctx context.Context, path string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("divoid: build request: %w", err)
+	}
+	return c.send(req, nil)
+}
+
+func (c *Client) send(req *http.Request, out any) error {
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.client().Do(req)

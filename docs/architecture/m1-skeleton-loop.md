@@ -1604,8 +1604,12 @@ No code appears in this document by design. The order below is architectural, no
 11a. **The record's own shape, which is what milestone 2 actually consumes** — new in revision 3, and the
     part of this unit #10821 found unpinned end to end. Pin it **at the wire level, through a decode
     struct with literal JSON tags**, with fixture values distinctive enough that a wrong field cannot
-    pass: `answer`, `model`, `toolCalls`, `modelCalls`, `capReached`, `usage`, `stopReason`, `written`
-    and `limits`. Three of these are rules rather than fields and deserve their own assertions:
+    pass: `answer`, `model`, `toolCalls`, `modelCalls`, `capReached`, `usage`, `stopReason`, ~~`written`~~
+    and `limits`. **STRUCK 2026-09-02 (#10899, A4): `written` is no longer a member of the record, so
+    pinning it here would direct an implementer to assert a field that must not exist. The write receipt
+    is a response-only key; `docs/architecture/run-record-fate.md` §8.1 states what to pin instead — that
+    the stored body is the response body minus exactly that one key. Line 829's list is left standing:
+    it is a true statement about what unit A shipped, and history is not corrected.** Three of these are rules rather than fields and deserve their own assertions:
     **`usage` has exactly one entry per model call, in order, empty where a call reported nothing**;
     **`toolCalls[].results` carries every row the round returned, not the admitted subset**, with the
     same columns `candidates[]` has; and **`limits` reports the constants actually in force** — the one

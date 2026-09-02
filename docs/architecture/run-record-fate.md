@@ -6,7 +6,7 @@
 > write-back), **#10890** (the drain grace is five seconds; a run is not).
 > Project: **#10422** · Vision: **#10424**, including **refinement round 8** · Predecessor design:
 > **#10532** (M1, the skeleton loop) — **consumed, partially corrected, not superseded.** §16 lists the
-> three paragraphs of it this document overrides and the amendment that must land with this one.
+> four paragraphs of it this document overrides and the amendment that must land with this one.
 > Standards applied: Design Contracts **#1136**, Code Contracts **#114 §0 and §4** (§4 via the Go annex
 > **#10861** — **cited, not restated**), vocabulary rule **#1220 §2**, falsifiable-universals rule
 > **#1220 §5**, edge conventions **#7216**, container rule **#10440**.
@@ -531,7 +531,7 @@ no audit column and no config member, so #1136 §3's filed-task requirement does
 | Constant | Value | Derivation, and why it is not a knob |
 |---|---|---|
 | **The run bound** | **10 minutes** | It bounds everything from the handler's entry up to and including the answer. **Stated, not derived from the parts** (§6.3): the composed worst case is ≈ 16 min (C48), which no caller would wait for, and a bound assembled from three component timeouts moves silently whenever one of them does. 10 min is sized against the deployment the provider ruling exists to enable — a slow local model, where one call can take minutes (#10532 §8.4a) and the cap allows three — and against a caller who is a human with `curl` and can interrupt. **It differs by no environment**: a fast hosted endpoint never approaches it and a slow local one is exactly what it is sized for. **Falsifier, and it is cheap: §8.6's wall clock.** Ten real runs against a local runtime either sit far below it or push it, and the number moves with data in hand rather than judgement |
-| **The drain grace** | **11 minutes**, stated as a literal **and asserted against `run bound + 4 × the graph client's per-call timeout`** | It stops being an independently chosen number (§6.3). A run in flight at `SIGTERM` has at most the run bound left, plus a write-back of at most four graph calls at 15 s each (three POSTs and the possible discard) — 60 s. A grace covering both makes the drain **arithmetically** complete rather than probably complete. The literal is asserted against the arithmetic so that moving either input without re-deriving this turns a test red — the same discipline #10532 §8.4 applies to its 100,000-byte ceiling |
+| **The drain grace** | **11 minutes** = **run bound + 3 × the graph client's per-call timeout (45 s) + 15 s of stated headroom**. ~~asserted against `run bound + 4 × the graph client's per-call timeout`~~ | It stops being an independently chosen number (§6.3). A run in flight at `SIGTERM` has at most the run bound left, plus its write-back. **CORRECTED 2026-09-02 (QA #10910 W-2): the write-back's maximum is three graph calls, not four**, and the two halves of this number are now labelled because they are not the same kind of number. ~~a write-back of at most four graph calls at 15 s each (three POSTs and the possible discard) — 60 s~~ over-counted: the discard is reachable **only** on the branch where the body write failed, and on that branch the link call is never issued, so no path issues four (§8.4a). The derivation is therefore **45 s**; the remaining **15 s is margin, chosen so the grace does not sit exactly on its own bound**, and it is called margin rather than dressed as arithmetic. The literal is asserted against both parts so that moving either input without re-deriving this turns a test red — the same discipline #10532 §8.4 applies to its 100,000-byte ceiling |
 
 **What raising the grace does *not* cost (C47, C51).** An idle shutdown still returns immediately. A
 container under `docker stop`'s default is still killed 10 s after `SIGTERM`. **The process offers a
@@ -541,6 +541,36 @@ deployment, and the deployment note is §14's, not a code change.
 **The per-call timeouts are untouched.** `divoid.DefaultTimeout` and `openaicompat.DefaultTimeout` bound
 a hung socket and remain exactly as #10532 §8.4a set them. The run bound is a different instrument: it
 bounds a **slow** run, not a hung call, and the two do not substitute for each other.
+
+### 8.4a The write-back's maximum call count — enumerated, because §8.4 got it wrong once
+
+**Added 2026-09-02 from QA #10910 W-2.** §8.4's first draft derived the grace from *four* graph calls.
+The number is **three**, and the enumeration is recorded here rather than left implicit, because a
+derivation whose count nobody can re-check is the thing that invited the error.
+
+**How it was established:** every path through the write-back operation in the merged tree was walked and
+its outbound graph calls counted. Each leg is one request — the adapter's send helper issues exactly one
+round trip per call and there is no retry anywhere on the path (§10, unchanged).
+
+| Path | Calls issued | Count | Receipt |
+|---|---|---|---|
+| The record will not serialise | none | **0** | `notStored` |
+| create fails | create | **1** | `notStored` |
+| body write fails, discard succeeds | create, body, **discard** | **3** | `notStored` |
+| body write fails, discard also fails | create, body, **discard** (attempted) | **3** | `notStored` |
+| link fails | create, body, link | **3** | `unlinked` |
+| all three land | create, body, link | **3** | `stored` |
+
+**The maximum is 3, and four is not reachable on any path.** The over-count added the discard on top of a
+full three-call success — but the discard exists **only** on the body-write-failure branch, which returns
+before the link is ever issued. The two are mutually exclusive by construction (§6.2), which is the same
+early return that makes the keep-or-discard rule work at all.
+
+**Why this is corrected rather than left as harmless slack.** It errs safe — the grace is larger than the
+bound needs, never smaller — so nothing is broken today. That is exactly the reason to fix it: a number
+carrying a **stated derivation** invites a later reader to re-derive it, and a reader re-deriving from the
+same wrong count would "correct" the grace *downward* onto a bound it no longer clears. §8.4 now separates
+the 45 s that is derived from the 15 s that is margin, so the two cannot be confused for each other.
 
 ### 8.5 The error envelope gains one code
 
@@ -596,16 +626,52 @@ Everything this document adds is on the deterministic side of #10532 §9.1's bou
 still enters at exactly one line — the model's reply — and none of the following is downstream of it in
 any way that matters.
 
-| Addition | Deterministic? | Pinned how |
+**CORRECTED 2026-09-02 from QA #10918 W-6 — the table below now names guards, and the run-bound row was
+false.** The first draft of this table described, for each addition, the *mechanism* by which it would be
+covered. That is a claim, and one of the eight was wrong in a way nobody could see from the table: the
+run-bound row described coverage by **the caller supplying its own clock**, which cannot observe whether
+the handler applies a bound at all — Go propagates a parent context's expiry into the child, so a handler
+that applied no ceiling would satisfy every test the row described. The same defect had already been
+raised against the implementation and was its critical fail; §9 asserted the coverage that was missing,
+which is why it survived a full review cycle. **The rule that follows, and it is this document's own
+subject applied to itself: a coverage row names the guard, not the mechanism.** A named guard is an
+artifact a reader can open; a described mechanism is a claim they have to re-derive. Round 8, on this
+document's own table.
+
+| Addition | Deterministic? | The guard that pins it |
 |---|---|---|
-| The receipt's three states | **Yes, given the write outcome** | Port level, from a graph double that fails a chosen leg. One test per state |
-| The discard branch | **Yes, given which leg failed** | Wire level: a test server that accepts the create and rejects the body write, asserting a `DELETE` for that id and no other |
-| Keep-on-link-failure | **Yes** | Wire level: accept create and body, reject link, assert **no** `DELETE` |
-| The two artifacts' relationship | **Yes** | One test comparing the two byte sequences (§8.1). This is the assertion that replaces the withdrawn claim |
-| The run bound's expiry | **Yes** | Handler level with a deliberately slow loop double: `504`, the new code, and — the mutation that matters — that it is **not** reported as `502` |
-| The drain | **Yes** | The existing process-level harness, extended: signal during an in-flight run, assert the response still arrives and the ordered shutdown records still appear |
-| The grace's arithmetic | **Yes** | The literal asserted against its inputs (§8.4), literal on the expected side per #10466 |
-| The log pair | **Yes** | Process level: a completed run emits both lines in order; the started line carries a length and never the text |
+| The receipt's three states | **Yes, given the write outcome** | Port level: `TestTurnRunReportsEachWriteStateVerbatimAndInterpretsNone`. Adapter side, one per state: `TestWriteRunReportsStoredWithTheNodeIDWhenAllThreeCallsLand`, `TestWriteRunReportsNotStoredAndAttemptsNothingFurtherWhenTheCreateFails`, `TestWriteRunKeepsTheCompleteRecordAndReportsUnlinkedWhenTheLinkFails` |
+| The discard branch | **Yes, given which leg failed** | `TestWriteRunDiscardsTheBodylessShellAndReportsNotStoredWhenTheContentWriteFails`, and the two that make it safe rather than merely present: `TestWriteRunDiscardsOnlyTheNodeItsOwnCreateReturned` and `TestWriteRunStillReportsNotStoredWhenTheDiscardItselfFails` |
+| Keep-on-link-failure | **Yes** | `TestWriteRunKeepsTheCompleteRecordAndReportsUnlinkedWhenTheLinkFails`, with `TestWriteRunLogsTheRepairableOrphanWithItsNodeIDOnlyWhenTheLinkFailed` pinning that the operator is told |
+| The two artifacts' relationship (§8.1) | **Yes** | `TestTheStoredBodyIsTheResponseBodyMinusTheWriteReceiptAndNothingElse` — the assertion that replaces the withdrawn identity claim — with `TestTheStoredBodyCarriesNoWriteReceiptWhileTheResponseDoes`, `TestWriteRunStoredBodyCarriesNoWriteReceiptKey` and `TestTurnRunRecordSerialisesWithNoKeyAboutItsOwnFiling` |
+| **The run bound exists at all** — a run the caller never bounded is still ceiled, and the ceiling stops at the answer | **Yes** | **`TestRunsCeilsARunTheCallerNeverBoundedAtTenMinutes`** — the request carries no deadline, so a deadline observed inside the turn can only have come from the handler; it asserts one is there and that its remaining time is in range. **`TestRunsCeilingStopsAtTheAnswerAndDoesNotReachTheWriteBack`** — the write-back's context carries no deadline, which is §8.4's *"up to and including the answer"* and §6.4's detachment, in one assertion |
+| The run bound's expiry, **classified** | **Yes** | `TestRunsReturns504WhenTheRunContextExpiresBeforeAnAnswerExists`, `TestRunsDoesNotReport502ForAnExpiredRunEvenThoughAGraphCallCarriedTheExpiry` and `TestRunsReports502NotTheDeadlineCodeWhenTheCallerMerelyDisconnects`. **These pin the classification and nothing more.** They supply their own deadline, so they cannot show that a ceiling exists — the row above is what does, and the two rows are separate because conflating them is exactly the error this section is correcting. The fifth code itself (§8.5) is held closed by `TestTheErrorEnvelopeCanEmitExactlyFiveCodes` and `TestEachErrorCodeConstantCarriesItsWireValue` |
+| **The write-back outliving the request** (§6.4's invariant) | **Yes** | `TestTurnRunFilesTheRecordAfterTheRequestContextIsCancelled`, with `TestTurnRunDoesNotFailTheRunWhenNoNodeHoldsTheRecord`. **Added 2026-09-02: the first draft's table had no row for this at all**, although §14 step 5 named it a deliverable — an omission of the same kind as the row above it |
+| The drain | **Yes** | `TestSIGTERMDrainsAnInFlightRunInsteadOfDroppingIt` — signal during an in-flight run, assert the response still arrives and the ordered shutdown records still appear |
+| The grace's arithmetic | **Yes** | `TestTheDrainGraceIsElevenMinutesDerivedFromTheRunBoundTheWriteBackAndAStatedMargin` and `TestTheDrainGraceKeepsAPositiveMarginOverTheBoundItMustCover`, literal on the expected side per #10466 — the two parts §8.4 separates are separated in the assertion too, the second asserting the margin is positive and that the grace clears the bound rather than sitting on it. **CORRECTED 2026-09-02 from QA #10923 W-9: the second guard was cited under its pre-rename name, ~~`TestTheDrainGraceDoesNotSitExactlyOnTheBoundItMustCover`~~, which had ceased to resolve** |
+| The log pair | **Yes** | `TestACompletedRunEmitsTheStartedAndFinishedPairInOrder` at process level; `TestTurnRunLogsRunStartedBeforeTheAnchorRead`, `TestTurnRunStartedRecordCarriesTheInputLengthAndNeverTheInputText`, `TestTurnRunFinishedRecordCarriesTheReceiptCountsAndWallClock` and — the one that makes T10's signature real — `TestTurnRunLogsNoRunFinishedWhenTheRunNeverReachedAnAnswer` |
+
+**How to keep this table honest, since it has now been wrong once.** A row is only worth its space if the
+named guard would **fail** on the design's own negation of that row. Where the discrimination is not
+obvious from the guard's name, the row says what makes it discriminate — the caller-supplied-no-deadline
+premise in the run-bound row is the example, and it is the fact the wrong row omitted. **Falsifier for
+the whole section:** any row whose named guard passes on an implementation that does not have the
+property the row claims.
+
+**The trade this table makes, and the failure mode it bought — named 2026-09-02 after QA #10923 W-9.**
+Named guards are checkable where the prose they replaced was not, and they acquire a way to rot that
+prose did not have: **a rename in a file this document does not own silently falsifies a row, and the
+falsification is invisible from here.** The check is mechanical — extract the backticked `Test…` names
+from this file, **discard any inside a struck `~~…~~` span, which are historical rather than cited**, and
+confirm each of the rest resolves to a `func Test…` in some `_test.go` — and it is **a
+point-in-time result, not a property**, so it is re-run whenever this section is edited or trusted,
+never reported once and relied on afterwards. That distinction is this document's own subject, and W-9
+is the second time it has been the answer.
+
+**A note on numbering, so this is not folded into the wrong set.** §16's `A1`–`A4` are amendments to
+**#10532**. This correction is to *this* document and is deliberately **not** `A5` — the A-set counts
+corrections to the predecessor, and a set that also counted self-corrections would stop answering the
+question it exists to answer.
 
 **The default suite stays fully offline and hermetic.** Nothing here opens a socket to anything but a
 local test server, needs a credential, or needs a model runtime — #10532 §9.3's property is preserved and
@@ -740,10 +806,12 @@ design, not preserved as a comment.
    the handler tests the run context's expiry **before** classifying the error. Pin `504` with the new
    code, and pin the mutation — make the handler classify by error type first and confirm the test
    reddens with a `502`.
-7. **The grace** (§8.4), as a literal asserted against `run bound + 4 × the graph client's per-call
-   timeout`, **literal on the expected side** (#10466). Note that `internal/server` must not reach into
-   the graph adapter for that input — the derivation lives in §8.4, the constant is a literal, and the
-   assertion is what ties them.
+7. **The grace** (§8.4), as a literal asserted against `run bound + 3 × the graph client's per-call
+   timeout + 15 s of headroom`, **literal on the expected side** (#10466). **The count is three, not
+   four** (§8.4a), and the headroom is named separately in the assertion so a later reader cannot
+   re-derive it away as a miscount. Note that `internal/server` must not reach into the graph adapter
+   for that input — the derivation lives in §8.4, the constant is a literal, and the assertion is what
+   ties them.
 8. **The drain**, at the process level: signal during an in-flight run and assert the response still
    arrives and the ordered shutdown records still appear. This is the test #10890 names as absent.
 9. **The log pair and the two orphan lines** (§8.6). Pin that `run started` carries a **length** and never
@@ -819,7 +887,7 @@ delete on the link-failure branch · a sweep for existing orphans · anything fr
 | Reader / scope inventories explicit | ✓ §2.1, §2.2 (with reasons), §5's not-a-component table, §14's do-not-add list |
 | Out-of-scope listed explicitly | ✓ §2.2, as a table, plus #1220 §2's prose future list in §2.2 and §8.2 |
 | No multi-paragraph rationale for things that obviously stay | ✓ The per-call timeouts get two sentences (§8.4); the unchanged §6.5 rows get five table rows and no prose |
-| Predecessor design marked superseded | **Applicable in part and handled in §16.** #10532 is **not** superseded end-to-end and must not be banner-marked as if it were; three of its paragraphs are overridden and each gets a correction in place, in the same change |
+| Predecessor design marked superseded | **Applicable in part and handled in §16.** #10532 is **not** superseded end-to-end and must not be banner-marked as if it were; four of its paragraphs are overridden (A1–A4, §16; A4 added 2026-09-02 from QA #10910 W-6) and each gets a correction in place, in the same change |
 
 **Falsifiable-universals check (#1220 §5).** Every universal here names what would break it:
 
@@ -840,11 +908,11 @@ own §8.4 was corrected for — a bound expressed against an unstated quantity.
 
 ---
 
-## 16. The Amendment to #10532 — three paragraphs, corrected in place
+## 16. The Amendment to #10532 — four paragraphs, corrected in place
 
 **#10532 is not superseded and must not be banner-marked.** It is M1's design, M1 shipped, and it is
-consumed here unchanged everywhere except three places where a reader would now be relying on something
-false. Those three get a correction **in place**, in the same change as this document, following
+consumed here unchanged everywhere except four places where a reader would now be relying on something
+false. Those four get a correction **in place**, in the same change as this document, following
 #10532's own established convention — **strike, do not delete; record what was believed and when** — and
 the DiVoid node is kept byte-identical to the repo file.
 
@@ -853,9 +921,18 @@ the DiVoid node is kept byte-identical to the repo file.
 | **A1** | **§8.4a**, the paragraph beginning *"One interaction is named and deliberately left alone"* | Its mechanism claim is false: *"raising the grace to cover a worst-case local generation would make every shutdown hang for minutes"*. `Shutdown` returns as soon as connections are idle (C47), so an idle shutdown is unaffected at any grace. **Its conclusion also reverses**: M1 does not raise the grace; this design does | Strike the mechanism sentence, keep the paragraph, and record that its own stated falsifier — *"the day a run is expensive… the trade reverses"* — was met by a different route than it predicted: not by the run becoming expensive, but by the mechanism claim being wrong. Point at this document |
 | **A2** | **§8.2**, the `written` row | It says the field carries *"the node id the record was written to, or the reason it was not"*, in a table describing the record. In the stored record it carries neither and structurally cannot (C45, C46) | Strike the row and replace it with a pointer: the write receipt is **not** a member of the record, and §8.1 of this document states what the two artifacts guarantee instead |
 | **A3** | **§6.5**, the *"Write-back fails"* row, and the **TL;DR** and §7 sentences asserting *"the response body **is** the record"* | The row specifies the fully-failed case only and is silent on the partial one (#10863); the identity claim is false in one key (#10899) | Amend the row to point at §6.1's complete table, and amend the two identity sentences to the minus-one-key claim, marked as a correction with its date and the finding that produced it |
+| **A4** | **§14, step 11a's pin checklist** (the record-shape pin list) | It still names `written` among the fields a wire-level decode struct must assert. That member no longer exists, so the line **directs a future implementer to pin something that must not exist**. **Added 2026-09-02 from QA #10910 W-6** | Strike `written` from the list and point at §8.1's replacement assertion. **§8.2's sentence naming the fields unit A's record lacks is deliberately left standing** — it is a true statement about what unit A shipped, and this document corrects claims that are false now, not history that was true then |
 
 **Why this shape and not a revision 4.** #10532's revisions were made while M1 was in flight, and each
 one moved a decision the milestone had not yet shipped. M1 is closed and verified live (#10883). A
-revision 4 would rewrite a closed milestone's history to contain a decision taken after it; three
-correction pointers say honestly that the milestone shipped, was run, and taught us three things. **The
+revision 4 would rewrite a closed milestone's history to contain a decision taken after it; four
+correction pointers say honestly that the milestone shipped, was run, and taught us what it taught. **The
 same reasoning #10532 applies to its own struck paragraphs applies to it.**
+
+**A4 is what this shape is for, and it arrived a day later.** It was not a paragraph this document
+overlooked — it became false only once the receipt left the record, which is a change *this* document
+makes. A banner-marked predecessor would have hidden it; four dated pointers make it one more row.
+**The count is expected to keep moving**, and whatever states it — this heading, the header line, and
+§15's document-discipline row — moves with it. **It counts corrections to #10532 and nothing else:**
+this document's own corrections (§8.4a, §9) are dated in place and are deliberately not numbered into
+the A-set, because a set that counted both would stop answering the question it exists to answer.

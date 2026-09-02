@@ -34,7 +34,7 @@ func run() int {
 		return 1
 	}
 
-	graph := divoid.NewClient(cfg.divoidURL, cfg.divoidKey, nil)
+	graph := divoid.NewClient(cfg.divoidURL, cfg.divoidKey, nil, logger)
 	model := openaicompat.NewClient(cfg.modelURL, cfg.modelID, cfg.modelKey, nil)
 	turn := loop.NewTurn(graph, model, systemText, cfg.modelID, logger)
 
