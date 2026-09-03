@@ -510,7 +510,7 @@ func TestJudgeOnEmptyChoicesReturnsAnError(t *testing.T) {
 	}
 }
 
-func TestNewClientDefaultsToATimeoutBoundHTTPClientWhenNoneIsSupplied(t *testing.T) {
+func TestNewModelClientDefaultsToATimeoutBoundHTTPClientWhenNoneIsSupplied(t *testing.T) {
 	t.Parallel()
 
 	c := NewClient("http://example.invalid", "m", "k", nil)
