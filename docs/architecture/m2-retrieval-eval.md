@@ -805,6 +805,17 @@ is the guard that says so.
 | `required[]` → `{node, verdict, rank, size, stale}` | the attribution that makes the number actionable. **`size`** is the required node's own byte count, present whenever the node was a candidate at all — it is what separates a `cut` M3 tuning can rescue from a `cut` no ranking can (§5.4), and it costs no read, because admission already computed it |
 | `candidates[]` *(revision 7)* | **the row's full candidate set, in rank order** — the `[]loop.Disposition` the scorer already receives and today discards. It is what makes a labelled miss triageable: §4.3's three causes are byte-identical in every other field, and telling them apart is a human reading of **what outranked the required node**. A `Disposition` carries no content body (rank, id, type, name, similarity, size, content hash, included, cut reason), so a 34-row corpus adds roughly 680 scalar records to a local file — and **no extra graph read**, so §10's GET count is unchanged |
 
+**A *diagnostic* here is a value the sweep computes in order to name one known failure mode** — not the
+evidence it was computed from, and not the row's identity *(the boundary is stated after QA #11102 flagged
+that it was nowhere stated, so the count below could be neither confirmed nor refuted)*. Under it, `row`,
+`stratum` and `subject` are **identification**; `required[]` is **the attribution**; `candidateCount` and
+`admittedCount` are the **variable `k`** §5.1 makes explicit; and **`candidates[]` is the evidence** — the
+input the diagnostics are derived from, retained rather than computed. **`candidates[]` is therefore not a
+seventh diagnostic, and the count is six.** That is also why it carries its own delete test in the next
+paragraph rather than joining the list below: **deleting a diagnostic costs an explanation; deleting
+`candidates[]` costs the evidence every explanation is built from** — a different kind of loss, and the
+reason §11.2's capture-or-lose argument binds it and nothing else in this section.
+
 Every one of the six diagnostics survives the delete test: remove `anchorWasCandidate` and a shipped defect
 stays invisible; remove `selfProducedCandidates` and the first sweep's low score is inexplicable; remove
 `shutout` and an admission catastrophe reads as a retrieval failure; remove the byte pair and the two cut
@@ -1203,11 +1214,18 @@ different populations, which is exactly how the wrong number got written.
 | Of the **eight** rows whose guard is absent from this branch | Count | Which, and why |
 |---|---|---|
 | **visible** to check 1 — the row cites a name that does not resolve | **4** | G-30, G-30b, G-31, G-31b — five names between them, because G-30b cites two |
-| **invisible** to check 1 | **4** | G-32 and G-33 cite no test name at all; G-28 and G-29 cite the existing test they *retarget*, so the name resolves and check 1 stays silent |
+| **invisible** to check 1 | **4** | **Two mechanisms, and they are not equally bad.** *Cites nothing, so nothing can fail:* **G-29, G-32, G-33**. *Cites a **different** existing test, so check 1 resolves it and passes:* **G-28** alone, which names `TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode` — the test it retargets. ~~G-32 and G-33 cite no test name at all; G-28 and G-29 cite the existing test they retarget~~ *(corrected after QA #11102 W-5: G-29 cites no test either — its cell names G-28, not a test. The counts are unaffected)* |
 
 **Half of them are invisible, and that is the finding rather than the bookkeeping.** P-41 checks that every
 cited name resolves; **it cannot check that a row owing a guard has cited a name for it** — a row citing
-nothing has nothing to fail on, and a row citing a *different, existing* test passes. That is the audit gap
+nothing has nothing to fail on, and a row citing a *different, existing* test passes.
+
+**The second mechanism is the worse one, and it was measured rather than argued** (QA #11102, on G-28): the
+cited name is in the cited set, resolves in the present set, and occurs in the `comm -23` residue **zero**
+times. So check 1 does not merely stay quiet about a row whose guard does not exist — **it passes it**. A
+silent absence is a gap; a silent pass is a wrong answer, and exactly one row in this table has that shape.
+
+That is the audit gap
 revision 6 named two paragraphs down, arriving from the other direction: revision 6 found a *property* with
 no row, and revision 7 finds *rows* whose guard no name reaches. The status table above is what stands in
 for it until the guards land.
@@ -1665,8 +1683,10 @@ between a design that precedes code and one whose implementation is four steps i
 ### What the A/B cannot measure — and one limit is not enough
 
 Toni named one himself: *"its always a smoke test."* That is the statistical limit and it is the one a larger
-sample fixes. **#11092 §5 names five, of which three are structural** — no sample size, no rubric and no care
-removes them. The two that neither Toni nor #11069 named, recorded here because they bear on *this* document:
+sample fixes. ~~**#11092 §5 names five, of which three are structural**~~ **#11092 §5 names five, and only
+§5.1 — the smoke-test limit — is statistical; every other one is structural** — no sample size, no rubric
+and no care removes them *(corrected after QA #11102 W-7: "three" was wrong here, at two sites inside
+#11092, and in #11069. It is the **remediable** count, which is a different cut of the same five)*. The two that neither Toni nor #11069 named, recorded here because they bear on *this* document:
 
 - **The A/B is blind to tasks whose answer no node holds.** Its admission precondition — *"we know that our
   system has all the information to solve it"* — **selects the task set for cases where retrieval can
@@ -1724,10 +1744,14 @@ revision 7**, on `design/m2-revision-7`, and neither is changed in substance by 
   `fix/corpus-loader-guards`, and §13 now states that as a measurement with the date it was taken.
 - **The gap that made it possible is worth more than the instance.** P-41 checks that every *cited* name
   resolves. It cannot check that a row *owing* a guard has cited a name for it — a row citing nothing has
-  nothing to fail on, and a row citing a *different, existing* test passes. **Of the eight rows in §13 whose
-  guard does not exist on this branch, four are invisible to check 1** for one of those two reasons: G-32
-  and G-33 cite no name, G-28 and G-29 cite the existing test they retarget. Revision 6 found a property
-  with no row; this is rows whose guard no name reaches, and it is the same audit gap from the other side.
+  nothing to fail on, and a row citing a *different, existing* test is resolved and **passed**. **Of the
+  eight rows in §13 whose guard does not exist on this branch, four are invisible to check 1** by one of
+  those two mechanisms. **§13's table carries the row-by-row assignment and this sentence deliberately no
+  longer repeats it** *(after QA #11102 W-5: the assignment stood here in duplicate and was wrong in both
+  copies — G-29 cites no test name either, so the second mechanism is G-28 alone. **The duplication is the
+  finding**, not the misattribution: this was one claim at two sites, inside the remedy for a defect that
+  was one claim at two sites. One site now owns it)*. Revision 6 found a property with no row; this is rows
+  whose guard no name reaches, and it is the same audit gap from the other side.
   *(Corrected after QA #11099 CF-1. As first written this said "four of the six rows this document owes the
   tree are **invisible**" while §13 said four of six were **visible** — the same measurement stated twice
   with the numerator inverted, under a denominator neither section defined and a phrase, "owed to the
