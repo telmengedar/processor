@@ -14,10 +14,11 @@
 > the two live records, or out of a read-only query I ran against `divoid.mamgo.io` on 2026-09-02.
 > Measurements are labelled as such; the two derivations are labelled as derivations.
 > **Revision 7 (2026-09-03)** folds in **#11052**, **#11065** and **#11066**, and rules on **#11069**.
-> The task-outcome A/B that #11069 proposes is **not** in this document: it is
-> `docs/architecture/task-outcome-ab.md` (DiVoid **#11092**), which **consumes** this instrument rather
-> than replacing it. Nothing here is superseded — §16 argues the split, and §14's last row records why no
-> banner is owed.
+> The task-outcome A/B that #11069 proposes is **not** in this document: it is DiVoid node **#11092**,
+> which **consumes** this instrument rather than replacing it. **#11092 has no repo file, deliberately** —
+> #1176's 2026-09-03 ruling puts a design that genuinely precedes any code in the graph rather than in a
+> repository PR, and #11092 §10 opens by stating that nothing in it is buildable today. Nothing here is
+> superseded — §16 argues the split, and §14's last row records why no banner is owed.
 
 ---
 
@@ -142,7 +143,7 @@ made against that test, and §11 records where it lost to something else.
 | **Any change to `internal/loop`** | The eval consumes `Assemble` and the limit constants as they ship. If the eval needed the loop to change, the eval would no longer be measuring what runs |
 | **Tuning anything** | #10924, verbatim: *"M2 builds the instrument and reports a number; acting on the number is M3."* |
 | **Concurrency in the sweep** | §10 measures a sweep at ~2 minutes. A worker pool buys 90 seconds and costs ordering discipline and error aggregation. **Trigger:** a sweep past ~20 minutes |
-| **Task-outcome measurement, and the A/B that carries it** *(revision 7)* | It needs model calls and a human judgement of result quality, and it measures a **different object**: end-to-end task outcome at a held-constant memory state, against this document's per-question retrieval at whatever state the sweep meets. Designed in `docs/architecture/task-outcome-ab.md` (#11092), which **consumes** this instrument — the sweep supplies the only zero-variance signals in that experiment. **This row is a pointer, not a deferral:** the work is designed, and what gates it is #11066 plus a settled task set, not a trigger on this milestone |
+| **Task-outcome measurement, and the A/B that carries it** *(revision 7)* | It needs model calls and a human judgement of result quality, and it measures a **different object**: end-to-end task outcome at a held-constant memory state, against this document's per-question retrieval at whatever state the sweep meets. Designed in DiVoid **#11092** — a node, not a repo file, per #1176's 2026-09-03 ruling — which **consumes** this instrument — the sweep supplies the only zero-variance signals in that experiment. **This row is a pointer, not a deferral:** the work is designed, and what gates it is #11066 plus a settled task set, not a trigger on this milestone |
 
 ---
 
@@ -552,7 +553,7 @@ whether that was real.~~
 
 **Revision 7 suspends the growth instruction, and only the instruction.** The arithmetic above is unchanged
 and stays true — 45 judgements at p≈0.8 still carry SE ≈ 0.06, and this instrument still cannot resolve
-0.05. What changed is what the number is *for*. Under `docs/architecture/task-outcome-ab.md` (#11092) the
+0.05. What changed is what the number is *for*. Under the task-outcome A/B design (DiVoid **#11092**) the
 headline claim is a task outcome, not this rate, so **the corpus is sized to the task set rather than to a
 standard error** — and the eleven labelled rows now in `internal/eval/corpus.json` may already be the right
 number. **Suspended, not deleted:** the trigger comes back the moment anyone quotes this rate as a headline
@@ -1092,7 +1093,7 @@ still names the right answer, which is §6.5's second rot and §4.3's *go look*.
 defect of the corpus. **It is the corpus pointing at the harder question** — *does more memory help?* —
 which is answerable only across time, on a moving graph, against labels naming what an answer should draw
 on. That is the artifact the corpus already is. The companion instrument that holds the memory state fixed
-(`docs/architecture/task-outcome-ab.md`, #11092) answers the other question and is **structurally blind to
+(the task-outcome A/B design, DiVoid **#11092**) answers the other question and is **structurally blind to
 this one** — which is why this cross-time machinery is kept rather than retired as the A/B takes over the
 headline.
 
@@ -1188,13 +1189,28 @@ the two are different numbers:**
 | G-32, G-33 | **not in the residue** — neither cites a test name yet | **owed to the tree.** No implementation exists; **#11066** is the task |
 
 **Check 1's residue on this document at revision 7 is exactly those five names, and the check was run
-(2026-09-03).** Six rows are owed to the tree and only four of them are visible to check 1 at all — **which is
-the finding rather than the bookkeeping.** P-41 checks that every cited name resolves; **it cannot check that
-a row owing a guard has cited one**, because a row that cites nothing has nothing to fail on. That is the
-audit gap revision 6 named two paragraphs down, arriving from the other direction: revision 6 found a
-*property* with no row, and revision 7 finds *rows* with no name. **A row that names no guard is invisible to
-the only mechanical check this document has**, and the status table above is what stands in for it until the
-guards land.
+(2026-09-03).** ~~Six rows are owed to the tree and only four of them are visible to check 1 at all — which
+is the finding rather than the bookkeeping.~~
+
+**The population, stated — because this section used one phrase for three different ones and got the count
+wrong twice** *(corrected after QA #11099 CF-1; §16 carried the same sentence with the numerator inverted)*.
+Count **rows in the table below whose guard does not exist on this branch**: there are **eight** — G-28,
+G-29, G-30, G-30b, G-31, G-31b, G-32, G-33. That is deliberately **not** the status table's *"owed to the
+tree"*, which is the narrower **four** that no branch carries at all; the four on
+`fix/corpus-loader-guards` are absent from here and owed to nobody. Both counts are true and they are
+different populations, which is exactly how the wrong number got written.
+
+| Of the **eight** rows whose guard is absent from this branch | Count | Which, and why |
+|---|---|---|
+| **visible** to check 1 — the row cites a name that does not resolve | **4** | G-30, G-30b, G-31, G-31b — five names between them, because G-30b cites two |
+| **invisible** to check 1 | **4** | G-32 and G-33 cite no test name at all; G-28 and G-29 cite the existing test they *retarget*, so the name resolves and check 1 stays silent |
+
+**Half of them are invisible, and that is the finding rather than the bookkeeping.** P-41 checks that every
+cited name resolves; **it cannot check that a row owing a guard has cited a name for it** — a row citing
+nothing has nothing to fail on, and a row citing a *different, existing* test passes. That is the audit gap
+revision 6 named two paragraphs down, arriving from the other direction: revision 6 found a *property* with
+no row, and revision 7 finds *rows* whose guard no name reaches. The status table above is what stands in
+for it until the guards land.
 
 **That residue is a to-do list, not a defect**; every other name in the table resolves today. It is stated
 here because an unexplained residue is what trains a reader to stop running check 1 — this section's own
@@ -1371,9 +1387,9 @@ questions.
 | Item | Answer |
 |---|---|
 | Cites Code Contracts and Design Contracts as load-bearing | ✓ Header; #114 §4 via #10861 is cited, not restated (§9.5) |
-| Out-of-scope listed explicitly | ✓ §2, eight rows, each with a trigger |
+| Out-of-scope listed explicitly | ✓ §2, ~~eight rows, each with a trigger~~ **nine rows, each with a trigger or a stated reason** *(revision 7 added the ninth — the task-outcome A/B — and broke both halves of the old claim at once: the count, and the qualifier, because that row carries **gates** (#11066 plus a settled task set) rather than a trigger. It points at designed work, not deferred work)* |
 | No multi-paragraph rationale for things that obviously stay | ✓ |
-| Predecessor designs banner-marked where superseded | ✓ **Nothing is superseded.** #10532 and #10904 are consumed and extended; §16 lists the ~~two~~ places this document *sharpens* them without overriding any claim *(revision 7: the table has three rows, not two)*. **And this document is not superseded either.** `docs/architecture/task-outcome-ab.md` (#11092) is a **successor, not a supersession**: it changes which number is the headline and leaves every mechanism here canonical and in force. #1136 §5's banner rule binds an **end-to-end** supersession, so it does not fire — what is owed instead is a forward pointer, which the header carries. §16 argues the split |
+| Predecessor designs banner-marked where superseded | ✓ **Nothing is superseded.** #10532 and #10904 are consumed and extended; §16 lists the ~~two~~ places this document *sharpens* them without overriding any claim *(revision 7: the table has three rows, not two)*. **And this document is not superseded either.** The task-outcome A/B design (DiVoid **#11092**) is a **successor, not a supersession**: it changes which number is the headline and leaves every mechanism here canonical and in force. #1136 §5's banner rule binds an **end-to-end** supersession, so it does not fire — what is owed instead is a forward pointer, which the header carries. §16 argues the split |
 
 ---
 
@@ -1560,6 +1576,13 @@ must move together — the repo file, the DiVoid node (#11034 P-40), and any cor
 claims and are folded in below. The fourth — #11069, carrying Toni's reframe of what the milestone should
 measure — is **not** folded in, and the ruling against folding it is the substance of this revision.
 
+**One thing about the change that carries this, because a reader diffing the repo will meet it and the
+branch name does not say so** *(recorded after QA #11099 §4)*. **The commit lands revisions 6 and 7
+together**, not revision 7 alone: the repo file's §16 ended at *Revision 5*, because revision 6 lived only
+on node #10926 and the repo file was the half that was behind. So revision 6 appears and is amended inside
+one commit. That is not a scope defect — it is the P-40/P-50 parity gap #11057 ruled on, closing — and
+P-49's binding applies to the pair, not to revision 7 alone.
+
 | Correction | Where it was wrong or silent | Now |
 |---|---|---|
 | **§6.2 stated only that a `hash` is non-empty** (#11052) | a malformed hash *loads*, and then reads as `stale: true` on every sweep — saying *the graph moved under a good label* where the truth is *the label was never right*. Silent where it could be caught, misleading where it is seen | the rule is 64 lowercase hex, old text struck. **§8.1 needed no edit**: its invariant column already said *"sha256 hex, the same function `assemble.go` uses"*, so §8.1 was the **overstating** section and #11046 offered the choice of weakening it — the code was made true instead |
@@ -1571,15 +1594,18 @@ measure — is **not** folded in, and the ruling against folding it is the subst
 
 ### The ruling on #11069: a successor document, and not for the reasons offered
 
-**Ruled: the task-outcome A/B becomes `docs/architecture/task-outcome-ab.md` (#11092), and this document is
-not superseded.** Two reasons were put to me and I rest on neither.
+**Ruled: the task-outcome A/B becomes its own design — DiVoid **#11092** — and this document is not
+superseded.** Two reasons were put to me and I rest on neither.
 
 - **"This file is too big to hold" is not a reason.** Splitting a document on length, without a boundary that
   means something, produces two documents that must be read together and a relationship the reader now has to
   reconstruct. Size is evidence that a document may be carrying more than one thing; it is not the finding.
 - **"It measures a different object" is true and is not decisive.** It would equally justify a §18.
 
-**What decides it is P-43, and it decides it cleanly.** #11069's own fold-in table asks for §1 and §2 —
+**~~What decides it is P-43, and it decides it cleanly.~~ P-43 excludes #11069's fold-in *as it was asked
+for*, and that is the whole of what it excludes** *(re-ordered after QA #11099 W4 — the strike is on the
+ordering claim, not on the reasoning under it, which stands and which QA agreed with)*. #11069's own
+fold-in table asks for §1 and §2 —
 *what the milestone is for*. A design document is a **dated record**: corrected in place with the old text
 struck, never retro-edited. But §1 and §2 are the premise the shipped implementation was built against, and
 four of §15's five steps have shipped against them. Striking a Problem Statement leaves a document with two,
@@ -1587,13 +1613,20 @@ one of them struck, and **every downstream section then serves an ambiguous prem
 split and §6.3's sizing would each have to be read against *which §1?*. That is precisely the failure revision
 6 named — *a document can be locally true everywhere and globally inconsistent* — manufactured deliberately.
 
-Two further reasons, each sufficient on its own:
+**What P-43 does *not* do is choose between a successor artifact and a new §18 here — and the original
+ordering of these reasons got that wrong.** A §18 that *adds* the A/B beside §1 rather than striking it
+needs no strike at all, so it passes P-43 untouched. **The reason that discriminates between a section and
+a separate artifact is the measured one, and it is promoted here from a footnote:**
 
-- **The lifecycles differ.** This design is closed: its implementation order is five steps, four shipped and
-  the fifth in flight. The A/B is unbuilt and blocked. Merging an open design into a closed record re-opens
-  the record, and — by the P-49 mechanism this revision is itself an instance of — **every future A/B
-  revision would rot `r09`'s hash**, which is the revision-6 problem multiplied by a document that has not
-  started changing yet.
+- **The lifecycles differ, and by P-49 they cannot share a hash.** This design is closed: five steps, four
+  shipped and the fifth in flight. The A/B is unbuilt and blocked on two gates. `r09` requires **this
+  document** at its content hash — so by the P-49 mechanism **this very revision is an instance of**, every
+  future revision of an A/B section would rot that row: the revision-6 problem, on a design that has not
+  started changing yet, multiplied by however many revisions it takes to settle. **A closed record and an
+  open design cannot share a hash**, and that is the sentence a §18 has no answer to.
+
+One further reason, which stands on its own and is argued rather than measured:
+
 - **It is a project-level claim in a milestone document.** #11069 says the A/B supersedes the rates *as the
   headline*. That is a claim about how this **project** measures itself, not about what M2 delivers. #10924's
   charter is #10424 §9's one sentence and nothing in it is about task outcome.
@@ -1611,6 +1644,23 @@ formality: its targets are not all of one kind, and treating them as one is what
 | §9.1 — no-mutation extended to the loop while measured | **Successor.** §9.1 is about *the instrument*. Extending it to a component this milestone does not build is scope creep; #11092 §4.2 carries it, and #11071 is the task |
 | §10 — the A/B's price | **Successor** |
 | §11.4 — the snapshot rejection re-argued | **Folded in, and it is the sharpest of the six.** A rejected alternative whose stated reason has stopped holding is exactly what P-51 obliges the noticing hop to correct |
+
+**And it is a node, not a repo file** *(added after QA #11099 CF-2; the artifact decision is the
+operator's under #10192, and this records it)*. The successor was written as
+`docs/architecture/task-outcome-ab.md` and that file was withdrawn before this change was committed.
+**#1176**'s 2026-09-03 ruling: a design that genuinely precedes any code is a DiVoid node, not a repository
+PR — and #11092 §10 opens by stating that nothing in it is buildable today, behind two gates, one of which
+needs Toni. The failure mode that ruling names is exactly the one available here: *a design merges, the
+implementation does not follow, and the document ages into a description of something that was never
+built — while reading as current, because merged looks like shipped.* **Nothing was lost by dropping the
+path**: this document cited the successor by path at **six** sites — the header, §2's out-of-scope row,
+§6.3, §11.2, §14 and §16 — and every one of them already carried #11092 beside the path, so the six
+became node-only citations with no information removed. *(QA #11099 CF-2 put the number at five and
+named §11.4 among them; §11.4 carried no path citation, and §6.3 and §14 did. The remedy is unchanged
+— recorded because a count in a dated record is a claim.)*
+**And the withdrawal is scoped to that one new file.** Correcting *this* document in place is P-43 working
+as intended, and `r09` is bound to it by P-49 — which is the same asymmetry the ruling itself draws
+between a design that precedes code and one whose implementation is four steps in.
 
 ### What the A/B cannot measure — and one limit is not enough
 
@@ -1673,10 +1723,17 @@ revision 7**, on `design/m2-revision-7`, and neither is changed in substance by 
   author who did not run it** — struck in place. What the run actually returns is five names, all from
   `fix/corpus-loader-guards`, and §13 now states that as a measurement with the date it was taken.
 - **The gap that made it possible is worth more than the instance.** P-41 checks that every *cited* name
-  resolves. It cannot check that a row *owing* a guard has cited one — a row citing nothing has nothing to
-  fail on — so four of the six rows this document owes the tree are invisible to the only mechanical check it
-  has. Revision 6 found a property with no row; this is rows with no name, and it is the same audit gap from
-  the other side.
+  resolves. It cannot check that a row *owing* a guard has cited a name for it — a row citing nothing has
+  nothing to fail on, and a row citing a *different, existing* test passes. **Of the eight rows in §13 whose
+  guard does not exist on this branch, four are invisible to check 1** for one of those two reasons: G-32
+  and G-33 cite no name, G-28 and G-29 cite the existing test they retarget. Revision 6 found a property
+  with no row; this is rows whose guard no name reaches, and it is the same audit gap from the other side.
+  *(Corrected after QA #11099 CF-1. As first written this said "four of the six rows this document owes the
+  tree are **invisible**" while §13 said four of six were **visible** — the same measurement stated twice
+  with the numerator inverted, under a denominator neither section defined and a phrase, "owed to the
+  tree", that §13's own status table uses for a different and narrower set. **Three populations were
+  reachable from the text and the document named none.** The population is now stated at both sites, and it
+  is eight, not six.)*
 
 ---
 
