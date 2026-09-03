@@ -10,7 +10,8 @@ const hashPrefixLength = 8
 
 const (
 	alarmControlAbsent = "no control stratum: this sweep verified nothing about itself, so a broken harness would report a plausible number"
-	alarmControlBroken = "the control stratum did not read 1.00: either the graph moved or the harness broke, and this sweep's labelled number is not trustworthy"
+	alarmControlBroken = "the control stratum did not verify retrieval: either the graph moved, the harness broke, or the stratum could not be scored at all, and this sweep's labelled number is not trustworthy"
+	alarmControlBudget = "budget alarm: the control stratum was retrieved in full and cut by the budget. Retrieval is intact and this sweep's retrieved rate is trustworthy; the admitted rate is a reading of the assembler, not of the retriever."
 )
 
 type rate struct {
@@ -60,8 +61,8 @@ func writeSummary(result Result, corpusPath string, w io.Writer) {
 	writeRate(w, StratumLabelled, rateOf(result, StratumLabelled))
 	writeRate(w, StratumControl, rateOf(result, StratumControl))
 
-	if !result.ControlIntact() {
-		fmt.Fprintf(w, "\n%s\n", controlAlarm(result))
+	if alarm := controlAlarm(result); alarm != "" {
+		fmt.Fprintf(w, "\n%s\n", alarm)
 	}
 
 	writeMisses(w, result, StratumLabelled)
@@ -74,7 +75,13 @@ func controlAlarm(result Result) string {
 	if countRows(result, StratumControl) == 0 {
 		return alarmControlAbsent
 	}
-	return alarmControlBroken
+	if !result.ControlVerifiedRetrieval() {
+		return alarmControlBroken
+	}
+	if result.controlWasCut() {
+		return alarmControlBudget
+	}
+	return ""
 }
 
 func writeRate(w io.Writer, stratum string, r rate) {

@@ -15,7 +15,7 @@ const maxRequiredPerRow = 3
 // StratumLabelled marks a row whose required nodes were labelled by hand.
 const StratumLabelled = "labelled"
 
-// StratumControl marks a constructed row that must read 1.00 on every sweep.
+// StratumControl marks a constructed row whose required nodes retrieval must surface on every sweep.
 const StratumControl = "control"
 
 // Required is one node a row demands, with the hash it carried when it was labelled.

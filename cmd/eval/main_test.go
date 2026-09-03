@@ -13,13 +13,14 @@ import (
 	"testing"
 
 	"github.com/telmengedar/processor/internal/eval"
+	"github.com/telmengedar/processor/internal/loop"
 )
 
 const runCorpus = `[
   {"id": "r01", "input": "what did the split change", "subject": 100, "stratum": "labelled",
    "required": [{"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "an answer that omits it is wrong"}]},
   {"id": "c01", "input": "a constructed control input", "subject": 100, "stratum": "control",
-   "required": [{"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "a constructed row must read one"}]}
+   "required": [{"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "a constructed row must be retrieved"}]}
 ]`
 
 type failingWriter struct{}
@@ -35,6 +36,26 @@ func graphServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Query().Get("query") != "" {
 			fmt.Fprintf(w, `{"result":[{"id":200,"type":"documentation","name":"Alpha","similarity":0.81,"content":%q}],"total":1}`, requiredNodeBody)
+			return
+		}
+		if r.URL.Query().Get("id") == "100" {
+			fmt.Fprint(w, `{"result":[{"id":100,"type":"documentation","name":"Subject","content":"the subject body"}],"total":1}`)
+			return
+		}
+		fmt.Fprint(w, `{"result":[],"total":0}`)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func graphServerWhoseRankOneCandidateExhaustsTheBudget(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("query") != "" {
+			fmt.Fprintf(w, `{"result":[{"id":199,"type":"session-log","name":"Run","similarity":0.9,"content":%q},{"id":200,"type":"documentation","name":"Alpha","similarity":0.81,"content":%q}],"total":2}`,
+				strings.Repeat("x", loop.AssemblyByteBudget+1), requiredNodeBody)
 			return
 		}
 		if r.URL.Query().Get("id") == "100" {
@@ -136,8 +157,8 @@ func TestRunExitsNonZeroWhenTheControlStratumMissedOnALiveSweep(t *testing.T) {
 	server := graphServer(t)
 	graphEnv(t, server.URL)
 
-	body := strings.Replace(runCorpus, `"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "a constructed row must read one"`,
-		`"node": 999, "hash": "37002ae74ca517874ce657943da48e6069979427e09de958e9b7fad19ab5cac3", "why": "a constructed row must read one"`, 1)
+	body := strings.Replace(runCorpus, `"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "a constructed row must be retrieved"`,
+		`"node": 999, "hash": "37002ae74ca517874ce657943da48e6069979427e09de958e9b7fad19ab5cac3", "why": "a constructed row must be retrieved"`, 1)
 
 	var machine, human bytes.Buffer
 
@@ -149,8 +170,36 @@ func TestRunExitsNonZeroWhenTheControlStratumMissedOnALiveSweep(t *testing.T) {
 	if machine.Len() == 0 {
 		t.Fatal("no measurement was emitted; an unverified sweep must still report what it saw")
 	}
-	if !strings.Contains(human.String(), "the control stratum did not read 1.00") {
+	if !strings.Contains(human.String(), "the control stratum did not verify retrieval: either the graph moved, the harness broke, or the stratum could not be scored at all") {
 		t.Fatalf("the human stream does not raise the control alarm:\n%s", human.String())
+	}
+}
+
+func TestRunExitsZeroAndBlamesTheBudgetWhenARankOneCandidateCutTheControlOnALiveSweep(t *testing.T) {
+	server := graphServerWhoseRankOneCandidateExhaustsTheBudget(t)
+	graphEnv(t, server.URL)
+
+	var machine, human bytes.Buffer
+
+	code := run([]string{"-corpus", corpusFile(t, runCorpus)}, &machine, &human)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0 when retrieval surfaced the control and the budget discarded it; the human stream was:\n%s", code, human.String())
+	}
+
+	var decoded eval.Result
+	if err := json.Unmarshal(machine.Bytes(), &decoded); err != nil {
+		t.Fatalf("the machine stream did not carry a result: %v\nit carried:\n%s", err, machine.String())
+	}
+	if got := decoded.Rows[1].Required[0].Verdict; got != eval.Cut {
+		t.Fatalf("the control node's verdict = %q, want %q: the fixture did not reach the boundary this guard is about", got, eval.Cut)
+	}
+
+	if !strings.Contains(human.String(), "budget alarm: the control stratum was retrieved in full and cut by the budget. Retrieval is intact and this sweep's retrieved rate is trustworthy; the admitted rate is a reading of the assembler, not of the retriever.") {
+		t.Fatalf("the human stream does not name the budget as the cause:\n%s", human.String())
+	}
+	if strings.Contains(human.String(), "either the graph moved, the harness broke, or the stratum could not be scored at all") {
+		t.Fatalf("the human stream blames the instrument for what the budget did:\n%s", human.String())
 	}
 }
 

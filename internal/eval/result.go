@@ -100,8 +100,8 @@ func (r RowResult) Scored() bool {
 	return true
 }
 
-// ControlIntact reports whether the sweep verified itself against a control stratum that read 1.00.
-func (r Result) ControlIntact() bool {
+// ControlVerifiedRetrieval reports whether a control stratum was present, scored, and retrieved in full.
+func (r Result) ControlVerifiedRetrieval() bool {
 	controls := 0
 	for _, row := range r.Rows {
 		if row.Stratum != StratumControl {
@@ -112,12 +112,26 @@ func (r Result) ControlIntact() bool {
 			return false
 		}
 		for _, node := range row.Required {
-			if node.Verdict != Admitted {
+			if node.Verdict == NotRetrieved {
 				return false
 			}
 		}
 	}
 	return controls > 0
+}
+
+func (r Result) controlWasCut() bool {
+	for _, row := range r.Rows {
+		if row.Stratum != StratumControl {
+			continue
+		}
+		for _, node := range row.Required {
+			if node.Verdict == Cut {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func selfProduced(d loop.Disposition) bool {

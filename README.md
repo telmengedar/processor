@@ -43,8 +43,10 @@ words; that document carries the argument.
 - `cmd/eval` — the retrieval sweep: loads a corpus file (`-corpus`) and, per row, does exactly what a
   real run's first six steps do — fetch the anchor, one recall, `Assemble` — then stops before the
   model, so a full sweep costs no model call at all. Writes the measurement as JSON to stdout and the
-  human summary to stderr, and exits non-zero when the control stratum did not verify the sweep. Needs
-  the graph half of the boot configuration only.
+  human summary to stderr, and exits non-zero when retrieval could not be verified against the control
+  stratum. A control node the byte budget merely cut exits zero under a named budget alarm — that is the
+  assembler being measured, not the instrument failing. Needs the graph half of the boot configuration
+  only.
 - `internal/boot` — the boot configuration: the module's one environment read site, split into the
   listen address, a graph half and a model half, so a caller that needs only graph configuration is
   never asked for model configuration.
@@ -351,6 +353,8 @@ flags it.
   the raw input verbatim at the loop's own candidate limit, that its dispositions equal the ones a real
   run produces for the same anchor and candidates, that it reads the graph and never writes to it, that a
   row whose required node no longer resolves leaves both denominators instead of scoring as a miss, and
-  that a control stratum which did not read 1.00 exits non-zero. **Not verified here — and not
+  that a control node the retriever never surfaced exits non-zero while a control node the byte budget
+  cut exits zero under a budget alarm — the pair over otherwise identical fixtures, so neither is
+  satisfied by an implementation that reads the two verdicts alike. **Not verified here — and not
   verifiable by any test:** that the numbers mean anything. No corpus exists yet, and a green build
   proves the instrument works while proving nothing about what it measures (design **#10926** §15).

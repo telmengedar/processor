@@ -209,30 +209,54 @@ func TestARowIsNotScoredWhenTheSweepCouldNotFetchItsSubject(t *testing.T) {
 	}
 }
 
-func TestControlIntactIsFalseWhenTheCorpusCarriesNoControlRowAtAll(t *testing.T) {
+func controlStratumWhoseSecondNodeScored(verdict Verdict) Result {
+	return Result{Rows: []RowResult{
+		{Stratum: StratumControl, Required: []NodeResult{{Node: 1, Verdict: Admitted}}},
+		{Stratum: StratumControl, Required: []NodeResult{{Node: 2, Verdict: verdict}}},
+	}}
+}
+
+func TestControlVerifiedRetrievalIsFalseWhenTheCorpusCarriesNoControlRowAtAll(t *testing.T) {
 	t.Parallel()
 
 	result := Result{Rows: []RowResult{{Stratum: StratumLabelled, Required: []NodeResult{{Node: 1, Verdict: Admitted}}}}}
 
-	if result.ControlIntact() {
-		t.Fatal("ControlIntact is true for a sweep with no control stratum, want false: an absent self-check is not a passing one")
+	if result.ControlVerifiedRetrieval() {
+		t.Fatal("ControlVerifiedRetrieval is true for a sweep with no control stratum, want false: an absent self-check is not a passing one")
 	}
 }
 
-func TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode(t *testing.T) {
+func TestControlVerifiedRetrievalIsTrueWhenTheBudgetCutAControlNodeTheRetrieverSurfaced(t *testing.T) {
 	t.Parallel()
 
-	result := Result{Rows: []RowResult{
-		{Stratum: StratumControl, Required: []NodeResult{{Node: 1, Verdict: Admitted}}},
-		{Stratum: StratumControl, Required: []NodeResult{{Node: 2, Verdict: Cut, Rank: 9}}},
-	}}
+	result := controlStratumWhoseSecondNodeScored(Cut)
 
-	if result.ControlIntact() {
-		t.Fatal("ControlIntact is true where a control row scored a cut, want false")
+	if !result.ControlVerifiedRetrieval() {
+		t.Fatal("ControlVerifiedRetrieval is false where a control node was retrieved and cut, want true: the budget is not the retriever")
 	}
 }
 
-func TestControlIntactIsTrueWhenEveryControlRowAdmittedEveryRequiredNode(t *testing.T) {
+func TestControlVerifiedRetrievalIsFalseWhenAControlNodeWasNeverRetrieved(t *testing.T) {
+	t.Parallel()
+
+	result := controlStratumWhoseSecondNodeScored(NotRetrieved)
+
+	if result.ControlVerifiedRetrieval() {
+		t.Fatal("ControlVerifiedRetrieval is true where a control node reached no candidate row, want false: retrieval is the ceiling under every number in the sweep")
+	}
+}
+
+func TestControlVerifiedRetrievalIsFalseWhenAControlRowCarriesAnUnresolvedRequiredNode(t *testing.T) {
+	t.Parallel()
+
+	result := controlStratumWhoseSecondNodeScored(Unresolved)
+
+	if result.ControlVerifiedRetrieval() {
+		t.Fatal("ControlVerifiedRetrieval is true where a control row could not be scored at all, want false: an absent self-check is not a passing one")
+	}
+}
+
+func TestControlVerifiedRetrievalIsTrueWhenEveryControlRowAdmittedEveryRequiredNode(t *testing.T) {
 	t.Parallel()
 
 	result := Result{Rows: []RowResult{
@@ -240,7 +264,7 @@ func TestControlIntactIsTrueWhenEveryControlRowAdmittedEveryRequiredNode(t *test
 		{Stratum: StratumLabelled, Required: []NodeResult{{Node: 2, Verdict: NotRetrieved}}},
 	}}
 
-	if !result.ControlIntact() {
-		t.Fatal("ControlIntact is false where every control row read 1.00, want true: a labelled miss must not break the self-check")
+	if !result.ControlVerifiedRetrieval() {
+		t.Fatal("ControlVerifiedRetrieval is false where every control node was admitted, want true: a labelled miss must not break the self-check")
 	}
 }
