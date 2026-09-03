@@ -61,11 +61,32 @@ func intactControlRow() RowResult {
 	}
 }
 
+func controlRowScoring(verdict Verdict) RowResult {
+	return RowResult{
+		Row:            "c01",
+		Stratum:        StratumControl,
+		Subject:        400,
+		CandidateCount: 17,
+		AdmittedCount:  1,
+		AdmittedBytes:  56302,
+		BudgetBytes:    loop.AssemblyByteBudget,
+		Required:       []NodeResult{{Node: 401, Verdict: verdict}},
+	}
+}
+
 func mustContain(t *testing.T, output, want string) {
 	t.Helper()
 
 	if !strings.Contains(output, want) {
 		t.Fatalf("output does not contain %q; output was:\n%s", want, output)
+	}
+}
+
+func mustNotContain(t *testing.T, output, unwanted string) {
+	t.Helper()
+
+	if strings.Contains(output, unwanted) {
+		t.Fatalf("output contains %q; output was:\n%s", unwanted, output)
 	}
 }
 
@@ -170,20 +191,25 @@ func TestReportNamesARowTheSweepCouldNotScoreAtAll(t *testing.T) {
 	mustContain(t, human, "retrieved 2/3 (0.67)")
 }
 
-func TestReportWarnsThatTheSweepIsNotTrustworthyWhenAControlRowMissed(t *testing.T) {
+func TestReportBlamesTheInstrumentAndNotTheBudgetWhenAControlNodeWasNeverRetrieved(t *testing.T) {
 	t.Parallel()
 
-	broken := RowResult{
-		Row:      "c01",
-		Stratum:  StratumControl,
-		Required: []NodeResult{{Node: 401, Verdict: NotRetrieved}},
-	}
+	_, human := render(t, resultWith(oneMissOfEachKind(), controlRowScoring(NotRetrieved)))
 
-	_, human := render(t, resultWith(oneMissOfEachKind(), broken))
-
-	mustContain(t, human, alarmControlBroken)
+	mustContain(t, human, "the control stratum did not read 1.00: either the graph moved or the harness broke, and this sweep's labelled number is not trustworthy")
 	mustContain(t, human, "misses (control):")
 	mustContain(t, human, "#401")
+	mustNotContain(t, human, "budget alarm")
+}
+
+func TestReportBlamesTheBudgetAndNotTheInstrumentWhenTheBudgetCutAControlNodeItRetrieved(t *testing.T) {
+	t.Parallel()
+
+	_, human := render(t, resultWith(oneMissOfEachKind(), controlRowScoring(Cut)))
+
+	mustContain(t, human, "budget alarm: the control stratum was retrieved in full and cut by the budget. Retrieval is intact and this sweep's retrieved rate is trustworthy; the admitted rate is a reading of the assembler, not of the retriever.")
+	mustContain(t, human, "control   retrieved 1/1 (1.00)   admitted 0/1 (0.00)")
+	mustNotContain(t, human, "either the graph moved or the harness broke")
 }
 
 func TestReportWarnsWhenTheCorpusCarriedNoControlStratumAtAll(t *testing.T) {
@@ -191,7 +217,7 @@ func TestReportWarnsWhenTheCorpusCarriedNoControlStratumAtAll(t *testing.T) {
 
 	_, human := render(t, resultWith(oneMissOfEachKind()))
 
-	mustContain(t, human, alarmControlAbsent)
+	mustContain(t, human, "no control stratum: this sweep verified nothing about itself, so a broken harness would report a plausible number")
 }
 
 func TestReportSaysNothingAlarmingWhenTheControlStratumReadOne(t *testing.T) {
@@ -199,9 +225,9 @@ func TestReportSaysNothingAlarmingWhenTheControlStratumReadOne(t *testing.T) {
 
 	_, human := render(t, resultWith(oneMissOfEachKind(), intactControlRow()))
 
-	if strings.Contains(human, alarmControlBroken) || strings.Contains(human, alarmControlAbsent) {
-		t.Fatalf("the summary raises a control alarm on an intact control stratum; output was:\n%s", human)
-	}
+	mustNotContain(t, human, "either the graph moved or the harness broke")
+	mustNotContain(t, human, "no control stratum")
+	mustNotContain(t, human, "budget alarm")
 }
 
 func TestReportCountsTheAnchorDuplicationAndSelfProducedCandidatesItFound(t *testing.T) {

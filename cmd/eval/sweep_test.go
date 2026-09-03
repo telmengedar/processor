@@ -392,15 +392,33 @@ func TestRunReportsAnUnknownFlagWithoutSweeping(t *testing.T) {
 	}
 }
 
-func TestTheSweepExitsNonZeroWhenTheControlStratumDidNotVerifyIt(t *testing.T) {
+func aSweepWhoseOnlyControlNodeScored(verdict eval.Verdict) eval.Result {
+	return eval.Result{Rows: []eval.RowResult{
+		{Stratum: eval.StratumControl, Required: []eval.NodeResult{{Node: 401, Verdict: verdict}}},
+	}}
+}
+
+func TestTheSweepExitsNonZeroWhenAControlNodeWasNeverRetrieved(t *testing.T) {
 	t.Parallel()
 
-	broken := eval.Result{Rows: []eval.RowResult{
-		{Stratum: eval.StratumControl, Required: []eval.NodeResult{{Node: 401, Verdict: eval.NotRetrieved}}},
-	}}
+	if got := exitCodeFor(aSweepWhoseOnlyControlNodeScored(eval.NotRetrieved)); got != exitError {
+		t.Fatalf("exit code = %d, want %d: an unattended sweep must signal that retrieval itself could not be verified", got, exitError)
+	}
+}
 
-	if got := exitCodeFor(broken); got != exitError {
-		t.Fatalf("exit code = %d, want %d: an unattended sweep must signal that it could not verify itself", got, exitError)
+func TestTheSweepExitsZeroWhenTheBudgetCutAControlNodeTheRetrieverSurfaced(t *testing.T) {
+	t.Parallel()
+
+	if got := exitCodeFor(aSweepWhoseOnlyControlNodeScored(eval.Cut)); got != 0 {
+		t.Fatalf("exit code = %d, want 0: a cut control is the assembler being measured, not the instrument failing", got)
+	}
+}
+
+func TestTheSweepExitsNonZeroWhenAControlRowCouldNotBeScoredAtAll(t *testing.T) {
+	t.Parallel()
+
+	if got := exitCodeFor(aSweepWhoseOnlyControlNodeScored(eval.Unresolved)); got != exitError {
+		t.Fatalf("exit code = %d, want %d: a sweep whose self-check did not run has no self-check", got, exitError)
 	}
 }
 

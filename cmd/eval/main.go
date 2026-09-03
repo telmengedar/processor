@@ -61,7 +61,7 @@ func run(args []string, machine, human io.Writer) int {
 }
 
 func exitCodeFor(result eval.Result) int {
-	if !result.ControlIntact() {
+	if !result.ControlVerifiedRetrieval() {
 		return exitError
 	}
 	return 0
