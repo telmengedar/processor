@@ -13,6 +13,12 @@
 > Baseline: `main` at **`9992209`** (PR #8 merged). Every number in §3 was read out of that tree, out of
 > the two live records, or out of a read-only query I ran against `divoid.mamgo.io` on 2026-09-02.
 > Measurements are labelled as such; the two derivations are labelled as derivations.
+> **Revision 7 (2026-09-03)** folds in **#11052**, **#11065** and **#11066**, and rules on **#11069**.
+> The task-outcome A/B that #11069 proposes is **not** in this document: it is DiVoid node **#11092**,
+> which **consumes** this instrument rather than replacing it. **#11092 has no repo file, deliberately** —
+> #1176's 2026-09-03 ruling puts a design that genuinely precedes any code in the graph rather than in a
+> repository PR, and #11092 §10 opens by stating that nothing in it is buildable today. Nothing here is
+> superseded — §16 argues the split, and §14's last row records why no banner is owed.
 
 ---
 
@@ -62,6 +68,15 @@ and would produce a shutout. M2 does **not** fix it — fixing the thing you are
 measuring it, is backwards. The harness reports self-produced candidates as a named diagnostic, and R13's
 exclusion becomes **M3's first tuning decision taken against a number instead of an argument.** That is
 the ordering argument of the whole milestone doing its job on day one.
+
+**What exit 1 means, because the first sweep is about to be read (revision 6, from #11045).** The control
+stratum is read at **both** boundaries, not one. A control node that was **never retrieved** is an instrument
+failure and exits **1** — the retriever, the graph or the harness is broken and nothing in the sweep is
+readable. A control node that was **retrieved and then cut** exits **0** with a named budget alarm, because
+that is R13 doing exactly what §11.3 says the first sweep will measure. Scoring controls on `admitted`, as
+first written, would have made the pollution itself indistinguishable from a broken harness — and that is the
+most likely way this command exits 1 on its first real run. **Exit 0 means the numbers can be believed. It
+does not mean they are good.**
 
 **Cost.** One full sweep of a 30-row corpus: **0 model calls**, ~70 graph GETs, ~2 minutes wall clock, no
 currency. The composition path (mechanical + the model's own supplementary query) is **out of scope** and
@@ -128,6 +143,7 @@ made against that test, and §11 records where it lost to something else.
 | **Any change to `internal/loop`** | The eval consumes `Assemble` and the limit constants as they ship. If the eval needed the loop to change, the eval would no longer be measuring what runs |
 | **Tuning anything** | #10924, verbatim: *"M2 builds the instrument and reports a number; acting on the number is M3."* |
 | **Concurrency in the sweep** | §10 measures a sweep at ~2 minutes. A worker pool buys 90 seconds and costs ordering discipline and error aggregation. **Trigger:** a sweep past ~20 minutes |
+| **Task-outcome measurement, and the A/B that carries it** *(revision 7)* | It needs model calls and a human judgement of result quality, and it measures a **different object**: end-to-end task outcome at a held-constant memory state, against this document's per-question retrieval at whatever state the sweep meets. Designed in DiVoid **#11092** — a node, not a repo file, per #1176's 2026-09-03 ruling — which **consumes** this instrument — the sweep supplies the only zero-variance signals in that experiment. **This row is a pointer, not a deferral:** the work is designed, and what gates it is #11066 plus a settled task set, not a trigger on this milestone |
 
 ---
 
@@ -304,6 +320,11 @@ brief's hardest question (§9.2). They are **capped, labelled `control`, and nev
 rate** — blending them would inflate the headline and, worse, add trials that all score 1.0, shrinking the
 apparent standard error while measuring nothing (§11.4).
 
+**Revision 6 sharpens what "~1.0" means here.** A constructed row reads ~1.0 at the **retrieval** boundary by
+construction — that is the whole of what makes it a control. It reads ~1.0 at the **admission** boundary only
+while nothing oversized outranks it, which is a property of the graph on the day and not of the control. §9.2
+guard 3 therefore splits at the two boundaries §5 already drew, and only the retrieval half is an invariant.
+
 ### 4.3 Hand-labelling (1) is primary, and its stated weakness is its advantage
 
 The brief names the cost: *"the labeller's model of 'required' becomes the metric's definition."* That is
@@ -327,6 +348,37 @@ instead of trusting it, which matters because every row is one person's judgemen
 measuring "did we get most of the neighbourhood", which is diffuse; a row listing one to three, each with a
 stated reason, measures something sharp. A row that cannot be narrowed under three is a row containing two
 inputs, and it splits.
+
+**A labelled miss is a finding, not a verdict** *(revision 7, from #11065)*. The definition above says
+when a node is *required*. It does not say what a **miss** means — and three causes produce output that is
+byte-identical in every field the harness prints today:
+
+| # | Cause | What it is |
+|---|---|---|
+| 1 | the retriever got worse | a real regression |
+| 2 | **the graph gained a better node** and retrieval correctly preferred it | an improvement wearing a regression's clothes |
+| 3 | the label was wrong, or has become wrong | a corpus defect |
+
+**So a labelled red obliges a look, not a fix — and *"update the corpus"* is a legitimate outcome of that
+look.** Toni's words, which are where this came from:
+
+> *"our memory is a living system. as soon as more fitting or more precise nodes exist it will probably
+> include different nodes, at some point it might not include the expected ones. So its more of like an
+> indicator telling us - we should check that and not outright a fail. The check then would tell us whether
+> the signal is actually a red flag or whether we need to change the corpus."*
+
+The reason is §4.5's own property read from the other side. **The corpus names required node *ids*, which
+is what makes it survive every retriever change — and it is exactly what makes it not survive the graph
+gaining a better answer.** The property that gives the format its durability against one kind of change is
+the property that exposes it to the other. That is the trade the format makes; it is stated here rather
+than left for a reader to discover from a red.
+
+**The exit code does not change, and revision 6's spine is why.** That revision ruled that the instrument
+reports what the pipeline does and does not adjudicate. The same rule governs the labelled rate: a labelled
+red is evidence and the reader adjudicates. Labelled misses never drove the exit code (§4.2), and this is
+the reason — **you cannot automate *go look*.** What revision 7 adds is the evidence that makes the look
+possible: §8.2 retains the candidate set, §8.3 names what outranked the required node, and §6.5 says which
+kind of label rot is decidable and which is not.
 
 ### 4.4 One source considered and not built
 
@@ -407,6 +459,44 @@ A closed set, one per required node, each with a producer in this design and a r
 | `notRetrieved` | absent from all 20 rows | the retriever never surfaced it |
 | `unresolved` | the node id no longer resolves in the graph | **not a score.** The row is excluded from both rates and counted separately (§6.5) |
 
+### 5.4 A required node larger than the budget
+
+**This document is one.** #10926 was **95,661 B** when #11046 measured it, #10904 is **79,046 B**, and the
+budget is 60,000 B. **A required node larger than the budget can never be `admitted`, whatever the retriever
+does.** No figure is quoted for this file's current size on purpose: it grows with every revision, and a
+number that must be re-checked on each edit is the same unverifiable-citation shape §13 removed line numbers
+for. Its best attainable verdict is `cut`, and it
+contributes a permanent zero to the admitted rate for a reason that is not about retrieval at all. Since every
+question whose answer genuinely lives in one of this project's design documents is such a row, that is a large
+and interesting class. The first corpus keeps **one** of them (`r09`) deliberately, so the fact is countable
+rather than invisible.
+
+**It is not rejected at load, and not checked at load at all** — for a reason stronger than taste. The loader
+is offline by construction (§15 step 3: *"no graph access in this step at all"*) and every §6.2 rule is
+decidable from the file alone. A size check is a graph read, and it would make corpus **validity** depend on
+live graph state: a corpus that loaded yesterday would fail today because someone edited a node. That is
+exactly the drift §6.5 already settled, and it settled it **at sweep time as a flag on a scored row**, never at
+load time as a rejection. The same answer binds here. Rejecting the row outright would additionally forbid the
+corpus from stating a true and important fact about the shipped pipeline.
+
+**It does not get its own stratum either.** A third member costs a third rate and would pull the row out of the
+labelled rate — discarding the true half of what it measures, which is that the retriever *did* surface a 95 KB
+design document for a question about it. §6.1's stratum has two members and keeps them.
+
+**What ships is the fact, not a verdict about it.** The node's own byte size is already on the `Disposition`
+the scorer walks — admission is computed from it — so it is carried onto the required-node result and printed
+beside every `cut` (§8.2, §8.3), against a budget the same line already prints. The distinction that decides a
+milestone is then immediate:
+
+| Reading | What it means | Who can act on it |
+|---|---|---|
+| `cut`, and the node **fits** the budget | something above it consumed the budget first | M3's tuning. This is a target |
+| `cut`, and the node **exceeds** the budget alone | it cannot reach the model at any ranking whatsoever | not tuning. Chunking, which is a different milestone |
+
+Carrying the size rather than a derived `oversize` boolean is deliberate and is §5.1's habit applied once more:
+the budget is already on the same line, so a boolean would encode a comparison the reader can make, while the
+raw number answers *by how much* — which is the input to whether chunking is worth a milestone.
+
 ---
 
 ## 6. The corpus
@@ -441,7 +531,8 @@ more precisely than a date does). Both are the "audit columns for traceability" 
 |---|---|
 | `required` must not contain the row's `subject` | the anchor is fetched by id and can never be a recall miss (§3.1), so such a row is a **free hit that silently inflates every sweep** |
 | `1 <= len(required) <= 3` | §4.3 — above three the row is measuring the neighbourhood |
-| every `required` entry has a non-empty `why` and `hash` | §4.3 and §6.5 respectively; an empty one is a row that was never really labelled |
+| ~~every `required` entry has a non-empty `why` and `hash`~~ every `required` entry has a non-empty `why`, and a `hash` that is **64 lowercase hex characters** — the form `assemble.go`'s content hash takes | §4.3 and §6.5 respectively; an empty one is a row that was never really labelled. A **malformed** hash is worse than an empty one: it loads, and then reads as `stale: true` on every sweep, which says *the graph moved under a good label* where the truth is *the label was never right*. Silent where it could be caught, misleading where it is seen |
+| `required[].node` is unique **within the row** *(revision 7)* | the uniqueness rule was stated for row ids and never for required-node ids inside a row. A repeat counts **one** label two or three times in both rates — numerator and denominator both move, so the row's contribution is silently mis-weighted with no diagnostic anywhere |
 | `id` unique, `input` non-empty, `subject > 0`, `stratum` in the closed set | a malformed row must fail loudly, never silently score |
 | a malformed file, or an empty corpus, is an **error** | a sweep reporting `0/0` and exiting 0 is the exact instrument failure this milestone exists to avoid |
 
@@ -457,8 +548,17 @@ computed by the harness** — a statistics surface is machinery nobody asked for
 prevents the misreading; the arithmetic is the reader's.
 
 30 is chosen because it is what one person will author carefully, not because a formula produced it.
-**Trigger to grow it:** a tuning change moves the number by less than ~0.12 and the decision depends on
-whether that was real.
+~~**Trigger to grow it:** a tuning change moves the number by less than ~0.12 and the decision depends on
+whether that was real.~~
+
+**Revision 7 suspends the growth instruction, and only the instruction.** The arithmetic above is unchanged
+and stays true — 45 judgements at p≈0.8 still carry SE ≈ 0.06, and this instrument still cannot resolve
+0.05. What changed is what the number is *for*. Under the task-outcome A/B design (DiVoid **#11092**) the
+headline claim is a task outcome, not this rate, so **the corpus is sized to the task set rather than to a
+standard error** — and the eleven labelled rows now in `internal/eval/corpus.json` may already be the right
+number. **Suspended, not deleted:** the trigger comes back the moment anyone quotes this rate as a headline
+rather than as an explanation, and the arithmetic is what makes that quotation wrong. §17 question 1's
+*"an agent extends to thirty"* is suspended with it.
 
 ### 6.4 Where it lives — a file in the repo, and why the graph is disqualified
 
@@ -507,6 +607,42 @@ admitted or cut. So a required node that *was* retrieved yields its live hash fo
 `Disposition`. A separate `Node()` read is needed **only for required nodes that were not retrieved** —
 which are exactly the rows whose verdict is a miss and which would be embarrassing if the miss turned out to
 be a deletion. §10 prices it.
+
+**And `stale` covers one of the two ways a label rots, not both** *(revision 7, from #11065)*. The table
+above reads as *the* drift guard. It is not:
+
+| Rot | Mechanism | Decidable by this harness? |
+|---|---|---|
+| the required node's **content** changed under the label | content hash inequality | **yes** — this is `stale` |
+| a **better node appeared beside it**, and the label's node is no longer the best answer | none available | **no** |
+
+The second is not decidable by any check this harness can run, **because *better* is precisely the
+judgement §4.3 assigns to the labeller** — the same judgement, arriving later. A flag for it would have to
+encode the definition of *required*, which §4.3 deliberately left to a human with a stated reason per node.
+
+> **So it does not get a flag. It gets evidence and a procedure.** A flag here is #11034 P-3's shape
+> exactly — a guard whose every available response is worse than the violation: it would fire on every
+> graph addition, or never fire at all. The evidence is §8.2's retained candidate set and §8.3's
+> outranked-by line; the procedure is §4.3's *a labelled red obliges a look*.
+
+**Editing the corpus is therefore expected, and three things already keep it honest** — none of them a new
+mechanism, which is why this is a cross-reference rather than a design:
+
+1. **An edit meets the same bar as its creation.** §6.2's validation runs on **every load**, so an edited
+   row is checked exactly like a new one. §4.3's test — state what is specifically wrong with an answer
+   lacking this node — is a field on the row, not a ceremony at authoring time.
+2. **Edits are dated and reasoned in git, not in the file.** The corpus is a JSON file in the repo (§6.4),
+   so `git log -p -- internal/eval/corpus.json` already gives every edit with its date, its author and a
+   diff of the `why` fields. An in-file changelog would be a second and worse copy of git history —
+   #1136 §2 form 3, pure restatement. **The discipline is: a corpus edit is its own commit, and the reason
+   for it is the commit message.** This is a benefit of §6.4's repo-over-graph ruling that §6.4 did not
+   name.
+3. **Comparability across an edit is already guarded**, by the first element of the result tuple above: a
+   score is not comparable across a corpus change, because `corpusHash` moves. The change *is* part of
+   what you are comparing, and the diff is in git.
+
+**The residual, stated rather than solved** — this section's own habit. No mechanism stops a bad-faith
+edit, and building one is P-3's bad trade. §12 E10 carries the risk and its falsifier.
 
 ---
 
@@ -619,6 +755,12 @@ so it is an ordinary foreground command by that ruling's own scope correction; i
 because that is where the `PROCESSOR_`-prefixed environment is already assembled, and because containers
 here are **linux/arm64** (`GOARCH=arm64`, per #10440's measured toolchain trap).
 
+**Exit code — and it is narrower than it looks.** `2` is a usage error, `1` means **this sweep's numbers cannot
+be believed**, `0` means they can. *Believable* is not *good*: a sweep that faithfully measures a badly
+performing pipeline exits **0**, because the number is true and is the thing the milestone exists to produce.
+§9.2 guard 3 states the two conditions that make a number unbelievable; §5.4 and §11.3 state the ones that
+look like it and are not.
+
 ---
 
 ## 8. Contracts
@@ -631,7 +773,7 @@ here are **linux/arm64** (`GOARCH=arm64`, per #10440's measured toolchain trap).
 | `input` | the text a run would receive, verbatim | non-empty |
 | `subject` | the anchor node id | `> 0`, and **absent from `required`** |
 | `stratum` | `labelled` or `control` | closed set; the two are never summed |
-| `required[].node` | a node id that must be retrieved | `> 0` |
+| `required[].node` | a node id that must be retrieved | `> 0`; **unique within the row** *(revision 7)* |
 | `required[].hash` | its content hash at labelling time | non-empty; sha256 hex, the same function `assemble.go` uses |
 | `required[].why` | what is wrong with an answer lacking it | non-empty |
 
@@ -660,13 +802,35 @@ is the guard that says so.
 | `selfProducedCandidates` | **§3.4 / R13**, made countable |
 | `shutout` | `admittedCount == 0` while `candidateCount > 0` — §3.4's catastrophic shape, which a recall number alone reports as an ordinary miss |
 | `topSimilarity` | **§3.2's discriminator at the other end.** It separates *the required node was lost inside a near-tied top-20* (measured spread 0.0316) from *recall returned nothing useful at all* — a distinction a rank-less `notRetrieved` verdict cannot make. Read by whoever is deciding whether the retriever or the input is at fault |
-| `required[]` → `{node, verdict, rank, stale}` | the attribution that makes the number actionable |
+| `required[]` → `{node, verdict, rank, size, stale}` | the attribution that makes the number actionable. **`size`** is the required node's own byte count, present whenever the node was a candidate at all — it is what separates a `cut` M3 tuning can rescue from a `cut` no ranking can (§5.4), and it costs no read, because admission already computed it |
+| `candidates[]` *(revision 7)* | **the row's full candidate set, in rank order** — the `[]loop.Disposition` the scorer already receives and today discards. It is what makes a labelled miss triageable: §4.3's three causes are byte-identical in every other field, and telling them apart is a human reading of **what outranked the required node**. A `Disposition` carries no content body (rank, id, type, name, similarity, size, content hash, included, cut reason), so a 34-row corpus adds roughly 680 scalar records to a local file — and **no extra graph read**, so §10's GET count is unchanged |
+
+**A *diagnostic* here is a value the sweep computes in order to name one known failure mode** — not the
+evidence it was computed from, and not the row's identity *(the boundary is stated after QA #11102 flagged
+that it was nowhere stated, so the count below could be neither confirmed nor refuted)*. Under it, `row`,
+`stratum` and `subject` are **identification**; `required[]` is **the attribution**; `candidateCount` and
+`admittedCount` are the **variable `k`** §5.1 makes explicit; and **`candidates[]` is the evidence** — the
+input the diagnostics are derived from, retained rather than computed. **`candidates[]` is therefore not a
+seventh diagnostic, and the count is six.** That is also why it carries its own delete test in the next
+paragraph rather than joining the list below: **deleting a diagnostic costs an explanation; deleting
+`candidates[]` costs the evidence every explanation is built from** — a different kind of loss, and the
+reason §11.2's capture-or-lose argument binds it and nothing else in this section.
 
 Every one of the six diagnostics survives the delete test: remove `anchorWasCandidate` and a shipped defect
 stays invisible; remove `selfProducedCandidates` and the first sweep's low score is inexplicable; remove
 `shutout` and an admission catastrophe reads as a retrieval failure; remove the byte pair and the two cut
 regimes are indistinguishable; remove `topSimilarity` and a `notRetrieved` verdict cannot say whether the
 retriever was close or nowhere near; remove `stale` and the corpus rots silently.
+
+**`candidates[]` is captured rather than printed, and the argument is §11.2's own** *(revision 7)*. A
+sweep is a point-in-time reading of a live graph, so **evidence not written into the result at sweep time
+is unrecoverable** — re-running next week queries a different graph and produces a different candidate set.
+This is #10532 §7's lesson (*"a record of ids alone rots as the nodes change"*) applied to the instrument
+instead of the loop. **Delete test:** remove it and every labelled miss is untriageable *forever*, because
+the graph has moved by the time anyone looks. It is the only moment the evidence exists.
+
+**And it adds no exposure.** The withheld graph URL above is a credential; node names are not — and the M1
+run record already stores full candidate **bodies** in the graph itself, which is §3.4's whole problem.
 
 **Classifying a self-produced candidate** uses *both* the run node type and the run name prefix — type alone
 over-counts, because other agents write `session-log` nodes into this graph. Both constants live in
@@ -676,13 +840,21 @@ values the writer uses rather than a copy that can drift. Both are already on a 
 
 ### 8.3 The human summary
 
-Roughly twenty lines on stderr, and two rules govern it:
+Roughly twenty lines on stderr, and ~~three~~ **four** rules govern it:
 
 1. **Every rate carries its numerator and denominator.** `retrieved 34/41 (0.83)`, never `0.83`. §6.3's
    resolution limit is what makes a bare rate dangerous.
 2. **Every miss is named** — row, node, verdict, rank — never only counted. This is the rule that answers
    Toni's test: `recall = 0.62` changes nobody's mind; *"row 07 required #10424, which ranked 8 and was cut
    by a 30 KB node at rank 8 while the budget was half empty"* changes it immediately.
+3. **The two control alarms are different sentences, and only one of them is an exit code** (§9.2). A control
+   that was never retrieved is an instrument failure; a control that was retrieved and cut is a budget
+   measurement. Printing them with the same words puts a reader back where §9.2 started.
+4. **Every miss also names what outranked the required node** *(revision 7)* — uniformly the three
+   highest-ranked candidates by id and similarity, **one rule with no branching on verdict**. For a
+   `notRetrieved` it says what came back instead; for a `cut` at rank 9 it says what beat it. This is the
+   line that lets a reader run §4.3's *look* without going back to the graph, which by then has moved. A
+   miss with fewer than three candidates above it prints what exists rather than padding.
 
 ```
 corpus internal/eval/corpus.json — 34 rows (30 labelled, 4 control), hash 9f2c…
@@ -693,7 +865,11 @@ control    retrieved   4/4 (1.00)   admitted   4/4 (1.00)
 
 misses (labelled):
   r03  #10861  notRetrieved                  20 candidates, top similarity 0.71
-  r07  #10424  cut at rank 8                 k'=7, 32504/60000 bytes admitted
+               outranked by                  #11052 (0.79)  #11046 (0.77)  #10995 (0.75)
+  r07  #10424  cut at rank 8                 k'=7, 32504/60000 bytes admitted, node 30104 B
+               outranked by                  #10897 (0.81)  #10898 (0.78)  #10861 (0.76)
+  r22  #10904  cut at rank 3                 k'=1, 56302/60000 bytes admitted, node 79046 B
+               outranked by                  #10897 (0.83)  #10898 (0.80)
   ...
 diagnostics:
   anchor also a candidate      11/30 rows (admitted in 9)
@@ -701,6 +877,27 @@ diagnostics:
   shutouts                      3 rows
   stale labels 2   unresolved (excluded from both rates) 1
 ```
+
+And the shape §9.2's split exists for — the same sweep on a day a run record sits at rank 1. It exits **0**:
+
+```
+labelled   retrieved 34/41 (0.83)   admitted  0/41 (0.00)
+control    retrieved   4/4 (1.00)   admitted   0/4 (0.00)
+
+budget alarm: the control stratum was retrieved in full and cut by the budget. Retrieval is intact and this
+sweep's retrieved rate is trustworthy; the admitted rate is a reading of the assembler, not of the retriever.
+```
+
+**Two things about the outranked-by line, both deliberate.** `r22` above prints **two** candidates, not
+three, because only two outranked it — padding to a fixed three with a zero-valued entry would report a
+candidate that does not exist, and the specimen shows the honest shape so an implementer does not have to
+infer it.
+
+**And a reading aid that costs nothing, stated in prose rather than computed.** DiVoid node ids are an
+ascending primary key, so a candidate id **higher than the required node's** is a node that did not exist
+when the label was written. In `r03` above all three outranking candidates are newer than #10861 — §4.3's
+cause 2 on sight. It is a **hint for a reader, not a check**: it rests on an id convention this harness does
+not own, and promoting it to a computed field would be inventing exactly the flag §6.5 rules out.
 
 ---
 
@@ -735,12 +932,62 @@ This is the brief's hardest question. Four guards, deliberately independent:
 |---|---|---|
 | 1 | The scorer is pure, so every verdict is exhaustively unit-testable against hand-built dispositions including cases that never occur naturally | tests (§13 G-5..G-8) |
 | 2 | **A deliberately unsatisfiable row must be reported as a miss.** A fixture row requiring a node the query cannot surface. If the harness reports it as a hit, the harness is lying | test (§13 G-15) |
-| 3 | **The control stratum runs on every sweep.** Constructed rows should read ~1.0; if they do not, either the graph moved or the harness broke, and the labelled number is not trustworthy that day | runtime, every sweep |
+| 3 | **The control stratum runs on every sweep**, read at **two** boundaries (split below). A control node that was never retrieved means the graph moved or the harness broke. A control node retrieved and then cut means the assembler discarded it — a measurement, not a fault | runtime, every sweep |
 | 4 | Admission is the loop's own `Assemble`, not a reimplementation | test **plus** grep falsifier (§9.3) |
 
 Guard 3 is the one that runs unattended, and it is the real job of the constructed rows §4.2 demoted. This
 is #10466's non-negotiable gate applied to the instrument: **a harness you have not seen report a miss is
 decoration.**
+
+#### Guard 3 splits at the two boundaries — revision 6, from #11045
+
+~~As first written, guard 3 read the control stratum at the admission boundary alone: every control row's
+required node had to be `admitted`, and anything less exited 1 saying "either the graph moved or the harness
+broke".~~ **That verdict cannot mean what it says while §3.4's pollution is unfixed, and every fact that
+proves it is already in this document.** Admission is stop-not-skip (§5.1); #10897 is a **70,660 B** run
+record against a 60,000 B budget and #10898 is **56,302 B**; either at rank 1 admits nothing or nearly nothing
+and cuts every row beneath it, controls included. **So the most likely cause of a control failure today is the
+known, unfixed self-recall pollution — which is neither the harness nor the graph**, and is the one thing the
+stratum exists to rule out. It is also the most likely way `cmd/eval` exits 1 on its first real run, and a
+first measurement that exits 1 for a misattributed reason is worse than no measurement, because it is read as
+evidence about the instrument.
+
+**This was an inconsistency inside the document, not a new decision.** §11.3 already rules on this exact event
+for labelled rows — *"the first sweep will measure a defect, not a retriever, and that is correct"* — while
+guard 3 applied the opposite rule to control rows running through the identical pipeline, and nothing
+reconciled them. §5's own move is the reconciliation: **one boundary was split into two because the two
+failures want opposite fixes, and the guard that verifies the metric never inherited the split.**
+
+| The control's required node | Boundary | Reads as | Exit |
+|---|---|---|---|
+| `notRetrieved` | retrieval | **an invariant is broken.** A query that is a paraphrase of its own required node failed to surface it in twenty candidates: the retriever, the graph or the harness is not doing what C22 measured. Retrieval is the ceiling under every number in the sweep, so none of them is readable | **1** |
+| `unresolved`, or the row errored | — | the control's own referent is gone, or the graph call failed. There was **no self-check this sweep**, and an absent guard is not a passing one | **1** |
+| no control rows at all | — | unchanged from guard 3 as first written | **1** |
+| `cut` | admission | **a budget alarm, and a measurement.** Retrieval is intact — the control is what proves it — and the assembler discarded the node. The retrieved rate is fully trustworthy; the admitted rate is a true reading of a pipeline with a shipped defect in it | **0**, named loudly (§8.3 rule 3) |
+
+**The stratum gains a second job by not aborting.** On a labelled row a shutout is ambiguous — it could be a
+bad label. On a control row retrieval is guaranteed by construction, so a cut control is **unambiguously the
+assembler**, and it is the sharpest single piece of evidence a sweep can produce about budget collapse. The
+first semantics converted that evidence into an exit code and threw it away.
+
+**And the exit code keeps a meaning it can carry.** Nothing else in the sweep can detect a broken retriever: a
+labelled row that misses is indistinguishable from a labelled row that was mislabelled, which is exactly why
+§9.2 needed a stratum whose retrieval is true by construction. That property is untouched by the split — it
+was never an admission property in the first place.
+
+**Four alternatives, rejected:**
+
+| Alternative | Rejected because |
+|---|---|
+| **Fix R13 first**, so the precondition guard 3 assumed actually holds | it inverts this milestone's own ordering claim. #10822 R13 says *"do not build it before the measurement"*, and §11.3 makes R13's exclusion **M3's first tuning decision taken against a measurement instead of an argument**. Making the defect a prerequisite for the instrument that measures it discards the property the milestone exists to demonstrate — and the fix would then be taken against an argument, since no sweep would have run |
+| **Keep `admitted`, but exempt a cut attributable to a self-produced candidate** | it special-cases the one polluter already found and stays wrong for the next one, and it is §11.3's rejected filtering move one level up: the instrument declining to see what it was built to see |
+| **Give control rows their own budget** | the control would stop measuring the shipped pipeline, which breaks §9.3's no-drift property, and it is a configuration knob whose named operator does not exist (#1136 §3) |
+| **Drop the control stratum, relying on G-15 and the mutation round** | those pin the harness against fixtures. Guard 3 is the only check that runs against the **live graph** on every sweep; deleting it removes the only channel that can say *the graph moved* |
+
+**Score controls on `retrieved` and say nothing further** — #11045's first option — is absent from that table
+because it is this ruling minus one report line, and it reaches the same exit codes. It is rejected only for
+what it discards: a cut control is the budget evidence named two paragraphs above, and §8.3 rule 2 already
+requires that every miss be named rather than counted.
 
 ### 9.3 It must not drift from the loop
 
@@ -844,9 +1091,22 @@ exactly where. Repeatability is inherited, not engineered, which is why nothing 
 
 Two sweeps a week apart are not directly comparable, because the graph gained nodes. The mitigation is what
 §6.5 already buys — the stale/unresolved counts say whether the corpus's own referents moved — and it does
-**not** extend to the rest of the graph, which is 10,079 nodes and growing. **Stated, not solved.** Solving
-it would need a graph snapshot, which is a substantial mechanism for a problem that has not yet bitten.
+**not** extend to the rest of the graph, which is 10,079 nodes and growing. **Stated, not solved.**
+~~Solving it would need a graph snapshot, which is a substantial mechanism for a problem that has not yet
+bitten.~~ *(Revision 7: that was a cost argument, and it does not survive a reader who wants a fixed state
+on purpose. §11.4 now carries a rejection that does not depend on whether the problem has bitten.)*
 **Trigger:** a tuning comparison whose result reverses when re-run days later.
+
+**Revision 7 also sharpens what this residual *is*.** As written above, a new node is framed as a confound
+to be held constant. That framing is wrong and Toni's is better: **a better node appearing is the memory
+substrate working.** The thing to hold constant is not the graph — it is the question of whether the label
+still names the right answer, which is §6.5's second rot and §4.3's *go look*. So this residual is not a
+defect of the corpus. **It is the corpus pointing at the harder question** — *does more memory help?* —
+which is answerable only across time, on a moving graph, against labels naming what an answer should draw
+on. That is the artifact the corpus already is. The companion instrument that holds the memory state fixed
+(the task-outcome A/B design, DiVoid **#11092**) answers the other question and is **structurally blind to
+this one** — which is why this cross-time machinery is kept rather than retired as the A/B takes over the
+headline.
 
 ### 11.3 The first sweep will measure a defect, not a retriever — and that is correct
 
@@ -875,6 +1135,7 @@ name the cause beside it.
 | **Making the sweep a `go test`** | §9.4 |
 | **Concurrent fan-out** | saves ~90 seconds; costs a worker pool, ordering discipline and error aggregation |
 | **A precision or noise metric** | §2, and #10424's *"precision without recall is more dangerous than noise"* |
+| **A graph snapshot, to hold the memory state constant** *(revision 7 — replaces §11.2's original rejection)* | **A snapshot you can query is a different retriever.** Holding the memory state constant means holding node bodies **and the ranking over them** constant. §11.1 records C22's measurement that DiVoid's ranking is bit-stable for a fixed `(graph state, query)`; a reimplementation carries no such guarantee. Copy the nodes into any other store and the embedding and the similarity ordering are that store's, not DiVoid's — **so a snapshot does not hold the memory state constant, it replaces it**, and anything measured against it is measuring a retriever this system does not ship. This argument does not depend on the problem having bitten, which is why it replaces the cost argument rather than joining it |
 
 ---
 
@@ -886,9 +1147,12 @@ name the cause beside it.
 | E2 | **The corpus is too small to resolve the moves M3 makes** | §6.3 states the resolution in the document and prints denominators | a tuning change moves the number by less than ~0.12 |
 | E3 | **Graph drift makes two sweeps incomparable** | stale/unresolved counts for the corpus's own referents; §11.2 states the residual honestly | a comparison reverses on re-run days later |
 | E4 | **Self-produced content dominates and the number says nothing about retrieval** | reported by name per sweep (§8.2), not hidden; §11.3 makes it M3's first decision | `selfProducedCandidates` exceeds ~25% of candidate slots, or shutouts exceed ~10% of rows |
-| E5 | **The harness reports plausible numbers while broken** | four independent guards, one running every sweep (§9.2) | the control stratum reads below 1.0 |
+| E5 | **The harness reports plausible numbers while broken** | four independent guards, one running every sweep (§9.2) | the control stratum's **retrieved** rate reads below 1.00. *(Revision 6: as first written this row said "the control stratum reads below 1.0", which the admitted rate can do for a reason that is neither the harness nor the graph — §9.2)* |
 | E6 | **The eval drifts from the loop** as M3 changes assembly | behavioural test (G-14) plus two mutations on the loop's own constants and admission rule (§9.3, G-14b) | a `loop` constant changes and no eval test notices |
 | E7 | **The anchor duplication (§3.3) distorts every number** | rejected at load where it would be a free hit (§6.2); reported per row where it is budget cost (§8.2) | `anchorWasCandidate` is true on a majority of rows and the admitted byte totals are correspondingly inflated |
+| E8 | **The admitted rate carries permanent zeros nothing can move**, from required nodes larger than the budget (§5.4), and a reader attributes them to the retriever | the node's own `size` is printed beside every `cut`, against the budget on the same line | a `cut` line appears without the required node's size, or the admitted rate is quoted in a comparison without the count of oversized required nodes behind it |
+| E9 | **A reader treats exit 0 as "the numbers are good"** now that a budget collapse no longer exits 1 (§9.2) | §7.4 states what the code means; the budget alarm is printed in words, and in the same sweep the labelled admitted rate is visibly near zero | someone cites a sweep's exit 0 as evidence about the pipeline rather than about the sweep |
+| E10 | **A disappointing score is resolved by editing the answer key** *(revision 7)*. §4.3 makes *"update the corpus"* a legitimate outcome of a labelled miss — which is right, and is also the path of least resistance: every individual edit looks reasonable and the erosion is invisible | §6.5's three parts, all of which already exist: §6.2 re-validates an edited row exactly like a new one, git carries the date and the reason, and `corpusHash` breaks the comparison chain at the point of the edit. **No new mechanism** — building one is #11034 P-3's bad trade, and E1 already covers the definition drifting rather than the rows moving | **a corpus edit lands in the same commit as anything else**, or a comparison is quoted across two differing `corpusHash` values without the corpus diff beside it |
 
 ---
 
@@ -918,6 +1182,70 @@ The rule that follows is the general one, and it is why the fix is the format ra
 
 Line numbers therefore appear nowhere in this table. Where one would have pointed — `internal/eval/corpus.go`'s
 `maxRequiredPerRow`, for instance — the row names the **identifier** instead, which greps.
+
+**Revision 6 adds two rows for guards the tree does not yet carry**, G-28 and G-29, and ~~check 1's `comm -23`
+will list both until they land~~ *(revision 7: **false, and it was checked this time.** Both rows cite
+`TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode` — the test they retarget — which exists
+today, so check 1 resolves them and never listed either. A claim about what a check would output, written into
+the section about falsifiable claims, by an author who did not run it.)* ~~**That residue is this revision's
+to-do list, not a defect**; every other name in the table resolves today.~~
+
+**Revision 7 adds six rows, and states the residue as a measurement rather than as a count of rows, because
+the two are different numbers:**
+
+| Rows | What check 1 does with them | Status, measured on this branch 2026-09-03 |
+|---|---|---|
+| G-28, G-29 | **not in the residue** — both cite an existing test by name | **owed to the tree.** No implementation exists; **#11048** is the task |
+| G-30, G-30b, G-31, G-31b | **the entire residue: five names** | **written, and in flight on another branch.** The four rows' five tests and the two loader guards exist on `origin/fix/corpus-loader-guards` (tip `dd46f65`), and `git merge-base --is-ancestor origin/fix/corpus-loader-guards origin/main` reports **not merged** — so they are absent from `main` and from this branch. They land with that branch; **nobody should re-implement them** |
+| G-32, G-33 | **not in the residue** — neither cites a test name yet | **owed to the tree.** No implementation exists; **#11066** is the task |
+
+**Check 1's residue on this document at revision 7 is exactly those five names, and the check was run
+(2026-09-03).** ~~Six rows are owed to the tree and only four of them are visible to check 1 at all — which
+is the finding rather than the bookkeeping.~~
+
+**The population, stated — because this section used one phrase for three different ones and got the count
+wrong twice** *(corrected after QA #11099 CF-1; §16 carried the same sentence with the numerator inverted)*.
+Count **rows in the table below whose guard does not exist on this branch**: there are **eight** — G-28,
+G-29, G-30, G-30b, G-31, G-31b, G-32, G-33. That is deliberately **not** the status table's *"owed to the
+tree"*, which is the narrower **four** that no branch carries at all; the four on
+`fix/corpus-loader-guards` are absent from here and owed to nobody. Both counts are true and they are
+different populations, which is exactly how the wrong number got written.
+
+| Of the **eight** rows whose guard is absent from this branch | Count | Which, and why |
+|---|---|---|
+| **visible** to check 1 — the row cites a name that does not resolve | **4** | G-30, G-30b, G-31, G-31b — five names between them, because G-30b cites two |
+| **invisible** to check 1 | **4** | **Two mechanisms, and they are not equally bad.** *Cites nothing, so nothing can fail:* **G-29, G-32, G-33**. *Cites a **different** existing test, so check 1 resolves it and passes:* **G-28** alone, which names `TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode` — the test it retargets. ~~G-32 and G-33 cite no test name at all; G-28 and G-29 cite the existing test they retarget~~ *(corrected after QA #11102 W-5: G-29 cites no test either — its cell names G-28, not a test. The counts are unaffected)* |
+
+**Half of them are invisible, and that is the finding rather than the bookkeeping.** P-41 checks that every
+cited name resolves; **it cannot check that a row owing a guard has cited a name for it** — a row citing
+nothing has nothing to fail on, and a row citing a *different, existing* test passes.
+
+**The second mechanism is the worse one, and it was measured rather than argued** (QA #11102, on G-28): the
+cited name is in the cited set, resolves in the present set, and occurs in the `comm -23` residue **zero**
+times. So check 1 does not merely stay quiet about a row whose guard does not exist — **it passes it**. A
+silent absence is a gap; a silent pass is a wrong answer, and exactly one row in this table has that shape.
+
+That is the audit gap
+revision 6 named two paragraphs down, arriving from the other direction: revision 6 found a *property* with
+no row, and revision 7 finds *rows* whose guard no name reaches. The status table above is what stands in
+for it until the guards land.
+
+**That residue is a to-do list, not a defect**; every other name in the table resolves today. It is stated
+here because an unexplained residue is what trains a reader to stop running check 1 — this section's own
+failure mode, one level up. **And the statuses must not be collapsed:** a reader who takes all six owed rows
+as *unwritten* would file #11048's and #11066's work correctly and would then also re-write four rows whose
+guards already exist, instead of merging the branch that clears them.
+
+**On the ordering of the ids below.** G-28 and G-29 sit before G-27, because revision 6 inserted them where
+the property they guard is discussed rather than at the end. Left as it is on #11034's own rule that **an id
+is a handle, not a position**; renumbering to restore visual order would break every citation that already
+names one, which is the cost the handle rule exists to avoid.
+
+**And a gap this revision found by looking for the row that should have caught #11045: there was none.** The
+control stratum's exit-code behaviour was pinned by six tests across three packages and appeared in **zero**
+coverage rows, so the *name the guard, not the mechanism* discipline never reached the one property a caller
+actually consumes. **P-41 checks that every cited name resolves; nothing checks that every guarded property is
+cited**, and those are not the same audit. G-28 and G-29 close it here; the general lesson is in §16.
 
 | # | Property | Guard |
 |---|---|---|
@@ -953,7 +1281,15 @@ Line numbers therefore appear nowhere in this table. Where one would have pointe
 | G-25b | A secret never appears in the **model** half's boot error — `PROCESSOR_MODEL_KEY` present, `PROCESSOR_MODEL_ID` empty. **Premise:** the split created a second secret in a second loader, so this half had no guard before it | `TestBootConfigErrorsNameTheVariableAndNeverItsValue`, model scenario |
 | G-26a | **§1 S1 — no model call is reachable.** Stronger than any grep, because it is a fact about the binary rather than about spellings | **Linker falsifier:** `go list -deps ./cmd/eval` does not contain `internal/openaicompat`; `go list -deps ./cmd/processor` does. Confirmed by QA #10945 ruling B |
 | G-26b | **§9.1 — the instrument never writes.** A grep cannot pin this: consuming `loop.GraphPort` forces every double to implement `WriteRun`, so a literal grep hits test sources on compliant code | `fakeGraph.WriteRun` calls `t.Fatal`, observed red by inserting one `WriteRun` into `sweepRow`. The grep remains as a backstop **scoped to non-test sources** |
+| G-28 | **A control node that was retrieved and cut does not fail the sweep** — it is a budget alarm, exit 0 (§9.2). **Premise that makes it discriminate:** the fixture's control row is `cut`, never `notRetrieved`, since a fixture conflating the two is passed by an implementation that reads either as a failure | **Guard required by revision 6; not yet in the tree.** It replaces `TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode`, which pins the semantics this revision overturns and is retargeted rather than deleted. **Falsifier:** restore the `Verdict != Admitted` condition; the guard must redden |
+| G-29 | **A control node that was never retrieved fails the sweep** — exit 1 (§9.2). **Premise:** paired with G-28 over otherwise identical fixtures, so neither passes an implementation that collapses the two verdicts | **Guard required by revision 6; not yet in the tree.** **Falsifier:** widen the condition to accept `notRetrieved`; the guard must redden. It runs as a pair with G-28 — either one alone is satisfied by a constant |
 | G-27 | **`main()` binds the real streams in the right order.** `os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))` is one line no in-process test can reach — `main()` is not callable and the real file descriptors are not substitutable from inside the process | **Grep falsifier, admissible here:** exactly one hit for `os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))` in non-test source, and **zero** for the swapped spelling. See the admissibility note below |
+| G-30 | A `required[].hash` that is not 64 lowercase hex is rejected at load. **Premise that makes it discriminate:** the five rejected arms are *4 characters*, *outside the alphabet*, *uppercase*, *63 characters* and *a 128-character lowercase sha512 digest* — an implementation checking only non-emptiness passes none of them, one checking only length passes neither the alphabet nor the case arm, and one checking `len < 64` rather than `len != 64` passes the sha512 arm alone. That last arm was added after QA #11057 CF-1 found the `<` mutation surviving the whole suite green: the boundary needs both sides, and a sha512 digest is the most likely wrong-hash-function paste | `TestLoadRejectsARequiredHashThatIsNotLowercaseSha256Hex` (`internal/eval/corpus_test.go`) — **on `origin/fix/corpus-loader-guards`, not on this branch** |
+| G-30b | **The dual: a legitimate hash still loads.** Uppercase is excluded on purpose — `assemble.go`'s content hash is lowercase-only and `score.go` compares with plain equality, so an uppercase hash is guaranteed permanently stale — and the accepted set is therefore argued from what the **format** permits rather than from what the corpus writes today: an all-digit hash, an all-letter hash, and **the content hash `loop.Assemble` itself produces**, fed back in through the loader. The last of those pins the eval guard's premise to `loop.contentHash` rather than to eval's own encoder, which QA #11057 W1 identified as agreeing only by coincidence; mutating `loop.contentHash` to uppercase, or to a 128-character digest, reddens it | `TestLoadAcceptsAnAllDigitAndAnAllLetterSha256Hash`, `TestLoadAcceptsAsARequiredHashTheContentHashAssembleProduces` (`internal/eval/corpus_test.go`) — **same branch caveat as G-30** |
+| G-31 | The same node id twice inside one row's `required` is rejected at load | `TestLoadRejectsARowListingTheSameRequiredNodeTwice` (`internal/eval/corpus_test.go`) — **same branch caveat as G-30** |
+| G-31b | **The dual: three distinct required nodes still load**, so the guard cannot be satisfied by refusing every second entry. **Premise, verified by QA #11057:** `TestLoadRejectsARowListingTheSameRequiredNodeTwice` does *not* redden under `if len(required) > 0` — the mutant still rejects the duplicate row with the same message — so the rejection test cannot distinguish *rejects a repeated node* from *rejects any second entry*, and this dual is the sole discriminator. **Falsifier:** weaken the check to `if len(required) > 0`; observed reddening this row and nothing else | `TestLoadAcceptsThreeDistinctRequiredNodesOnOneRow` (`internal/eval/corpus_test.go`) — **same branch caveat as G-30** |
+| G-32 | The row result carries **every** candidate the sweep produced, in **rank** order (§8.2). **Premise that makes it discriminate:** the fixture's candidates must differ from each other in id *and* in similarity, and must include at least one cut candidate, or an implementation retaining only the admitted prefix passes, and one re-sorting by similarity rather than preserving the rank the graph returned passes too | **Guard required by revision 7; not yet in the tree** — **#11066** is the task. **Falsifier:** retain `dispositions[:admittedCount]`; the guard must redden |
+| G-33 | A miss line names the three highest-ranked candidates, and a miss with fewer than three above it prints what exists rather than padding (§8.3 rule 4). **Premise:** the fixture carries one miss with three or more outranking candidates and one with exactly two, so an implementation that always prints three — padding with a zero-valued entry — fails the second, and one that prints by insertion order rather than by rank fails the first | **Guard required by revision 7; not yet in the tree** — **#11066** is the task. **Falsifier:** print `candidates[:3]` unconditionally; the guard must redden on the two-candidate row |
 
 Applying the table's own falsifier to the rows most at risk: G-4's empty-corpus half fails against code that
 returns `0/0` and exits 0 — the test asserts an error, so it discriminates. G-9 fails against code that
@@ -1069,9 +1405,9 @@ questions.
 | Item | Answer |
 |---|---|
 | Cites Code Contracts and Design Contracts as load-bearing | ✓ Header; #114 §4 via #10861 is cited, not restated (§9.5) |
-| Out-of-scope listed explicitly | ✓ §2, eight rows, each with a trigger |
+| Out-of-scope listed explicitly | ✓ §2, ~~eight rows, each with a trigger~~ **nine rows, each with a trigger or a stated reason** *(revision 7 added the ninth — the task-outcome A/B — and broke both halves of the old claim at once: the count, and the qualifier, because that row carries **gates** (#11066 plus a settled task set) rather than a trigger. It points at designed work, not deferred work)* |
 | No multi-paragraph rationale for things that obviously stay | ✓ |
-| Predecessor designs banner-marked where superseded | ✓ **Nothing is superseded.** #10532 and #10904 are consumed and extended; §16 lists the two places this document *sharpens* them without overriding any claim |
+| Predecessor designs banner-marked where superseded | ✓ **Nothing is superseded.** #10532 and #10904 are consumed and extended; §16 lists the ~~two~~ places this document *sharpens* them without overriding any claim *(revision 7: the table has three rows, not two)*. **And this document is not superseded either.** The task-outcome A/B design (DiVoid **#11092**) is a **successor, not a supersession**: it changes which number is the headline and leaves every mechanism here canonical and in force. #1136 §5's banner rule binds an **end-to-end** supersession, so it does not fire — what is owed instead is a forward pointer, which the header carries. §16 argues the split |
 
 ---
 
@@ -1213,6 +1549,216 @@ The mutation-index correction is the same shape a third time: **a citation is on
 resolve.** `M44` resolves against a document that was never durable; *"swap the two arguments"* resolves
 against the code.
 
+### Revision 6 — 2026-09-03, after the first corpus was authored and before any sweep was run (#11045, #11046)
+
+**No implementation round produced this one.** Both findings came from **authoring against the schema rather
+than reading it** — a third way of testing a design, and the only one that had not been tried: §13's guards
+test the code, the mutation round tests the guards, and writing eleven real rows tested the *document*.
+
+| Correction | Where it was wrong | Now |
+|---|---|---|
+| **§9.2 guard 3 read the control stratum at one boundary** | it required `admitted`, so under stop-not-skip a single 70,660 B run record at rank 1 cuts every control and the sweep exits 1 reporting *"the graph moved or the harness broke"* — when the cause is the self-recall pollution §3.4 measured. **The stratum reported the one thing it was built to rule out** | split at the two boundaries §5 already drew: `notRetrieved` and `unresolved` exit **1**, `cut` exits **0** as a named budget alarm. §4.2, §7.4, §8.3, §12 E5 and §13 G-28/G-29 follow |
+| **§12 E5's falsifier was *"the control stratum reads below 1.0"*** | it does not say **which rate**, and the admitted rate can read below 1.0 for a reason that is neither the harness nor the graph | *"the control stratum's **retrieved** rate reads below 1.00"* |
+| **Nothing said a required node can be larger than the budget** | #10926 is 95,661 B against 60,000 B, so `r09` contributes a permanent zero to the admitted rate for a reason unrelated to retrieval, and neither §6.2 nor the loader mentions it | **§5.4**: not rejected at load, not a third stratum — the node's own `size` ships beside every `cut` (§8.2, §8.3), with §12 E8 carrying the residual risk |
+| **The property that drives the exit code had no coverage row** | six tests pinned it across three packages and §13 cited none of them, so the *name the guard* discipline never reached the one behaviour a caller consumes | **G-28 / G-29**, both marked as owed to the tree, with the check-1 residue explained in §13's preamble |
+
+**The lesson, and it is a new shape.** Revisions 2–5 all found rows whose **wording** was weak — a mechanism
+described as a guard, a check that fires on compliant code, a name that resolved to nothing, a line number
+nothing could verify. Revision 6 found something else: **two sections that were each correct and that
+contradicted each other.** §11.3 rules that a defect faithfully measured is a correct result; §9.2 guard 3
+ruled that the same event on a control row is an instrument failure. Both were written in the same pass, both
+survived four revisions and a mutation round, and **no check in this document or in #11034 can find that** —
+every one of them resolves a claim against the tree, and here the tree matched the claim. What found it was a
+reader with a use for the number.
+
+> **A document can be locally true everywhere and globally inconsistent.** Checks that resolve each claim
+> against the code cannot see it, because each claim resolves. The instrument for it is a reader who needs the
+> answer — which is the argument for authoring the corpus *before* the first sweep rather than after, and the
+> second time that ordering has paid (the first was §3.4, which fired R13 before a sweep existed).
+
+**What this revision deliberately does not change.** R13 stays unfixed and unscheduled: #10822's *"do not
+build it before the measurement"* and §11.3's ordering claim both survive, and the split is what lets them —
+the first sweep can now measure the pollution instead of aborting on it. The corpus is unchanged in shape,
+`r09` stays, and the two rates keep their definitions.
+
+**One consequence of amending this document at all, which is worth a line because it recurs.** `r09`'s
+required node **is this document**, and the hash on that row is this file's. Every revision therefore rots
+that label, and the sweep reports `stale` for a reason that has nothing to do with graph drift — noise on the
+exact channel §6.5 built to detect it. **The rule: a corpus row requiring a repo-backed design document is
+re-hashed in the same change that revises the document.** This document now has three representations that
+must move together — the repo file, the DiVoid node (#11034 P-40), and any corpus hash pointing at it.
+
+### Revision 7 — 2026-09-03, folding three pending amendments and ruling on a fourth (#11052, #11065, #11066, #11069)
+
+**Four pending edits had accumulated against a blocked file.** Three were amendments to this document's own
+claims and are folded in below. The fourth — #11069, carrying Toni's reframe of what the milestone should
+measure — is **not** folded in, and the ruling against folding it is the substance of this revision.
+
+**One thing about the change that carries this, because a reader diffing the repo will meet it and the
+branch name does not say so** *(recorded after QA #11099 §4)*. **The commit lands revisions 6 and 7
+together**, not revision 7 alone: the repo file's §16 ended at *Revision 5*, because revision 6 lived only
+on node #10926 and the repo file was the half that was behind. So revision 6 appears and is amended inside
+one commit. That is not a scope defect — it is the P-40/P-50 parity gap #11057 ruled on, closing — and
+P-49's binding applies to the pair, not to revision 7 alone.
+
+| Correction | Where it was wrong or silent | Now |
+|---|---|---|
+| **§6.2 stated only that a `hash` is non-empty** (#11052) | a malformed hash *loads*, and then reads as `stale: true` on every sweep — saying *the graph moved under a good label* where the truth is *the label was never right*. Silent where it could be caught, misleading where it is seen | the rule is 64 lowercase hex, old text struck. **§8.1 needed no edit**: its invariant column already said *"sha256 hex, the same function `assemble.go` uses"*, so §8.1 was the **overstating** section and #11046 offered the choice of weakening it — the code was made true instead |
+| **Nothing required `required[].node` to be unique inside a row** (#11052) | uniqueness was stated for row ids and never for required-node ids. A repeat counts **one** label two or three times in both rates — numerator and denominator both move, so the row is silently mis-weighted with no diagnostic anywhere | §6.2 gains the rule; §8.1's invariant gains *unique within the row* |
+| **Nothing said what a labelled miss *means*** (#11065) | §4.3 defined *required* and stopped. Three causes — a real regression, a better node appearing, a wrong label — are byte-identical in every field the harness prints, so a red reads as a verdict when it is a finding | §4.3 carries the three causes and Toni's words; §6.5 names which of the two ways a label rots is decidable; §12 E10 carries the gaming risk the permission creates |
+| **The evidence needed to tell those causes apart was being discarded** (#11066) | `BuildRow` receives the full `[]loop.Disposition` and keeps only scalars, and `missLine` prints no candidate identity for any verdict. A sweep is a point-in-time reading of a live graph, so the evidence is unrecoverable the moment the sweep ends | §8.2 retains `candidates[]`; §8.3 gains the outranked-by line, the two-candidate specimen, and the ascending-id reading aid as prose |
+| **§11.2 rejected a graph snapshot on cost** — *"a problem that has not yet bitten"* (#11069) | a cost argument does not survive a reader who wants a fixed memory state **on purpose**, which is exactly what a task-outcome A/B wants | struck, and replaced in §11.4 by an argument that does not depend on whether the problem has bitten: **a snapshot you can query is a different retriever** |
+| **§6.3's growth trigger sized the corpus against a standard error** (#11069) | the arithmetic is fine; the *instruction* rested on this rate being the headline, which it no longer is | the instruction is **struck and suspended**, the arithmetic is kept and is now the reason the rate cannot be quoted as a headline. §17 question 1 and question 3 follow |
+
+### The ruling on #11069: a successor document, and not for the reasons offered
+
+**Ruled: the task-outcome A/B becomes its own design — DiVoid **#11092** — and this document is not
+superseded.** Two reasons were put to me and I rest on neither.
+
+- **"This file is too big to hold" is not a reason.** Splitting a document on length, without a boundary that
+  means something, produces two documents that must be read together and a relationship the reader now has to
+  reconstruct. Size is evidence that a document may be carrying more than one thing; it is not the finding.
+- **"It measures a different object" is true and is not decisive.** It would equally justify a §18.
+
+**~~What decides it is P-43, and it decides it cleanly.~~ P-43 excludes #11069's fold-in *as it was asked
+for*, and that is the whole of what it excludes** *(re-ordered after QA #11099 W4 — the strike is on the
+ordering claim, not on the reasoning under it, which stands and which QA agreed with)*. #11069's own
+fold-in table asks for §1 and §2 —
+*what the milestone is for*. A design document is a **dated record**: corrected in place with the old text
+struck, never retro-edited. But §1 and §2 are the premise the shipped implementation was built against, and
+four of §15's five steps have shipped against them. Striking a Problem Statement leaves a document with two,
+one of them struck, and **every downstream section then serves an ambiguous premise** — §4.3's argument, §5's
+split and §6.3's sizing would each have to be read against *which §1?*. That is precisely the failure revision
+6 named — *a document can be locally true everywhere and globally inconsistent* — manufactured deliberately.
+
+**What P-43 does *not* do is choose between a successor artifact and a new §18 here — and the original
+ordering of these reasons got that wrong.** A §18 that *adds* the A/B beside §1 rather than striking it
+needs no strike at all, so it passes P-43 untouched. **The reason that discriminates between a section and
+a separate artifact is the measured one, and it is promoted here from a footnote:**
+
+- **The lifecycles differ, and by P-49 they cannot share a hash.** This design is closed: five steps, four
+  shipped and the fifth in flight. The A/B is unbuilt and blocked on two gates. `r09` requires **this
+  document** at its content hash — so by the P-49 mechanism **this very revision is an instance of**, every
+  future revision of an A/B section would rot that row: the revision-6 problem, on a design that has not
+  started changing yet, multiplied by however many revisions it takes to settle. **A closed record and an
+  open design cannot share a hash**, and that is the sentence a §18 has no answer to.
+
+One further reason, which stands on its own and is argued rather than measured:
+
+- **It is a project-level claim in a milestone document.** #11069 says the A/B supersedes the rates *as the
+  headline*. That is a claim about how this **project** measures itself, not about what M2 delivers. #10924's
+  charter is #10424 §9's one sentence and nothing in it is about task outcome.
+
+**Where I rule against #11069's own fold-in table**, which is the part of this ruling that is not a
+formality: its targets are not all of one kind, and treating them as one is what made the choice look binary.
+
+| #11069 target | Ruling |
+|---|---|
+| §1, §2 — the milestone's purpose | **Successor.** These are the retro-edits P-43 forbids. §2 gains a pointer row, which is additive |
+| §4.3 — `required[]` as the A/B's precondition | **Successor.** It is a forward citation *from* the new document; this one owes nothing. #11092 §3 quotes §4.3 verbatim rather than restating it |
+| §5 — the split retained on its original argument | **Neither.** #11069 says the justification needs no rewriting, so folding in a note that nothing changed is pure restatement (#1136 §2 form 3). **Not written** |
+| §6.3 — struck | **Folded in, narrowed.** The arithmetic does not become false; the *prescription* does. Only the prescription is struck |
+| §6.5, §11.2 | **Split.** §11.2's re-framing is a correction to a claim this document makes and is folded in. *"`stale` proves two arms saw one graph"* is the successor's use of this mechanism and is stated there |
+| §9.1 — no-mutation extended to the loop while measured | **Successor.** §9.1 is about *the instrument*. Extending it to a component this milestone does not build is scope creep; #11092 §4.2 carries it, and #11071 is the task |
+| §10 — the A/B's price | **Successor** |
+| §11.4 — the snapshot rejection re-argued | **Folded in, and it is the sharpest of the six.** A rejected alternative whose stated reason has stopped holding is exactly what P-51 obliges the noticing hop to correct |
+
+**And it is a node, not a repo file** *(added after QA #11099 CF-2; the artifact decision is the
+operator's under #10192, and this records it)*. The successor was written as
+`docs/architecture/task-outcome-ab.md` and that file was withdrawn before this change was committed.
+**#1176**'s 2026-09-03 ruling: a design that genuinely precedes any code is a DiVoid node, not a repository
+PR — and #11092 §10 opens by stating that nothing in it is buildable today, behind two gates, one of which
+needs Toni. The failure mode that ruling names is exactly the one available here: *a design merges, the
+implementation does not follow, and the document ages into a description of something that was never
+built — while reading as current, because merged looks like shipped.* **Nothing was lost by dropping the
+path**: this document cited the successor by path at **six** sites — the header, §2's out-of-scope row,
+§6.3, §11.2, §14 and §16 — and every one of them already carried #11092 beside the path, so the six
+became node-only citations with no information removed. *(QA #11099 CF-2 put the number at five and
+named §11.4 among them; §11.4 carried no path citation, and §6.3 and §14 did. The remedy is unchanged
+— recorded because a count in a dated record is a claim.)*
+**And the withdrawal is scoped to that one new file.** Correcting *this* document in place is P-43 working
+as intended, and `r09` is bound to it by P-49 — which is the same asymmetry the ruling itself draws
+between a design that precedes code and one whose implementation is four steps in.
+
+### What the A/B cannot measure — and one limit is not enough
+
+Toni named one himself: *"its always a smoke test."* That is the statistical limit and it is the one a larger
+sample fixes. ~~**#11092 §5 names five, of which three are structural**~~ **#11092 §5 names five, and only
+§5.1 — the smoke-test limit — is statistical; every other one is structural** — no sample size, no rubric
+and no care removes them *(corrected after QA #11102 W-7: "three" was wrong here, at two sites inside
+#11092, and in #11069. It is the **remediable** count, which is a different cut of the same five)*. The two that neither Toni nor #11069 named, recorded here because they bear on *this* document:
+
+- **The A/B is blind to tasks whose answer no node holds.** Its admission precondition — *"we know that our
+  system has all the information to solve it"* — **selects the task set for cases where retrieval can
+  succeed.** The population it cannot see is the population a memory substrate exists to shrink.
+- **Alone, it is the single-scalar design §1 already rejected.** A task-outcome verdict is one bit over
+  retrieval, assembly, prompt, model and tool loop together; it cannot say which stage moved. §1's test —
+  *would this instrument change anyone's mind?* — has the same answer it had for a bare recall number.
+  **That is the strongest argument that the two layer rather than compete**, and it is this document's own
+  test doing the work.
+
+### The blocking defect, and why the A/B design is credible in spite of it
+
+**#11071 is real and the A/B is not runnable until it is answered.** `internal/loop/turn.go:131` calls
+`WriteRun` unconditionally *(read first-hand on this branch, 2026-09-03)*, so an A/B of N tasks × 2 arms
+writes 2N run records into the state it exists to hold constant — and §3.4 measured those records outranking
+real content and exceeding the whole budget. **#11092 §4.2 answers it** with a shape that requires **no change
+to `internal/loop`**: the runner supplies a decorating `GraphPort` whose `WriteRun` files nothing and returns
+the existing `notStored` receipt. No flag, no second code path through the turn, no addition to a shipped
+closed set. #11071 deliberately left the shape to the implementer; choosing between competing shapes is design,
+so it is ruled in #11092 rather than deferred — the constraint #11071 states is untouched.
+
+### What #11048 and #11049 build against
+
+Both were told not to start against `main`'s copy of this document. **They now build against this file at
+revision 7**, on `design/m2-revision-7`, and neither is changed in substance by this revision:
+
+- **#11048** (the control verdict split) implements §9.2, §7.4, §8.3 rule 3, §12 E5 and §13 **G-28 / G-29** —
+  all of which are revision 6's and are untouched here. §13's preamble now states G-28/G-29's status
+  explicitly, which is the only delta it sees.
+- **#11049** (the required node's `size`) implements §5.4, §8.2 and §8.3 — also revision 6's and untouched.
+  The one thing to note is that §8.3's specimen has grown an *outranked by* line under each miss (rule 4,
+  #11066's work); #11049 adds the size to the **miss line itself**, not to that new line, and the two are
+  independent.
+- **#11066** (the retained candidate set) now has its design: §8.2, §8.3 rule 4 and §13 **G-32 / G-33**.
+
+### What could not be verified here, stated because P-51 requires it in the sentence and not in a preamble
+
+- **The container gate was reachable and was run** for the corpus change this revision carries — so, unlike
+  the round P-51 was written against, nothing here rests on reasoning from source about a container I could
+  not enter. Where a figure is inherited rather than re-measured — the 50,000–110,000 B run-record range, the
+  70,660 B of #10897, C22's bit-stability measurement, §10.2's token counts — #11092 labels it as inherited in
+  the sentence that uses it.
+- **Two things in the brief that produced this revision were wrong against the tree, and are recorded because
+  a corrected brief is not the same as a corrected document.** First, #11052 states its two coverage rows are
+  *"next free ids G-28 and G-29"* — but revision 6 had already taken both, so they are folded in here as
+  **G-30 / G-30b / G-31 / G-31b**; anyone reading #11052 will find the old numbers. Second, #11052 describes
+  its loader guards as *shipped*, which is true of `origin/fix/corpus-loader-guards` and **not** of `main` or
+  of this branch — verified by `git merge-base --is-ancestor`, and recorded in §13's preamble so the four rows
+  are not re-implemented by someone reading them as owed.
+- **And running check 1 rather than describing it found a third thing, in §13's own preamble.** Revision 6
+  wrote that *"check 1's `comm -23` will list both until they land"* of G-28 and G-29. It never did and never
+  could: both rows cite, by name, the existing test they retarget, so check 1 resolves them. **A claim about
+  what a check would print, in the section whose subject is claims that cannot be checked, written by an
+  author who did not run it** — struck in place. What the run actually returns is five names, all from
+  `fix/corpus-loader-guards`, and §13 now states that as a measurement with the date it was taken.
+- **The gap that made it possible is worth more than the instance.** P-41 checks that every *cited* name
+  resolves. It cannot check that a row *owing* a guard has cited a name for it — a row citing nothing has
+  nothing to fail on, and a row citing a *different, existing* test is resolved and **passed**. **Of the
+  eight rows in §13 whose guard does not exist on this branch, four are invisible to check 1** by one of
+  those two mechanisms. **§13's table carries the row-by-row assignment and this sentence deliberately no
+  longer repeats it** *(after QA #11102 W-5: the assignment stood here in duplicate and was wrong in both
+  copies — G-29 cites no test name either, so the second mechanism is G-28 alone. **The duplication is the
+  finding**, not the misattribution: this was one claim at two sites, inside the remedy for a defect that
+  was one claim at two sites. One site now owns it)*. Revision 6 found a property with no row; this is rows
+  whose guard no name reaches, and it is the same audit gap from the other side.
+  *(Corrected after QA #11099 CF-1. As first written this said "four of the six rows this document owes the
+  tree are **invisible**" while §13 said four of six were **visible** — the same measurement stated twice
+  with the numerator inverted, under a denominator neither section defined and a phrase, "owed to the
+  tree", that §13's own status table uses for a different and narrower set. **Three populations were
+  reachable from the text and the document named none.** The population is now stated at both sites, and it
+  is eight, not six.)*
+
 ---
 
 ## 17. Open questions
@@ -1220,12 +1766,21 @@ against the code.
 1. **Who authors the corpus?** Toni, or an agent whose rows Toni reviews. It changes nothing structural, but
    §4.3's definition means the labeller's judgement *is* the metric, so it should be a deliberate choice
    rather than whoever is free. My recommendation: Toni authors the first ten to fix the definition by
-   example, and an agent extends to thirty against those ten.
+   example, and ~~an agent extends to thirty against those ten~~ *(revision 7: the extension to thirty is
+   **suspended** — §6.3 explains why sizing is now against the task set, not against a standard error.
+   Eleven rows exist and may be enough. The authorship question itself is unchanged and still open)*.
 2. **Should a sweep result ever be filed to DiVoid?** A measurement is knowledge and the Hivemind contract
    says knowledge goes to the graph — but a result node per sweep re-creates §3.4's pollution with a
    near-duplicate flood. **Recommendation, taken as the default:** the harness writes files; a human or agent
    files the *interesting* ones as `documentation` carrying the numbers and the reason, never as a dump.
    Automating it would be exactly the knob #1136 §3 refuses.
-3. **Is 30 rows the right start?** §6.3 states what it buys and what it does not. If M3's first tuning move
+3. ~~**Is 30 rows the right start?** §6.3 states what it buys and what it does not. If M3's first tuning move
    is expected to be small, the corpus needs to be larger before M3 begins, and that is a scheduling
-   decision rather than a design one.
+   decision rather than a design one.~~ *(Revision 7: **answered, and the answer is that the question was
+   the wrong shape.** It presupposed the labelled rate is the headline. Under #11092 it is not, so the
+   corpus is sized to the task set — §6.3. What replaces it is question 4.)*
+4. **Is the A/B's task set the eleven corpus rows, or a different set?** *(Revision 7.)* They were authored
+   to test **retrieval**, not to be **tasks a system solves** — the two overlap heavily and are not the same
+   thing. #11092 §11 carries the question and its recommendation; it is repeated here because the answer
+   determines whether this corpus grows, shrinks or stays at eleven, and that is a decision about **this**
+   file.
