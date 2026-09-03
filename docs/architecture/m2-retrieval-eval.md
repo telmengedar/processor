@@ -1195,46 +1195,82 @@ the two are different numbers:**
 
 | Rows | What check 1 does with them | Status, measured on this branch 2026-09-03 |
 |---|---|---|
-| G-28, G-29 | **not in the residue** — both cite an existing test by name | **owed to the tree.** No implementation exists; **#11048** is the task |
-| G-30, G-30b, G-31, G-31b | **the entire residue: five names** | **written, and in flight on another branch.** The four rows' five tests and the two loader guards exist on `origin/fix/corpus-loader-guards` (tip `dd46f65`), and `git merge-base --is-ancestor origin/fix/corpus-loader-guards origin/main` reports **not merged** — so they are absent from `main` and from this branch. They land with that branch; **nobody should re-implement them** |
+| G-28, G-29 | **not in the residue.** ~~both cite an existing test by name~~ G-28 cites an existing test by name; **G-29 cites no name at all** *(corrected 2026-09-03 — this was QA #11102 W-5's misattribution surviving at a third site the finding did not name; see the invisibility table below)* | **owed to the tree.** No implementation exists; **#11048** is the task |
+| G-30, G-30b, G-31, G-31b | **not in the residue** — every cited name resolves | **DONE, and this is a third status the table did not have** — not owed, not in flight, but landed. ~~**written, and in flight on another branch.** The four rows' five tests and the two loader guards exist on `origin/fix/corpus-loader-guards` (tip `dd46f65`), and `git merge-base --is-ancestor origin/fix/corpus-loader-guards origin/main` reports **not merged** — so they are absent from `main` and from this branch. They land with that branch; **nobody should re-implement them**~~ *(corrected 2026-09-03: **PR #15 merged as `6d16803`** while this revision was in review, and `main` was merged into this branch at `7dff07b`. Re-measured there, not inferred: `git merge-base --is-ancestor origin/fix/corpus-loader-guards origin/main` now reports **merged**, `isContentHash` and the duplicate-node check are in `internal/eval/corpus.go` here, and all five cited tests resolve)* |
 | G-32, G-33 | **not in the residue** — neither cites a test name yet | **owed to the tree.** No implementation exists; **#11066** is the task |
 
-**Check 1's residue on this document at revision 7 is exactly those five names, and the check was run
-(2026-09-03).** ~~Six rows are owed to the tree and only four of them are visible to check 1 at all — which
-is the finding rather than the bookkeeping.~~
+~~**Check 1's residue on this document at revision 7 is exactly those five names, and the check was run
+(2026-09-03).**~~ **Check 1's residue on this document is `0`, re-measured on `7dff07b`.** *(The struck
+sentence was true when written and false a few hours later, and it is corrected rather than left to its
+date for one reason: **§13's subject is the residue.** A reader told to expect five names who runs the
+command and gets none concludes the document is stale and stops running it — this section's own named
+failure mode, arriving as an unexplained **absence** rather than an unexplained residue.* **`6d16803`** *is
+what changed it.)* ~~Six rows are owed to the tree and only four of them are visible to check 1 at all —
+which is the finding rather than the bookkeeping.~~
 
 **The population, stated — because this section used one phrase for three different ones and got the count
 wrong twice** *(corrected after QA #11099 CF-1; §16 carried the same sentence with the numerator inverted)*.
-Count **rows in the table below whose guard does not exist on this branch**: there are **eight** — G-28,
+Count **rows in the table below whose guard does not exist in this tree**: ~~there are **eight** — G-28,
 G-29, G-30, G-30b, G-31, G-31b, G-32, G-33. That is deliberately **not** the status table's *"owed to the
 tree"*, which is the narrower **four** that no branch carries at all; the four on
 `fix/corpus-loader-guards` are absent from here and owed to nobody. Both counts are true and they are
-different populations, which is exactly how the wrong number got written.
+different populations, which is exactly how the wrong number got written.~~ there are **four** — G-28,
+G-29, G-32, G-33 *(re-measured on `7dff07b`. It was eight until **`6d16803`**; the four that were
+absent-but-written are now present)*.
 
-| Of the **eight** rows whose guard is absent from this branch | Count | Which, and why |
+**The two populations this section had to keep apart have collapsed into one, and that is worth saying
+rather than quietly deleting the distinction.** *Rows whose guard is absent* and the status table's *owed
+to the tree* are now the **same four rows**. The distinction was real and load-bearing while
+`fix/corpus-loader-guards` was outstanding, and it is not gone — only currently empty. **The moment any
+guard is written on a branch and not yet merged, the two diverge again**, and a reader who has learned to
+treat them as synonyms will re-create CF-1 exactly.
+
+| Of the **four** rows whose guard is absent from this tree | Count | Which, and why |
 |---|---|---|
-| **visible** to check 1 — the row cites a name that does not resolve | **4** | G-30, G-30b, G-31, G-31b — five names between them, because G-30b cites two |
+| **visible** to check 1 — the row cites a name that does not resolve | **0** | **None.** ~~**4** — G-30, G-30b, G-31, G-31b — five names between them, because G-30b cites two~~ *(those four were the whole visible set; `6d16803` made every one of their names resolve, so check 1 now sees nothing here)* |
 | **invisible** to check 1 | **4** | **Two mechanisms, and they are not equally bad.** *Cites nothing, so nothing can fail:* **G-29, G-32, G-33**. *Cites a **different** existing test, so check 1 resolves it and passes:* **G-28** alone, which names `TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode` — the test it retargets. ~~G-32 and G-33 cite no test name at all; G-28 and G-29 cite the existing test they retarget~~ *(corrected after QA #11102 W-5: G-29 cites no test either — its cell names G-28, not a test. The counts are unaffected)* |
 
-**Half of them are invisible, and that is the finding rather than the bookkeeping.** P-41 checks that every
-cited name resolves; **it cannot check that a row owing a guard has cited a name for it** — a row citing
-nothing has nothing to fail on, and a row citing a *different, existing* test passes.
+~~**Half of them are invisible, and that is the finding rather than the bookkeeping.**~~ **All four are
+invisible now, and *how* that happened is a sharper finding than the ratio ever was.** P-41 checks that
+every cited name resolves; **it cannot check that a row owing a guard has cited a name for it** — a row
+citing nothing has nothing to fail on, and a row citing a *different, existing* test passes.
 
 **The second mechanism is the worse one, and it was measured rather than argued** (QA #11102, on G-28): the
 cited name is in the cited set, resolves in the present set, and occurs in the `comm -23` residue **zero**
 times. So check 1 does not merely stay quiet about a row whose guard does not exist — **it passes it**. A
 silent absence is a gap; a silent pass is a wrong answer, and exactly one row in this table has that shape.
 
-That is the audit gap
-revision 6 named two paragraphs down, arriving from the other direction: revision 6 found a *property* with
-no row, and revision 7 finds *rows* whose guard no name reaches. The status table above is what stands in
-for it until the guards land.
+That is the audit gap revision 6 named two paragraphs down, arriving from the other direction: revision 6
+found a *property* with no row, and revision 7 finds *rows* whose guard no name reaches. The status table
+above, not the residue, is what a reader should act on until the guards land.
 
-**That residue is a to-do list, not a defect**; every other name in the table resolves today. It is stated
+**And `6d16803` demonstrated something no argument would have.** The residue fell from five names to **zero
+without one of the still-owed guards being written**, and check 1's view of this document's own gap fell
+from four rows of eight to **none of four** — as a side effect of *good news*, a branch merging.
+
+> **A check can lose coverage by being satisfied.** Check 1 reports only on *cited names that do not
+> resolve*. Every way of clearing an entry — writing the guard, **merging a branch that already had it**, or
+> simply deleting the citation — removes that row from the check's view. So it is most informative when the
+> document is at its worst and blindest when the document looks best, and the rows it can no longer see are
+> exactly the rows that still owe a guard.
+
+**So an empty residue is not a clean document.** It licenses one claim and no others: *every test name this
+document cites resolves to a test that exists.* It does **not** say that a row owing a guard has cited one
+(G-29, G-32 and G-33 cite nothing), that a cited name is the **right** guard for its row (G-28 cites the
+test it retargets — the silent pass above), that a guard discriminates (check 3), that it stays green on a
+compliant implementation (check 4), or that its package can observe the property at all (check 2).
+**Four of this document's coverage rows name a guard that does not exist, and check 1 is green.** That is
+the argument for the other three checks, in one measured sentence.
+
+~~**That residue is a to-do list, not a defect**; every other name in the table resolves today. It is stated
 here because an unexplained residue is what trains a reader to stop running check 1 — this section's own
 failure mode, one level up. **And the statuses must not be collapsed:** a reader who takes all six owed rows
 as *unwritten* would file #11048's and #11066's work correctly and would then also re-write four rows whose
-guards already exist, instead of merging the branch that clears them.
+guards already exist, instead of merging the branch that clears them.~~ *(Struck 2026-09-03 after
+**`6d16803`**: there is no residue left to explain, and the collapse it warned against — re-implementing
+four guards that already existed — is no longer available, because they are merged. **The inverse warning
+replaces it:** the residue is empty while four rows still owe a guard, so what now trains a reader wrongly
+is not an unexplained residue but an unexamined absence of one.)*
 
 **On the ordering of the ids below.** G-28 and G-29 sit before G-27, because revision 6 inserted them where
 the property they guard is discussed rather than at the end. Left as it is on #11034's own rule that **an id
@@ -1284,10 +1320,10 @@ cited**, and those are not the same audit. G-28 and G-29 close it here; the gene
 | G-28 | **A control node that was retrieved and cut does not fail the sweep** — it is a budget alarm, exit 0 (§9.2). **Premise that makes it discriminate:** the fixture's control row is `cut`, never `notRetrieved`, since a fixture conflating the two is passed by an implementation that reads either as a failure | **Guard required by revision 6; not yet in the tree.** It replaces `TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode`, which pins the semantics this revision overturns and is retargeted rather than deleted. **Falsifier:** restore the `Verdict != Admitted` condition; the guard must redden |
 | G-29 | **A control node that was never retrieved fails the sweep** — exit 1 (§9.2). **Premise:** paired with G-28 over otherwise identical fixtures, so neither passes an implementation that collapses the two verdicts | **Guard required by revision 6; not yet in the tree.** **Falsifier:** widen the condition to accept `notRetrieved`; the guard must redden. It runs as a pair with G-28 — either one alone is satisfied by a constant |
 | G-27 | **`main()` binds the real streams in the right order.** `os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))` is one line no in-process test can reach — `main()` is not callable and the real file descriptors are not substitutable from inside the process | **Grep falsifier, admissible here:** exactly one hit for `os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))` in non-test source, and **zero** for the swapped spelling. See the admissibility note below |
-| G-30 | A `required[].hash` that is not 64 lowercase hex is rejected at load. **Premise that makes it discriminate:** the five rejected arms are *4 characters*, *outside the alphabet*, *uppercase*, *63 characters* and *a 128-character lowercase sha512 digest* — an implementation checking only non-emptiness passes none of them, one checking only length passes neither the alphabet nor the case arm, and one checking `len < 64` rather than `len != 64` passes the sha512 arm alone. That last arm was added after QA #11057 CF-1 found the `<` mutation surviving the whole suite green: the boundary needs both sides, and a sha512 digest is the most likely wrong-hash-function paste | `TestLoadRejectsARequiredHashThatIsNotLowercaseSha256Hex` (`internal/eval/corpus_test.go`) — **on `origin/fix/corpus-loader-guards`, not on this branch** |
-| G-30b | **The dual: a legitimate hash still loads.** Uppercase is excluded on purpose — `assemble.go`'s content hash is lowercase-only and `score.go` compares with plain equality, so an uppercase hash is guaranteed permanently stale — and the accepted set is therefore argued from what the **format** permits rather than from what the corpus writes today: an all-digit hash, an all-letter hash, and **the content hash `loop.Assemble` itself produces**, fed back in through the loader. The last of those pins the eval guard's premise to `loop.contentHash` rather than to eval's own encoder, which QA #11057 W1 identified as agreeing only by coincidence; mutating `loop.contentHash` to uppercase, or to a 128-character digest, reddens it | `TestLoadAcceptsAnAllDigitAndAnAllLetterSha256Hash`, `TestLoadAcceptsAsARequiredHashTheContentHashAssembleProduces` (`internal/eval/corpus_test.go`) — **same branch caveat as G-30** |
-| G-31 | The same node id twice inside one row's `required` is rejected at load | `TestLoadRejectsARowListingTheSameRequiredNodeTwice` (`internal/eval/corpus_test.go`) — **same branch caveat as G-30** |
-| G-31b | **The dual: three distinct required nodes still load**, so the guard cannot be satisfied by refusing every second entry. **Premise, verified by QA #11057:** `TestLoadRejectsARowListingTheSameRequiredNodeTwice` does *not* redden under `if len(required) > 0` — the mutant still rejects the duplicate row with the same message — so the rejection test cannot distinguish *rejects a repeated node* from *rejects any second entry*, and this dual is the sole discriminator. **Falsifier:** weaken the check to `if len(required) > 0`; observed reddening this row and nothing else | `TestLoadAcceptsThreeDistinctRequiredNodesOnOneRow` (`internal/eval/corpus_test.go`) — **same branch caveat as G-30** |
+| G-30 | A `required[].hash` that is not 64 lowercase hex is rejected at load. **Premise that makes it discriminate:** the five rejected arms are *4 characters*, *outside the alphabet*, *uppercase*, *63 characters* and *a 128-character lowercase sha512 digest* — an implementation checking only non-emptiness passes none of them, one checking only length passes neither the alphabet nor the case arm, and one checking `len < 64` rather than `len != 64` passes the sha512 arm alone. That last arm was added after QA #11057 CF-1 found the `<` mutation surviving the whole suite green: the boundary needs both sides, and a sha512 digest is the most likely wrong-hash-function paste | `TestLoadRejectsARequiredHashThatIsNotLowercaseSha256Hex` (`internal/eval/corpus_test.go`) — ~~**on `origin/fix/corpus-loader-guards`, not on this branch**~~ **present in this tree since `6d16803`** |
+| G-30b | **The dual: a legitimate hash still loads.** Uppercase is excluded on purpose — `assemble.go`'s content hash is lowercase-only and `score.go` compares with plain equality, so an uppercase hash is guaranteed permanently stale — and the accepted set is therefore argued from what the **format** permits rather than from what the corpus writes today: an all-digit hash, an all-letter hash, and **the content hash `loop.Assemble` itself produces**, fed back in through the loader. The last of those pins the eval guard's premise to `loop.contentHash` rather than to eval's own encoder, which QA #11057 W1 identified as agreeing only by coincidence; mutating `loop.contentHash` to uppercase, or to a 128-character digest, reddens it | `TestLoadAcceptsAnAllDigitAndAnAllLetterSha256Hash`, `TestLoadAcceptsAsARequiredHashTheContentHashAssembleProduces` (`internal/eval/corpus_test.go`) — ~~**same branch caveat as G-30**~~ **present since `6d16803`, as G-30** |
+| G-31 | The same node id twice inside one row's `required` is rejected at load | `TestLoadRejectsARowListingTheSameRequiredNodeTwice` (`internal/eval/corpus_test.go`) — ~~**same branch caveat as G-30**~~ **present since `6d16803`, as G-30** |
+| G-31b | **The dual: three distinct required nodes still load**, so the guard cannot be satisfied by refusing every second entry. **Premise, verified by QA #11057:** `TestLoadRejectsARowListingTheSameRequiredNodeTwice` does *not* redden under `if len(required) > 0` — the mutant still rejects the duplicate row with the same message — so the rejection test cannot distinguish *rejects a repeated node* from *rejects any second entry*, and this dual is the sole discriminator. **Falsifier:** weaken the check to `if len(required) > 0`; observed reddening this row and nothing else | `TestLoadAcceptsThreeDistinctRequiredNodesOnOneRow` (`internal/eval/corpus_test.go`) — ~~**same branch caveat as G-30**~~ **present since `6d16803`, as G-30** |
 | G-32 | The row result carries **every** candidate the sweep produced, in **rank** order (§8.2). **Premise that makes it discriminate:** the fixture's candidates must differ from each other in id *and* in similarity, and must include at least one cut candidate, or an implementation retaining only the admitted prefix passes, and one re-sorting by similarity rather than preserving the rank the graph returned passes too | **Guard required by revision 7; not yet in the tree** — **#11066** is the task. **Falsifier:** retain `dispositions[:admittedCount]`; the guard must redden |
 | G-33 | A miss line names the three highest-ranked candidates, and a miss with fewer than three above it prints what exists rather than padding (§8.3 rule 4). **Premise:** the fixture carries one miss with three or more outranking candidates and one with exactly two, so an implementation that always prints three — padding with a zero-valued entry — fails the second, and one that prints by insertion order rather than by rank fails the first | **Guard required by revision 7; not yet in the tree** — **#11066** is the task. **Falsifier:** print `candidates[:3]` unconditionally; the guard must redden on the two-candidate row |
 
@@ -1758,6 +1794,42 @@ revision 7**, on `design/m2-revision-7`, and neither is changed in substance by 
   tree", that §13's own status table uses for a different and narrower set. **Three populations were
   reachable from the text and the document named none.** The population is now stated at both sites, and it
   is eight, not six.)*
+
+### Revision 7, corrected in place — 2026-09-03, after `6d16803` merged PR #15 mid-review
+
+**Not a new revision.** PR #15 landed the `fix/corpus-loader-guards` work while this one sat in review, and
+`main` was merged into this branch at `7dff07b`. That falsified two measurements in §13 — the section whose
+subject *is* measurement — and moved the population counts with them.
+
+| Was | Is, re-measured on `7dff07b` |
+|---|---|
+| G-30, G-30b, G-31, G-31b: *"written, and in flight on another branch … absent from `main` and from this branch"* | **done.** `git merge-base --is-ancestor` reports **merged**; `isContentHash` and the duplicate-node check are in `internal/eval/corpus.go` here; all five cited names resolve |
+| *"Check 1's residue … is exactly those five names"* | **the residue is `0`** |
+| *"eight rows whose guard does not exist"* — 4 visible, 4 invisible | **four rows** — **0** visible, **4** invisible |
+| the status table's two statuses | **three.** *Done* is a status the table did not have, and adding it was cheaper than overloading *owed* or *in flight* |
+
+**Why the date does not carry it — a real question, not a formality.** P-43 makes this a dated record and both
+statements were true when written, so the default reading is that nothing is wrong. That does not survive
+here, for a reason specific to this section: **§13 tells a reader to run a command and says what to expect
+back.** A reader told to expect five names who runs it and gets none concludes the document is stale and stops
+running it — the exact failure §13 names one paragraph earlier, arriving as an unexplained **absence** instead
+of an unexplained residue. And the distinction that settles it: **a record may age; an instruction may not.**
+The status table is an instruction, and *"nobody should re-implement them"* rested on *"they are absent from
+this branch"*, which was false at merge time.
+
+**What the merge demonstrated, and no argument would have.** The residue fell to zero **without one of the
+still-owed guards being written** — check 1's view of this document's own gap fell from four rows of eight to
+none of four, as a side effect of *good news*. That is now stated in §13 as a general shape: **a check can
+lose coverage by being satisfied**, so it is blindest exactly when the document looks best. §13 also now says
+what an empty residue does and does not license, because *nothing to see* is the wrong reading and was the
+only one available.
+
+**And a third instance of QA #11102 W-5 surfaced while doing this**, at a site neither that finding nor I had
+named: §13's **status** table also said G-28 and G-29 *"both cite an existing test by name"*. G-29 cites none.
+Two sites were corrected when W-5 was raised and a third was not, because the remedy was applied to the sites
+the finding **listed** rather than to the claim it was about. **Correcting the named instances of a duplicated
+claim is not the same as correcting the claim** — and what finally caught it was re-reading the section whole
+rather than patching it, which is the same instrument that found revision 6's contradiction and CF-1's.
 
 ---
 
