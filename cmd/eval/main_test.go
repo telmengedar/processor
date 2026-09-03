@@ -160,6 +160,10 @@ func TestRunExitsNonZeroWhenTheControlStratumMissedOnALiveSweep(t *testing.T) {
 	body := strings.Replace(runCorpus, `"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "a constructed row must be retrieved"`,
 		`"node": 999, "hash": "37002ae74ca517874ce657943da48e6069979427e09de958e9b7fad19ab5cac3", "why": "a constructed row must be retrieved"`, 1)
 
+	if !strings.Contains(body, `"node": 999`) {
+		t.Fatal("the corpus this test sweeps requires no node 999: the replace matched nothing, so the sweep is exercising the node the other rows require instead of one the graph does not hold")
+	}
+
 	var machine, human bytes.Buffer
 
 	code := run([]string{"-corpus", corpusFile(t, body)}, &machine, &human)

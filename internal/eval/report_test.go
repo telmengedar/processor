@@ -389,3 +389,114 @@ func TestRenderNamesWhichOfTheTwoStreamsFailedRatherThanReportingAWriteFailure(t
 		t.Fatalf("both stream failures report %q, want the failed stream named", measurement.Error())
 	}
 }
+
+func mustContainLine(t *testing.T, output, want string) {
+	t.Helper()
+
+	for _, line := range strings.Split(output, "\n") {
+		if strings.TrimLeft(line, " ") == want {
+			return
+		}
+	}
+	t.Fatalf("no line of the output reads %q; output was:\n%s", want, output)
+}
+
+func missWithFiveCandidates() RowResult {
+	return RowResult{
+		Row:            "r01",
+		Stratum:        StratumLabelled,
+		Subject:        100,
+		CandidateCount: 5,
+		AdmittedCount:  3,
+		AdmittedBytes:  32504,
+		BudgetBytes:    loop.AssemblyByteBudget,
+		TopSimilarity:  0.95,
+		Required:       []NodeResult{{Node: 303, Verdict: NotRetrieved}},
+		Candidates: []loop.Disposition{
+			{Rank: 1, ID: 401, Similarity: 0.62, Included: true},
+			{Rank: 2, ID: 402, Similarity: 0.91, Included: true},
+			{Rank: 3, ID: 403, Similarity: 0.77, Included: true},
+			{Rank: 4, ID: 404, Similarity: 0.95},
+			{Rank: 5, ID: 405, Similarity: 0.48},
+		},
+	}
+}
+
+func missCutAtRankThree() RowResult {
+	return RowResult{
+		Row:            "r22",
+		Stratum:        StratumLabelled,
+		Subject:        100,
+		CandidateCount: 4,
+		AdmittedCount:  1,
+		AdmittedBytes:  56302,
+		BudgetBytes:    loop.AssemblyByteBudget,
+		TopSimilarity:  0.93,
+		Required:       []NodeResult{{Node: 502, Verdict: Cut, Rank: 3}},
+		Candidates: []loop.Disposition{
+			{Rank: 1, ID: 511, Similarity: 0.66, Included: true},
+			{Rank: 2, ID: 512, Similarity: 0.88},
+			{Rank: 3, ID: 502, Similarity: 0.81},
+			{Rank: 4, ID: 514, Similarity: 0.93},
+		},
+	}
+}
+
+func TestReportNamesTheThreeHighestRankedCandidatesThatOutrankedAMiss(t *testing.T) {
+	t.Parallel()
+
+	_, human := render(t, resultWith(missWithFiveCandidates(), intactControlRow()))
+
+	mustContainLine(t, human, "outranked by   #401 (0.62)  #402 (0.91)  #403 (0.77)")
+}
+
+func TestReportNamesOnlyTheTwoCandidatesThatExistWhenFewerThanThreeOutrankedTheMiss(t *testing.T) {
+	t.Parallel()
+
+	_, human := render(t, resultWith(missCutAtRankThree(), intactControlRow()))
+
+	mustContainLine(t, human, "outranked by   #511 (0.66)  #512 (0.88)")
+}
+
+func TestReportNamesWhatOutrankedTheMissForEveryMissVerdictAlike(t *testing.T) {
+	t.Parallel()
+
+	cut := missWithFiveCandidates()
+	cut.Row = "r02"
+	cut.Required = []NodeResult{{Node: 304, Verdict: Cut, Rank: 4}}
+	unresolved := missWithFiveCandidates()
+	unresolved.Row = "r03"
+	unresolved.Required = []NodeResult{{Node: 305, Verdict: Unresolved}}
+
+	_, human := render(t, resultWith(missWithFiveCandidates(), cut, unresolved, intactControlRow()))
+
+	if got := strings.Count(human, "outranked by"); got != 3 {
+		t.Fatalf("the summary carries %d outranked-by lines for three misses whose verdicts are notRetrieved, cut and unresolved, want 3: the line is one rule that does not branch on verdict; output was:\n%s", got, human)
+	}
+}
+
+func TestReportNamesNoOutrankingCandidatesForARowWhoseRequiredNodeWasAdmitted(t *testing.T) {
+	t.Parallel()
+
+	admitted := missWithFiveCandidates()
+	admitted.Required = []NodeResult{{Node: 403, Verdict: Admitted, Rank: 3}}
+
+	_, human := render(t, resultWith(admitted, intactControlRow()))
+
+	if strings.Contains(human, "outranked by") {
+		t.Fatalf("the summary names what outranked a required node that was admitted; the line belongs to a miss and to nothing else. Output was:\n%s", human)
+	}
+}
+
+func TestReportNamesNoOutrankingCandidatesForAMissThatNothingOutranked(t *testing.T) {
+	t.Parallel()
+
+	rankOne := missCutAtRankThree()
+	rankOne.Required = []NodeResult{{Node: 511, Verdict: Cut, Rank: 1}}
+
+	_, human := render(t, resultWith(rankOne, intactControlRow()))
+
+	if strings.Contains(human, "outranked by") {
+		t.Fatalf("the summary carries an outranked-by line for a miss at rank 1, which no candidate outranked; an empty list is not a line. Output was:\n%s", human)
+	}
+}

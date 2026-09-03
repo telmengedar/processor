@@ -268,3 +268,40 @@ func TestControlVerifiedRetrievalIsTrueWhenEveryControlRowAdmittedEveryRequiredN
 		t.Fatal("ControlVerifiedRetrieval is false where every control node was admitted, want true: a labelled miss must not break the self-check")
 	}
 }
+
+func TestSweepRetainsEveryCandidateItSawInRankOrderIncludingTheOnesTheBudgetCut(t *testing.T) {
+	t.Parallel()
+
+	candidates := []loop.Candidate{
+		{ID: 401, Similarity: 0.62, Content: "aaa"},
+		{ID: 402, Similarity: 0.91, Content: "bbbb"},
+		{ID: 403, Similarity: 0.77, Content: strings.Repeat("x", loop.AssemblyByteBudget)},
+		{ID: 404, Similarity: 0.48, Content: "ccccc"},
+	}
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
+
+	got := BuildRow(labelledRow(Required{Node: 403, Hash: "h", Why: "w"}), dispositions)
+
+	if len(got.Candidates) != 4 {
+		t.Fatalf("len(Candidates) = %d, want 4: the row retained %d of the 4 candidates the sweep produced, and AdmittedCount is %d",
+			len(got.Candidates), len(got.Candidates), got.AdmittedCount)
+	}
+
+	wantID := []int64{401, 402, 403, 404}
+	wantSimilarity := []float64{0.62, 0.91, 0.77, 0.48}
+	wantIncluded := []bool{true, true, false, false}
+	for i := range wantID {
+		if got.Candidates[i].ID != wantID[i] || got.Candidates[i].Rank != i+1 {
+			t.Fatalf("Candidates[%d] is #%d at rank %d, want #%d at rank %d: the retained set must keep the rank order the graph returned rather than any re-sort of it",
+				i, got.Candidates[i].ID, got.Candidates[i].Rank, wantID[i], i+1)
+		}
+		if got.Candidates[i].Similarity != wantSimilarity[i] {
+			t.Fatalf("Candidates[%d].Similarity = %v, want %v: the similarity that ranked the candidate must be retained beside its id",
+				i, got.Candidates[i].Similarity, wantSimilarity[i])
+		}
+		if got.Candidates[i].Included != wantIncluded[i] {
+			t.Fatalf("Candidates[%d] (#%d) has Included = %v, want %v: a candidate the byte budget cut is retained exactly as an admitted one is",
+				i, got.Candidates[i].ID, got.Candidates[i].Included, wantIncluded[i])
+		}
+	}
+}
