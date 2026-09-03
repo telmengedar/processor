@@ -41,14 +41,21 @@ const (
 	envDivoidKey = "PROCESSOR_DIVOID_KEY"
 	envModelURL  = "PROCESSOR_MODEL_URL"
 	envModelID   = "PROCESSOR_MODEL_ID"
+	envModelKey  = "PROCESSOR_MODEL_KEY"
+)
+
+const (
+	graphKeySentinel = "test-key-12345"
+	modelKeySentinel = "test-model-key-67890"
+	modelIDSentinel  = "test-model-id"
 )
 
 func validEnv(overrides map[string]string) map[string]string {
 	env := map[string]string{
 		envDivoidURL: "https://graph.example/api",
-		envDivoidKey: "test-key-12345",
+		envDivoidKey: graphKeySentinel,
 		envModelURL:  "https://model.example/v1",
-		envModelID:   "test-model-id",
+		envModelID:   modelIDSentinel,
 	}
 	for k, v := range overrides {
 		env[k] = v
@@ -324,6 +331,21 @@ func TestBindError(t *testing.T) {
 	}
 }
 
+func assertEachEndpointReceivedItsOwnCredential(t *testing.T, graphAuth, modelAuth *authRecorder) {
+	t.Helper()
+
+	if graphKeySentinel == modelKeySentinel {
+		t.Fatalf("the sentinels are identical, so a crossed credential is indistinguishable from a correct one")
+	}
+
+	if got, want := graphAuth.get(), "Bearer "+graphKeySentinel; got != want {
+		t.Errorf("the graph endpoint was called with Authorization %q, want %q — the graph client was not built with the graph key", got, want)
+	}
+	if got, want := modelAuth.get(), "Bearer "+modelKeySentinel; got != want {
+		t.Errorf("the model endpoint was called with Authorization %q, want %q — the model client was not built with the model key", got, want)
+	}
+}
+
 type runCallResult struct {
 	status int
 	body   []byte
@@ -336,11 +358,14 @@ func TestSIGTERMDrainsAnInFlightRunInsteadOfDroppingIt(t *testing.T) {
 	bin := buildProcessorBinary(t)
 
 	stored := &storedBody{}
-	graphSrv := graphServer(t, stored, "")
+	graphSrv, graphAuth := graphServer(t, stored, "")
 
 	const modelDelay = 6 * time.Second
 	entered := make(chan struct{}, 1)
-	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	modelAuth := &authRecorder{}
+	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		modelAuth.record(r)
+
 		select {
 		case entered <- struct{}{}:
 		default:
@@ -355,6 +380,7 @@ func TestSIGTERMDrainsAnInFlightRunInsteadOfDroppingIt(t *testing.T) {
 		envHTTPAddr:  "127.0.0.1:0",
 		envDivoidURL: graphSrv.URL,
 		envModelURL:  modelSrv.URL,
+		envModelKey:  modelKeySentinel,
 	}))
 
 	done := make(chan runCallResult, 1)
@@ -407,6 +433,8 @@ func TestSIGTERMDrainsAnInFlightRunInsteadOfDroppingIt(t *testing.T) {
 		t.Fatalf("the graph never received the run record, so the drain delivered the answer but not the second copy; stderr:\n%s", rp.stderr.String())
 	}
 
+	assertEachEndpointReceivedItsOwnCredential(t, graphAuth, modelAuth)
+
 	awaitExit(t, rp.cmd, 30*time.Second, rp.stderr)
 
 	if code := rp.cmd.ProcessState.ExitCode(); code != 0 {
@@ -427,9 +455,12 @@ func TestACompletedRunEmitsTheStartedAndFinishedPairInOrder(t *testing.T) {
 	bin := buildProcessorBinary(t)
 
 	stored := &storedBody{}
-	graphSrv := graphServer(t, stored, "")
+	graphSrv, graphAuth := graphServer(t, stored, "")
 
-	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	modelAuth := &authRecorder{}
+	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		modelAuth.record(r)
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"the answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":22}}`))
 	}))
@@ -439,6 +470,7 @@ func TestACompletedRunEmitsTheStartedAndFinishedPairInOrder(t *testing.T) {
 		envHTTPAddr:  "127.0.0.1:0",
 		envDivoidURL: graphSrv.URL,
 		envModelURL:  modelSrv.URL,
+		envModelKey:  modelKeySentinel,
 	}))
 	defer func() {
 		_ = rp.cmd.Process.Kill()
@@ -477,4 +509,9 @@ func TestACompletedRunEmitsTheStartedAndFinishedPairInOrder(t *testing.T) {
 	if !strings.Contains(out, "elapsed=") {
 		t.Fatalf("run-finished record does not carry the wall clock; stderr:\n%s", out)
 	}
+	if !strings.Contains(out, "model="+modelIDSentinel) {
+		t.Fatalf("run-finished record does not carry model=%s, so the model id the turn was built with is unpinned; stderr:\n%s", modelIDSentinel, out)
+	}
+
+	assertEachEndpointReceivedItsOwnCredential(t, graphAuth, modelAuth)
 }

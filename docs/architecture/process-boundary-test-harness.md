@@ -439,6 +439,54 @@ keep running.
 | 3 | Configuration error | `PROCESSOR_HTTP_ADDR=` (set, empty) | **1** | `ERROR` `boot configuration`, naming `PROCESSOR_HTTP_ADDR` |
 | 4 | Bind error | `PROCESSOR_HTTP_ADDR=` the first instance's actual address | **1** | `ERROR` `listen`, carrying that address |
 
+**Added 2026-09-03:** two further scenarios arrived after this table was written and are **not**
+numbered into it — see §8.5, which names them directly.
+
+### 8.5 Credential and model-id wiring — added 2026-09-03
+
+The four scenarios above are the ones this document shipped with. Two further scenarios arrived later
+with the drain work and are deliberately **not** retro-fitted into §8.4's table:
+`TestSIGTERMDrainsAnInFlightRunInsteadOfDroppingIt` and
+`TestACompletedRunEmitsTheStartedAndFinishedPairInOrder` — the only harness scenarios that dial a
+graph and a model endpoint rather than pointing at unreachable example hosts. The guards below are
+carried by those two and are named directly, not through a scenario number. Scope ruled in #10889.
+
+| Guard | Carried by | The premise that makes it discriminate |
+|---|---|---|
+| The graph endpoint is called with the graph key **and** the model endpoint with the model key | `assertEachEndpointReceivedItsOwnCredential`, called from both scenarios above | **The two sentinels are distinct**, asserted by the helper itself rather than left to prose. `PROCESSOR_DIVOID_KEY` and `PROCESSOR_MODEL_KEY` carry different values, so a crossed credential arrives as the *other* sentinel rather than as an equal one. Identical sentinels would leave crossed and correct indistinguishable |
+| The turn is built with the configured model id | The `model=` assertion on the run-finished record, in `TestACompletedRunEmitsTheStartedAndFinishedPairInOrder` | `logFinished` emits the id **the turn holds**, not the id the adapter requests, so the record reads the `loop.NewTurn` argument end to end rather than the adapter's |
+
+`PROCESSOR_MODEL_KEY` is set in those two scenarios' environment overrides and **not** in `validEnv`, so
+the other three scenarios go on exercising `boot.LoadModel`'s optional-key path — an absent
+`PROCESSOR_MODEL_KEY` is accepted and the process boots and serves. The adapter's own
+header-omission branch is **not** reached by these scenarios and is not this harness's to cover; it is
+pinned in `internal/openaicompat` by `TestJudgeSendsNoAuthorizationHeaderWhenKeyIsEmpty`.
+**Corrected 2026-09-03** from a first draft claiming these scenarios exercised the adapter's
+header-omission branch: they never dial the model endpoint, so they cannot reach it.
+
+**What these guards do not cover**, so that no row reads wider than its instrument:
+
+- Not the **system text** argument to `loop.NewTurn`. Separate member, no credential radius.
+- Not **which `*http.Client`** each adapter uses. That needs a recording `RoundTripper` inside the
+  adapter package; an `httptest` fixture is structurally incapable of it.
+- Not the **URL** pair. Crossed URLs are already killed, but by assertions written for other purposes
+  — see W-5 below. That coverage stays incidental and this addition does not make it deliberate.
+
+**Measured 2026-09-03 in the container**, on a scratch copy of the module, each mutation's applied diff
+asserted before scoring and the applied-diff assertion itself first proved to fire on a no-op:
+
+| # | Mutation in `run()` | Outcome | The message that attributes it |
+|---|---|---|---|
+| W-1 | the model adapter is built with the graph key | **red**, both scenarios | *the model endpoint was called with Authorization "Bearer test-key-12345", want "Bearer test-model-key-67890"* |
+| W-2 | full key swap | **red**, both arms in both scenarios | both messages, each naming its own endpoint and the sentinel that arrived |
+| W-3 | the model adapter is built `(URL, Key, ID)` — three consecutive strings from one struct | **red**, both scenarios | *the model endpoint was called with Authorization "Bearer test-model-id"* |
+| W-4 | the turn is built with the graph key in the model-id position | **red**, completed-run scenario | *run-finished record does not carry model=test-model-id* |
+| W-5 | control — the two **URL** arguments swapped | **red**, both scenarios, through the pre-existing assertions | *POST /runs status = 404, want 200* — existing coverage undisturbed by this addition |
+
+W-4 leaves the drain scenario green, which is correct: that scenario makes no model-id claim. W-5 dies
+on the status assertion before the drain scenario's stored-record assertion is reached, so the URL
+kill is **narrower than #10889 §1 traced it** — one assertion, not three.
+
 ---
 
 ## 9. What This Pins, and What Would Falsify It
@@ -461,6 +509,9 @@ a measured row.
 `signal.NotifyContext` locally, run the Linux gate, confirm scenarios 1 and 2 **fail**, and restore. A
 suite that has never been seen to fail has not been shown to be an instrument. This is the same check
 #10437 §14 step 3 required of the lifecycle's paired negative test.
+
+**Added 2026-09-03:** the credential and model-id wiring mutants are **§8.5**, and unlike this table's
+rows they were measured rather than entailed.
 
 ### 9.2 Claims this design makes that are not measured
 

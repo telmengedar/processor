@@ -47,10 +47,30 @@ func (s *storedBody) get() []byte {
 	return s.body
 }
 
-func graphServer(t *testing.T, stored *storedBody, failing string) *httptest.Server {
+type authRecorder struct {
+	mu     sync.Mutex
+	header string
+}
+
+func (a *authRecorder) record(r *http.Request) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.header = r.Header.Get("Authorization")
+}
+
+func (a *authRecorder) get() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.header
+}
+
+func graphServer(t *testing.T, stored *storedBody, failing string) (*httptest.Server, *authRecorder) {
 	t.Helper()
 
+	auth := &authRecorder{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth.record(r)
+
 		if r.Method == http.MethodGet {
 			w.Header().Set("Content-Type", "application/json")
 			if r.URL.Query().Get("id") != "" {
@@ -82,14 +102,14 @@ func graphServer(t *testing.T, stored *storedBody, failing string) *httptest.Ser
 		}
 	}))
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, auth
 }
 
 func runOneTurn(t *testing.T, failing string) (*httptest.ResponseRecorder, []byte) {
 	t.Helper()
 
 	stored := &storedBody{}
-	graphSrv := graphServer(t, stored, failing)
+	graphSrv, _ := graphServer(t, stored, failing)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	graph := divoid.NewClient(graphSrv.URL, "k", graphSrv.Client(), logger)
