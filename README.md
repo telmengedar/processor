@@ -1,22 +1,55 @@
 # Processor
 
-Processor is a harness whose substrate is memory, not history (see `VISION.md`). **M0** built a minimal
-Go service skeleton that starts, serves one HTTP endpoint, and shuts down cleanly
-(`docs/architecture/m0-service-skeleton.md`). **M1** closes the skeleton loop —
-input → mechanical assembly → one model call → write-back — in two units
-(`docs/architecture/m1-skeleton-loop.md`): **unit A** built mechanical context assembly with no model
-call; **unit B** adds the judgement step and the write-back. The model call is **provider-agnostic**: one
-adapter speaks the OpenAI-compatible chat-completions protocol, so a local runtime works with no
-credential and no per-token spend (design #10521's ruling).
+Processor is a harness whose substrate is memory, not history (see `VISION.md`). Two binaries: one
+serves the turn over HTTP, the other sweeps a retrieval corpus and scores what retrieval delivered.
+
+## Status
+
+<!-- Maintenance: this section is anchored to VISION.md's milestone list, not to the tree. A merge
+     changes nothing here; a finished milestone moves one item from "what is coming" up into "what you
+     get today". Keep counts, package names, file lists and graph node ids out of it — they belong to
+     the sections below that own them, where they are already checked against a real run. -->
+
+**What you get by cloning this today.** Build it, point it at a DiVoid graph and at any
+OpenAI-compatible model endpoint — a local runtime works with no key and no per-token spend — and one
+`POST /runs` gives you a full turn: it pulls context out of the graph mechanically, asks the model once
+(letting the model request one supplementary lookup of its own), writes the result back to the graph as
+a node, and hands you the whole record of what it retrieved, what it kept, what it cut and why. That
+path has been run end to end against a real model, on both the plain-answer route and the tool-using
+one. There is also a second binary that scores how good the retrieval was — it builds and runs, but the
+hand-labelled answer key it scores against does not exist yet, **so today it can tell you nothing
+meaningful**. Writing that answer key is the work currently in front of the project.
+
+**What to expect if you come back later.**
+
+- **Better context assembly**, which is the next real capability and the one the project is actually
+  about. What is here now is deliberately the simplest thing that is honestly mechanical: one recall
+  query, a byte budget, and no memory of previous turns.
+- **Gates a model cannot talk its way past** — work described in the graph as obligations to meet, and
+  checked mechanically rather than asserted in prose.
+- **A background pass that keeps the memory from silting up** — grouping, re-homing and marking what has
+  been superseded, so recall still works past the first month.
+- Further out: a way to inspect a run visually, and more than one agent sharing the same memory.
+
+**The boundary, plainly.** This is an experiment about whether retrieved memory can stand in for a
+conversation transcript. It is not a product, and its central question — whether the assembled context
+is any good — is exactly the one not answered yet. The list above is `VISION.md`'s roadmap in plain
+words; that document carries the argument.
 
 ## What's here
 
 - `cmd/processor` — the process entry point: loads the boot configuration, binds the listener, wires
   OS signals, constructs the graph adapter, the model adapter and the loop, owns the exit code.
+- `cmd/eval` — the retrieval sweep: loads a corpus file (`-corpus`) and, per row, does exactly what a
+  real run's first six steps do — fetch the anchor, one recall, `Assemble` — then stops before the
+  model, so a full sweep costs no model call at all. Writes the measurement as JSON to stdout and the
+  human summary to stderr, and exits non-zero when the control stratum did not verify the sweep. Needs
+  the graph half of the boot configuration only.
 - `internal/boot` — the boot configuration: the module's one environment read site, split into the
   listen address, a graph half and a model half, so a caller that needs only graph configuration is
   never asked for model configuration.
-- `internal/server` — the HTTP route table and the serve/drain lifecycle.
+- `internal/server` — the HTTP route table and the serve/drain lifecycle
+  (`docs/architecture/m0-service-skeleton.md`).
 - `internal/loop` — the turn: mechanical context assembly (`Assemble`, a pure function — no I/O, no
   clock, no randomness) and its sequencing (`Turn.Run`): fetch, assemble, judge — dispatching the one
   supplementary-recall tool as the model asks for it, up to a call cap — then write the record back. See
@@ -24,7 +57,13 @@ credential and no per-token spend (design #10521's ruling).
 - `internal/divoid` — the graph adapter: reads the subject node and the semantic recall query, and
   writes the run record back as one node linked to its subject.
 - `internal/openaicompat` — the model adapter: one OpenAI-compatible chat-completions client. Named for
-  the protocol, not a vendor — it will mostly point at things that are not OpenAI.
+  the protocol, not a vendor — it will mostly point at things that are not OpenAI. Provider-agnostic by
+  ruling (design **#10521**): a local runtime works with no credential and no per-token spend.
+- `internal/eval` — the corpus and the scorer: the row type with its validating loader, the pure scoring
+  of a row's required nodes against what assembly did with them, and the reporter. **Two** rates, not
+  one — *retrieved* (did the recall query surface the node at all) and *admitted* (did it survive the
+  byte budget) — because they fail differently and imply opposite fixes
+  (`docs/architecture/m2-retrieval-eval.md`).
 - `GET /health` — returns `200` with `Content-Type: application/json` and body `{"status":"ok"}`.
 - `POST /runs` — assembles context for one input against one subject node, judges it against the
   configured model (dispatching the recall tool as needed), writes the run record to the graph, and
@@ -188,9 +227,11 @@ go test -count=1 -v ./...
 ```
 
 `-count=1` disables Go's test cache; without it a re-run can print `(cached)` and execute nothing.
-A passing run prints one `ok` line per package (`cmd/processor`, `internal/boot`, `internal/divoid`,
-`internal/loop`, `internal/openaicompat`, `internal/server`) and every `--- PASS:` line for each test. The default suite is
-fully offline and hermetic: no network call, no credential, no live graph, no live model, no spend — every
+A passing run prints one `ok` line per package — **eight**: `cmd/eval`, `cmd/processor`, `internal/boot`,
+`internal/divoid`, `internal/eval`, `internal/loop`, `internal/openaicompat`, `internal/server` — and
+every `--- PASS:` line for each test. A `?` line is the one to watch for: it means a package shipped with
+no test at all. The default suite is fully offline and hermetic: no network call, no credential, no live
+graph, no live model, no spend — every
 graph-facing and model-facing test runs against a local `httptest.Server`, deliberately (design §9.3): a
 live model is nondeterministic, so it can never be what a per-change suite asserts against. This is also
 why there is no automated model gate at any tier — see "What is and isn't verified here" below.
@@ -237,9 +278,9 @@ flags it.
     sh -c 'go vet ./... && go test -count=1 ./...'
   ```
 
-  Expects one `ok` line per package — **six**: `cmd/processor`, `internal/boot`, `internal/divoid`,
-  `internal/loop`, `internal/openaicompat`, `internal/server` — no `?`, exit `0`. One 1.32 GB `golang:1.27` image pull,
-  once.
+  Expects the same one-`ok`-line-per-package output as the host run under "Test" above — the package set
+  is identical, the container simply also runs the Linux-only file — with no `?` and exit `0`. One
+  1.32 GB `golang:1.27` image pull, once.
 - **The drain is covered by an automated process-level test** (`cmd/processor/process_linux_test.go`):
   the real binary is launched against local graph and model test servers, the model endpoint is made
   slow, `SIGTERM` is sent while a run is genuinely in flight (the model server signals when it has been
@@ -271,9 +312,10 @@ flags it.
   back-fills, every candidate is hashed and sized including the cut ones, and the render order is by
   node id — a score reshuffle does not move a byte. `internal/divoid`'s two read operations are pinned
   at the wire level against a local test server, including the C30 empty-result discrimination (a
-  missing subject is a `200` with an empty result, never a `404`). **Not verified here:** an end-to-end
-  run against the live DiVoid graph — the design's own measured facts (`docs/architecture/m1-skeleton-loop.md`
-  §3) are the closest thing to that, and a first live run is the natural next check once this ships.
+  missing subject is a `200` with an empty result, never a `404`). **Since verified live** against
+  `divoid.mamgo.io`: every decode assumption held, including that the `fields` projection populates
+  `content` inline rather than needing a second fetch, and that `Recall` must not re-sort what the graph
+  already returned in rank order (**#10883**).
 - **The judgement step and write-back (`POST /runs`, unit B):** `internal/openaicompat` is pinned at the
   wire level against a local test server — the exact request shape (model, messages, `max_tokens`, the one
   tool declaration), the `Authorization` header sent only when a key is configured, decoding of a
@@ -290,11 +332,25 @@ flags it.
   naming the surviving node on stderr. The two-artifact relationship (`cmd/processor/artifacts_test.go`)
   is asserted end-to-end: one turn through the real handler and the real graph adapter, both byte
   sequences taken, and the stored body compared key-for-key against the response minus `written`.
-  **Not verified here:** the OpenAI-compatible protocol's actual **200** response shape from a real
-  implementation — no local runtime (Ollama, LM Studio, llama.cpp, vLLM, koboldcpp) was installed or
-  listening on this machine when this was built (checked, not assumed: `ollama`/`lms`/`llama-server`/
-  `vllm`/`koboldcpp` all absent from `PATH`, no `~/.ollama`, and `GET /v1/models` on `127.0.0.1:11434`,
-  `:1234`, `:8000` and `:8080` all had nothing listening). The live check is therefore **not performed**,
-  not merely unautomated — installing a runtime and running one real turn against it is the natural next
-  step, and is deliberately a manual command rather than a gate (design §10.6): a live model is
-  nondeterministic and cannot be what a per-change assertion runs against.
+  **Since verified live, which the suite structurally could not do** — every success fixture was written
+  from the same reading of the protocol that produced the decoder, so a misreading would be reproduced on
+  both sides: two real turns against a real OpenAI-compatible endpoint, in a container, covering the
+  answer path (**#10897**) and the tool path (**#10898**), where the model composed its own recall query,
+  received the rows and answered out of them. Every decode assumption in `internal/openaicompat/wire.go`
+  held, the endpoint's extra fields were ignored (the safe direction), and the write path landed all three
+  POSTs with UTF-8 intact. It found one defect — the stored record's receipt was empty where the
+  response's was not (**#10899**), since fixed by the record-fate design above. It stays a **manual**
+  check rather than a gate (design §10.6): a live model is nondeterministic and cannot be what a
+  per-change assertion runs against.
+- **The retrieval eval harness (`cmd/eval`, M2):** the corpus loader's validation is pinned rule by rule
+  (a required set naming its own subject, one over the cap of three, an empty one, a missing reason or
+  hash, a duplicate row id, a stratum outside the closed set), the scorer's four verdicts are pinned
+  — including that *cut* and *not retrieved* are distinguished on otherwise identical rows, and that a
+  moved content hash raises a stale flag rather than a verdict — and the reporter is pinned over
+  hand-built results. The sweep is pinned at the port level against a graph double: that it recalls with
+  the raw input verbatim at the loop's own candidate limit, that its dispositions equal the ones a real
+  run produces for the same anchor and candidates, that it reads the graph and never writes to it, that a
+  row whose required node no longer resolves leaves both denominators instead of scoring as a miss, and
+  that a control stratum which did not read 1.00 exits non-zero. **Not verified here — and not
+  verifiable by any test:** that the numbers mean anything. No corpus exists yet, and a green build
+  proves the instrument works while proving nothing about what it measures (design **#10926** §15).
