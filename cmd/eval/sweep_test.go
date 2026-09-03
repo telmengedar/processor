@@ -422,6 +422,19 @@ func TestTheSweepExitsNonZeroWhenAControlRowCouldNotBeScoredAtAll(t *testing.T) 
 	}
 }
 
+func TestTheSweepExitsNonZeroWhenOneControlNodeWasCutAndAnotherWasNeverRetrieved(t *testing.T) {
+	t.Parallel()
+
+	mixed := eval.Result{Rows: []eval.RowResult{
+		{Stratum: eval.StratumControl, Required: []eval.NodeResult{{Node: 401, Verdict: eval.Cut}}},
+		{Stratum: eval.StratumControl, Required: []eval.NodeResult{{Node: 402, Verdict: eval.NotRetrieved}}},
+	}}
+
+	if got := exitCodeFor(mixed); got != exitError {
+		t.Fatalf("exit code = %d, want %d: one cut control does not excuse another the retriever never surfaced", got, exitError)
+	}
+}
+
 func TestTheSweepExitsZeroWhenTheControlStratumReadOneAndOnlyLabelledRowsMissed(t *testing.T) {
 	t.Parallel()
 

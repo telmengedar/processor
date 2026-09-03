@@ -265,6 +265,6 @@ func TestControlVerifiedRetrievalIsTrueWhenEveryControlRowAdmittedEveryRequiredN
 	}}
 
 	if !result.ControlVerifiedRetrieval() {
-		t.Fatal("ControlVerifiedRetrieval is false where every control row read 1.00, want true: a labelled miss must not break the self-check")
+		t.Fatal("ControlVerifiedRetrieval is false where every control node was admitted, want true: a labelled miss must not break the self-check")
 	}
 }

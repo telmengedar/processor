@@ -196,7 +196,7 @@ func TestReportBlamesTheInstrumentAndNotTheBudgetWhenAControlNodeWasNeverRetriev
 
 	_, human := render(t, resultWith(oneMissOfEachKind(), controlRowScoring(NotRetrieved)))
 
-	mustContain(t, human, "the control stratum did not read 1.00: either the graph moved or the harness broke, and this sweep's labelled number is not trustworthy")
+	mustContain(t, human, "the control stratum did not verify retrieval: either the graph moved, the harness broke, or the stratum could not be scored at all, and this sweep's labelled number is not trustworthy")
 	mustContain(t, human, "misses (control):")
 	mustContain(t, human, "#401")
 	mustNotContain(t, human, "budget alarm")
@@ -209,7 +209,35 @@ func TestReportBlamesTheBudgetAndNotTheInstrumentWhenTheBudgetCutAControlNodeItR
 
 	mustContain(t, human, "budget alarm: the control stratum was retrieved in full and cut by the budget. Retrieval is intact and this sweep's retrieved rate is trustworthy; the admitted rate is a reading of the assembler, not of the retriever.")
 	mustContain(t, human, "control   retrieved 1/1 (1.00)   admitted 0/1 (0.00)")
-	mustNotContain(t, human, "either the graph moved or the harness broke")
+	mustNotContain(t, human, "either the graph moved, the harness broke, or the stratum could not be scored at all")
+}
+
+func TestReportBlamesTheInstrumentWhenOneControlNodeWasCutAndAnotherWasNeverRetrieved(t *testing.T) {
+	t.Parallel()
+
+	mixed := resultWith(oneMissOfEachKind(), controlRowScoring(Cut),
+		RowResult{Row: "c02", Stratum: StratumControl, Required: []NodeResult{{Node: 402, Verdict: NotRetrieved}}})
+
+	_, human := render(t, mixed)
+
+	mustContain(t, human, "control   retrieved 1/2 (0.50)   admitted 0/2 (0.00)")
+	mustContain(t, human, "the control stratum did not verify retrieval: either the graph moved, the harness broke, or the stratum could not be scored at all, and this sweep's labelled number is not trustworthy")
+	mustNotContain(t, human, "budget alarm")
+	mustNotContain(t, human, "retrieved in full")
+}
+
+func TestReportDoesNotDenyTheRateItJustPrintedWhenAControlRowCouldNotBeScored(t *testing.T) {
+	t.Parallel()
+
+	unscored := resultWith(oneMissOfEachKind(), intactControlRow(),
+		RowResult{Row: "c02", Stratum: StratumControl, Required: []NodeResult{{Node: 402, Verdict: Unresolved}}})
+
+	_, human := render(t, unscored)
+
+	mustContain(t, human, "control   retrieved 1/1 (1.00)   admitted 1/1 (1.00)")
+	mustContain(t, human, "the control stratum did not verify retrieval: either the graph moved, the harness broke, or the stratum could not be scored at all, and this sweep's labelled number is not trustworthy")
+	mustNotContain(t, human, "did not read 1.00")
+	mustNotContain(t, human, "budget alarm")
 }
 
 func TestReportWarnsWhenTheCorpusCarriedNoControlStratumAtAll(t *testing.T) {
@@ -225,7 +253,7 @@ func TestReportSaysNothingAlarmingWhenTheControlStratumReadOne(t *testing.T) {
 
 	_, human := render(t, resultWith(oneMissOfEachKind(), intactControlRow()))
 
-	mustNotContain(t, human, "either the graph moved or the harness broke")
+	mustNotContain(t, human, "either the graph moved, the harness broke, or the stratum could not be scored at all")
 	mustNotContain(t, human, "no control stratum")
 	mustNotContain(t, human, "budget alarm")
 }

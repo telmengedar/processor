@@ -20,7 +20,7 @@ const runCorpus = `[
   {"id": "r01", "input": "what did the split change", "subject": 100, "stratum": "labelled",
    "required": [{"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "an answer that omits it is wrong"}]},
   {"id": "c01", "input": "a constructed control input", "subject": 100, "stratum": "control",
-   "required": [{"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "a constructed row must read one"}]}
+   "required": [{"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "a constructed row must be retrieved"}]}
 ]`
 
 type failingWriter struct{}
@@ -157,8 +157,8 @@ func TestRunExitsNonZeroWhenTheControlStratumMissedOnALiveSweep(t *testing.T) {
 	server := graphServer(t)
 	graphEnv(t, server.URL)
 
-	body := strings.Replace(runCorpus, `"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "a constructed row must read one"`,
-		`"node": 999, "hash": "37002ae74ca517874ce657943da48e6069979427e09de958e9b7fad19ab5cac3", "why": "a constructed row must read one"`, 1)
+	body := strings.Replace(runCorpus, `"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "a constructed row must be retrieved"`,
+		`"node": 999, "hash": "37002ae74ca517874ce657943da48e6069979427e09de958e9b7fad19ab5cac3", "why": "a constructed row must be retrieved"`, 1)
 
 	var machine, human bytes.Buffer
 
@@ -170,7 +170,7 @@ func TestRunExitsNonZeroWhenTheControlStratumMissedOnALiveSweep(t *testing.T) {
 	if machine.Len() == 0 {
 		t.Fatal("no measurement was emitted; an unverified sweep must still report what it saw")
 	}
-	if !strings.Contains(human.String(), "the control stratum did not read 1.00") {
+	if !strings.Contains(human.String(), "the control stratum did not verify retrieval: either the graph moved, the harness broke, or the stratum could not be scored at all") {
 		t.Fatalf("the human stream does not raise the control alarm:\n%s", human.String())
 	}
 }
@@ -198,7 +198,7 @@ func TestRunExitsZeroAndBlamesTheBudgetWhenARankOneCandidateCutTheControlOnALive
 	if !strings.Contains(human.String(), "budget alarm: the control stratum was retrieved in full and cut by the budget. Retrieval is intact and this sweep's retrieved rate is trustworthy; the admitted rate is a reading of the assembler, not of the retriever.") {
 		t.Fatalf("the human stream does not name the budget as the cause:\n%s", human.String())
 	}
-	if strings.Contains(human.String(), "either the graph moved or the harness broke") {
+	if strings.Contains(human.String(), "either the graph moved, the harness broke, or the stratum could not be scored at all") {
 		t.Fatalf("the human stream blames the instrument for what the budget did:\n%s", human.String())
 	}
 }
