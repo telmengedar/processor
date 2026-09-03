@@ -94,10 +94,15 @@ func validateRow(row Row, seen map[string]bool) error {
 	if len(row.Required) == 0 || len(row.Required) > maxRequiredPerRow {
 		return fmt.Errorf("eval: row %q: %d required nodes, want between 1 and %d (design 6.2)", row.ID, len(row.Required), maxRequiredPerRow)
 	}
+	required := make(map[int64]bool, len(row.Required))
 	for _, req := range row.Required {
 		if err := validateRequired(row, req); err != nil {
 			return err
 		}
+		if required[req.Node] {
+			return fmt.Errorf("eval: row %q: required node %d is listed twice, so one label would be counted twice in both rates (design 6.2)", row.ID, req.Node)
+		}
+		required[req.Node] = true
 	}
 	return nil
 }
@@ -112,8 +117,23 @@ func validateRequired(row Row, req Required) error {
 	if req.Hash == "" {
 		return fmt.Errorf("eval: row %q: required node %d carries no hash (design 6.2)", row.ID, req.Node)
 	}
+	if !isContentHash(req.Hash) {
+		return fmt.Errorf("eval: row %q: required node %d carries hash %q, which is not lowercase sha256 hex and so can never equal a live content hash, leaving the row stale on every sweep (design 6.2)", row.ID, req.Node, req.Hash)
+	}
 	if req.Why == "" {
 		return fmt.Errorf("eval: row %q: required node %d carries no reason (design 6.2)", row.ID, req.Node)
 	}
 	return nil
+}
+
+func isContentHash(hash string) bool {
+	if len(hash) != hex.EncodedLen(sha256.Size) {
+		return false
+	}
+	for _, c := range []byte(hash) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
