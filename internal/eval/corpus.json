@@ -1,0 +1,171 @@
+[
+  {
+    "id": "r01",
+    "input": "Where is a Go test supposed to state what it is checking, and why not in a comment above it?",
+    "subject": 10495,
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10861,
+        "hash": "3c422707cac0146c27c624039fc88a06443260107baf61c697b35648723992d4",
+        "why": "An answer lacking this would present the long-test-name convention as house style, when the truth is a dated ruling that the comment contract binds Go on this repo, that Go gets no [Description] escape hatch, and that no linter enforces any of it."
+      }
+    ]
+  },
+  {
+    "id": "r02",
+    "input": "Several reviews in a row let the same violation through without flagging it. Who got that wrong?",
+    "subject": 10521,
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10879,
+        "hash": "a82a884262db6f4294f15019d3b024d12def75948ebe4d2df43f20b64bcdab31",
+        "why": "An answer lacking this would blame the reviewers, when the truth is that the design had scoped the contract section out of the applied set, so none of the four was wrong under the authority it had, and an open task had predicted that exact deadlock a day earlier."
+      }
+    ]
+  },
+  {
+    "id": "r03",
+    "input": "A test asserts that a field serialises as an empty array rather than null. I deleted the line that sets it to an empty slice and nothing failed. What am I missing?",
+    "subject": 10422,
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10877,
+        "hash": "cf128ee2d8e293618833818deb0d3f76390e7b85efb57f7737d8ee5973f044a1",
+        "why": "An answer lacking this would conclude the assertion is dead, when the truth is that a nil-normalising guard one layer downstream supplies the same value, so a green proves nothing until the mutated line is shown to be the one the asserted value last flows from."
+      }
+    ]
+  },
+  {
+    "id": "r04",
+    "input": "Can I run the signal test straight on this machine, or does it have to run somewhere else?",
+    "subject": 10439,
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10440,
+        "hash": "72ce43d5d521cb2f802c8913a19286746e7671da1a267ff1c945635301d3a39f",
+        "why": "An answer lacking this would say to run it locally, when the truth is a standing ruling that anything reaching the interactive session runs in a Linux container, and that the container here is arm64 while the emulated toolchain reports amd64, so a build without an explicit GOARCH produces a binary that will not run in it."
+      }
+    ]
+  },
+  {
+    "id": "r05",
+    "input": "The prompt we sent carries the same node body twice. What causes that?",
+    "subject": 10897,
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10927,
+        "hash": "051ab1c6642e71ab1a1f370a6fca1c272b9f4018047b27c300bcdf6f5ed51ce2",
+        "why": "An answer lacking this would guess at a rendering bug, when the truth is that assembly renders the anchor and then every admitted candidate without ever removing the anchor from the candidate set, and the subject is by construction one of recall's strongest hits for an input about it."
+      }
+    ]
+  },
+  {
+    "id": "r06",
+    "input": "What happens to a request that is still being worked on when the service is told to stop?",
+    "subject": 10489,
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10890,
+        "hash": "5f905336454db6ad4b598a68ce5d55bb853cee4324795d914471a11382ee82d2",
+        "why": "An answer lacking this would describe an orderly drain, when the truth is that the only bound is a five-second grace chosen when the longest request was a health check, a turn has no overall deadline, and the run is cut before write-back so neither the caller nor the graph gets anything."
+      }
+    ]
+  },
+  {
+    "id": "r07",
+    "input": "The variables the binary reads are unset in every scope on this machine. Does that mean the credential is missing?",
+    "subject": 10422,
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10883,
+        "hash": "e7272942bb12f08e387093bfe5c504ce111b39f8b7a0f5cd24925d6c0c15ff89",
+        "why": "An answer lacking this would conclude the resource is absent, when the truth is that the probe tested the names the code consumes while the machine supplies the same credential under different ambient names, so the negative result falsified only the thing actually probed."
+      }
+    ]
+  },
+  {
+    "id": "r08",
+    "input": "Every package prints ok and the command still comes back non-zero. Should I just run it again?",
+    "subject": 10482,
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10839,
+        "hash": "6e5c889110340eade8b9a1cd99c84367736994c1df76ef4e0c0ac044dbbc6ac5",
+        "why": "An answer lacking this would treat the non-zero exit as a real failure or advise re-running until green, when the truth is a reproducible host-only file lock on cleanup of the temporary test binary after every test has already passed, with the container gate unaffected and re-running until green named as the wrong response."
+      }
+    ]
+  },
+  {
+    "id": "r09",
+    "input": "Why not keep the evaluation data in the graph, next to everything else it is scored against?",
+    "subject": 10924,
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10926,
+        "hash": "8eb2ac4a024e73a60f5e6512d829b0841a69c638f24e707b0834ba66038193c7",
+        "why": "An answer lacking this cannot say that a node whose body is the query plus its own answer key would outrank the content it scores, could consume or shut out the assembly budget, and would leak the answer key into any real run with a similar input."
+      }
+    ]
+  },
+  {
+    "id": "r10",
+    "input": "A mutation ran, the suite stayed green, and we scored that as the code being compliant. What is owed before that counts as evidence?",
+    "subject": 10422,
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10943,
+        "hash": "593cae2fb9b1709f2f85fa203c40d12b9e85da0c25dd73e9b20fe802fcece791",
+        "why": "An answer lacking this would accept the green, when the truth is that a green is evidence only when paired with a demonstration that red was reachable, which takes two separately-named witnesses and whose load-bearing half is the counterfactual non-compliant implementation."
+      }
+    ]
+  },
+  {
+    "id": "r11",
+    "input": "We want to pin that a string type only ever takes its three values. Is checking the declarations enough?",
+    "subject": 10919,
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10982,
+        "hash": "bcd4cd19bbd0aec35b53b123c9815413b85687fa4befbd02157dad9a3ded0e14",
+        "why": "An answer lacking this would accept a declared-values check, when the truth is that such a type can be constructed anywhere without being declared, so the establishable claim is about construction in non-test source and its route enumeration must come from what the language permits rather than from what the tree happens to write today."
+      }
+    ]
+  },
+  {
+    "id": "c01",
+    "input": "What is left behind when write-back creates the session-log node and the call that sets its content then fails?",
+    "subject": 10422,
+    "stratum": "control",
+    "required": [
+      {
+        "node": 10863,
+        "hash": "0146b00c1ca300db46c46c6c5303e2f89811dd968fc86db98211c65e6008e3bf",
+        "why": "Control, authored from this node's own wording: an answer lacking it cannot name the bodyless node a failed content call leaves behind, nor that nothing reaches or removes it."
+      }
+    ]
+  },
+  {
+    "id": "c02",
+    "input": "Why does a claim that something cannot be done need a probe more than a claim that it can?",
+    "subject": 10422,
+    "stratum": "control",
+    "required": [
+      {
+        "node": 10444,
+        "hash": "336ec20e5430a0f8c3c3e9c5f68cee5a5d567a2ef3823bf149e52fad4b6ad84d",
+        "why": "Control, authored from this node's own wording: an answer lacking it cannot say that a positive claim is contradicted by use while a negative one is acted on by avoidance, so nothing ever contradicts it."
+      }
+    ]
+  }
+]
