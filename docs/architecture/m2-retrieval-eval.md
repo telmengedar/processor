@@ -522,8 +522,10 @@ load time as a rejection. The same answer binds here. Rejecting the row outright
 corpus from stating a true and important fact about the shipped pipeline.
 
 **It does not get its own stratum either.** A third member costs a third rate and would pull the row out of the
-labelled rate — discarding the true half of what it measures, which is that the retriever *did* surface a 95 KB
-design document for a question about it. §6.1's stratum has two members and keeps them.
+labelled rate — discarding the true half of what it measures, which is that the retriever *did* surface a
+~~95 KB~~ **95,661 B (as #11046 measured it; the file is larger at every later revision — §5.4's own rule
+above is not to quote a current size)** design document for a question about it. §6.1's stratum has two
+members and keeps them.
 
 **What ships is the fact, not a verdict about it.** The node's own byte size is already on the `Disposition`
 the scorer walks — admission is computed from it — so it is carried onto the required-node result and printed
@@ -532,7 +534,6 @@ the specification's tense, not the tree's.** `NodeResult` carries no `size` and 
 **#11049** is the unstarted task that implements this section together with §8.2's `required[]` row and
 §8.3's specimen. §12 E8 named this as a mitigation already in place and is corrected in the same revision.)*
 The distinction that decides a
-milestone is then immediate:
 milestone is then immediate:
 
 | Reading | What it means | Who can act on it |
@@ -927,6 +928,16 @@ figures were **never** what the code produced — the specimen was hand-set to r
 their order** from a specimen and never its whitespace, and where a specimen and the code disagree about a
 **field**, the specimen is the requirement and the gap is a task — as `, node 30104 B` is #11049.
 
+**And the inverse case, which the rule above does not cover** *(revision 8, from QA #11291 W-2)*. Where the
+**code** carries a field the **specimen** omits, the *code* is right and the specimen is merely older —
+nothing is owed. Three such differences exist and are deliberately not in the table above, which measures
+only what the specimen over-claims: `report.go:210` prints `shutouts  3/30 rows` where the specimen shows
+`3 rows`; `report.go:211-212` puts `stale labels` and `unresolved required nodes` on two lines where the
+specimen puts both on one; and `report.go:208` says `(admitted as a candidate in 9)` against the
+specimen's `(admitted in 9)`. **The first of those is the one to keep**: the missing denominator is exactly
+what §8.3 rule 1 and G-11 exist to guarantee, so the code is enforcing a rule the specimen quietly breaks.
+**A specimen may under-specify safely and over-specify never.**
+
 ```
 corpus internal/eval/corpus.json — 34 rows (30 labelled, 4 control), hash 9f2c…
 limits candidateLimit=20 assemblyByteBudget=60000
@@ -1303,8 +1314,9 @@ to-do list, not a defect**; every other name in the table resolves today.~~
 > **the test both rows cited does not exist in this tree** — it is named in §16's revision 8 table, and
 > deliberately not here.
 > PR #18 retargeted it rather than keeping it, so revision 7's *silent pass* became check 1's *residue* —
-> the one transition the preamble below did not anticipate, and the reason the residue is `2` rather than
-> `0`. Note what the two revisions have in common: **both wrote a dated claim about the tree in the present
+> the one transition the preamble below did not anticipate, and the reason the residue measured **`2`
+> rather than `0` on `2bea35c`**, this revision's starting point. **It is `0` on the file you are reading**
+> (below). Note what the two revisions have in common: **both wrote a dated claim about the tree in the present
 > tense.** Revision 7 corrected the tense of a prediction and kept the tense of the fact.
 
 **Revision 7 adds six rows, and states the residue as a measurement rather than as a count of rows, because
@@ -1325,7 +1337,8 @@ failure mode, arriving as an unexplained **absence** rather than an unexplained 
 what changed it.)* ~~Six rows are owed to the tree and only four of them are visible to check 1 at all —
 which is the finding rather than the bookkeeping.~~
 
-**Check 1's residue on this document is `2`, measured on `2bea35c` on 2026-09-04 (revision 8).** The two
+**Check 1's residue on this document was `2` at `2bea35c`, measured on 2026-09-04 (revision 8) before any
+of this revision's edits.** The two
 names were the retargeted control guard (cited at G-28 and twice in this preamble) and the renamed shutout
 guard (cited at G-16). **Both identifiers are spelled in §16's revision 8 table and nowhere in §1–§15** — §13
 excludes §16 from check 1 by design, and repeating a dead name inside the checked range would leave the
@@ -1376,11 +1389,20 @@ citing nothing has nothing to fail on, and a row citing a *different, existing* 
 **The second mechanism is the worse one, and it was measured rather than argued** (QA #11102, on G-28): the
 cited name is in the cited set, resolves in the present set, and occurs in the `comm -23` residue **zero**
 times. So check 1 does not merely stay quiet about a row whose guard does not exist — **it passes it**. A
-silent absence is a gap; a silent pass is a wrong answer, and exactly one row in this table has that shape.
+silent absence is a gap; a silent pass is a wrong answer, and ~~exactly one row in this table has that
+shape~~ *(revision 8: **no row in this table has that shape now.** G-28 was the one, and it is corrected
+here. The mechanism is retained above because it is a property of check 1 rather than of these rows —
+and because the way it finally surfaced is worth keeping: the cited test was **deleted**, which
+converted the silent pass into an ordinary residue entry. **The instrument caught it only after the defect
+had changed into a different defect.**)*
 
 That is the audit gap revision 6 named two paragraphs down, arriving from the other direction: revision 6
-found a *property* with no row, and revision 7 finds *rows* whose guard no name reaches. The status table
-above, not the residue, is what a reader should act on until the guards land.
+found a *property* with no row, and revision 7 finds *rows* whose guard no name reaches. ~~The status table
+above, not the residue, is what a reader should act on until the guards land.~~ *(Revision 8: **all four
+landed** — `c6083e5` and `530458f` — so the instruction has no remaining subject. What replaces it is
+narrower and still true: **the status table is what a reader should act on whenever the two disagree**,
+because the residue reports only on cited names that fail to resolve and stays silent about a row that
+cites nothing at all.)*
 
 **And `6d16803` demonstrated something no argument would have.** The residue fell from five names to **zero
 without one of the still-owed guards being written**, and check 1's view of this document's own gap fell
@@ -1394,15 +1416,27 @@ from four rows of eight to **none of four** — as a side effect of *good news*,
 
 **So an empty residue is not a clean document.** It licenses one claim and no others: *every test name this
 document cites resolves to a test that exists.* It does **not** say that a row owing a guard has cited one
-(G-29, G-32 and G-33 cite nothing), that a cited name is the **right** guard for its row (G-28 cites the
-test it retargets — the silent pass above), that a guard discriminates (check 3), that it stays green on a
+~~(G-29, G-32 and G-33 cite nothing)~~ *(revision 8: **all four rows now cite shipped guards**, so this
+document has no live instance of either mechanism — the claim is kept as the general property check 1
+lacks, not as a statement about these rows)*, that a cited name is the **right** guard for its row
+~~(G-28 cites the test it retargets — the silent pass above)~~ *(revision 8: corrected with the row)*, that a
+guard discriminates (check 3), that it stays green on a
 compliant implementation (check 4), or that its package can observe the property at all (check 2).
 ~~**Four of this document's coverage rows name a guard that does not exist, and check 1 is green.**~~
-**Revision 8: zero of them do, and check 1 is *not* green — its residue is `2`.** The four rows that owed a
-guard (G-28, G-29, G-32, G-33) all have one now, and the two residue names are a *different* defect:
-citations left behind by tests that were **renamed**, not tests never written. That is the argument for the
-other three checks restated rather than withdrawn — check 1 went green on the gap it could see and red on
-one it could not predict, in the same revision.
+**Revision 8: zero of them do, and check 1's residue on the shipped file is `0`.** The four rows that owed
+a guard (G-28, G-29, G-32, G-33) all have one now.
+
+**The route there is the part worth keeping, and it is dated rather than present-tense.** Measured on
+`2bea35c` — this revision's starting point — the residue was **`2`**, and neither name was a guard nobody
+had written: both were **citations left behind by tests that were renamed** (PR #18 retargeted one, PR #22
+renamed the other). Correcting those two citations is part of this revision, so **the residue is `0` on the
+file you are reading** — re-measured on the amended tip, not predicted from the starting point.
+
+So check 1 went green on the gap it could see *and* red on one it could not predict, **within a single
+revision** — which is the argument for the other three checks restated rather than withdrawn. **Do not read
+the `2` as this document's current state:** the preamble scopes it to `2bea35c` and so does this paragraph,
+because an unscoped figure in a section's conclusion is exactly the hedge-dropping P-51 names, and a reader
+who runs the command and gets `0` against a document claiming `2` learns to stop running it.
 
 ~~**That residue is a to-do list, not a defect**; every other name in the table resolves today. It is stated
 here because an unexplained residue is what trains a reader to stop running check 1 — this section's own
@@ -1410,9 +1444,14 @@ failure mode, one level up. **And the statuses must not be collapsed:** a reader
 as *unwritten* would file #11048's and #11066's work correctly and would then also re-write four rows whose
 guards already exist, instead of merging the branch that clears them.~~ *(Struck 2026-09-03 after
 **`6d16803`**: there is no residue left to explain, and the collapse it warned against — re-implementing
-four guards that already existed — is no longer available, because they are merged. **The inverse warning
+four guards that already existed — is no longer available, because they are merged.* ~~**The inverse warning
 replaces it:** the residue is empty while four rows still owe a guard, so what now trains a reader wrongly
-is not an unexplained residue but an unexamined absence of one.)*
+is not an unexplained residue but an unexamined absence of one.~~ *(**Revision 8:** the inverse
+warning has expired with the condition that made it true — **no row owes a guard any more.** It is kept
+struck rather than deleted because the shape recurs: whenever a row is written before its guard, an empty
+residue again means less than it appears to. **This site was not in QA #11291's list of four**; it was
+found by sweeping the claim — *that four rows are defective* — across the whole region instead of visiting
+the lines the finding named. That is P-52's remedy applied to the finding about P-52.)*
 
 **On the ordering of the ids below.** G-28 and G-29 sit before G-27, because revision 6 inserted them where
 the property they guard is discussed rather than at the end. Left as it is on #11034's own rule that **an id
@@ -2036,6 +2075,32 @@ principle.
 than leaving three consecutive rounds to rediscover it. Take **fields and their order** from a specimen;
 never its whitespace. Where a specimen and the code disagree about a **field**, the specimen is the
 requirement and the gap is a task.
+
+**4. The sweep stopped one paragraph short of its own understanding, and QA #11291 caught it.** Revision 8's
+first pass enumerated §13's **table** correctly — 44 `G-` rows, zero stale sites, the first sweep in six not
+to lose one — and then left **five** falsified claims standing in the section's **closing paragraphs**:
+*"exactly one row in this table has that shape"*, *"until the guards land"*, *"(G-29, G-32 and G-33 cite
+nothing)"*, *"(G-28 cites the test it retargets)"*, and *"the residue is empty while four rows still owe a
+guard"*. Two more restated the starting point's residue of `2` in the **present tense**, in the position a
+reader treats as the section's answer.
+
+**The diff is the finding.** Line 1400 was struck and replaced; lines 1396–1399, which state the same
+falsified facts, were untouched **context in the same hunk**. The author corrected the sentence immediately
+*below* and left the one immediately *above*. That is **P-52**'s corollary verbatim — *correcting a
+duplicated claim at one site leaves the worse copy alive* — and it is the **sixth consecutive round** on this
+repo to lose a §13 site: not in the sweep this time, and not in the handover, but **in the paragraph the
+author had open**.
+
+> **A region you are editing is not a region you have swept.** The three prior rounds lost sites by
+> searching too narrowly; this one lost them by assuming that proximity to the edit implied inspection. The
+> remedy is the same instrument either way — **enumerate by claim over the whole region, paragraph-joined
+> and strike-blanked** — and it has to be pointed at the prose, not only at the table. The repair pass ran
+> exactly that over §13's closing paragraphs and found a **fifth** site QA's own list of four did not carry.
+
+**And the residue restatements are P-51 in miniature**: a correctly scoped measurement (*`2`, on `2bea35c`*)
+travelled four paragraphs into an unscoped present-tense sentence, dropping the hedge and keeping the number
+— in the section that had just documented that exact failure mode. **Every statement of this document's
+residue is now either past-tense and pinned to a commit, or `0` and pinned to the shipped file.**
 
 #### What was verified rather than inherited, because P-51 requires it in the sentence
 
