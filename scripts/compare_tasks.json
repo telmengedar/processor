@@ -1,0 +1,44 @@
+[
+  {
+    "id": "t1-second-provider",
+    "task": "We want Processor to talk to a second model provider alongside the OpenAI-compatible one. Where does that change land, and what would make the change wrong?",
+    "subject": 10884,
+    "answerNodes": [10466, 10884, 10846],
+    "whyMemoryIsRequired": "A model with no memory will propose a provider registry, a factory, or a protocol enum, because that is the textbook answer. This project refuses all three by name (#10532 section 5.6, carried on #10466): selection is a construction in cmd/processor because there is one provider, the second will arrive knowing what it needs to select on, and a lookup table with one entry is a name rather than a boundary. It will also miss the falsifier the archetype ends on -- grep internal/loop's production code for the new provider's vocabulary and get nothing -- and the zero-dependency rule that forbids pulling in the vendor's SDK."
+  },
+  {
+    "id": "t2-new-setting",
+    "task": "Processor needs to read a new setting from the environment: a byte budget that a deployment can lower. Where does that read go, and what do I have to decide before writing it?",
+    "subject": 10937,
+    "answerNodes": [10937, 10466],
+    "whyMemoryIsRequired": "A model with no memory will reach for os.Getenv at the point of use, or a config struct, or a settings library. It cannot know that this module has exactly one os.LookupEnv call, that it lives in internal/boot behind three exported loaders, that the number of loaders is the number of independently-dereferenced groups rather than the number of subsystems -- so a member no existing loader's caller dereferences is a fourth loader and not a fourth field -- or that the member must be assigned one of three named absent/empty classes with present-but-empty an error in every one."
+  },
+  {
+    "id": "t3-second-ask-worse",
+    "task": "Someone reports that asking Processor the same question a second time gives a visibly worse answer than the first. Nothing was deployed in between. Where do I look?",
+    "subject": 10846,
+    "answerNodes": [11141],
+    "whyMemoryIsRequired": "A model with no memory will suggest caching, sampling temperature, conversation state, or rate limiting. The measured cause is none of those: the turn writes a run record back to the graph it reads from, that record embeds the input verbatim so it ranks among the first few candidates on a repeat, it is structurally larger than the whole assembly budget because it embeds the block it assembled, and admission is stop-not-skip so one unadmittable early candidate cuts every candidate behind it. The observed result was zero of twenty admitted and a block containing the anchor alone."
+  },
+  {
+    "id": "t4-implementation-finished",
+    "task": "I have finished implementing the change. It compiles, the tests pass, and it is sitting in the working tree. What am I supposed to do next, and what am I not?",
+    "subject": 10192,
+    "answerNodes": [10192, 7506],
+    "whyMemoryIsRequired": "General knowledge gives a confidently wrong answer here: commit, push, open a pull request, write the body. On this project an implementing agent runs no git and no gh at all -- no branch, no commit, no push, no PR, no draft. The work is returned in the working tree and the orchestrator packages it, opens the PR as a draft, and is the only party who writes the PR body. This is the task in the set where the memoryless arm is expected to be fluent and wrong rather than vague."
+  },
+  {
+    "id": "t5-where-does-the-design-go",
+    "task": "An architect produced a design document for the change I am about to implement, and it currently exists only as a graph node. Does it need to go anywhere else before the work ships?",
+    "subject": 10422,
+    "answerNodes": [11092, 11034],
+    "whyMemoryIsRequired": "A model with no memory will say to commit it under docs/ or leave it in the ticket, and will not know the conditions. The rule is that a design produced during a task is a deliverable committed on the implementation branch and named by its node id in the PR body (P-48), that a design which genuinely precedes any code is a node and earns a repo file only when the first implementation step ships -- the exception #11092's own header invokes and applies to itself -- and that whoever revises the document publishes both copies byte-identical in one change (P-40), because a stored digest makes the two artifacts one unit of change with one author (P-49)."
+  },
+  {
+    "id": "t6-rate-went-up",
+    "task": "We changed a retrieval knob and the sweep's retrieval rate went up. Write the two or three sentences I should put in the pull request body about what that does and does not establish.",
+    "subject": 10992,
+    "answerNodes": [11092],
+    "whyMemoryIsRequired": "This is the honest control in the set: a memoryless model can produce a decent generic answer about proxy metrics and outcome measurement, so the transcript arm is not set up to fail. What it cannot produce is this project's rulings -- that the retrieval rate is demoted from headline to explanation rather than retired, that a task-outcome verdict is never quoted without the sweep result for the same two arms beside it, that a verdict quoted without the context-usage figures is a result whose price nobody looked at, and that at n=1 the protocol is a regression gate and 'arm A is better' is a claim n=1 cannot support."
+  }
+]
