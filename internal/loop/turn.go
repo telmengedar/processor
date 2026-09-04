@@ -137,12 +137,13 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 
 func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Duration) {
 	reports, inTokens, outTokens := summarizeUsage(record.Usage)
+	cut := cutCount(record.Candidates)
 
 	attrs := []any{
 		"subject", record.Subject,
 		"receipt", string(receipt.State),
 		"candidates", len(record.Candidates),
-		"cut", cutCount(record.Candidates),
+		"cut", cut,
 		"modelCalls", record.ModelCalls,
 		"model", record.Model,
 		"usageReports", reports,
@@ -152,6 +153,10 @@ func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Dur
 	}
 	if receipt.NodeID != 0 {
 		attrs = append(attrs, "node", receipt.NodeID)
+	}
+
+	if len(record.Candidates) > 0 && cut == len(record.Candidates) {
+		t.log().Warn("assembly admitted no candidate: the block carried the anchor alone", "subject", record.Subject, "candidates", len(record.Candidates))
 	}
 
 	t.log().Info("run finished", attrs...)

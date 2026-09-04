@@ -8,26 +8,12 @@ import (
 	"strings"
 )
 
-const cutReasonByteBudget = "byte budget exceeded"
+const (
+	cutReasonByteBudget   = "byte budget exceeded"
+	cutReasonSelfProduced = "self-produced"
+)
 
-// Assemble is a pure function: no I/O, no clock, no randomness. Given the
-// anchor and the candidates recall returned (in rank/score order,
-// descending), it decides which candidates fit within budget bytes of body
-// content and renders the block sent to the model.
-//
-// Admission is a stop, not a skip (design §6.3): the first candidate whose
-// body would push the cumulative admitted size over budget is cut, and so
-// is every candidate after it. Smaller, lower-ranked candidates are never
-// back-filled into space a larger one left unused — that would break the
-// invariant that "included" means "outranked everything excluded". The
-// anchor itself is exempt from the budget (design R4).
-//
-// The block is rendered sorted by node id ascending — never by score
-// (design §6.3): ranking decides entry, a total order decides position.
-// Id order is a total order over distinct nodes; score order is not, so a
-// block sorted by score would reshuffle (and a byte-exact golden test
-// would go flaky) the moment two scores tie or one shifts in the ninth
-// decimal, for a reason that has nothing to do with the code.
+// Assemble is a pure function: no I/O, no clock, no randomness.
 func Assemble(anchor Anchor, candidates []Candidate, budget int) (block string, dispositions []Disposition) {
 	admitted, dispositions := admit(candidates, budget)
 
@@ -41,7 +27,6 @@ func admit(candidates []Candidate, budget int) (admitted []Candidate, dispositio
 	admitted = make([]Candidate, 0, len(candidates))
 
 	cumulative := 0
-	stopped := false
 	for i, c := range candidates {
 		size := len(c.Content)
 
@@ -55,12 +40,14 @@ func admit(candidates []Candidate, budget int) (admitted []Candidate, dispositio
 			ContentHash: contentHash(c.Content),
 		}
 
-		if !stopped && cumulative+size <= budget {
+		switch {
+		case c.SelfProduced:
+			d.CutReason = cutReasonSelfProduced
+		case cumulative+size <= budget:
 			cumulative += size
 			d.Included = true
 			admitted = append(admitted, c)
-		} else {
-			stopped = true
+		default:
 			d.CutReason = cutReasonByteBudget
 		}
 

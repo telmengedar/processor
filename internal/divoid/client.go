@@ -153,11 +153,12 @@ func (c *Client) Recall(ctx context.Context, query string, limit int) ([]loop.Ca
 	candidates := make([]loop.Candidate, len(resp.Result))
 	for i, r := range resp.Result {
 		candidates[i] = loop.Candidate{
-			ID:         r.ID,
-			Type:       r.Type,
-			Name:       r.Name,
-			Similarity: r.Similarity,
-			Content:    r.Content,
+			ID:           r.ID,
+			Type:         r.Type,
+			Name:         r.Name,
+			Similarity:   r.Similarity,
+			Content:      r.Content,
+			SelfProduced: IsRunRecord(r.Type, r.Name),
 		}
 	}
 	return candidates, nil

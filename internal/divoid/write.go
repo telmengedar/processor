@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/telmengedar/processor/internal/loop"
@@ -26,6 +27,11 @@ const (
 	logRepairableOrphan = "repairable orphan"
 	logUncollectedShell = "uncollected shell"
 )
+
+// IsRunRecord reports whether a graph row is a run record this system wrote.
+func IsRunRecord(nodeType, name string) bool {
+	return nodeType == RunNodeType && strings.HasPrefix(name, RunNamePrefix)
+}
 
 type createNodeRequest struct {
 	Type string `json:"type"`

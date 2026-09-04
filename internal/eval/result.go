@@ -1,7 +1,6 @@
 package eval
 
 import (
-	"strings"
 	"time"
 
 	"github.com/telmengedar/processor/internal/divoid"
@@ -138,5 +137,5 @@ func (r Result) controlWasCut() bool {
 }
 
 func selfProduced(d loop.Disposition) bool {
-	return d.Type == divoid.RunNodeType && strings.HasPrefix(d.Name, divoid.RunNamePrefix)
+	return divoid.IsRunRecord(d.Type, d.Name)
 }

@@ -85,21 +85,16 @@ func TestAssembleBlockOrderIsByIDNotByInputOrder(t *testing.T) {
 	}
 }
 
-// TestAssembleAdmitsWithinBudgetAndCutsTheRest pins the admission rule as
-// a stop, not a skip (design §6.3): once a candidate does not fit, every
-// candidate after it is cut too, even a smaller one that would have fit in
-// the space left over. The scenario is asserted to genuinely arise before
-// the outcome is asserted (#114 §13.1.1).
-func TestAssembleAdmitsWithinBudgetAndCutsTheRest(t *testing.T) {
+func TestAssembleCutsWhatDoesNotFitAndBackFillsASmallerCandidateBehindIt(t *testing.T) {
 	t.Parallel()
 
 	anchor := Anchor{ID: 1, Type: "t", Name: "a"}
 
 	candidates := []Candidate{
-		{ID: 10, Content: strings.Repeat("x", 40)}, // rank 1: fits, cumulative 40
-		{ID: 20, Content: strings.Repeat("y", 40)}, // rank 2: fits, cumulative 80
-		{ID: 30, Content: strings.Repeat("z", 40)}, // rank 3: would push to 120 > 100, cut
-		{ID: 40, Content: strings.Repeat("w", 5)},  // rank 4: fits in the leftover 20, but must still be cut
+		{ID: 10, Content: strings.Repeat("x", 40)},
+		{ID: 20, Content: strings.Repeat("y", 40)},
+		{ID: 30, Content: strings.Repeat("z", 40)},
+		{ID: 40, Content: strings.Repeat("w", 5)},
 	}
 	const budget = 100
 
@@ -120,7 +115,7 @@ func TestAssembleAdmitsWithinBudgetAndCutsTheRest(t *testing.T) {
 		{10, true},
 		{20, true},
 		{30, false},
-		{40, false},
+		{40, true},
 	}
 	for i, w := range want {
 		if dispositions[i].ID != w.id {
@@ -131,11 +126,94 @@ func TestAssembleAdmitsWithinBudgetAndCutsTheRest(t *testing.T) {
 		}
 	}
 
-	if dispositions[3].Included {
-		t.Fatal("candidate 40 (smaller than the leftover budget) was back-filled; admission must stop, not skip (design §6.3)")
+	if !dispositions[3].Included {
+		t.Fatal("candidate 40 fits the budget candidate 30 could not use and was cut anyway; admission must skip, not stop (design §6.3, corrected)")
 	}
 	if dispositions[2].CutReason == "" {
 		t.Fatal("a cut candidate has an empty CutReason, want it recorded")
+	}
+}
+
+func TestAssembleAdmitsCandidatesBehindOneThatDoesNotFit(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	candidates := []Candidate{
+		{ID: 10, Content: strings.Repeat("x", 200)},
+		{ID: 20, Content: strings.Repeat("y", 40)},
+		{ID: 30, Content: strings.Repeat("z", 30)},
+	}
+	const budget = 100
+
+	if len(candidates[0].Content) <= budget {
+		t.Fatalf("test setup error: rank 1 is %d bytes against a budget of %d, so it does not exceed the whole budget and this test cannot discriminate", len(candidates[0].Content), budget)
+	}
+
+	_, dispositions := Assemble(anchor, candidates, budget)
+
+	if dispositions[0].Included {
+		t.Fatal("dispositions[0] (id 10) was admitted although it exceeds the whole budget")
+	}
+	for _, i := range []int{1, 2} {
+		if !dispositions[i].Included {
+			t.Fatalf("dispositions[%d] (id %d) was cut although it fits; an unadmittable candidate must not block the ones behind it", i, dispositions[i].ID)
+		}
+	}
+	for i := range dispositions {
+		if dispositions[i].Rank != i+1 {
+			t.Fatalf("dispositions[%d] (id %d) has Rank %d, want %d — rank is the candidate's position in the recall order, not its position among the admitted", i, dispositions[i].ID, dispositions[i].Rank, i+1)
+		}
+	}
+}
+
+func TestAssembleCutsSelfProducedCandidatesWithoutChargingTheBudget(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	candidates := []Candidate{
+		{ID: 10, Content: strings.Repeat("x", 40), SelfProduced: true},
+		{ID: 20, Content: strings.Repeat("y", 40)},
+		{ID: 30, Content: strings.Repeat("z", 40)},
+	}
+	const budget = 100
+
+	if len(candidates[0].Content) > budget {
+		t.Fatalf("test setup error: the self-produced row is %d bytes against a budget of %d, so the byte rule would cut it anyway", len(candidates[0].Content), budget)
+	}
+
+	_, dispositions := Assemble(anchor, candidates, budget)
+
+	if dispositions[0].Included {
+		t.Fatal("dispositions[0] (id 10) is self-produced and was admitted, want it cut")
+	}
+	for _, i := range []int{1, 2} {
+		if !dispositions[i].Included {
+			t.Fatalf("dispositions[%d] (id %d) was cut; two 40-byte rows fit a 100-byte budget only if the self-produced row's 40 bytes were never charged", i, dispositions[i].ID)
+		}
+	}
+}
+
+func TestAssembleReportsSelfProducedRatherThanBudgetForAFittingRunRecord(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	candidates := []Candidate{{ID: 10, Content: "a body that fits easily", SelfProduced: true}}
+	const budget = 1_000
+
+	if len(candidates[0].Content) > budget {
+		t.Fatalf("test setup error: the row is %d bytes against a budget of %d; both rule orders cut it and the test cannot discriminate", len(candidates[0].Content), budget)
+	}
+
+	_, dispositions := Assemble(anchor, candidates, budget)
+
+	if dispositions[0].Included {
+		t.Fatal("a self-produced candidate that fits the budget was admitted; the byte rule ran first and admitted it, so the self-produced rule must be applied before the byte rule")
+	}
+	if dispositions[0].CutReason == cutReasonByteBudget {
+		t.Fatalf("CutReason = %q, want the self-produced reason rather than the budget reason", dispositions[0].CutReason)
+	}
+	if dispositions[0].CutReason != cutReasonSelfProduced {
+		t.Fatalf("CutReason = %q, want the self-produced reason", dispositions[0].CutReason)
 	}
 }
 
@@ -148,12 +226,12 @@ func TestAssembleRecordsSizeAndHashForCutCandidatesToo(t *testing.T) {
 	anchor := Anchor{ID: 1}
 	candidates := []Candidate{
 		{ID: 10, Content: strings.Repeat("x", 200)},
-		{ID: 20, Content: "cut-me"},
+		{ID: 20, Content: strings.Repeat("y", 80)},
 	}
-	const budget = 50 // smaller than candidate 10 alone
+	const budget = 50
 
-	if len(candidates[0].Content) <= budget {
-		t.Fatalf("test setup error: candidate 10's %d bytes does not exceed budget %d", len(candidates[0].Content), budget)
+	if len(candidates[0].Content) <= budget || len(candidates[1].Content) <= budget {
+		t.Fatalf("test setup error: candidates are %d and %d bytes against budget %d; both must exceed it for the second to be cut", len(candidates[0].Content), len(candidates[1].Content), budget)
 	}
 
 	_, dispositions := Assemble(anchor, candidates, budget)
@@ -168,8 +246,8 @@ func TestAssembleRecordsSizeAndHashForCutCandidatesToo(t *testing.T) {
 	if cut.Included {
 		t.Fatal("candidate 20 was included, want it recorded as cut")
 	}
-	if cut.Size != len("cut-me") {
-		t.Fatalf("cut candidate Size = %d, want %d — size must be recorded even when cut", cut.Size, len("cut-me"))
+	if cut.Size != 80 {
+		t.Fatalf("cut candidate Size = %d, want 80 — size must be recorded even when cut", cut.Size)
 	}
 	if cut.ContentHash == "" {
 		t.Fatal("cut candidate ContentHash is empty, want it recorded even when cut")
@@ -355,6 +433,20 @@ func TestAssembleCutReasonHasTheExactWording(t *testing.T) {
 	_, dispositions := Assemble(anchor, candidates, budget)
 
 	const want = "byte budget exceeded"
+	if dispositions[0].CutReason != want {
+		t.Fatalf("CutReason = %q, want %q", dispositions[0].CutReason, want)
+	}
+}
+
+func TestAssembleSelfProducedCutReasonHasTheExactWording(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	candidates := []Candidate{{ID: 10, Content: "small", SelfProduced: true}}
+
+	_, dispositions := Assemble(anchor, candidates, 60_000)
+
+	const want = "self-produced"
 	if dispositions[0].CutReason != want {
 		t.Fatalf("CutReason = %q, want %q", dispositions[0].CutReason, want)
 	}
