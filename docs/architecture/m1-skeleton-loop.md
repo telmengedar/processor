@@ -45,6 +45,28 @@
 > carries the constants that governed the run so it stays interpretable after they change (§8.2).
 > **Unit A is untouched again** — where the sweep landed on shipped assembly code, §11 R4, R13 and R14
 > record the finding, its number and its falsifier rather than changing it.
+>
+> **CORRECTION SET 2026-09-04 — the loop was poisoning its own next turn, and §6.3's falsifier fired.**
+> Design **#11158**, from task **#11141**: two turns on the same input admitted **zero of twenty**
+> candidates, because a run record ranks early on a repeat of its own input, is structurally larger than
+> the budget that produced it, and admission stopped at the first candidate that did not fit. Unit A's
+> shipped assembly changes for the first time, and six sites in this document are **corrected in place**
+> — strike, do not delete, per #10466's own convention and the worked precedent at
+> `docs/architecture/run-record-fate.md` §16:
+>
+> | # | Section | What is falsified | Correction |
+> |---|---|---|---|
+> | **B1** | **§6.1 step 5** | *"The first candidate that would exceed it is cut, and so is every candidate after it"* | Admission skips; the walk visits every candidate |
+> | **B2** | **§6.3**, *"Why the budget stops rather than skips"* | The rule, and the invariant *"'included' means 'outranked everything excluded'"*. **§6.3's own stated falsifier has fired, twice, and is what carries the change** | Struck and replaced with the measured firing and the two rules that replace it |
+> | **B3** | **§6.4a**, the *Admission* row | *"stop at the first that does not fit, no back-fill"* on the supplementary path | Both paths call one `admit`; both skip |
+> | **B4** | **§8.2** `candidates[]`, **§8.3** recall row, **§10.3** | Neither the second cut reason nor the shutout alarm existed | Extended, not struck — these are additions |
+> | **B5** | **§11 R13** | Its remedy — *"excluding the run-record type is one query parameter"* | Ruled **adopted by a different mechanism than it proposed**: cut at admission, never filtered from the query |
+> | **B6** | **§14** unit A step 3 and *Do not add* | Both direct a future implementer at the rule this correction removes | Corrected in place |
+>
+> **What this does not change:** `Assemble` stays pure (§9.1), the anchor stays exempt (§11 R4), the
+> record still carries every candidate (§9.4 obligation 1), and the recall query is still unscoped
+> (§6.2). **The record is deliberately still larger than the budget** — #11158 §7.3 rejects capping it,
+> because a record small enough to fit is a record that gets *admitted*.
 
 ---
 
@@ -473,9 +495,11 @@ Owns: request decoding, status-code selection, the error envelope (§8.5). Owns 
 3. **Recall.** One semantic query. **The query text is the input text, verbatim.** No rewriting, no
    expansion, no summarisation, no model. Limit: the candidate constant (§8.4).
 4. **Hash and size** every candidate returned — *every* one, including the ones about to be cut.
-5. **Admit** in descending score order while the cumulative body bytes stay within the budget. The first
-   candidate that would exceed it is cut, **and so is every candidate after it** — see §6.3 on why the
-   rule is a stop, not a skip.
+5. **Admit** in descending score order every candidate whose body fits the budget still unspent.
+   ~~The first candidate that would exceed it is cut, **and so is every candidate after it** — see §6.3
+   on why the rule is a stop, not a skip.~~ **CORRECTED 2026-09-04 (#11158, B1): a candidate that does
+   not fit is cut and the walk continues, so it costs its own slot and nothing else. A candidate this
+   system produced is cut before the byte test and charges nothing (§6.3).**
 6. **Render** the block (§6.3).
 7. **Call** the model once: system text, the block, the input, the tool definition.
 8. **Dispatch** tool uses (§6.4) until the model stops asking or the call cap is reached.
@@ -528,13 +552,55 @@ Round 6's continuity-of-attention argument is the third reason and it is recorde
 *"a context which reshuffles completely every step produces a thought process that reshuffles completely
 every step."*
 
-**Why the budget stops rather than skips.** When a candidate does not fit, admission stops; smaller
+~~**Why the budget stops rather than skips.** When a candidate does not fit, admission stops; smaller
 lower-ranked candidates are **not** back-filled. Back-filling optimises byte utilisation at the cost of a
 non-monotone admission rule — "included" would no longer mean "outranked everything excluded", and the
 record's cut column would stop being readable as a ranking. Cost of the simple rule, measured on C23's
 distribution: with a 42,978 B node at a good rank, most of the budget is spent on it and the rest is cut.
 That is legible; the alternative is not. **Falsifier:** if the record repeatedly shows a large node
-starving a run that a back-fill would have saved, the rule is wrong — and the record is what shows it.
+starving a run that a back-fill would have saved, the rule is wrong — and the record is what shows it.~~
+
+**STRUCK 2026-09-04 (#11158, B2). The falsifier above fired — twice, on two records eight weeks apart in
+the same graph — and it is the authority for the change, not any fresh argument against the rule:**
+
+| Date | Record | Rank-1 size | Budget consumed | Would a back-fill have saved it? |
+|---|---|---|---|---|
+| 2026-09-02 | #10897 replayed (`docs/architecture/m2-retrieval-eval.md` §5.2) | 70,660 B | 0 of 60,000 | Yes — every remaining candidate was cut without one byte admitted |
+| 2026-09-04 | #11138 live (#11141) | 65,409 B | 0 of 60,000 | Yes — ranks 2 and 3 were 5,710 B and 2,470 B |
+
+**The admission rule, as it now stands.** Walk the candidates once, in the order recall returned. For
+each, record its disposition exactly as before — rank, id, type, name, similarity, size, hash — and then,
+**in this order**:
+
+1. if the candidate is **self-produced** — a run record this system wrote — cut it with its own reason,
+   **do not** charge its size, continue;
+2. else if the cumulative admitted size plus this body still fits the budget, admit it, charge it,
+   continue;
+3. else cut it with the byte-budget reason, **do not** charge its size, continue.
+
+There is no latch: the walk always visits every candidate. The boundary stays inclusive (`<=`).
+
+**Order 1-before-2 is load-bearing.** A run record that happened to fit must still be reported as
+self-produced, or the record's own account of why it cut something becomes wrong in the field that says
+why (`docs/architecture/run-record-fate.md`'s thesis: a record accounts for its composition).
+
+**Conceded, explicitly:** `included` now means *"outranked everything excluded **that was also small
+enough**"*, not *"outranked everything excluded"*, and admission is non-monotone in size. The half of the
+struck paragraph that does **not** survive is its second clause: the block is rendered sorted by node id
+and never by score (the rule directly above), and `candidates[]` preserves rank order independently of
+admission, so no reader ever saw a rank prefix in either artifact. **The cut column becomes more
+accurate, not less** — before this change a shutout record carried nineteen candidates claiming
+*"byte budget exceeded"* that were never measured against a budget.
+
+**Why self-produced content is cut at admission rather than filtered from the query.** §6.2's three
+narrowings stay unbuilt and §11 R13's *"one query parameter"* remedy is **rejected as a mechanism** while
+its goal is adopted: filtering removes the row before it is written down, which is the one thing
+milestone 2 forbids (§9.4 obligation 1), and node type alone cannot carry the distinction because run
+records are typed `session-log` and so are human-written session logs — two of them were ranks 2 and 3 in
+the failing run. Cut at admission, the row is still retrieved, still ranked, and still recorded with its
+similarity and a cut reason of its own, so the evidence about how self-produced content competes with
+real content accumulates in every record written from here on. **Self-recall is ruled a capability worth
+having; the run record is the wrong vehicle for it** (#11158 §4).
 
 **Block layout, fixed:**
 
@@ -592,7 +658,7 @@ bytes; this section spends part of it.
 | Aspect | The assembled block (§6.3) | A supplementary result (this section) |
 |---|---|---|
 | Budget | `AssemblyByteBudget`, per run | `SupplementaryByteBudget`, **per round** |
-| Admission | Rank order, stop at the first that does not fit, **no back-fill** | Identical |
+| Admission | Rank order, ~~stop at the first that does not fit, **no back-fill**~~ **CORRECTED 2026-09-04 (#11158, B3): skip what does not fit and continue; cut self-produced rows first** | Identical — both paths call the one `admit` (§6.3) |
 | Position | Sorted by node id ascending | **Rank order as returned** |
 | Exemption | The anchor (§11 R4) | **None** |
 | Recorded | Every row, admitted or cut, with the reason | Identical (§8.2) |
@@ -815,7 +881,7 @@ a second lookup does.
 | `subject` | The node id the run is about |
 | `query` | The text sent to the retriever. **At M1 this equals `input`, and it is a separate field precisely so that the day it stops being equal is visible in the record** |
 | `anchor` | Subject node: id, type, name, size, content hash |
-| `candidates[]` | **Every** row the query returned, in rank order: rank, id, type, name, similarity, size, content hash, `included` or `cut`, and the cut reason |
+| `candidates[]` | **Every** row the query returned, in rank order: rank, id, type, name, similarity, size, content hash, `included` or `cut`, and the cut reason. **Two cut reasons since 2026-09-04 (#11158, B4)**: the byte budget, and *self-produced* for a run record this system wrote. A self-produced row is recorded exactly like any other — retrieved, ranked, sized and hashed — which is what keeps the evidence about how it competes against real content |
 | `block` | The assembled context, verbatim |
 | `answer` | The model's final text |
 | `toolCalls[]` | Per supplementary recall round: the query the model asked, and **every** row it returned — with the same columns `candidates[]` carries: rank, id, type, name, similarity, size, content hash, `included` or `cut`, and the cut reason. **Widened in revision 3** (#10821 CF-4, W-7): the two paths are the same event under §6.4a, a cut is unreadable without the size that caused it, and §9.4 obligation 3 was simply false for any run that used the tool |
@@ -839,7 +905,7 @@ Declared by `internal/loop`; implemented by the adapters; constructed in `main`.
 | Port | Operation | In | Out | Invariants |
 |---|---|---|---|---|
 | **graph** | subject fetch | node id | node with body, or not-found | Not-found is a distinct outcome, not an error (C30) |
-| | recall | query text, limit | ranked rows with bodies and scores | Rank order as returned. The adapter does not re-sort |
+| | recall | query text, limit | ranked rows with bodies and scores, **each marked self-produced or not** | Rank order as returned. The adapter does not re-sort and **drops nothing** — it marks. **Extended 2026-09-04 (#11158, B4):** whether a row is a record this system wrote is a fact about the graph's node vocabulary, which §5.1 places outside `internal/loop`, so the adapter classifies and assembly decides |
 | | write run | a run record | the new node id | **The adapter chooses type, name and edge. The caller supplies no structure.** Three POSTs (C32) |
 | **model** | judge | the system text, the assembled block, the input, the conversation so far, and whether supplementary recall is offered | the final prose; zero or more **supplementary-recall requests**, each a query string with an id to answer against; **one terminal reason from the loop's closed set**; the raw reason verbatim; **the two token counts if reported, or their absence** (revision 3, below) | One attempt. No retry. No interpretation of the prose. **Nothing in this column is a provider's word** |
 
@@ -1231,6 +1297,13 @@ not require one: C41 measured the reference implementation returning an error wi
 all, and local runtimes generally have no such concept. The old text treated Anthropic's `request_id` as
 a field that would be there; under the ruling it is a field that usually is not.
 
+**A third record, on failure only — new 2026-09-04 (#11158, B4).** A run that admitted **nothing** from
+a **non-empty** candidate set logs a **warning** naming the condition, with the subject and the candidate
+count. The block that reached the model was the anchor alone, which is a degraded answer rather than a
+failed one: **WARN, not ERROR** — the turn succeeded at the HTTP boundary, a caller got an answer, and
+the record is still the evidence. An **empty** candidate set is deliberately **not** this condition; that
+is a retrieval failure, not an admission one.
+
 No key value, **no endpoint URL** (§10.2), no input text beyond its length, at any level.
 
 **The logger is a required dependency, and the one guard around it is deliberate — recorded 2026-09-02
@@ -1386,7 +1459,7 @@ section just learned about itself.
 | # | Risk | Mitigation |
 |---|---|---|
 | R1 | **Retrieval noise makes the context useless.** Measured: an unrelated project's node at rank 7 (C28) | The record shows it, per run, with scores. §6.2's falsifier is a ten-run experiment on unit A. Milestone 2 is the durable answer |
-| R2 | **The budget starves a run.** One 42,978 B node (C23) can consume most of 60,000 | Legible in the cut column. §6.3 states the back-fill alternative and why it loses. If the record shows it repeatedly, the rule changes with evidence |
+| R2 | **The budget starves a run.** One 42,978 B node (C23) can consume most of 60,000 | Legible in the cut column. ~~§6.3 states the back-fill alternative and why it loses.~~ **CORRECTED 2026-09-04 (#11158): §6.3 now states the back-fill as the rule.** *"If the record shows it repeatedly, the rule changes with evidence"* is the sentence this row should be read for — the record showed it twice and the rule changed (§6.3, §11 R13) |
 | R3 | **Deictic input retrieves noise.** Measured, spectacularly (C27) | Stated, not hidden. M1 does not claim to solve deixis; #10424 §5.1 assigns it to the tiers and to `intent`, both milestone 3. The anchor gives every run *something* stable regardless |
 | R4 | **The anchor is exempt from the budget**, so a pathologically large subject node is an unbounded input — and after §6.4a bounded the recall path, **it is the only one left** | **Re-derived in revision 3, and it changed direction.** The measured ceiling in this graph is unchanged — 42,978 B (C23) — but revision 2 judged it against the *budget*, where an oversized anchor merely crowds the candidates, and concluded *"no instance exists"*. §8.4 now judges it against the *window*, where the anchor is the one term that can push a run past what the endpoint can hold: on a 32,768-token window a worst-case run leaves about **12,500 bytes** for it, and this graph already contains a node **3.4× that**. **The instance exists and is measured.** The fix is unchanged and still cheap — truncate with an explicit marker and record the truncation — but it is a change to unit A's shipped assembly, so revision 3 records it with the number rather than making it. **Falsifier, now answerable rather than hypothetical:** run any node over ≈ 12,500 B as the subject against a 32K-window endpoint |
 | R5 | **Run records flood the graph.** One node per request | Deliberate and visible at M1, where a human drives every run. #10424 §5.7's retention tiering is the durable answer and belongs with the milestone that has volume to tier. **Revision 3 adds the size, which nobody had stated:** a record carries the block verbatim, so one run writes a node of roughly **50,000–110,000 B** — **10 to 19× the median node in this graph** (C23: 5,758 B). Ten runs put more bytes into this neighbourhood than the ≈22 nodes it currently holds (C25). That is a fact about the graph; **R13 is the fact about the runs that follows from it** |
@@ -1397,7 +1470,7 @@ section just learned about itself.
 | R8 | **The model treats the block as a transcript** and answers from position rather than relevance | §8.6's system text establishes what the block is. Falsifiable on the first live runs by reading the answers |
 | R9 | **Graph latency dominates.** ~2 s per run before the model is reached (C20, C23, C29) | Accepted at M1. The two reads are independent and could run concurrently — one obvious optimisation, deliberately not taken until a measurement says it matters |
 | R10 | **The seams get load-bearing** and the design drifts toward interface-per-service | §9.2's falsifier is checkable by inspection: any interface without an experiment behind it goes |
-| **R13** | **Run records are unfiltered recall candidates, and they are copies of earlier prompts.** M1 writes a `session-log` node per run (§8.3) into the same graph its recall query reads, and nothing scopes that query (§6.2). So run *n*'s candidate set can contain run *n−1*'s record — a node 10–19× median size (R5) whose body is a **verbatim copy of a block the run already has**, and which under §6.3's stop-don't-skip admission can consume the entire assembly budget and cut all nineteen other candidates | **Named in revision 3; not fixed here, and the distinction matters.** §6.2's argument against filtering was made about *human-authored* content and it still holds; **self-produced content is a case it does not cover**, and this design did not notice that writing into the pool it reads from changes that premise. The remedy is measured and cheap — C25 confirms `type=` composes with `query=`, so excluding the run-record type is one query parameter — but it is a change to unit A's shipped read path, and **no run record has ever been written, so the evidence for it does not exist yet.** **Falsifier, and it produces that evidence in ten runs:** run ten, then read the eleventh's candidate set. If `session-log` nodes appear above rank 5, or if one is admitted and cuts the rest, the exclusion goes in with a measurement behind it — the same standard R1 and R2 are held to |
+| **R13** | **Run records are unfiltered recall candidates, and they are copies of earlier prompts.** M1 writes a `session-log` node per run (§8.3) into the same graph its recall query reads, and nothing scopes that query (§6.2). So run *n*'s candidate set can contain run *n−1*'s record — a node 10–19× median size (R5) whose body is a **verbatim copy of a block the run already has**, and which under §6.3's stop-don't-skip admission can consume the entire assembly budget and cut all nineteen other candidates | **Named in revision 3; not fixed here, and the distinction matters.** §6.2's argument against filtering was made about *human-authored* content and it still holds; **self-produced content is a case it does not cover**, and this design did not notice that writing into the pool it reads from changes that premise. The remedy is measured and cheap — C25 confirms `type=` composes with `query=`, so excluding the run-record type is one query parameter — but it is a change to unit A's shipped read path, and **no run record has ever been written, so the evidence for it does not exist yet.** **Falsifier, and it produces that evidence in ten runs:** run ten, then read the eleventh's candidate set. If `session-log` nodes appear above rank 5, or if one is admitted and cuts the rest, the exclusion goes in with a measurement behind it — the same standard R1 and R2 are held to. **FIRED AND RULED 2026-09-04 (#11158, B5). It took two runs, not ten:** the record ranked first, could never be admitted, and cut all nineteen behind it (#11141). The goal is adopted and **the proposed mechanism is not** — neither branch this row named shipped. A `type=` exclusion filters the row before it is written down (§9.4 obligation 1 forbids it) and node type alone cannot carry the distinction, because human-written session logs carry the same type and were ranks 2 and 3 in the failing run. **The row is cut at admission instead** (§6.3), so it stays retrieved, ranked and recorded. **What survives of this row as a live risk:** run records still occupy retrieval slots out of the candidate limit. That is countable per run from `candidates[]`, and it is what would justify a query-level change later — with the measurement §6.2 has always demanded |
 | **R14** | **M1 does not fit an 8,192-token window, and that is a real size among the ruling's own target runtimes.** §8.4's ceiling table: the assembly budget alone is ≈ 15,000 tokens, **183%** of such a window, before the anchor and before any tool use | **Named rather than repaired, because the constant that causes it is unit A's and is shipped.** The tool path is not the cause — §6.4a bounds it, and a run with zero tool calls overflows an 8K window just as badly. The fix, when there is evidence for it, is `AssemblyByteBudget`. The honest position today is that **M1's floor is a 32,768-token endpoint**, and §13.6 asks whether that is acceptable. **Falsifier:** point it at an 8K runtime. The first call fails or truncates, §6.5's rows carry it, and the number to change is in §8.4 |
 
 ---
@@ -1550,9 +1623,11 @@ No code appears in this document by design. The order below is architectural, no
    discrimination** — a test that a missing subject is detected, and a mutation check that a
    status-code-based check would pass wrongly.
 3. **`internal/loop`, assembly.** The pure function and the record. **The golden test is the deliverable
-   here**: fixed candidate rows in, one byte-exact block out. Separately pin: admission stops rather than
-   skips (§6.3); every candidate is hashed and sized including the cut ones (§9.4 obligation 1); the
-   render order is by id and a score reshuffle does not move a byte.
+   here**: fixed candidate rows in, one byte-exact block out. Separately pin: ~~admission stops rather
+   than skips (§6.3)~~ **CORRECTED 2026-09-04 (#11158, B6) — admission skips rather than stops, and a
+   self-produced row is cut before the byte test and charges nothing (§6.3)**; every candidate is hashed
+   and sized including the cut ones (§9.4 obligation 1); the render order is by id and a score reshuffle
+   does not move a byte.
 4. **`POST /runs`.** The handler, with the loop as **a parameter to the handler-building function**
    (#10466 archetype C). Status codes and the envelope per §8.5.
 5. **Before handing off, mutate and watch it redden.** Change the render order from id to score and
@@ -1590,8 +1665,10 @@ No code appears in this document by design. The order below is architectural, no
     single tool round trip, the cap firing, and a malformed tool input producing an error-flagged result
     that does not abort the turn.
     **And the budget (§6.4a), which revision 3 adds and which is where this unit was rejected once.** The
-    loop admits hits in rank order against `SupplementaryByteBudget`, stops at the first that does not
-    fit, back-fills nothing, and exempts nothing. Pin a round whose hits straddle the budget and assert
+    loop admits hits in rank order against `SupplementaryByteBudget`, ~~stops at the first that does not
+    fit, back-fills nothing,~~ **CORRECTED 2026-09-04 (#11158, B6): skips what does not fit and
+    back-fills what does, cutting self-produced rows first — both paths call the one `admit` (§6.3)** and
+    exempts nothing. Pin a round whose hits straddle the budget and assert
     **both** the admitted set and that *every* row still reaches the record with its admit-or-cut
     decision. Pin the round that admits **zero** because its best hit is oversized (§6.5's new row). Pin
     that the error branch is bounded and carries no address (§8.5). **And assert the ceiling as a
@@ -1638,8 +1715,11 @@ No code appears in this document by design. The order below is architectural, no
 ### Do not add
 
 Retries · backoff · a circuit breaker · streaming · caching or cache breakpoints · a config knob for any
-constant in §8.4 · **a back-fill or a size exemption on either budget (§6.3, §6.4a)** · **a type filter on
-the recall query (§11 R13 — it needs a measurement first)** · middleware · a `/health` dependency check · an `intent` field · anything from §2.2's
+constant in §8.4 · ~~**a back-fill or a size exemption on either budget (§6.3, §6.4a)**~~ **CORRECTED
+2026-09-04 (#11158, B6): the back-fill is now the rule (§6.3); a size *exemption* is still forbidden on
+either budget** · ~~**a type filter on the recall query (§11 R13 — it needs a measurement first)**~~
+**CORRECTED 2026-09-04 (#11158, B6): still forbidden, and no longer pending a measurement — the
+measurement was taken and the ruling is that the query stays unscoped (§11 R13)**  · middleware · a `/health` dependency check · an `intent` field · anything from §2.2's
 prose list · a second environment read site · a dependency (§10.9) · **a second provider, a
 provider-selection member, or capability probing of the endpoint (§6.6)** · **a provider's field names
 anywhere in `internal/loop` (§9.2)**.

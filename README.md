@@ -326,9 +326,11 @@ flags it.
   (`ReadHeaderTimeout` and shutdown-error propagation at the process level), which is a different
   instrument tracked separately as DiVoid **#10489**.
 - **Mechanical context assembly (`POST /runs`, unit A):** `Assemble` is byte-pinned by an offline golden
-  test (fixed candidate rows in, one exact block out), and separately: admission stops rather than
-  back-fills, every candidate is hashed and sized including the cut ones, and the render order is by
-  node id — a score reshuffle does not move a byte. `internal/divoid`'s two read operations are pinned
+  test (fixed candidate rows in, one exact block out), and separately: admission skips rather than
+  stops, so a candidate that does not fit cuts only itself; a candidate this system wrote is cut
+  before the byte test and charges nothing; every candidate is hashed and sized including the cut
+  ones; the render order is by node id — a score reshuffle does not move a byte; and a run that
+  admits nothing from a non-empty candidate set raises a warning on the operator log. `internal/divoid`'s two read operations are pinned
   at the wire level against a local test server, including the C30 empty-result discrimination (a
   missing subject is a `200` with an empty result, never a `404`). **Since verified live** against
   `divoid.mamgo.io`: every decode assumption held, including that the `fields` projection populates

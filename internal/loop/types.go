@@ -17,6 +17,9 @@ type Candidate struct {
 	Name       string
 	Similarity float64
 	Content    string
+
+	// SelfProduced is true when this row is a record this system wrote; the graph adapter sets it.
+	SelfProduced bool
 }
 
 // AnchorSummary is the anchor's entry in a run record: enough to identify

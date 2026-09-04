@@ -214,19 +214,13 @@ def print_turn(number, record):
         print(f"cut: {count} x {reason}")
 
     budget = (record.get("limits") or {}).get("assemblyByteBudget")
-    first_cut = next((r.get("rank") for r in rows if not r.get("included")), None)
     for row in rows:
         if budget and row.get("size", 0) > budget:
-            line = (
+            print(
                 f"UNADMITTABLE: #{row.get('id')} is {row.get('size')} bytes against a "
-                f"{budget}-byte assembly budget, so no run can ever admit it."
+                f"{budget}-byte assembly budget, so no run can ever admit it. It costs its own "
+                f"slot; the candidates behind it are still considered."
             )
-            if row.get("rank") == first_cut:
-                line += (
-                    f" Admission stops at the first candidate that does not fit, so it also cut "
-                    f"the {len(rows) - row.get('rank', 0)} behind it."
-                )
-            print(line)
 
     anchor = record.get("anchor") or {}
     print(

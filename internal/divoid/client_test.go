@@ -223,6 +223,40 @@ func TestRecallReturnsEveryCandidateTheServerSentUnfiltered(t *testing.T) {
 	}
 }
 
+func TestRecallMarksOnlyTheRunRecordsThisClientWrote(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"result": []map[string]any{
+				{"id": 1, "type": RunNodeType, "name": RunNamePrefix + " 2026-09-04T10:00:00Z what changed", "similarity": 0.9, "content": "a"},
+				{"id": 2, "type": RunNodeType, "name": "a session log another agent wrote", "similarity": 0.8, "content": "b"},
+				{"id": 3, "type": "documentation", "name": RunNamePrefix + " lookalike", "similarity": 0.7, "content": "c"},
+			},
+			"total": 3,
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	got, err := c.Recall(context.Background(), "q", 20)
+	if err != nil {
+		t.Fatalf("Recall: %v", err)
+	}
+
+	want := []bool{true, false, false}
+	if len(got) != len(want) {
+		t.Fatalf("got %d candidates, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].SelfProduced != w {
+			t.Fatalf("candidate[%d] (#%d %q %q) SelfProduced = %v, want %v: the node type and the name prefix must both match",
+				i, got[i].ID, got[i].Type, got[i].Name, got[i].SelfProduced, w)
+		}
+	}
+}
+
 // TestRecallPreservesReturnedOrderWithoutResorting pins design §8.3: "Rank
 // order as returned. The adapter does not re-sort."
 func TestRecallPreservesReturnedOrderWithoutResorting(t *testing.T) {

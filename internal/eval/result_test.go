@@ -17,12 +17,12 @@ func labelledRow(required ...Required) Row {
 	return Row{ID: "r01", Input: "an input", Subject: 100, Stratum: StratumLabelled, Required: required}
 }
 
-func TestSweepReportsAShutoutWhenAnOversizedRankOneCandidateAdmitsNothing(t *testing.T) {
+func TestSweepReportsAShutoutWhenEveryCandidateWasOversized(t *testing.T) {
 	t.Parallel()
 
 	candidates := []loop.Candidate{
 		{ID: 200, Content: strings.Repeat("x", loop.AssemblyByteBudget+1)},
-		{ID: 201, Content: "a body that would have fitted trivially"},
+		{ID: 201, Content: strings.Repeat("y", loop.AssemblyByteBudget+1)},
 	}
 	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
 
@@ -276,7 +276,7 @@ func TestSweepRetainsEveryCandidateItSawInRankOrderIncludingTheOnesTheBudgetCut(
 		{ID: 401, Similarity: 0.62, Content: "aaa"},
 		{ID: 402, Similarity: 0.91, Content: "bbbb"},
 		{ID: 403, Similarity: 0.77, Content: strings.Repeat("x", loop.AssemblyByteBudget)},
-		{ID: 404, Similarity: 0.48, Content: "ccccc"},
+		{ID: 404, Similarity: 0.48, Content: strings.Repeat("c", loop.AssemblyByteBudget)},
 	}
 	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
 

@@ -809,7 +809,7 @@ func TestTurnRunDoesNotFailTheRunWhenNoNodeHoldsTheRecord(t *testing.T) {
 	}
 }
 
-func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndCutsTheRest(t *testing.T) {
+func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *testing.T) {
 	t.Parallel()
 
 	graph := baseGraph()
@@ -839,7 +839,7 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndCutsTheRest(t *testing.T) {
 	if len(round.Results) != 4 {
 		t.Fatalf("round.Results has %d entries, want 4 — every row the round returned, admitted or cut", len(round.Results))
 	}
-	wantIncluded := []bool{true, true, false, false}
+	wantIncluded := []bool{true, true, false, true}
 	wantOrder := []int64{91, 92, 93, 94}
 	for i, want := range wantIncluded {
 		if round.Results[i].ID != wantOrder[i] {
@@ -849,10 +849,10 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndCutsTheRest(t *testing.T) {
 			t.Fatalf("round.Results[%d] (id %d) Included = %v, want %v", i, wantOrder[i], round.Results[i].Included, want)
 		}
 	}
-	if round.Results[3].Included {
-		t.Fatal("rank 4 (smaller than the leftover budget) was back-filled; admission must stop, not skip, exactly like the block (design §6.4a)")
+	if !round.Results[3].Included {
+		t.Fatal("rank 4 fits the leftover budget rank 3 could not use and was cut anyway; admission must skip, not stop, exactly like the block (design §6.4a)")
 	}
-	if round.Results[2].CutReason == "" || round.Results[3].CutReason == "" {
+	if round.Results[2].CutReason == "" {
 		t.Fatal("a cut supplementary hit has an empty CutReason, want it recorded")
 	}
 	if round.Results[2].Size != 5_000 {
@@ -860,8 +860,8 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndCutsTheRest(t *testing.T) {
 	}
 
 	seen := model.calls[1].PriorRecalls[0].Results
-	if len(seen) != 2 || seen[0].ID != 91 || seen[1].ID != 92 {
-		t.Fatalf("PriorRecalls[0].Results = %+v, want the two admitted candidates [91 92], in rank order", seen)
+	if len(seen) != 3 || seen[0].ID != 91 || seen[1].ID != 92 || seen[2].ID != 94 {
+		t.Fatalf("PriorRecalls[0].Results = %+v, want the three admitted candidates [91 92 94], in rank order", seen)
 	}
 }
 
@@ -1114,6 +1114,98 @@ func TestTurnRunFinishedRecordSumsUsageAcrossCallsAndCountsTheCallsThatReportedI
 			t.Fatalf("run-finished record does not carry %q; log:\n%s", want, out)
 		}
 	}
+}
+
+func TestTurnRunWarnsWhenAssemblyAdmittedNothing(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{
+		{ID: 7, Type: "task", Name: "TooBig", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 8, Type: "task", Name: "AlsoTooBig", Similarity: 0.8, Content: strings.Repeat("y", AssemblyByteBudget+1)},
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, "system", "test-model", logger)
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(record.Candidates) != 2 || cutCount(record.Candidates) != 2 {
+		t.Fatalf("test setup error: %d candidates of which %d were cut, want a non-empty set with nothing admitted", len(record.Candidates), cutCount(record.Candidates))
+	}
+
+	warning := logLineAtLevel(logBuf.String(), "WARN")
+	if warning == "" {
+		t.Fatalf("no WARN record for a run that admitted nothing from two candidates; log:\n%s", logBuf.String())
+	}
+	for _, want := range []string{"subject=42", "candidates=2"} {
+		if !strings.Contains(warning, want) {
+			t.Fatalf("the WARN record does not carry %q; it was:\n%s", want, warning)
+		}
+	}
+}
+
+func TestTurnRunDoesNotWarnWhenAnythingWasAdmitted(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{
+		{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
+		{ID: 8, Type: "task", Name: "TooBig", Similarity: 0.8, Content: strings.Repeat("x", AssemblyByteBudget+1)},
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, "system", "test-model", logger)
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if cutCount(record.Candidates) != 1 {
+		t.Fatalf("test setup error: %d of %d candidates were cut, want exactly one cut and one admitted", cutCount(record.Candidates), len(record.Candidates))
+	}
+
+	if warning := logLineAtLevel(logBuf.String(), "WARN"); warning != "" {
+		t.Fatalf("a run that admitted a candidate raised the shutout alarm:\n%s", warning)
+	}
+}
+
+func TestTurnRunDoesNotWarnWhenRecallReturnedNothing(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, "system", "test-model", logger)
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(record.Candidates) != 0 {
+		t.Fatalf("test setup error: the candidate set has %d rows, want it empty", len(record.Candidates))
+	}
+
+	if warning := logLineAtLevel(logBuf.String(), "WARN"); warning != "" {
+		t.Fatalf("a run whose recall returned nothing raised the assembly shutout alarm:\n%s", warning)
+	}
+}
+
+func logLineAtLevel(log, level string) string {
+	for _, line := range strings.Split(log, "\n") {
+		if strings.Contains(line, "level="+level) {
+			return line
+		}
+	}
+	return ""
 }
 
 func TestTurnRunLogsNoRunFinishedWhenTheRunNeverReachedAnAnswer(t *testing.T) {

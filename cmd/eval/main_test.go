@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +24,13 @@ const runCorpus = `[
   {"id": "c01", "input": "a constructed control input", "subject": 100, "stratum": "control",
    "required": [{"node": 200, "hash": "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6", "why": "a constructed row must be retrieved"}]}
 ]`
+
+var oversizedRequiredNodeBody = strings.Repeat("q", loop.AssemblyByteBudget+1)
+
+func oversizedControlCorpus() string {
+	sum := sha256.Sum256([]byte(oversizedRequiredNodeBody))
+	return strings.ReplaceAll(runCorpus, requiredNodeBodyHash, hex.EncodeToString(sum[:]))
+}
 
 type failingWriter struct{}
 
@@ -48,14 +57,14 @@ func graphServer(t *testing.T) *httptest.Server {
 	return server
 }
 
-func graphServerWhoseRankOneCandidateExhaustsTheBudget(t *testing.T) *httptest.Server {
+func graphServerWhoseControlNodeExceedsTheBudget(t *testing.T) *httptest.Server {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Query().Get("query") != "" {
-			fmt.Fprintf(w, `{"result":[{"id":199,"type":"session-log","name":"Run","similarity":0.9,"content":%q},{"id":200,"type":"documentation","name":"Alpha","similarity":0.81,"content":%q}],"total":2}`,
-				strings.Repeat("x", loop.AssemblyByteBudget+1), requiredNodeBody)
+			fmt.Fprintf(w, `{"result":[{"id":199,"type":"documentation","name":"Small","similarity":0.9,"content":"a body that fits"},{"id":200,"type":"documentation","name":"Alpha","similarity":0.81,"content":%q}],"total":2}`,
+				oversizedRequiredNodeBody)
 			return
 		}
 		if r.URL.Query().Get("id") == "100" {
@@ -179,13 +188,13 @@ func TestRunExitsNonZeroWhenTheControlStratumMissedOnALiveSweep(t *testing.T) {
 	}
 }
 
-func TestRunExitsZeroAndBlamesTheBudgetWhenARankOneCandidateCutTheControlOnALiveSweep(t *testing.T) {
-	server := graphServerWhoseRankOneCandidateExhaustsTheBudget(t)
+func TestRunExitsZeroAndBlamesTheBudgetWhenTheControlNodeDoesNotFitOnALiveSweep(t *testing.T) {
+	server := graphServerWhoseControlNodeExceedsTheBudget(t)
 	graphEnv(t, server.URL)
 
 	var machine, human bytes.Buffer
 
-	code := run([]string{"-corpus", corpusFile(t, runCorpus)}, &machine, &human)
+	code := run([]string{"-corpus", corpusFile(t, oversizedControlCorpus())}, &machine, &human)
 
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0 when retrieval surfaced the control and the budget discarded it; the human stream was:\n%s", code, human.String())
