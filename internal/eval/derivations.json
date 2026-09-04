@@ -1,0 +1,132 @@
+[
+  {
+    "row": "r01",
+    "queries": [
+      "How does a Go test carry what it pins?",
+      "Why are comments not the place to state a test's intent?",
+      "What does the comment contract say about test files?",
+      "What names a test's intent so it survives a refactor?",
+      "Go test name intent comment contract"
+    ]
+  },
+  {
+    "row": "r02",
+    "queries": [
+      "What happens when repeated reviews miss the same defect?",
+      "Is a rule that keeps being broken a discipline problem or a rule problem?",
+      "Who is accountable when a review lets a violation through?",
+      "What makes a badly designed rule rather than a badly followed one?",
+      "repeated review misses rule design accountability"
+    ]
+  },
+  {
+    "row": "r03",
+    "queries": [
+      "Why would a mutation leave the suite green?",
+      "How can deleting a line leave every test passing?",
+      "What can a decoded assertion not distinguish between an empty array and null?",
+      "Where must an empty slice rather than null be asserted?",
+      "empty array null raw body assertion mutation green"
+    ]
+  },
+  {
+    "row": "r04",
+    "queries": [
+      "Which tests are excluded on a non-Linux host?",
+      "Why does a green host run say nothing about a platform-specific file?",
+      "Where does the container gate run the suite?",
+      "How does the toolchain select GOOS-specific test files?",
+      "signal test linux host container gate build constraint"
+    ]
+  },
+  {
+    "row": "r05",
+    "queries": [
+      "How can the anchor appear again among the candidates?",
+      "What duplicates a node body inside the assembled block?",
+      "Does recall return the subject as one of its own candidates?",
+      "Why would assembly include the same content twice?",
+      "anchor duplicate candidate assembled block node body twice"
+    ]
+  },
+  {
+    "row": "r06",
+    "queries": [
+      "How does the server drain requests in flight during shutdown?",
+      "Is a run cancelled or allowed to finish when the process is told to stop?",
+      "What bounds the graceful shutdown period?",
+      "What happens to write-back while the process is shutting down?",
+      "graceful shutdown in-flight request drain timeout"
+    ]
+  },
+  {
+    "row": "r07",
+    "queries": [
+      "How are environment variables supplied to this binary at launch?",
+      "Why would the variables a process reads be absent from the shell?",
+      "Which prefix do this binary's configuration variables use?",
+      "Does an unset variable mean the credential does not exist?",
+      "environment variables unset launch mapped credential prefix"
+    ]
+  },
+  {
+    "row": "r08",
+    "queries": [
+      "What does an exit code mean that the per-package output does not show?",
+      "Why is the command non-zero when every package prints ok?",
+      "Can a pipeline hide the exit code of the test run?",
+      "What is not visible in the per-package summary lines?",
+      "exit code non-zero every package ok pipeline"
+    ]
+  },
+  {
+    "row": "r09",
+    "queries": [
+      "Why does the corpus live in a file rather than in the graph?",
+      "What does an instrument stored in the substrate it measures lose?",
+      "How is the corpus identified across sweeps?",
+      "What would change if the measurement moved into what it measures?",
+      "corpus file graph instrument substrate hash identity"
+    ]
+  },
+  {
+    "row": "r10",
+    "queries": [
+      "What must accompany a green mutation result?",
+      "How is a surviving mutant distinguished from a compliant implementation?",
+      "What witnesses does a green arm need?",
+      "Why is a green not a result on its own?",
+      "mutation green witness liveness sensitivity evidence"
+    ]
+  },
+  {
+    "row": "r11",
+    "queries": [
+      "Can a defined string type be constructed with a value it never declares?",
+      "Why does reading declarations miss a vocabulary violation?",
+      "What does assignability allow for a named string type?",
+      "How should a closed vocabulary be checked?",
+      "defined string type declared constants assignability closed vocabulary"
+    ]
+  },
+  {
+    "row": "c01",
+    "queries": [
+      "What state remains when a node is created but its content write fails?",
+      "How is a bodyless node reported?",
+      "What does the write receipt say when only part of the filing succeeded?",
+      "Is a created node rolled back when setting its content fails?",
+      "write-back node created content failed bodyless receipt"
+    ]
+  },
+  {
+    "row": "c02",
+    "queries": [
+      "What evidence does an impossibility claim require?",
+      "Why is a claim that something cannot be done harder to establish than one that it can?",
+      "How is a negative claim about a language falsified?",
+      "What is owed before recording that something cannot be expressed?",
+      "impossibility claim probe negative evidence falsifier"
+    ]
+  }
+]

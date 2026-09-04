@@ -14,6 +14,9 @@ func (g *probeGraph) Node(ctx context.Context, id int64) (loop.Anchor, bool, err
 	return loop.Anchor{ID: id, Type: "documentation", Name: "S", Content: "anchor"}, true, nil
 }
 func (g *probeGraph) Recall(ctx context.Context, q string, limit int, scope []int64) ([]loop.Candidate, error) {
+	if len(scope) > 0 {
+		return nil, nil
+	}
 	g.recallN++
 	if g.recallN == 1 {
 		return []loop.Candidate{{ID: 1, Type: "task", Name: "c", Similarity: 0.9, Content: "body"}}, nil

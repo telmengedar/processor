@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -26,6 +27,9 @@ type fakeGraph struct {
 
 	candidates []Candidate
 	recallErr  error
+
+	scopedCandidates []Candidate
+	scopedErr        error
 
 	recallQueue []recallResponse
 
@@ -50,6 +54,8 @@ type recallCall struct {
 	Scope []int64
 }
 
+const primaryRecallCalls = 2
+
 type recallResponse struct {
 	Candidates []Candidate
 	Err        error
@@ -66,6 +72,10 @@ func (f *fakeGraph) Recall(_ context.Context, query string, limit int, scope []i
 	f.recallQuery = query
 	f.recallLimit = limit
 	f.recallCalls = append(f.recallCalls, recallCall{Query: query, Limit: limit, Scope: scope})
+
+	if len(scope) > 0 {
+		return f.scopedCandidates, f.scopedErr
+	}
 
 	if len(f.recallQueue) > 0 {
 		resp := f.recallQueue[0]
@@ -358,11 +368,11 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 	if record.Answer != "final answer" {
 		t.Fatalf("record.Answer = %q, want %q", record.Answer, "final answer")
 	}
-	if len(graph.recallCalls) != 2 {
-		t.Fatalf("Recall was called %d times, want 2 (initial + one supplementary)", len(graph.recallCalls))
+	if len(graph.recallCalls) != primaryRecallCalls+1 {
+		t.Fatalf("Recall was called %d times, want %d (the primary pair + one supplementary)", len(graph.recallCalls), primaryRecallCalls+1)
 	}
-	if graph.recallCalls[1].Query != "the missing thing" {
-		t.Fatalf("supplementary recall query = %q, want %q", graph.recallCalls[1].Query, "the missing thing")
+	if graph.recallCalls[primaryRecallCalls].Query != "the missing thing" {
+		t.Fatalf("supplementary recall query = %q, want %q", graph.recallCalls[primaryRecallCalls].Query, "the missing thing")
 	}
 	if len(record.ToolCalls) != 1 {
 		t.Fatalf("record.ToolCalls has %d entries, want 1", len(record.ToolCalls))
@@ -404,8 +414,8 @@ func TestTurnRunRecordsAMalformedToolRequestAsAnErrorFlaggedRoundAndContinues(t 
 	if record.Answer != "answered anyway" {
 		t.Fatalf("record.Answer = %q, want the turn to reach the second call's answer", record.Answer)
 	}
-	if len(graph.recallCalls) != 1 {
-		t.Fatalf("Recall was called %d times, want 1 (only the initial call — the malformed round must not reach Recall)", len(graph.recallCalls))
+	if len(graph.recallCalls) != primaryRecallCalls {
+		t.Fatalf("Recall was called %d times, want %d (only the primary pair — the malformed round must not reach Recall)", len(graph.recallCalls), primaryRecallCalls)
 	}
 	if len(record.ToolCalls) != 1 {
 		t.Fatalf("record.ToolCalls has %d entries, want 1 (counted, not dropped)", len(record.ToolCalls))
@@ -464,7 +474,7 @@ func TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall(t *testing.
 	}
 	const (
 		wantModelCallCap      = 3
-		wantInitialRecalls    = 1
+		wantInitialRecalls    = primaryRecallCalls
 		wantDispatchedRecalls = wantModelCallCap - 1
 	)
 	if record.ModelCalls != wantModelCallCap {
@@ -523,8 +533,8 @@ func TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch(t *test
 	if len(last.Results) != 0 {
 		t.Fatalf("record.ToolCalls[2].Results = %+v, want empty — the round was never dispatched", last.Results)
 	}
-	if len(graph.recallCalls) != 3 {
-		t.Fatalf("Recall was called %d times, want 3 (1 initial + 2 dispatched) — the final round must still not be dispatched", len(graph.recallCalls))
+	if len(graph.recallCalls) != primaryRecallCalls+2 {
+		t.Fatalf("Recall was called %d times, want %d (the primary pair + 2 dispatched) — the final round must still not be dispatched", len(graph.recallCalls), primaryRecallCalls+2)
 	}
 }
 
@@ -1255,15 +1265,46 @@ func TestTheSupplementaryRecallSendsTheModelsOwnQueryUnscopedAsExactlyOneCall(t 
 		t.Fatalf("Run: %v", err)
 	}
 
-	if len(graph.recallCalls) != 2 {
-		t.Fatalf("Recall was called %d times, want 2 (the primary recall and one supplementary): the model asked for one lookup, so a supplementary path that fans one ask into several is spending reads the model did not request", len(graph.recallCalls))
+	if len(graph.recallCalls) != primaryRecallCalls+1 {
+		t.Fatalf("Recall was called %d times, want %d (the primary pair and one supplementary): the model asked for one lookup, so a supplementary path that fans one ask into several is spending reads the model did not request", len(graph.recallCalls), primaryRecallCalls+1)
 	}
 
-	supplementary := graph.recallCalls[1]
+	supplementary := graph.recallCalls[primaryRecallCalls]
 	if supplementary.Query != "the query the model composed" {
 		t.Fatalf("supplementary recall query = %q, want the model's own text %q verbatim: the model wrote this query knowing what the first block already gave it, and a path that rewrites or re-derives it answers a question nobody asked", supplementary.Query, "the query the model composed")
 	}
 	if len(supplementary.Scope) != 0 {
 		t.Fatalf("the supplementary recall carried scope %v, want none: the model asks for what the subject's own neighbourhood did not supply, so confining its one follow-up to that neighbourhood is the surest way to return the block it already has", supplementary.Scope)
+	}
+}
+
+func TestTheTurnHoldsThreeOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	for id := int64(1001); id <= 1020; id++ {
+		graph.candidates = append(graph.candidates, Candidate{ID: id, Type: "documentation", Name: "whole graph"})
+	}
+	for id := int64(2001); id <= 2005; id++ {
+		graph.scopedCandidates = append(graph.scopedCandidates, Candidate{ID: id, Type: "documentation", Name: "neighbourhood"})
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "done", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var neighbourhood []int64
+	for _, d := range record.Candidates {
+		if d.ID >= 2001 {
+			neighbourhood = append(neighbourhood, d.ID)
+		}
+	}
+
+	want := []int64{2001, 2002, 2003}
+	if !slices.Equal(neighbourhood, want) {
+		t.Fatalf("the run admitted neighbourhood candidates %v of the five on offer, want %v: the whole-graph ranking already fills the cap on its own, so the number of neighbourhood rows that reach the block is the number of slots withheld from it and nothing else", neighbourhood, want)
 	}
 }

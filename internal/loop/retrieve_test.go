@@ -166,19 +166,199 @@ func (g *failingNeighbourGraph) Neighbours(context.Context, int64) ([]int64, err
 	return nil, errors.New("literal: the links route refused")
 }
 
-func TestRetrieveSendsNoScopeSoThePrimaryRecallRanksTheWholeGraph(t *testing.T) {
-	t.Parallel()
+type fusionGraph struct {
+	lists      map[string][]Candidate
+	scoped     []Candidate
+	neighbours []int64
+	calls      []recallCall
+}
 
-	graph := &fakeGraph{}
+func (g *fusionGraph) Node(_ context.Context, id int64) (Anchor, bool, error) {
+	return Anchor{ID: id}, true, nil
+}
 
-	if _, err := Retrieve(context.Background(), graph, "the input", CandidateLimit); err != nil {
+func (g *fusionGraph) Neighbours(context.Context, int64) ([]int64, error) {
+	return g.neighbours, nil
+}
+
+func (g *fusionGraph) Recall(_ context.Context, query string, limit int, scope []int64) ([]Candidate, error) {
+	g.calls = append(g.calls, recallCall{Query: query, Limit: limit, Scope: scope})
+	if len(scope) > 0 {
+		return g.scoped, nil
+	}
+	return g.lists[query], nil
+}
+
+func (g *fusionGraph) WriteRun(context.Context, Record) WriteReceipt {
+	return WriteReceipt{State: NotStored}
+}
+
+func ranked(ids ...int64) []Candidate {
+	candidates := make([]Candidate, len(ids))
+	for i, id := range ids {
+		candidates[i] = Candidate{ID: id}
+	}
+	return candidates
+}
+
+func mustRetrieve(t *testing.T, graph GraphPort, queries []string, limit, reserve int) []int64 {
+	t.Helper()
+
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, limit, reserve)
+	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
+	return candidateIDs(got)
+}
 
-	if len(graph.recallCalls) != 1 {
-		t.Fatalf("Recall was called %d times, want 1", len(graph.recallCalls))
+func similarityGraph() *fusionGraph {
+	return &fusionGraph{lists: map[string][]Candidate{
+		"first": {
+			{ID: 700, Similarity: 0.90},
+			{ID: 300, Similarity: 0.10},
+			{ID: 900, Similarity: 0.80},
+		},
+		"second": {
+			{ID: 500, Similarity: 0.70},
+			{ID: 300, Similarity: 0.10},
+			{ID: 100, Similarity: 0.60},
+		},
+	}}
+}
+
+func TestFusionRanksTheNodeBothQueriesReturnedAboveEveryNodeOnlyOneReturnedDespiteItsLowestSimilarity(t *testing.T) {
+	t.Parallel()
+
+	got := mustRetrieve(t, similarityGraph(), []string{"first", "second"}, 5, 0)
+
+	want := []int64{300, 700, 500, 900, 100}
+	if !slices.Equal(got, want) {
+		t.Fatalf("fused order = %v, want %v: node 300 carries the lowest similarity of the five and sits second in both lists, so sorting the union by similarity puts it last and taking either list alone puts it second, while summing its two reciprocal ranks is the only reading that puts it first", got, want)
 	}
-	if len(graph.recallCalls[0].Scope) != 0 {
-		t.Fatalf("the primary recall carried scope %v, want none: this is the ranking the corpus rates are measured on, and confining it to the subject's neighbourhood changes what every row retrieves without changing a single rate's name", graph.recallCalls[0].Scope)
+}
+
+func reserveGraph() *fusionGraph {
+	return &fusionGraph{
+		lists:  map[string][]Candidate{"input": ranked(810, 220, 640, 130, 970, 350, 480, 760, 590, 20)},
+		scoped: ranked(590, 20, 990),
+	}
+}
+
+func TestTheScopeReserveAdmitsAScopedNodeTheFusedOrderPlacesBeyondTheCap(t *testing.T) {
+	t.Parallel()
+
+	got := mustRetrieve(t, reserveGraph(), []string{"input"}, 6, 2)
+
+	if !slices.Contains(got, int64(590)) {
+		t.Fatalf("retrieval returned %v, want node 590 among them: it stands ninth in the fused order and so falls outside a cap of six, and only slots held back from that cap before it is filled can carry it", got)
+	}
+}
+
+func TestTheScopeReserveLeavesTheFusedOrderAheadOfItAtTheRanksItAlreadyHeld(t *testing.T) {
+	t.Parallel()
+
+	got := mustRetrieve(t, reserveGraph(), []string{"input"}, 6, 2)
+
+	want := []int64{810, 220, 640, 130}
+	if len(got) < len(want) || !slices.Equal(got[:len(want)], want) {
+		t.Fatalf("retrieval returned %v, want it to open with %v: interleaving the scoped list into the fused one reaches the same nodes and demotes every one of them, which is a widening that costs the rows already answered correctly", got, want)
+	}
+}
+
+func TestRetrievalStillLeavesOutTheFusedNodesTheReserveDisplaced(t *testing.T) {
+	t.Parallel()
+
+	got := mustRetrieve(t, reserveGraph(), []string{"input"}, 6, 2)
+
+	if len(got) != 6 {
+		t.Fatalf("retrieval returned %d candidates for a cap of 6: %v", len(got), got)
+	}
+	for _, displaced := range []int64{970, 350} {
+		if slices.Contains(got, displaced) {
+			t.Fatalf("retrieval returned %v, and node %d stands fifth or sixth in the fused order: the reserve is slots taken out of the cap rather than added to it, so a result that keeps the whole fused prefix and the scoped list as well is a wider retrieval than the one that was measured", got, displaced)
+		}
+	}
+}
+
+func TestTheScopeReserveStopsAtItsOwnSizeRatherThanFillingWhatTheFusedListLeftEmpty(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists:  map[string][]Candidate{"input": ranked(810, 220, 640)},
+		scoped: ranked(990, 880, 770, 660),
+	}
+
+	got := mustRetrieve(t, graph, []string{"input"}, 6, 2)
+
+	want := []int64{810, 220, 640, 990, 880}
+	if !slices.Equal(got, want) {
+		t.Fatalf("retrieval returned %v, want %v: four scoped nodes are available and the cap has room for all of them, so a reserve that grows to fill the room is a scoped ranking with a fused prefix rather than the allocation that was measured", got, want)
+	}
+}
+
+func TestRetrieveIssuesOneWholeGraphRecallPerQueryAndOneMoreRankedInsideTheAnchorsScope(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists:      map[string][]Candidate{"the input": ranked(810), "derived one": ranked(220), "derived two": ranked(640)},
+		neighbours: []int64{7},
+	}
+
+	mustRetrieve(t, graph, []string{"the input", "derived one", "derived two"}, 6, 2)
+
+	if len(graph.calls) != 4 {
+		t.Fatalf("Recall was called %d times for three queries, want 4: one whole-graph ranking per query and one ranked inside the anchor's scope", len(graph.calls))
+	}
+	for i, want := range []string{"the input", "derived one", "derived two"} {
+		if graph.calls[i].Query != want {
+			t.Fatalf("recall %d queried %q, want %q verbatim", i, graph.calls[i].Query, want)
+		}
+		if len(graph.calls[i].Scope) != 0 {
+			t.Fatalf("recall %d carried scope %v, want none: a derived query confined to the anchor's neighbourhood cannot reach the crowding that a whole-graph ranking of it is there to escape", i, graph.calls[i].Scope)
+		}
+	}
+	if !slices.Equal(graph.calls[3].Scope, []int64{7, 42}) {
+		t.Fatalf("the scoped recall carried scope %v, want %v: the anchor together with its neighbours", graph.calls[3].Scope, []int64{7, 42})
+	}
+}
+
+func TestTheScopedRecallCarriesTheRawInputRatherThanADerivedQuery(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{"the input": ranked(810), "derived one": ranked(220)}}
+
+	mustRetrieve(t, graph, []string{"the input", "derived one"}, 6, 2)
+
+	scoped := graph.calls[len(graph.calls)-1]
+	if scoped.Query != "the input" {
+		t.Fatalf("the scoped recall queried %q, want the raw input %q: the reserve exists to compensate for a request whose own words rank badly against the whole graph, and ranking a derived question inside the neighbourhood instead answers a question the caller did not ask", scoped.Query, "the input")
+	}
+}
+
+func TestRetrieveReportsTheNeighbourFailureRatherThanRankingTheWholeGraphTwice(t *testing.T) {
+	t.Parallel()
+
+	graph := &failingNeighbourGraph{}
+
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"the input"}, 6, 2)
+	if err == nil {
+		t.Fatalf("Retrieve returned %v and a nil error, want the failure: a scope the links route could not supply leaves the reserved slots holding a second copy of the whole-graph ranking, which reads on every rate exactly like a neighbourhood that had nothing to add", candidateIDs(got))
+	}
+}
+
+func TestRetrieveReadsTheGraphNotAtAllWhenThereIsNoQueryToIssue(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{"": ranked(810)}, scoped: ranked(990)}
+
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, nil, 6, 2)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("Retrieve returned %v for an empty query set, want none", candidateIDs(got))
+	}
+	if len(graph.calls) != 0 {
+		t.Fatalf("Retrieve made %d graph reads for an empty query set, want none: the scoped recall has no query to carry, and issuing it with the empty string ranks the whole neighbourhood by nothing", len(graph.calls))
 	}
 }

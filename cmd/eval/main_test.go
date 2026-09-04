@@ -11,7 +11,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/telmengedar/processor/internal/eval"
@@ -229,5 +231,113 @@ func TestRunExitsNonZeroWhenTheSummaryCannotBeWritten(t *testing.T) {
 	}
 	if machine.Len() == 0 {
 		t.Fatal("the measurement was not written, want the sweep to have emitted it before the summary write failed")
+	}
+}
+
+func recordingGraphServer(t *testing.T, queries *[]string) *httptest.Server {
+	t.Helper()
+
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if query := r.URL.Query().Get("query"); query != "" {
+			mu.Lock()
+			*queries = append(*queries, query)
+			mu.Unlock()
+			fmt.Fprintf(w, `{"result":[{"id":200,"type":"documentation","name":"Alpha","similarity":0.81,"content":%q}],"total":1}`, requiredNodeBody)
+			return
+		}
+		if r.URL.Query().Get("id") == "100" {
+			fmt.Fprint(w, `{"result":[{"id":100,"type":"documentation","name":"Subject","content":"the subject body"}],"total":1}`)
+			return
+		}
+		fmt.Fprint(w, `{"result":[],"total":0}`)
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestRunIssuesEveryPinnedDerivationAndNamesTheArmItSweptOnBothStreams(t *testing.T) {
+	var queries []string
+	server := recordingGraphServer(t, &queries)
+	graphEnv(t, server.URL)
+
+	sidecar := filepath.Join(t.TempDir(), "derivations.json")
+	body := `[{"row": "r01", "queries": ["why would a mutation leave the suite green"]}]`
+	if err := os.WriteFile(sidecar, []byte(body), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var machine, human bytes.Buffer
+	code := run([]string{"-corpus", corpusFile(t, runCorpus), "-derivations", sidecar}, &machine, &human)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; the human stream was:\n%s", code, human.String())
+	}
+
+	if !slices.Contains(queries, "why would a mutation leave the suite green") {
+		t.Fatalf("the graph was asked %q, and the pinned derivation is not among them: a sidecar that is read and never issued produces the raw arm's ranking under the derived arm's hash", queries)
+	}
+
+	var decoded eval.Result
+	if err := json.Unmarshal(machine.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode the machine stream: %v", err)
+	}
+	const wantHash = "9d2da394c35147b5e33a3fc1518b34c346e2c9e5b59d1d76517d79b9cc470fe7"
+	if decoded.Arm != sidecar {
+		t.Fatalf("Arm = %q, want the sidecar path %q", decoded.Arm, sidecar)
+	}
+	if decoded.DerivationHash != wantHash {
+		t.Fatalf("DerivationHash = %q, want the sha256 of the sidecar bytes: a reading that cannot name the query set it ran cannot be compared against the one taken beside it", decoded.DerivationHash)
+	}
+	if decoded.DerivedRows != 1 {
+		t.Fatalf("DerivedRows = %d, want 1 of the two corpus rows", decoded.DerivedRows)
+	}
+	if !strings.Contains(human.String(), "1 rows derived") {
+		t.Fatalf("the human summary does not name the arm it swept on:\n%s", human.String())
+	}
+}
+
+func TestRunSweepsTheRawInputArmAndSaysSoWhenNoSidecarIsGiven(t *testing.T) {
+	server := graphServer(t)
+	graphEnv(t, server.URL)
+
+	var machine, human bytes.Buffer
+	code := run([]string{"-corpus", corpusFile(t, runCorpus)}, &machine, &human)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; the human stream was:\n%s", code, human.String())
+	}
+
+	var decoded eval.Result
+	if err := json.Unmarshal(machine.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode the machine stream: %v", err)
+	}
+	if decoded.Arm != "raw-input" {
+		t.Fatalf("Arm = %q, want %q", decoded.Arm, "raw-input")
+	}
+	if decoded.DerivationHash != "" {
+		t.Fatalf("DerivationHash = %q, want empty: no sidecar was read, and a hash on this reading would name an arm that was never swept", decoded.DerivationHash)
+	}
+	if !strings.Contains(human.String(), "arm raw-input") {
+		t.Fatalf("the human summary does not name the raw-input arm:\n%s", human.String())
+	}
+}
+
+func TestRunRefusesToSweepWhenTheSidecarNamesARowTheCorpusDoesNotCarry(t *testing.T) {
+	server := graphServer(t)
+	graphEnv(t, server.URL)
+
+	sidecar := filepath.Join(t.TempDir(), "derivations.json")
+	if err := os.WriteFile(sidecar, []byte(`[{"row": "r99", "queries": ["a question"]}]`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var machine, human bytes.Buffer
+	code := run([]string{"-corpus", corpusFile(t, runCorpus), "-derivations", sidecar}, &machine, &human)
+
+	if code != exitError {
+		t.Fatalf("exit code = %d, want %d: a sidecar row that matches nothing sweeps its corpus row on the raw input while the result names a derived arm", code, exitError)
+	}
+	if machine.Len() != 0 {
+		t.Fatalf("the machine stream carries a result for a sweep that never ran:\n%s", machine.String())
 	}
 }

@@ -11,11 +11,11 @@ import (
 
 const rowErrorSubjectNotFound = "subject not found"
 
-func sweep(ctx context.Context, graph loop.GraphPort, corpus eval.Corpus, sweptAt time.Time) (eval.Result, error) {
-	result := eval.NewResult(corpus, sweptAt)
+func sweep(ctx context.Context, graph loop.GraphPort, corpus eval.Corpus, derivations eval.Derivations, sweptAt time.Time) (eval.Result, error) {
+	result := eval.NewResult(corpus, derivations, sweptAt)
 
 	for _, row := range corpus.Rows {
-		rowResult, err := sweepRow(ctx, graph, row)
+		rowResult, err := sweepRow(ctx, graph, row, derivations)
 		if err != nil {
 			return eval.Result{}, fmt.Errorf("row %s: %w", row.ID, err)
 		}
@@ -25,8 +25,8 @@ func sweep(ctx context.Context, graph loop.GraphPort, corpus eval.Corpus, sweptA
 	return result, nil
 }
 
-func sweepRow(ctx context.Context, graph loop.GraphPort, row eval.Row) (eval.RowResult, error) {
-	dispositions, found, err := rowDispositions(ctx, graph, row)
+func sweepRow(ctx context.Context, graph loop.GraphPort, row eval.Row, derivations eval.Derivations) (eval.RowResult, error) {
+	dispositions, found, err := rowDispositions(ctx, graph, row, derivations)
 	if err != nil {
 		return eval.RowResult{}, err
 	}
@@ -43,13 +43,13 @@ func sweepRow(ctx context.Context, graph loop.GraphPort, row eval.Row) (eval.Row
 	return result, nil
 }
 
-func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row) ([]loop.Disposition, bool, error) {
+func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row, derivations eval.Derivations) ([]loop.Disposition, bool, error) {
 	anchor, found, err := graph.Node(ctx, row.Subject)
 	if err != nil || !found {
 		return nil, found, err
 	}
 
-	candidates, err := loop.Retrieve(ctx, graph, row.Input, loop.CandidateLimit)
+	candidates, err := loop.Retrieve(ctx, graph, anchor, derivations.QueriesFor(row), loop.CandidateLimit, loop.RecallScopeReserve)
 	if err != nil {
 		return nil, true, err
 	}

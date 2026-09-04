@@ -7,10 +7,11 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
-// Limits are the two loop constants a sweep is governed by.
+// Limits are the loop constants a sweep is governed by.
 type Limits struct {
 	CandidateLimit     int `json:"candidateLimit"`
 	AssemblyByteBudget int `json:"assemblyByteBudget"`
+	RecallScopeReserve int `json:"recallScopeReserve"`
 }
 
 // RowResult is one row's outcome, the diagnostics that make its number actionable,
@@ -36,23 +37,35 @@ type RowResult struct {
 	Error      string             `json:"error,omitempty"`
 }
 
-// Result is one sweep: what produced it, and one entry per corpus row in corpus order.
+// Result is one sweep: what produced it, which retrieval arm it ran, and one
+// entry per corpus row in corpus order.
 type Result struct {
-	CorpusHash string      `json:"corpusHash"`
-	SweptAt    time.Time   `json:"sweptAt"`
-	Limits     Limits      `json:"limits"`
-	RowCount   int         `json:"rowCount"`
-	Rows       []RowResult `json:"rows"`
+	CorpusHash     string      `json:"corpusHash"`
+	Arm            string      `json:"arm"`
+	DerivationHash string      `json:"derivationHash"`
+	DerivedRows    int         `json:"derivedRows"`
+	SweptAt        time.Time   `json:"sweptAt"`
+	Limits         Limits      `json:"limits"`
+	RowCount       int         `json:"rowCount"`
+	Rows           []RowResult `json:"rows"`
 }
 
-// NewResult opens a result for corpus, carrying its hash and the loop limits a sweep runs under.
-func NewResult(corpus Corpus, sweptAt time.Time) Result {
+// NewResult opens a result for corpus swept on derivations' arm, carrying both
+// identities and the loop limits a sweep runs under.
+func NewResult(corpus Corpus, derivations Derivations, sweptAt time.Time) Result {
 	return Result{
-		CorpusHash: corpus.Hash,
-		SweptAt:    sweptAt,
-		Limits:     Limits{CandidateLimit: loop.CandidateLimit, AssemblyByteBudget: loop.AssemblyByteBudget},
-		RowCount:   len(corpus.Rows),
-		Rows:       make([]RowResult, 0, len(corpus.Rows)),
+		CorpusHash:     corpus.Hash,
+		Arm:            derivations.Arm(),
+		DerivationHash: derivations.Hash,
+		DerivedRows:    derivations.Rows(),
+		SweptAt:        sweptAt,
+		Limits: Limits{
+			CandidateLimit:     loop.CandidateLimit,
+			AssemblyByteBudget: loop.AssemblyByteBudget,
+			RecallScopeReserve: loop.RecallScopeReserve,
+		},
+		RowCount: len(corpus.Rows),
+		Rows:     make([]RowResult, 0, len(corpus.Rows)),
 	}
 }
 

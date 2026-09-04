@@ -167,7 +167,7 @@ func TestResultHeaderCarriesTheCorpusHashAndTheLoopLimits(t *testing.T) {
 	corpus := Corpus{Hash: "a-corpus-hash", Rows: []Row{labelledRow(), labelledRow()}}
 	sweptAt := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
 
-	got := NewResult(corpus, sweptAt)
+	got := NewResult(corpus, Derivations{}, sweptAt)
 
 	if got.CorpusHash != "a-corpus-hash" {
 		t.Fatalf("CorpusHash = %q, want the hash of the corpus that produced the result", got.CorpusHash)
@@ -183,6 +183,9 @@ func TestResultHeaderCarriesTheCorpusHashAndTheLoopLimits(t *testing.T) {
 	}
 	if got.Limits.AssemblyByteBudget != loop.AssemblyByteBudget {
 		t.Fatalf("Limits.AssemblyByteBudget = %d, want the byte budget the loop ships %d", got.Limits.AssemblyByteBudget, loop.AssemblyByteBudget)
+	}
+	if got.Limits.RecallScopeReserve != loop.RecallScopeReserve {
+		t.Fatalf("Limits.RecallScopeReserve = %d, want the scope reserve the loop ships %d: two sweeps taken under different reserves are two arms, and a result that does not carry the reserve cannot say which one it is", got.Limits.RecallScopeReserve, loop.RecallScopeReserve)
 	}
 	if len(got.Rows) != 0 {
 		t.Fatalf("len(Rows) = %d, want an empty slice a sweep appends to in corpus order", len(got.Rows))

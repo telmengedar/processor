@@ -27,7 +27,7 @@ func main() {
 func run(args []string, machine, human io.Writer) int {
 	logger := slog.New(slog.NewTextHandler(human, nil))
 
-	corpusPath, ok := parseFlags(args, human)
+	corpusPath, derivationsPath, ok := parseFlags(args, human)
 	if !ok {
 		return exitUsage
 	}
@@ -44,9 +44,15 @@ func run(args []string, machine, human io.Writer) int {
 		return exitError
 	}
 
+	derivations, err := loadDerivations(derivationsPath, corpus)
+	if err != nil {
+		logger.Error("derivations", "error", err)
+		return exitError
+	}
+
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 
-	result, err := sweep(context.Background(), graph, corpus, time.Now().UTC())
+	result, err := sweep(context.Background(), graph, corpus, derivations, time.Now().UTC())
 	if err != nil {
 		logger.Error("sweep", "error", err)
 		return exitError
@@ -67,18 +73,26 @@ func exitCodeFor(result eval.Result) int {
 	return 0
 }
 
-func parseFlags(args []string, human io.Writer) (string, bool) {
+func loadDerivations(path string, corpus eval.Corpus) (eval.Derivations, error) {
+	if path == "" {
+		return eval.Derivations{}, nil
+	}
+	return eval.LoadDerivations(path, corpus)
+}
+
+func parseFlags(args []string, human io.Writer) (corpusPath, derivationsPath string, ok bool) {
 	flags := flag.NewFlagSet("eval", flag.ContinueOnError)
 	flags.SetOutput(human)
-	corpusPath := flags.String("corpus", "", "path of the corpus file to sweep")
+	corpus := flags.String("corpus", "", "path of the corpus file to sweep")
+	derivations := flags.String("derivations", "", "path of the pinned derivation sidecar to sweep with; absent, every row is swept on its own input alone")
 
 	if err := flags.Parse(args); err != nil {
-		return "", false
+		return "", "", false
 	}
-	if *corpusPath == "" {
+	if *corpus == "" {
 		fmt.Fprintln(human, "-corpus is required but not set")
 		flags.Usage()
-		return "", false
+		return "", "", false
 	}
-	return *corpusPath, true
+	return *corpus, *derivations, true
 }

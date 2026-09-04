@@ -60,8 +60,9 @@ func (l *latchingWriter) Write(p []byte) (int, error) {
 func writeSummary(result Result, corpusPath string, w io.Writer) {
 	fmt.Fprintf(w, "corpus %s - %d rows (%d labelled, %d control), hash %s\n",
 		corpusPath, result.RowCount, countRows(result, StratumLabelled), countRows(result, StratumControl), shortHash(result.CorpusHash))
-	fmt.Fprintf(w, "limits candidateLimit=%d assemblyByteBudget=%d\n\n",
-		result.Limits.CandidateLimit, result.Limits.AssemblyByteBudget)
+	fmt.Fprintf(w, "arm %s\n", armLine(result))
+	fmt.Fprintf(w, "limits candidateLimit=%d assemblyByteBudget=%d recallScopeReserve=%d\n\n",
+		result.Limits.CandidateLimit, result.Limits.AssemblyByteBudget, result.Limits.RecallScopeReserve)
 
 	writeRate(w, StratumLabelled, rateOf(result, StratumLabelled))
 	writeRate(w, StratumControl, rateOf(result, StratumControl))
@@ -74,6 +75,13 @@ func writeSummary(result Result, corpusPath string, w io.Writer) {
 	writeMisses(w, result, StratumControl)
 	writeRowErrors(w, result)
 	writeDiagnostics(w, result)
+}
+
+func armLine(result Result) string {
+	if result.Arm == ArmRawInput {
+		return ArmRawInput
+	}
+	return fmt.Sprintf("%s - %d rows derived, hash %s", result.Arm, result.DerivedRows, shortHash(result.DerivationHash))
 }
 
 func controlAlarm(result Result) string {

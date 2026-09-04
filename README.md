@@ -23,8 +23,9 @@ meaningful**. Writing that answer key is the work currently in front of the proj
 **What to expect if you come back later.**
 
 - **Better context assembly**, which is the next real capability and the one the project is actually
-  about. What is here now is deliberately the simplest thing that is honestly mechanical: one recall
-  query, a byte budget, and no memory of previous turns.
+  about. What is here now is deliberately the simplest thing that is honestly mechanical: a fan-out of
+  whole-graph recalls fused by reciprocal rank, three of the twenty candidate slots reserved for the
+  subject's own two-hop neighbourhood, a byte budget, and no memory of previous turns.
 - **Gates a model cannot talk its way past** — work described in the graph as obligations to meet, and
   checked mechanically rather than asserted in prose.
 - **A background pass that keeps the memory from silting up** — grouping, re-homing and marking what has
@@ -40,9 +41,12 @@ words; that document carries the argument.
 
 - `cmd/processor` — the process entry point: loads the boot configuration, binds the listener, wires
   OS signals, constructs the graph adapter, the model adapter and the loop, owns the exit code.
-- `cmd/eval` — the retrieval sweep: loads a corpus file (`-corpus`) and, per row, does exactly what a
-  real run's first six steps do — fetch the anchor, one recall, `Assemble` — then stops before the
-  model, so a full sweep costs no model call at all. Writes the measurement as JSON to stdout and the
+- `cmd/eval` — the retrieval sweep: loads a corpus file (`-corpus`) and, optionally, a sidecar of
+  pinned per-row queries (`-derivations`), and per row does exactly what a real run's first six steps
+  do — fetch the anchor, call the loop's own `Retrieve`, `Assemble` — then stops before the model, so a
+  full sweep costs no model call at all, on either arm. Without the sidecar every row is swept on its
+  own input alone; the result names the arm it ran and the sha256 of the sidecar it read, so two
+  readings taken minutes apart can be told apart. Writes the measurement as JSON to stdout and the
   human summary to stderr, and exits non-zero when retrieval could not be verified against the control
   stratum. A control node the byte budget merely cut exits zero under a named budget alarm — that is the
   assembler being measured, not the instrument failing. Needs the graph half of the boot configuration
@@ -79,7 +83,7 @@ words; that document carries the argument.
   ruling (design **#10521**): a local runtime works with no credential and no per-token spend.
 - `internal/eval` — the corpus and the scorer: the row type with its validating loader, the pure scoring
   of a row's required nodes against what assembly did with them, and the reporter. **Two** rates, not
-  one — *retrieved* (did the recall query surface the node at all) and *admitted* (did it survive the
+  one — *retrieved* (did retrieval surface the node at all) and *admitted* (did it survive the
   byte budget) — because they fail differently and imply opposite fixes
   (`docs/architecture/m2-retrieval-eval.md`).
 - `GET /health` — returns `200` with `Content-Type: application/json` and body `{"status":"ok"}`.
@@ -186,8 +190,12 @@ Request:
 {"input": "free text", "subject": 12345}
 ```
 
-`input` must be non-empty; `subject` is the id of the node the run is about. The retrieval query sent to
-the graph is `input`, verbatim — no rewriting, no expansion, no model.
+`input` must be non-empty; `subject` is the id of the node the run is about. The queries sent to the
+graph are `input`, verbatim — no rewriting, no expansion, no model. A turn issues it twice: once ranked
+against the whole graph, and once ranked inside the subject's own two-hop neighbourhood, which costs one
+extra read of the subject's edges. The whole-graph lists are fused by reciprocal rank; the last three of
+the twenty candidate slots are held for the neighbourhood list, so a node the whole graph ranks past the
+cap can still arrive while the nodes already at the top keep the ranks they had.
 
 The turn: fetch the subject and recall candidates, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
@@ -195,8 +203,8 @@ model, dispatch the one supplementary-recall tool as the model asks for it (up t
 calls, so at most 2 tool dispatches per run — the capping call's recall is counted but never dispatched),
 then write the record back to the graph as one `session-log` node linked to the subject.
 
-Response (`200`) is the run record: the input, the query, the anchor summary, **every** candidate the
-recall query returned — not only the ones kept — each with its rank, similarity, size, content hash, and
+Response (`200`) is the run record: the input, the query, the anchor summary, **every** candidate
+retrieval returned — not only the ones kept — each with its rank, similarity, size, content hash, and
 whether it was included or cut and why, the assembled block itself, the model's answer, the model id, every
 supplementary-recall round (query, and for every row the round returned — not only the admitted ones — the
 same rank/id/type/name/similarity/size/content-hash/included/cut-reason columns the candidates carry, or an
@@ -368,8 +376,11 @@ flags it.
   — including that *cut* and *not retrieved* are distinguished on otherwise identical rows, and that a
   moved content hash raises a stale flag rather than a verdict — and the reporter is pinned over
   hand-built results. The sweep is pinned at the port level against a graph double: that it recalls with
-  the raw input verbatim at the loop's own candidate limit, that its dispositions equal the ones a real
-  run produces for the same anchor and candidates, that it reads the graph and never writes to it, that a
+  the raw input verbatim at the loop's own candidate limit and unscoped, that it ranks that same input a
+  second time inside the subject's own scope, that it issues one whole-graph recall per pinned
+  derivation, that it holds exactly three of its candidate slots for the neighbourhood — the same
+  assertion the turn carries, so reverting either caller to its own retrieval reddens both packages —
+  that its dispositions equal the ones a real run produces for the same anchor and candidates, that it reads the graph and never writes to it, that a
   row whose required node no longer resolves leaves both denominators instead of scoring as a miss, and
   that a control node the retriever never surfaced exits non-zero while a control node the byte budget
   cut exits zero under a budget alarm — the pair over otherwise identical fixtures, so neither is

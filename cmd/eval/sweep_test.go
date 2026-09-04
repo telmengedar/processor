@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,8 @@ const requiredNodeBody = "the required node body"
 
 const requiredNodeBodyHash = "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a378ae4341eb04d6"
 
+const emptyBodyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
 type recallCall struct {
 	Query string
 	Limit int
@@ -28,8 +31,9 @@ type fakeGraph struct {
 
 	writeAllowed bool
 
-	nodes      map[int64]loop.Anchor
-	candidates []loop.Candidate
+	nodes            map[int64]loop.Anchor
+	candidates       []loop.Candidate
+	scopedCandidates []loop.Candidate
 
 	nodeErr   error
 	recallErr error
@@ -60,6 +64,9 @@ func (f *fakeGraph) Recall(_ context.Context, query string, limit int, scope []i
 	f.recallCalls = append(f.recallCalls, recallCall{Query: query, Limit: limit, Scope: scope})
 	if f.recallErr != nil {
 		return nil, f.recallErr
+	}
+	if len(scope) > 0 {
+		return f.scopedCandidates[:min(limit, len(f.scopedCandidates))], nil
 	}
 	return f.candidates[:min(limit, len(f.candidates))], nil
 }
@@ -94,7 +101,7 @@ func sweptAt() time.Time {
 func mustSweep(t *testing.T, graph loop.GraphPort, corpus eval.Corpus) eval.Result {
 	t.Helper()
 
-	result, err := sweep(context.Background(), graph, corpus, sweptAt())
+	result, err := sweep(context.Background(), graph, corpus, eval.Derivations{}, sweptAt())
 	if err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
@@ -130,7 +137,7 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 		t.Fatalf("Turn.Run: %v", err)
 	}
 
-	dispositions, found, err := rowDispositions(context.Background(), graph, row)
+	dispositions, found, err := rowDispositions(context.Background(), graph, row, eval.Derivations{})
 	if err != nil {
 		t.Fatalf("rowDispositions: %v", err)
 	}
@@ -164,14 +171,62 @@ func TestSweepRecallsWithTheRawInputVerbatimAndTheCandidateLimitTheLoopShips(t *
 	row := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"})
 	mustSweep(t, graph, corpusOf(row))
 
-	if len(graph.recallCalls) != 1 {
-		t.Fatalf("the sweep ran %d recalls for one row, want exactly 1", len(graph.recallCalls))
-	}
 	if graph.recallCalls[0].Query != row.Input {
 		t.Fatalf("recall query = %q, want the row input verbatim %q", graph.recallCalls[0].Query, row.Input)
 	}
 	if graph.recallCalls[0].Limit != loop.CandidateLimit {
 		t.Fatalf("recall limit = %d, want the candidate limit the loop ships %d", graph.recallCalls[0].Limit, loop.CandidateLimit)
+	}
+	if len(graph.recallCalls[0].Scope) != 0 {
+		t.Fatalf("the row's first recall carried scope %v, want none: the fused order is built from whole-graph rankings, and confining them to the subject's neighbourhood is the arm the reserve exists to add on top rather than to replace them with", graph.recallCalls[0].Scope)
+	}
+}
+
+func TestSweepRanksTheRawInputASecondTimeInsideTheSubjectsScopeSoTheReserveHasAListToDrawOn(t *testing.T) {
+	t.Parallel()
+
+	graph := newFakeGraph(t)
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+
+	row := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"})
+	mustSweep(t, graph, corpusOf(row))
+
+	if len(graph.recallCalls) != 2 {
+		t.Fatalf("the sweep ran %d recalls for one row carrying no derivations, want exactly 2: one whole-graph ranking of the input and one ranked inside the subject's scope", len(graph.recallCalls))
+	}
+	scoped := graph.recallCalls[1]
+	if scoped.Query != row.Input {
+		t.Fatalf("the scoped recall queried %q, want the row input verbatim %q", scoped.Query, row.Input)
+	}
+	if !slices.Equal(scoped.Scope, []int64{row.Subject}) {
+		t.Fatalf("the scoped recall carried scope %v, want %v: this fixture's subject has no neighbours, so a scope that has lost the subject itself is an unscoped whole-graph ranking wearing the reserve's name", scoped.Scope, []int64{row.Subject})
+	}
+}
+
+func TestSweepIssuesOneWholeGraphRecallPerPinnedDerivationBesideTheRawInput(t *testing.T) {
+	t.Parallel()
+
+	graph := newFakeGraph(t)
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+
+	row := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"})
+	derivations := eval.Derivations{Path: "pinned.json", Hash: "a-derivation-hash", Queries: map[string][]string{
+		"r01": {"why would a mutation leave the suite green", "what does a non-zero exit code mean"},
+	}}
+
+	if _, err := sweep(context.Background(), graph, corpusOf(row), derivations, sweptAt()); err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+
+	var unscoped []string
+	for _, call := range graph.recallCalls {
+		if len(call.Scope) == 0 {
+			unscoped = append(unscoped, call.Query)
+		}
+	}
+	want := []string{row.Input, "why would a mutation leave the suite green", "what does a non-zero exit code mean"}
+	if !slices.Equal(unscoped, want) {
+		t.Fatalf("the sweep issued unscoped recalls %q, want %q: a pinned derivation that never reaches the graph leaves the derived arm ranking exactly what the raw arm ranked while reporting a derivation hash beside it", unscoped, want)
 	}
 }
 
@@ -287,7 +342,7 @@ func TestSweepAbortsRatherThanReportingAnEmptyMeasurementWhenTheGraphReadFails(t
 	graph := newFakeGraph(t)
 	graph.nodeErr = errors.New("graph unavailable")
 
-	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), sweptAt())
+	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt())
 	if err == nil {
 		t.Fatal("sweep returned a nil error while the graph was unreachable, want an error rather than a plausible zero score")
 	}
@@ -302,7 +357,7 @@ func TestSweepAbortsWhenRecallItselfFails(t *testing.T) {
 	graph := newFakeGraph(t)
 	graph.recallErr = errors.New("graph unavailable")
 
-	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), sweptAt())
+	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt())
 	if err == nil {
 		t.Fatal("sweep returned a nil error while recall was failing, want an error")
 	}
@@ -324,8 +379,8 @@ func TestSweepReadsTheGraphAndNeverWritesToIt(t *testing.T) {
 	if !reflect.DeepEqual(graph.nodeCalls, wantNodeCalls) {
 		t.Fatalf("node calls = %v, want %v: one per subject, plus one per required node that was not retrieved", graph.nodeCalls, wantNodeCalls)
 	}
-	if len(graph.recallCalls) != 2 {
-		t.Fatalf("recall calls = %d, want one per row", len(graph.recallCalls))
+	if len(graph.recallCalls) != 4 {
+		t.Fatalf("recall calls = %d, want two per row: the raw input unscoped and the same input ranked inside the subject's scope", len(graph.recallCalls))
 	}
 }
 
@@ -448,5 +503,32 @@ func TestTheSweepExitsZeroWhenTheControlStratumReadOneAndOnlyLabelledRowsMissed(
 
 	if got := exitCodeFor(intact); got != 0 {
 		t.Fatalf("exit code = %d, want 0: a low labelled score is a measurement, not an instrument failure", got)
+	}
+}
+
+func TestTheSweepHoldsThreeOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *testing.T) {
+	t.Parallel()
+
+	graph := newFakeGraph(t)
+	for id := int64(1001); id <= 1020; id++ {
+		graph.candidates = append(graph.candidates, loop.Candidate{ID: id, Type: "documentation", Name: "whole graph"})
+	}
+	for id := int64(2001); id <= 2005; id++ {
+		graph.scopedCandidates = append(graph.scopedCandidates, loop.Candidate{ID: id, Type: "documentation", Name: "neighbourhood"})
+	}
+
+	row := labelledRow("r01", eval.Required{Node: 1001, Hash: emptyBodyHash, Why: "w"})
+	result := mustSweep(t, graph, corpusOf(row))
+
+	var neighbourhood []int64
+	for _, d := range result.Rows[0].Candidates {
+		if d.ID >= 2001 {
+			neighbourhood = append(neighbourhood, d.ID)
+		}
+	}
+
+	want := []int64{2001, 2002, 2003}
+	if !slices.Equal(neighbourhood, want) {
+		t.Fatalf("the sweep scored neighbourhood candidates %v of the five on offer, want %v: the instrument and the product share one retrieval, so a reserve the sweep does not honour is a rate measured on a pipeline the product does not run", neighbourhood, want)
 	}
 }

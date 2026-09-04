@@ -10,6 +10,7 @@ import (
 
 const (
 	CandidateLimit          = 20
+	RecallScopeReserve      = 3
 	AssemblyByteBudget      = 60_000
 	MaxModelCalls           = 3
 	SupplementaryByteBudget = 20_000
@@ -94,7 +95,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		return Record{}, WriteReceipt{}, ErrSubjectNotFound
 	}
 
-	candidates, err := Retrieve(ctx, t.Graph, input, CandidateLimit)
+	candidates, err := Retrieve(ctx, t.Graph, anchor, []string{input}, CandidateLimit, RecallScopeReserve)
 	if err != nil {
 		return Record{}, WriteReceipt{}, fmt.Errorf("%w: %v", ErrGraphUnavailable, err)
 	}

@@ -27,10 +27,15 @@ func render(t *testing.T, result Result) (machine, human string) {
 func resultWith(rows ...RowResult) Result {
 	return Result{
 		CorpusHash: "854847806c2db7327af358e4966916646de496abebedd033740dec3bcdae353d",
+		Arm:        ArmRawInput,
 		SweptAt:    time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC),
-		Limits:     Limits{CandidateLimit: loop.CandidateLimit, AssemblyByteBudget: loop.AssemblyByteBudget},
-		RowCount:   len(rows),
-		Rows:       rows,
+		Limits: Limits{
+			CandidateLimit:     loop.CandidateLimit,
+			AssemblyByteBudget: loop.AssemblyByteBudget,
+			RecallScopeReserve: loop.RecallScopeReserve,
+		},
+		RowCount: len(rows),
+		Rows:     rows,
 	}
 }
 
@@ -597,4 +602,33 @@ func TestReportIndentsTheOutrankedLineUnderTheVerdictItExplains(t *testing.T) {
 	if got := strings.Index(outranked[19:], "#"); got != 15 {
 		t.Fatalf("the outranked-by line starts its candidates %d columns after its label, want 15: the payload sits under the verdict's payload. Line was:\n%q", got, outranked)
 	}
+}
+
+func TestTheSummaryNamesTheRawInputArmWhereNoDerivationSidecarWasSwept(t *testing.T) {
+	t.Parallel()
+
+	_, human := render(t, resultWith(intactControlRow()))
+
+	mustContainLine(t, human, "arm raw-input")
+}
+
+func TestTheSummaryNamesTheDerivationSidecarAndItsHashSoTwoReadingsAreTellableApart(t *testing.T) {
+	t.Parallel()
+
+	result := resultWith(intactControlRow())
+	result.Arm = "internal/eval/derivations.json"
+	result.DerivationHash = "4f7c1a90b6d3e58217c4be09f1a2d3c4e5f60718293a4b5c6d7e8f90a1b2c3d4"
+	result.DerivedRows = 11
+
+	_, human := render(t, result)
+
+	mustContainLine(t, human, "arm internal/eval/derivations.json - 11 rows derived, hash 4f7c1a90")
+}
+
+func TestTheSummaryCarriesTheScopeReserveBesideTheOtherLimits(t *testing.T) {
+	t.Parallel()
+
+	_, human := render(t, resultWith(intactControlRow()))
+
+	mustContainLine(t, human, "limits candidateLimit=20 assemblyByteBudget=60000 recallScopeReserve=3")
 }
