@@ -6,6 +6,8 @@ assembled context -- and print both answers verbatim, side by side.
     python scripts/compare.py --only t1-second-provider,t3-second-ask-worse
     python scripts/compare.py --model-url http://127.0.0.1:12434/engines/v1 --model-id qwen3-coder
 
+Requires Python 3.12+: TemporaryDirectory(ignore_cleanup_errors=...) below needs 3.12.
+
 Arm SUBSTRATE is POST /runs against the built binary: retrieve, assemble, judge, write back.
 Arm TRANSCRIPT is the same model and the same task text posted straight to /chat/completions as a
 single user message, with no system message, no context block and no recall tool.
@@ -38,8 +40,9 @@ reports it whenever it happens. Nothing here prevents that, and the fix is #1109
 decorating port, which is Go and has no caller yet.
 
 Costs one model call per arm at minimum -- more where the substrate arm asks for supplementary recall
--- and one graph write per task. Exit 0 every task ran both arms; 1 a task's substrate arm admitted no
-candidates, so for that task the two arms were the same call; 2 the comparison could not be made.
+-- and one graph write per task. Exit 0 every task ran both arms; 1 a task's substrate arm admitted
+nothing at all -- neither in the initial context block nor in any supplementary recall round -- so for
+that task the two arms were the same call; 2 the comparison could not be made.
 """
 
 import argparse
@@ -135,7 +138,10 @@ def load_tasks(path, only):
     if only is None:
         return rows
 
-    wanted = [name.strip() for name in only.split(",") if name.strip()]
+    # dict.fromkeys dedupes while keeping first-occurrence order: "--only t1,t1" must run t1 once,
+    # not twice, or both the in-file duplicate-task check above and the graph check below are
+    # defeated by a repeated id rather than a repeated file row (DiVoid #11141).
+    wanted = list(dict.fromkeys(name.strip() for name in only.split(",") if name.strip()))
     by_id = {row["id"]: row for row in rows}
     missing = [name for name in wanted if name not in by_id]
     if missing:
@@ -431,7 +437,25 @@ def candidates(record):
 
 
 def admitted(record):
+    """Count of candidates the *initial* recall round admitted. Paired everywhere it is printed with
+    len(candidates(record)), which is also initial-round-only -- this is deliberately not the total
+    admitted across the run; see total_admitted for that."""
     return sum(1 for c in candidates(record) if c.get("included"))
+
+
+def total_admitted(record):
+    """Count of distinct nodes admitted anywhere in the run -- the initial block or any supplementary
+    recall round. Use this, not admitted(), for any question of the shape "did the model receive
+    anything" (e.g. starvation): a node the initial round cut and a later supplementary round
+    recovered was still received (N2, DiVoid #11141 follow-up)."""
+    return len(admitted_ids(record))
+
+
+def admitted_ids(record):
+    ids = {c.get("id") for c in candidates(record) if c.get("included")}
+    ids.update(node_id for node_id, row in _supplementary_by_id(record).items() if row.get("included"))
+    ids.discard(None)
+    return ids
 
 
 def block_bytes(record):
@@ -451,6 +475,7 @@ NOT_RETRIEVED = "not retrieved"
 RETRIEVED_CUT = "retrieved, cut"
 ADMITTED_PRIMARY = "admitted, primary"
 ADMITTED_SUPPLEMENTARY = "admitted, supplementary"
+ADMITTED_SUPPLEMENTARY_RECOVERED = "admitted, supplementary (recovered after cut)"
 UNLABELLED = "no answer nodes named"
 
 INDICTMENT = {
@@ -465,9 +490,17 @@ INDICTMENT = {
         "three"
     ),
     ADMITTED_SUPPLEMENTARY: (
-        "the initial recall query missed the answer; it reached the model only because the model "
-        "asked for supplementary recall and that second, unscoped query found it. This indicts the "
-        "initial recall query specifically, not the byte budget or the block"
+        "the initial recall query missed the answer entirely -- it never appears in the initial "
+        "candidate list at all. It reached the model only because the model asked for supplementary "
+        "recall and that second, unscoped query found it. This indicts the initial recall query "
+        "specifically, not the byte budget or the block"
+    ),
+    ADMITTED_SUPPLEMENTARY_RECOVERED: (
+        "the initial recall query DID return the answer -- it is in the initial candidate list, at "
+        "the rank printed on the answer-node line below -- and assembly's byte budget cut it before "
+        "the block was sent. The model then asked for supplementary recall and a second, unscoped "
+        "query re-admitted it. This indicts the byte budget or candidate limit at the initial round, "
+        "not the recall query: the recall query worked"
     ),
     UNLABELLED: "the task set names no answering node, so nothing mechanical can be attributed",
 }
@@ -490,6 +523,20 @@ def _supplementary_by_id(record):
 
 
 def answer_node_report(task, record):
+    """One (node, stage, rank, detail) row per answer node the task set names.
+
+    `rank` is the rank at the round the stage is reported from (the initial round for
+    ADMITTED_PRIMARY and a cut, the supplementary round for either supplementary stage). `detail`
+    is None except for ADMITTED_SUPPLEMENTARY_RECOVERED, where it carries the initial round's own
+    rank and cutReason -- the fact that made the initial query's success, and the cut, both real.
+
+    The three-way split below exists because "supplementary is included" is not one outcome: a node
+    absent from the initial candidate list entirely (`primary is None`) means the initial recall
+    query never found it -- that indicts the query. A node present in the initial candidate list but
+    not included (`primary is not None`) means the initial query found it and assembly cut it under
+    the byte budget -- that indicts the budget, not the query. Collapsing these (N1, DiVoid #11141
+    follow-up) reads a working recall query as a failed one.
+    """
     wanted = task.get("answerNodes") or []
     if not wanted:
         return []
@@ -500,28 +547,47 @@ def answer_node_report(task, record):
     for node in wanted:
         primary = primary_by_id.get(node)
         supplementary = supplementary_by_id.get(node)
-        if primary is not None and primary.get("included"):
-            rows.append((node, ADMITTED_PRIMARY, primary.get("rank")))
-        elif supplementary is not None and supplementary.get("included"):
-            rows.append((node, ADMITTED_SUPPLEMENTARY, supplementary.get("rank")))
+        primary_included = bool(primary is not None and primary.get("included"))
+        supplementary_included = bool(supplementary is not None and supplementary.get("included"))
+
+        if primary_included:
+            rows.append((node, ADMITTED_PRIMARY, primary.get("rank"), None))
+        elif supplementary_included and primary is not None:
+            reason = primary.get("cutReason") or "no reason given"
+            detail = f"initial recall ranked it #{primary.get('rank')} but assembly cut it ({reason})"
+            rows.append((node, ADMITTED_SUPPLEMENTARY_RECOVERED, supplementary.get("rank"), detail))
+        elif supplementary_included:
+            rows.append((node, ADMITTED_SUPPLEMENTARY, supplementary.get("rank"), None))
         elif primary is not None:
             reason = primary.get("cutReason") or "no reason given"
-            rows.append((node, f"{RETRIEVED_CUT} ({reason})", primary.get("rank")))
+            rows.append((node, f"{RETRIEVED_CUT} ({reason})", primary.get("rank"), None))
         elif supplementary is not None:
             reason = supplementary.get("cutReason") or "no reason given"
-            rows.append((node, f"{RETRIEVED_CUT} ({reason}, supplementary recall)", supplementary.get("rank")))
+            detail = None
+            rows.append(
+                (node, f"{RETRIEVED_CUT} ({reason}, supplementary recall)", supplementary.get("rank"), detail)
+            )
         else:
-            rows.append((node, NOT_RETRIEVED, None))
+            rows.append((node, NOT_RETRIEVED, None, None))
     return rows
 
 
 def task_stage(task, record):
+    """The furthest point any of the task's answer nodes reached, best first.
+
+    ADMITTED_SUPPLEMENTARY_RECOVERED outranks the genuine-miss ADMITTED_SUPPLEMENTARY: a node the
+    initial query found and the budget cut, later recovered, is a working query plus a tight budget;
+    a node the initial query never found at all is a query miss papered over by a second, unscoped
+    round. The first is the milder finding.
+    """
     rows = answer_node_report(task, record)
     if not rows:
         return UNLABELLED
-    dispositions = [disposition for _, disposition, _ in rows]
+    dispositions = [disposition for _, disposition, _, _ in rows]
     if any(d == ADMITTED_PRIMARY for d in dispositions):
         return ADMITTED_PRIMARY
+    if any(d == ADMITTED_SUPPLEMENTARY_RECOVERED for d in dispositions):
+        return ADMITTED_SUPPLEMENTARY_RECOVERED
     if any(d == ADMITTED_SUPPLEMENTARY for d in dispositions):
         return ADMITTED_SUPPLEMENTARY
     if any(d.startswith(RETRIEVED_CUT) for d in dispositions):
@@ -542,7 +608,13 @@ def describe_cut(row, budget):
             f"assembly refuses it before the byte budget is even consulted"
         )
     if reason == CUT_BYTE_BUDGET:
-        if budget is not None and size > budget:
+        if budget is None:
+            return (
+                f"CUT #{row.get('id')}: {size} bytes, cut for byte budget exceeded -- but this "
+                f"record carries no assemblyByteBudget, so whether it was oversized alone or only "
+                f"in combination with rows admitted ahead of it cannot be said from here"
+            )
+        if size > budget:
             return (
                 f"CUT #{row.get('id')}: {size} bytes alone exceeds the {budget}-byte assembly "
                 f"budget, so no run can admit it regardless of rank"
@@ -554,6 +626,33 @@ def describe_cut(row, budget):
             f"anything ranked later from being admitted"
         )
     return f"CUT #{row.get('id')}: {reason}"
+
+
+def print_displacement(rows, label, limit):
+    """Report retrieval-slot displacement for one recall round's result rows.
+
+    dispatchRecall calls Recall with the same fixed CandidateLimit for a supplementary round as for
+    the initial one, and assembly cuts a self-produced row there exactly the same way -- so a
+    supplementary round can suffer the same tail displacement as the initial round, silently, if
+    this is only ever checked on the initial round's candidates (N3, DiVoid #11141 follow-up).
+    Called once per round; prints nothing when that round admits no self-produced rows.
+    """
+    mine = [c for c in rows if c.get("cutReason") == CUT_SELF_PRODUCED]
+    if not mine:
+        return
+    ids = ", ".join(f"#{c['id']}" for c in mine)
+    limit_note = f"the top {limit}" if limit else "the fixed number of"
+    noun = "is a run record" if len(mine) == 1 else "are run records"
+    cuts = "cuts it" if len(mine) == 1 else "cuts them"
+    slot = "a slot" if len(mine) == 1 else "slots"
+    print(
+        f"           RETRIEVAL-SLOT DISPLACEMENT ({label}): {ids} {noun} this system wrote "
+        f"earlier that recall ranked into {limit_note} candidates it returns. Assembly always "
+        f"{cuts} as self-produced -- that check runs before the byte budget, so the product "
+        f"never reads its own history back -- but occupying {slot} in a fixed-size recall list "
+        f"means a real candidate that would otherwise have been retrieved fell off the tail "
+        f"instead. That is the defect, not a self-read."
+    )
 
 
 def print_task(task, record, transcript):
@@ -593,30 +692,21 @@ def print_task(task, record, transcript):
         if not row.get("included"):
             print(f"           {describe_cut(row, budget)}")
 
-    mine = [c for c in candidates(record) if c.get("cutReason") == CUT_SELF_PRODUCED]
-    if mine:
-        ids = ", ".join(f"#{c['id']}" for c in mine)
-        limit = (record.get("limits") or {}).get("candidateLimit")
-        limit_note = f"the top {limit}" if limit else "the fixed number of"
-        noun = "is a run record" if len(mine) == 1 else "are run records"
-        cuts = "cuts it" if len(mine) == 1 else "cuts them"
-        slot = "a slot" if len(mine) == 1 else "slots"
-        print(
-            f"           RETRIEVAL-SLOT DISPLACEMENT: {ids} {noun} this system wrote "
-            f"earlier that recall ranked into {limit_note} candidates it returns. Assembly always "
-            f"{cuts} as self-produced -- that check runs before the byte budget, so the product "
-            f"never reads its own history back -- but occupying {slot} in a fixed-size recall list "
-            f"means a real candidate that would otherwise have been retrieved fell off the tail "
-            f"instead. That is the defect, not a self-read."
-        )
+    limit = (record.get("limits") or {}).get("candidateLimit")
+    print_displacement(candidates(record), "initial recall", limit)
+    for index, call in enumerate(record.get("toolCalls") or [], 1):
+        print_displacement(call.get("results") or [], f"supplementary round {index}", limit)
 
     stage = task_stage(task, record)
     print()
     print(f"STAGE: {stage} -- {INDICTMENT[stage]}")
-    for node, disposition, rank in answer_node_report(task, record):
+    for node, disposition, rank, detail in answer_node_report(task, record):
         at = f" at rank {rank}" if rank is not None else ""
-        print(f"       answer node #{node}: {disposition}{at}")
-    if stage in (ADMITTED_PRIMARY, ADMITTED_SUPPLEMENTARY):
+        line = f"       answer node #{node}: {disposition}{at}"
+        if detail:
+            line += f" -- {detail}"
+        print(line)
+    if stage in (ADMITTED_PRIMARY, ADMITTED_SUPPLEMENTARY, ADMITTED_SUPPLEMENTARY_RECOVERED):
         print(
             "       The mechanical attribution stops here. Whether the substrate answer actually "
             "draws on the node, and whether it beats the transcript answer anyway, is the reader's "
@@ -670,7 +760,10 @@ def print_table(rows):
     )
     for task, record, transcript in rows:
         hits = answer_node_report(task, record)
-        found = sum(1 for _, disposition, _ in hits if disposition in (ADMITTED_PRIMARY, ADMITTED_SUPPLEMENTARY))
+        found = sum(
+            1 for _, disposition, _, _ in hits
+            if disposition in (ADMITTED_PRIMARY, ADMITTED_SUPPLEMENTARY, ADMITTED_SUPPLEMENTARY_RECOVERED)
+        )
         print(
             f"  {one_line(task['id'], 27):<27} "
             f"{admitted(record):>3}/{len(candidates(record)):<3} "
@@ -791,15 +884,21 @@ def main():
 
             print_table(rows)
 
-            starved = [(t, r) for t, r, _ in rows if not admitted(r)]
+            # Union of initial-round and supplementary-round admissions (total_admitted), not
+            # admitted() alone: admitted() only counts the initial round, so a task where the
+            # initial round admitted nothing but a supplementary round recovered a node would be
+            # misreported here as starved -- the model did receive that node, through a tool round
+            # (N2, DiVoid #11141 follow-up).
+            starved = [(t, r) for t, r, _ in rows if not total_admitted(r)]
             if starved:
                 print()
                 for task, record in starved:
                     print(
-                        f"FAIL: task {task['id']} admitted 0 of {len(candidates(record))} candidates. "
-                        f"Arm SUBSTRATE was sent the anchor and nothing else, so for this task the "
-                        f"two arms differ by one node rather than by a memory substrate, and the "
-                        f"comparison above is not one."
+                        f"FAIL: task {task['id']} admitted nothing: 0 of "
+                        f"{len(candidates(record))} initial candidates, and no supplementary round "
+                        f"admitted anything either. Arm SUBSTRATE was sent the anchor and nothing "
+                        f"else, so for this task the two arms differ by one node rather than by a "
+                        f"memory substrate, and the comparison above is not one."
                     )
                 return 1
 
