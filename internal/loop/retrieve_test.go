@@ -362,3 +362,101 @@ func TestRetrieveReadsTheGraphNotAtAllWhenThereIsNoQueryToIssue(t *testing.T) {
 		t.Fatalf("Retrieve made %d graph reads for an empty query set, want none: the scoped recall has no query to carry, and issuing it with the empty string ranks the whole neighbourhood by nothing", len(graph.calls))
 	}
 }
+
+func TestAScopedNodeTheFusedPrefixAlreadyHoldsDoesNotSpendAReservedSlot(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists:  map[string][]Candidate{"input": ranked(810, 220, 640, 130, 970, 350, 480, 760, 590, 20)},
+		scoped: ranked(810, 590, 20),
+	}
+
+	got := mustRetrieve(t, graph, []string{"input"}, 6, 2)
+
+	want := []int64{810, 220, 640, 130, 590, 20}
+	if !slices.Equal(got, want) {
+		t.Fatalf("retrieval returned %v, want %v: node 810 heads the fused order and the scope returns it as well, so charging that repeat against the reserve spends one of two slots on a node the result already carries and leaves node 20 outside the cap", got, want)
+	}
+}
+
+func dampingGraph() *fusionGraph {
+	return &fusionGraph{lists: map[string][]Candidate{
+		"first": {
+			{ID: 700, Similarity: 0.99},
+			{ID: 11, Similarity: 0.91}, {ID: 12, Similarity: 0.90}, {ID: 13, Similarity: 0.89},
+			{ID: 14, Similarity: 0.88}, {ID: 15, Similarity: 0.87}, {ID: 16, Similarity: 0.86},
+			{ID: 300, Similarity: 0.01},
+		},
+		"second": {
+			{ID: 21, Similarity: 0.85}, {ID: 22, Similarity: 0.84}, {ID: 23, Similarity: 0.83},
+			{ID: 24, Similarity: 0.82}, {ID: 25, Similarity: 0.81}, {ID: 26, Similarity: 0.80},
+			{ID: 27, Similarity: 0.79},
+			{ID: 300, Similarity: 0.01},
+		},
+	}}
+}
+
+func TestFusionPutsANodeTwoQueriesReturnedEighthAboveANodeOneQueryReturnedFirst(t *testing.T) {
+	t.Parallel()
+
+	got := mustRetrieve(t, dampingGraph(), []string{"first", "second"}, 20, 0)
+
+	twice := slices.Index(got, int64(300))
+	once := slices.Index(got, int64(700))
+	if twice < 0 || once < 0 {
+		t.Fatalf("fused order = %v, want both node 300 and node 700 among them", got)
+	}
+	if twice > once {
+		t.Fatalf("fused order = %v, and node 700 stands above node 300: node 300 was returned eighth by both queries and node 700 first by one, and how far a rank has to fall before two of them outweigh one top hit is what the damping term decides", got)
+	}
+}
+
+func deepDampingGraph() *fusionGraph {
+	return &fusionGraph{lists: map[string][]Candidate{
+		"first": {
+			{ID: 700, Similarity: 0.99},
+			{ID: 101, Similarity: 0.90},
+			{ID: 102, Similarity: 0.89},
+			{ID: 103, Similarity: 0.88},
+			{ID: 104, Similarity: 0.87},
+			{ID: 105, Similarity: 0.86},
+			{ID: 106, Similarity: 0.85},
+			{ID: 107, Similarity: 0.84},
+			{ID: 108, Similarity: 0.83},
+			{ID: 109, Similarity: 0.82},
+			{ID: 110, Similarity: 0.81},
+			{ID: 111, Similarity: 0.80},
+			{ID: 400, Similarity: 0.01},
+		},
+		"second": {
+			{ID: 201, Similarity: 0.89},
+			{ID: 202, Similarity: 0.88},
+			{ID: 203, Similarity: 0.87},
+			{ID: 204, Similarity: 0.86},
+			{ID: 205, Similarity: 0.85},
+			{ID: 206, Similarity: 0.84},
+			{ID: 207, Similarity: 0.83},
+			{ID: 208, Similarity: 0.82},
+			{ID: 209, Similarity: 0.81},
+			{ID: 210, Similarity: 0.80},
+			{ID: 211, Similarity: 0.79},
+			{ID: 212, Similarity: 0.78},
+			{ID: 400, Similarity: 0.01},
+		},
+	}}
+}
+
+func TestFusionKeepsANodeOneQueryReturnedFirstAboveANodeTwoQueriesReturnedThirteenth(t *testing.T) {
+	t.Parallel()
+
+	got := mustRetrieve(t, deepDampingGraph(), []string{"first", "second"}, 30, 0)
+
+	once := slices.Index(got, int64(700))
+	twice := slices.Index(got, int64(400))
+	if once < 0 || twice < 0 {
+		t.Fatalf("fused order = %v, want both node 700 and node 400 among them", got)
+	}
+	if once > twice {
+		t.Fatalf("fused order = %v, and node 400 stands above node 700: node 400 was returned thirteenth by both queries and node 700 first by one, and this is the far side of the same threshold its sibling guard bounds from below, so the two together fix how far the damping may travel in either direction", got)
+	}
+}
