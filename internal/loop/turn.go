@@ -92,7 +92,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		return Record{}, WriteReceipt{}, ErrSubjectNotFound
 	}
 
-	candidates, err := t.Graph.Recall(ctx, input, CandidateLimit)
+	candidates, err := Retrieve(ctx, t.Graph, input, CandidateLimit)
 	if err != nil {
 		return Record{}, WriteReceipt{}, fmt.Errorf("%w: %v", ErrGraphUnavailable, err)
 	}
