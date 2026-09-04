@@ -49,7 +49,7 @@ func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row) ([
 		return nil, found, err
 	}
 
-	candidates, err := graph.Recall(ctx, row.Input, loop.CandidateLimit)
+	candidates, err := loop.Retrieve(ctx, graph, row.Input, loop.CandidateLimit)
 	if err != nil {
 		return nil, true, err
 	}
