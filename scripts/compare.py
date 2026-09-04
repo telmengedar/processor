@@ -23,15 +23,19 @@ budget, or past the block entirely. The stage stops at the block: whether an adm
 is the reader's call on the two answers, and it is the case no instrument in this project can see.
 
 Every task's substrate arm writes one run record to the graph, which this names on exit and never
-deletes. A repeated task is refused before any model call rather than warned about, because the second
-run of one input reads the record the first one filed (DiVoid #11141).
+deletes. Two checks run before any model call to keep a repeat from reading its own prior record back:
+the loader refuses a task set that carries the same task text twice in one file, and a graph query
+(find_prior_run) refuses a task whose text an earlier invocation's run record already carries verbatim
+(DiVoid #11141). The graph check is a semantic recall against the same endpoint the binary itself
+queries, ranked to a fixed number of rows -- it can miss an older record that no longer ranks near its
+own text, so it is a real check and not a guarantee.
 
-Refusing repeats does not buy a clean invocation, and the first full run of the shipped set measured
-why: task 3 retrieved the records tasks 1 and 2 had just written, minutes earlier, on unrelated text.
-#11141 documents the mechanism for a repeated input; it also fires across different inputs, so a task
-late in a set is read against a graph the earlier ones moved. The per-task PRIOR OUTPUT line reports
-it whenever it happens. Nothing here prevents it, and the fix is #11092 section 4.2's decorating port,
-which is Go and has no caller yet.
+Neither check buys a clean invocation, and the first full run of the shipped set measured why: task 3
+retrieved the records tasks 1 and 2 had just written, minutes earlier, on unrelated text. #11141
+documents the mechanism for a repeated input; it also fires across different inputs, so a task late in
+a set is read against a graph the earlier ones moved. The per-task RETRIEVAL-SLOT DISPLACEMENT line
+reports it whenever it happens. Nothing here prevents that, and the fix is #11092 section 4.2's
+decorating port, which is Go and has no caller yet.
 
 Costs one model call per arm at minimum -- more where the substrate arm asks for supplementary recall
 -- and one graph write per task. Exit 0 every task ran both arms; 1 a task's substrate arm admitted no
@@ -47,8 +51,11 @@ import socket
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
+import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -56,6 +63,10 @@ REPO = Path(__file__).resolve().parent.parent
 DEFAULT_TASKS = Path(__file__).resolve().parent / "compare_tasks.json"
 
 RUN_NAME_PREFIX = "processor-run"
+RUN_NODE_TYPE = "session-log"
+
+CUT_SELF_PRODUCED = "self-produced"
+CUT_BYTE_BUDGET = "byte budget exceeded"
 
 HEALTH_TIMEOUT_S = 30
 PROBE_TIMEOUT_S = 60
@@ -63,6 +74,8 @@ RUN_TIMEOUT_S = 11 * 60 + 30
 TRANSCRIPT_TIMEOUT_S = 5 * 60
 IDLE_GRACE_S = 15
 DRAIN_GRACE_S = 11 * 60
+GRAPH_QUERY_TIMEOUT_S = 15
+GRAPH_QUERY_COUNT = 50
 
 RULE = "=" * 88
 THIN = "-" * 88
@@ -85,6 +98,8 @@ def load_tasks(path, only):
 
     for index, row in enumerate(rows):
         where = f"{path} entry {index}"
+        if not isinstance(row, dict):
+            raise CompareFailure(f"{where} is a {type(row).__name__}, not a JSON object")
         for key in ("id", "task", "subject"):
             if key not in row:
                 raise CompareFailure(f"{where} has no {key!r}")
@@ -92,6 +107,17 @@ def load_tasks(path, only):
             raise CompareFailure(f"{where} has an empty task")
         if not isinstance(row["subject"], int) or row["subject"] <= 0:
             raise CompareFailure(f"{where} has subject {row['subject']!r}; node ids are positive integers")
+        answer_nodes = row.get("answerNodes")
+        if answer_nodes is not None and (
+            not isinstance(answer_nodes, list)
+            or not all(isinstance(node, int) and not isinstance(node, bool) for node in answer_nodes)
+        ):
+            raise CompareFailure(
+                f"{where} has answerNodes {answer_nodes!r}; it must be a JSON list of integers. Run "
+                f"records carry node ids as numbers, so a quoted id such as \"11141\" never matches "
+                f"one and this tool would silently report every one of that task's answer nodes as "
+                f"'not retrieved'"
+            )
 
     seen_ids = duplicates(row["id"] for row in rows)
     if seen_ids:
@@ -149,11 +175,9 @@ def model_config(args):
     return url.rstrip("/"), model_id, key
 
 
-def child_env(model_url, model_id, model_key):
-    env = os.environ.copy()
-
-    url = env.get("PROCESSOR_DIVOID_URL") or env.get("DIVOID_URL")
-    key = env.get("PROCESSOR_DIVOID_KEY") or env.get("DIVOID_RAZIEL_KEY")
+def graph_credentials():
+    url = os.environ.get("PROCESSOR_DIVOID_URL") or os.environ.get("DIVOID_URL")
+    key = os.environ.get("PROCESSOR_DIVOID_KEY") or os.environ.get("DIVOID_RAZIEL_KEY")
     if not url or not key:
         raise CompareFailure(
             "no graph credential, and arm SUBSTRATE is the graph. The binary reads "
@@ -161,9 +185,84 @@ def child_env(model_url, model_id, model_key):
             "as DIVOID_URL and DIVOID_RAZIEL_KEY and this script maps one onto the other. Neither "
             "pair is set, so set DIVOID_URL and DIVOID_RAZIEL_KEY (or the PROCESSOR_ names directly)"
         )
+    return url.rstrip("/"), key
 
-    env["PROCESSOR_DIVOID_URL"] = url
-    env["PROCESSOR_DIVOID_KEY"] = key
+
+def find_prior_run(divoid_url, divoid_key, task_text):
+    """Return (nodeId, name) of an existing run record whose input is task_text verbatim, or None.
+
+    This queries GET /api/nodes?query=... -- the same semantic-recall endpoint
+    internal/divoid/client.go's Recall uses for retrieval -- rather than any kind of exact index
+    lookup, because the graph exposes no such lookup to this script. A record embedding task_text
+    verbatim normally ranks at or near the top of a recall for that same text, but this is still a
+    ranked search: a match outside GRAPH_QUERY_COUNT rows is missed. That is a real check, not a
+    guarantee.
+    """
+    query = urllib.parse.urlencode({
+        "query": task_text,
+        "count": str(GRAPH_QUERY_COUNT),
+        "fields": "id,type,name,content",
+    })
+    request = urllib.request.Request(
+        f"{divoid_url}/api/nodes?{query}",
+        headers={"Authorization": f"Bearer {divoid_key}", "Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=GRAPH_QUERY_TIMEOUT_S) as response:
+            payload = response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as err:
+        detail = err.read().decode("utf-8", "replace").strip()
+        raise CompareFailure(
+            f"GET {divoid_url}/api/nodes returned {err.code} while checking for a prior run of this "
+            f"task: {detail}"
+        ) from err
+    except (urllib.error.URLError, OSError, http.client.HTTPException) as err:
+        raise CompareFailure(
+            f"GET {divoid_url}/api/nodes did not complete while checking for a prior run of this "
+            f"task, and arm SUBSTRATE needs the same graph regardless: {type(err).__name__}: {err}"
+        ) from err
+
+    try:
+        wire = json.loads(payload)
+    except json.JSONDecodeError as err:
+        raise CompareFailure(
+            f"{divoid_url}/api/nodes returned {len(payload)} bytes that are not JSON ({err}) while "
+            f"checking for a prior run of this task"
+        ) from err
+
+    for row in wire.get("result") or []:
+        if row.get("type") != RUN_NODE_TYPE or not str(row.get("name", "")).startswith(RUN_NAME_PREFIX):
+            continue
+        try:
+            record = json.loads(row.get("content") or "")
+        except json.JSONDecodeError:
+            continue
+        if record.get("input") == task_text:
+            return row.get("id"), row.get("name")
+    return None
+
+
+def refuse_repeats_against_graph(tasks, divoid_url, divoid_key):
+    for task in tasks:
+        prior = find_prior_run(divoid_url, divoid_key, task["task"])
+        if prior is not None:
+            node_id, name = prior
+            raise CompareFailure(
+                f"task {task['id']} was already run: graph node #{node_id} ({name!r}) carries a run "
+                f"record whose input is this task's text verbatim. Refused rather than run again: the "
+                f"substrate arm's retrieval would read that record back (DiVoid #11141), so a second "
+                f"run of the same text is not a second measurement of anything. This is a semantic "
+                f"recall check, not an index lookup (see find_prior_run's docstring), and the loader's "
+                f"in-file duplicate check does not reach this case -- it only compares rows in the "
+                f"task set file against each other, not against the graph"
+            )
+
+
+def child_env(model_url, model_id, model_key, divoid_url, divoid_key):
+    env = os.environ.copy()
+    env["PROCESSOR_DIVOID_URL"] = divoid_url
+    env["PROCESSOR_DIVOID_KEY"] = divoid_key
     env["PROCESSOR_MODEL_URL"] = model_url
     env["PROCESSOR_MODEL_ID"] = model_id
     if model_key:
@@ -350,35 +449,69 @@ def one_line(value, width):
 
 NOT_RETRIEVED = "not retrieved"
 RETRIEVED_CUT = "retrieved, cut"
-ADMITTED = "admitted"
+ADMITTED_PRIMARY = "admitted, primary"
+ADMITTED_SUPPLEMENTARY = "admitted, supplementary"
 UNLABELLED = "no answer nodes named"
 
 INDICTMENT = {
-    NOT_RETRIEVED: "retrieval never returned the answer at all -- the recall query, not the budget",
+    NOT_RETRIEVED: (
+        "retrieval never returned the answer at all -- neither the initial recall query nor any "
+        "supplementary recall the model asked for. This indicts the recall query, not the budget"
+    ),
     RETRIEVED_CUT: "recall found the answer and assembly dropped it -- the byte budget and admission",
-    ADMITTED: (
-        "the answer reached the model. Anything wrong past here is the prompt, the model, or the "
-        "node's own content, and only reading both answers separates those three"
+    ADMITTED_PRIMARY: (
+        "the answer reached the model in the initial context block. Anything wrong past here is the "
+        "prompt, the model, or the node's own content, and only reading both answers separates those "
+        "three"
+    ),
+    ADMITTED_SUPPLEMENTARY: (
+        "the initial recall query missed the answer; it reached the model only because the model "
+        "asked for supplementary recall and that second, unscoped query found it. This indicts the "
+        "initial recall query specifically, not the byte budget or the block"
     ),
     UNLABELLED: "the task set names no answering node, so nothing mechanical can be attributed",
 }
+
+
+def _supplementary_by_id(record):
+    """Union every disposition any supplementary-recall round returned, keyed by node id.
+
+    A node can appear in more than one round; an included disposition wins over a cut one for the
+    same id, since 'was it ever admitted' is what the stage cares about.
+    """
+    by_id = {}
+    for call in record.get("toolCalls") or []:
+        for row in call.get("results") or []:
+            node_id = row.get("id")
+            existing = by_id.get(node_id)
+            if existing is None or (not existing.get("included") and row.get("included")):
+                by_id[node_id] = row
+    return by_id
 
 
 def answer_node_report(task, record):
     wanted = task.get("answerNodes") or []
     if not wanted:
         return []
-    by_id = {c.get("id"): c for c in candidates(record)}
+    primary_by_id = {c.get("id"): c for c in candidates(record)}
+    supplementary_by_id = _supplementary_by_id(record)
+
     rows = []
     for node in wanted:
-        row = by_id.get(node)
-        if row is None:
-            rows.append((node, NOT_RETRIEVED, None))
-        elif row.get("included"):
-            rows.append((node, ADMITTED, row.get("rank")))
+        primary = primary_by_id.get(node)
+        supplementary = supplementary_by_id.get(node)
+        if primary is not None and primary.get("included"):
+            rows.append((node, ADMITTED_PRIMARY, primary.get("rank")))
+        elif supplementary is not None and supplementary.get("included"):
+            rows.append((node, ADMITTED_SUPPLEMENTARY, supplementary.get("rank")))
+        elif primary is not None:
+            reason = primary.get("cutReason") or "no reason given"
+            rows.append((node, f"{RETRIEVED_CUT} ({reason})", primary.get("rank")))
+        elif supplementary is not None:
+            reason = supplementary.get("cutReason") or "no reason given"
+            rows.append((node, f"{RETRIEVED_CUT} ({reason}, supplementary recall)", supplementary.get("rank")))
         else:
-            reason = row.get("cutReason") or "no reason given"
-            rows.append((node, f"{RETRIEVED_CUT} ({reason})", row.get("rank")))
+            rows.append((node, NOT_RETRIEVED, None))
     return rows
 
 
@@ -387,11 +520,40 @@ def task_stage(task, record):
     if not rows:
         return UNLABELLED
     dispositions = [disposition for _, disposition, _ in rows]
-    if any(d == ADMITTED for d in dispositions):
-        return ADMITTED
+    if any(d == ADMITTED_PRIMARY for d in dispositions):
+        return ADMITTED_PRIMARY
+    if any(d == ADMITTED_SUPPLEMENTARY for d in dispositions):
+        return ADMITTED_SUPPLEMENTARY
     if any(d.startswith(RETRIEVED_CUT) for d in dispositions):
         return RETRIEVED_CUT
     return NOT_RETRIEVED
+
+
+def describe_cut(row, budget):
+    """One line describing why a non-admitted candidate was cut, from its own cutReason -- never an
+    inferred mechanism. internal/loop/assemble.go defines exactly two: self-produced and byte budget
+    exceeded, and the latter covers both an individually oversized row and a cumulative overflow."""
+    reason = row.get("cutReason") or "no reason given"
+    size = row.get("size", 0)
+
+    if reason == CUT_SELF_PRODUCED:
+        return (
+            f"CUT #{row.get('id')}: self-produced -- a run record this system wrote earlier; "
+            f"assembly refuses it before the byte budget is even consulted"
+        )
+    if reason == CUT_BYTE_BUDGET:
+        if budget is not None and size > budget:
+            return (
+                f"CUT #{row.get('id')}: {size} bytes alone exceeds the {budget}-byte assembly "
+                f"budget, so no run can admit it regardless of rank"
+            )
+        return (
+            f"CUT #{row.get('id')}: {size} bytes fits the budget alone but not after the "
+            f"candidates admitted ahead of it -- a cumulative-budget cut. Admission skips a row "
+            f"that does not fit and keeps checking the ones behind it, so this does not stop "
+            f"anything ranked later from being admitted"
+        )
+    return f"CUT #{row.get('id')}: {reason}"
 
 
 def print_task(task, record, transcript):
@@ -400,6 +562,12 @@ def print_task(task, record, transcript):
     print(f"TASK {task['id']}   subject #{task['subject']}")
     print(RULE)
     print(task["task"])
+
+    why = task.get("whyMemoryIsRequired")
+    if why:
+        print()
+        print("WHY MEMORY IS REQUIRED (this task's hypothesis, from the task set):")
+        print(textwrap.fill(str(why), width=88))
 
     print()
     print(
@@ -412,23 +580,34 @@ def print_task(task, record, transcript):
         f"{one_line(anchor.get('name'), 40)}"
     )
 
+    if record.get("capReached"):
+        print()
+        print(
+            "CAP REACHED: the model still wanted supplementary recall when the model-call cap "
+            "stopped it. The substrate answer below is not the model's last word -- it is what the "
+            "model had produced when it was cut off still asking for more context."
+        )
+
     budget = (record.get("limits") or {}).get("assemblyByteBudget")
     for row in candidates(record):
-        if budget and row.get("size", 0) > budget:
-            print(
-                f"           UNADMITTABLE: #{row.get('id')} is {row.get('size')} bytes against a "
-                f"{budget}-byte assembly budget, so no run can admit it. Admission stops at the "
-                f"first candidate that does not fit, so it also cut everything ranked behind it."
-            )
+        if not row.get("included"):
+            print(f"           {describe_cut(row, budget)}")
 
-    mine = [c for c in candidates(record) if str(c.get("name", "")).startswith(RUN_NAME_PREFIX)]
+    mine = [c for c in candidates(record) if c.get("cutReason") == CUT_SELF_PRODUCED]
     if mine:
         ids = ", ".join(f"#{c['id']}" for c in mine)
-        was = "is a run record" if len(mine) == 1 else "are run records"
+        limit = (record.get("limits") or {}).get("candidateLimit")
+        limit_note = f"the top {limit}" if limit else "the fixed number of"
+        noun = "is a run record" if len(mine) == 1 else "are run records"
+        cuts = "cuts it" if len(mine) == 1 else "cuts them"
+        slot = "a slot" if len(mine) == 1 else "slots"
         print(
-            f"           PRIOR OUTPUT IN CANDIDATES: {ids} {was} an earlier invocation of this tool "
-            f"or of smoke.py left in the graph. Arm SUBSTRATE read its own history here, so this "
-            f"task's retrieval is not the retrieval a clean graph would have produced."
+            f"           RETRIEVAL-SLOT DISPLACEMENT: {ids} {noun} this system wrote "
+            f"earlier that recall ranked into {limit_note} candidates it returns. Assembly always "
+            f"{cuts} as self-produced -- that check runs before the byte budget, so the product "
+            f"never reads its own history back -- but occupying {slot} in a fixed-size recall list "
+            f"means a real candidate that would otherwise have been retrieved fell off the tail "
+            f"instead. That is the defect, not a self-read."
         )
 
     stage = task_stage(task, record)
@@ -437,7 +616,7 @@ def print_task(task, record, transcript):
     for node, disposition, rank in answer_node_report(task, record):
         at = f" at rank {rank}" if rank is not None else ""
         print(f"       answer node #{node}: {disposition}{at}")
-    if stage == ADMITTED:
+    if stage in (ADMITTED_PRIMARY, ADMITTED_SUPPLEMENTARY):
         print(
             "       The mechanical attribution stops here. Whether the substrate answer actually "
             "draws on the node, and whether it beats the transcript answer anyway, is the reader's "
@@ -445,14 +624,21 @@ def print_task(task, record, transcript):
             "prompt, and one the answer uses and still loses on indicts the node's content."
         )
 
+    substrate_stop = record.get("stopReason") or {}
     print()
-    print("SUBSTRATE ANSWER, verbatim:")
+    print(
+        f"SUBSTRATE ANSWER, verbatim (stopReason={substrate_stop.get('reason')!r}, "
+        f"raw={substrate_stop.get('raw')!r}):"
+    )
     print(THIN)
     print(record.get("answer", ""))
     print(THIN)
 
     print()
-    print("TRANSCRIPT ANSWER, verbatim (same model, same text, no context block, no tool):")
+    print(
+        f"TRANSCRIPT ANSWER, verbatim (same model, same text, no context block, no tool; "
+        f"finishReason={transcript.get('finishReason')!r}):"
+    )
     print(THIN)
     print(transcript["answer"])
     print(THIN)
@@ -484,7 +670,7 @@ def print_table(rows):
     )
     for task, record, transcript in rows:
         hits = answer_node_report(task, record)
-        found = sum(1 for _, disposition, _ in hits if disposition == ADMITTED)
+        found = sum(1 for _, disposition, _ in hits if disposition in (ADMITTED_PRIMARY, ADMITTED_SUPPLEMENTARY))
         print(
             f"  {one_line(task['id'], 27):<27} "
             f"{admitted(record):>3}/{len(candidates(record)):<3} "
@@ -519,10 +705,14 @@ def print_records_written(receipts):
     ids = ", ".join(f"#{r['nodeId']} ({r['state']})" for r in stored)
     print(f"GRAPH: this invocation wrote {len(stored)} run record(s): {ids}")
     print(
-        "       Nothing was deleted. Each record embeds its task text verbatim and is larger than the "
-        "assembly budget, so it ranks early on any repeat of that text and admission stops there "
-        "(DiVoid #11141, #11133). Leaving them in place changes what the next invocation of this tool "
-        "retrieves and can move a corpus row's retrieval in the baseline sweep. Delete them by hand."
+        "       Nothing was deleted. Each record embeds its task text verbatim, so a later query -- "
+        "a repeat of this text, or an unrelated task whose vocabulary overlaps -- can rank it among "
+        "the top rows recall returns. Assembly always cuts it (cutReason 'self-produced', checked "
+        "before the byte budget), but recall returns a fixed number of rows, so a self-produced row "
+        "occupying one of them displaces a real row that would otherwise have been retrieved -- "
+        "retrieval-slot displacement, not an admission effect (DiVoid #11141, #11133). Leaving them "
+        "in place changes what the next invocation of this tool retrieves and can move a corpus "
+        "row's retrieval in the baseline sweep. Delete them by hand."
     )
 
 
@@ -544,11 +734,17 @@ def main():
 
     try:
         tasks = load_tasks(args.tasks, args.only)
+        divoid_url, divoid_key = graph_credentials()
+        refuse_repeats_against_graph(tasks, divoid_url, divoid_key)
         model_url, model_id, model_key = model_config(args)
-        env = child_env(model_url, model_id, model_key)
+        env = child_env(model_url, model_id, model_key, divoid_url, divoid_key)
         probe_model(model_url, model_id, model_key)
     except CompareFailure as err:
         print(f"FAIL: {err}")
+        return 2
+    except Exception as err:
+        traceback.print_exc(file=sys.stderr)
+        print(f"FAIL: the comparison could not be made: {type(err).__name__}: {err}")
         return 2
 
     with tempfile.TemporaryDirectory(prefix="processor-compare-", ignore_cleanup_errors=True) as tmp:
@@ -622,6 +818,14 @@ def main():
         except KeyboardInterrupt:
             print()
             print("FAIL: interrupted")
+            return 2
+        except Exception as err:
+            print()
+            traceback.print_exc(file=sys.stderr)
+            print(
+                f"FAIL: the comparison could not be made: {type(err).__name__}: {err}. This is not "
+                f"one of the failures this script names on purpose -- see the traceback on stderr."
+            )
             return 2
         finally:
             if proc is not None:

@@ -6,3 +6,6 @@
 # Local environment files
 .env
 .env.*
+
+# Python bytecode from scripts/
+__pycache__/
