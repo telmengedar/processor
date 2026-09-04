@@ -14,7 +14,8 @@ type Limits struct {
 	AssemblyByteBudget int `json:"assemblyByteBudget"`
 }
 
-// RowResult is one row's outcome and the five diagnostics that make its number actionable.
+// RowResult is one row's outcome, the diagnostics that make its number actionable,
+// and the candidate set they were derived from.
 type RowResult struct {
 	Row     string `json:"row"`
 	Stratum string `json:"stratum"`
@@ -31,8 +32,9 @@ type RowResult struct {
 	Shutout                   bool    `json:"shutout"`
 	TopSimilarity             float64 `json:"topSimilarity"`
 
-	Required []NodeResult `json:"required"`
-	Error    string       `json:"error,omitempty"`
+	Required   []NodeResult       `json:"required"`
+	Candidates []loop.Disposition `json:"candidates"`
+	Error      string             `json:"error,omitempty"`
 }
 
 // Result is one sweep: what produced it, and one entry per corpus row in corpus order.
@@ -62,6 +64,7 @@ func BuildRow(row Row, dispositions []loop.Disposition) RowResult {
 		Stratum:        row.Stratum,
 		Subject:        row.Subject,
 		CandidateCount: len(dispositions),
+		Candidates:     dispositions,
 		BudgetBytes:    loop.AssemblyByteBudget,
 		Required:       Score(row.Required, dispositions),
 	}

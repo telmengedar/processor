@@ -389,3 +389,212 @@ func TestRenderNamesWhichOfTheTwoStreamsFailedRatherThanReportingAWriteFailure(t
 		t.Fatalf("both stream failures report %q, want the failed stream named", measurement.Error())
 	}
 }
+
+func mustContainLine(t *testing.T, output, want string) {
+	t.Helper()
+
+	for _, line := range strings.Split(output, "\n") {
+		if strings.TrimLeft(line, " ") == want {
+			return
+		}
+	}
+	t.Fatalf("no line of the output reads %q; output was:\n%s", want, output)
+}
+
+func missWithFiveCandidates() RowResult {
+	return RowResult{
+		Row:            "r01",
+		Stratum:        StratumLabelled,
+		Subject:        100,
+		CandidateCount: 5,
+		AdmittedCount:  3,
+		AdmittedBytes:  32504,
+		BudgetBytes:    loop.AssemblyByteBudget,
+		TopSimilarity:  0.95,
+		Required:       []NodeResult{{Node: 303, Verdict: NotRetrieved}},
+		Candidates: []loop.Disposition{
+			{Rank: 1, ID: 401, Similarity: 0.62, Included: true},
+			{Rank: 2, ID: 402, Similarity: 0.91, Included: true},
+			{Rank: 3, ID: 403, Similarity: 0.77, Included: true},
+			{Rank: 7, ID: 404, Similarity: 0.95},
+			{Rank: 8, ID: 405, Similarity: 0.48},
+		},
+	}
+}
+
+func missCutWithExactlyTwoCandidatesAbove() RowResult {
+	return RowResult{
+		Row:            "r22",
+		Stratum:        StratumLabelled,
+		Subject:        100,
+		CandidateCount: 4,
+		AdmittedCount:  1,
+		AdmittedBytes:  56302,
+		BudgetBytes:    loop.AssemblyByteBudget,
+		TopSimilarity:  0.93,
+		Required:       []NodeResult{{Node: 502, Verdict: Cut, Rank: 5}},
+		Candidates: []loop.Disposition{
+			{Rank: 1, ID: 511, Similarity: 0.66, Included: true},
+			{Rank: 2, ID: 512, Similarity: 0.88},
+			{Rank: 5, ID: 502, Similarity: 0.81},
+			{Rank: 9, ID: 514, Similarity: 0.93},
+		},
+	}
+}
+
+func TestReportNamesTheThreeHighestRankedCandidatesThatOutrankedAMiss(t *testing.T) {
+	t.Parallel()
+
+	_, human := render(t, resultWith(missWithFiveCandidates(), intactControlRow()))
+
+	mustContainLine(t, human, "outranked by   #401 (0.62)  #402 (0.91)  #403 (0.77)")
+}
+
+func TestReportNamesOnlyTheTwoCandidatesThatExistWhenFewerThanThreeOutrankedTheMiss(t *testing.T) {
+	t.Parallel()
+
+	_, human := render(t, resultWith(missCutWithExactlyTwoCandidatesAbove(), intactControlRow()))
+
+	mustContainLine(t, human, "outranked by   #511 (0.66)  #512 (0.88)")
+}
+
+func TestReportNamesWhatOutrankedTheMissForEveryMissVerdictAlike(t *testing.T) {
+	t.Parallel()
+
+	cut := missWithFiveCandidates()
+	cut.Row = "r02"
+	cut.Required = []NodeResult{{Node: 304, Verdict: Cut, Rank: 4}}
+	unresolved := missWithFiveCandidates()
+	unresolved.Row = "r03"
+	unresolved.Required = []NodeResult{{Node: 305, Verdict: Unresolved}}
+
+	_, human := render(t, resultWith(missWithFiveCandidates(), cut, unresolved, intactControlRow()))
+
+	if got := strings.Count(human, "outranked by"); got != 3 {
+		t.Fatalf("the summary carries %d outranked-by lines for three misses whose verdicts are notRetrieved, cut and unresolved, want 3: the line is one rule that does not branch on verdict; output was:\n%s", got, human)
+	}
+}
+
+func TestReportNamesNoOutrankingCandidatesForARowWhoseRequiredNodeWasAdmitted(t *testing.T) {
+	t.Parallel()
+
+	admitted := missWithFiveCandidates()
+	admitted.Required = []NodeResult{{Node: 403, Verdict: Admitted, Rank: 3}}
+
+	_, human := render(t, resultWith(admitted, intactControlRow()))
+
+	if strings.Contains(human, "outranked by") {
+		t.Fatalf("the summary names what outranked a required node that was admitted; the line belongs to a miss and to nothing else. Output was:\n%s", human)
+	}
+}
+
+func TestReportNamesNoOutrankingCandidatesForAMissThatNothingOutranked(t *testing.T) {
+	t.Parallel()
+
+	rankOne := missCutWithExactlyTwoCandidatesAbove()
+	rankOne.Required = []NodeResult{{Node: 511, Verdict: Cut, Rank: 1}}
+
+	_, human := render(t, resultWith(rankOne, intactControlRow()))
+
+	if strings.Contains(human, "outranked by") {
+		t.Fatalf("the summary carries an outranked-by line for a miss at rank 1, which no candidate outranked; an empty list is not a line. Output was:\n%s", human)
+	}
+}
+
+func candidatesOnTheWire(t *testing.T, machine, row string) string {
+	t.Helper()
+
+	var decoded struct {
+		Rows []struct {
+			Row        string          `json:"row"`
+			Candidates json.RawMessage `json:"candidates"`
+		} `json:"rows"`
+	}
+	if err := json.Unmarshal([]byte(machine), &decoded); err != nil {
+		t.Fatalf("the machine result does not decode: %v; body was:\n%s", err, machine)
+	}
+	for _, r := range decoded.Rows {
+		if r.Row == row {
+			return string(r.Candidates)
+		}
+	}
+	t.Fatalf("the machine result carries no row %q; body was:\n%s", row, machine)
+	return ""
+}
+
+func lineContaining(t *testing.T, output, want string) string {
+	t.Helper()
+
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, want) {
+			return line
+		}
+	}
+	t.Fatalf("no line of the output contains %q; output was:\n%s", want, output)
+	return ""
+}
+
+func TestTheMachineResultCarriesTheRetainedCandidateSetUnderItsOwnWireKey(t *testing.T) {
+	t.Parallel()
+
+	machine, _ := render(t, resultWith(missWithFiveCandidates(), intactControlRow()))
+
+	var decoded struct {
+		Rows []struct {
+			Candidates []struct {
+				Rank       int     `json:"rank"`
+				ID         int64   `json:"id"`
+				Similarity float64 `json:"similarity"`
+				Included   bool    `json:"included"`
+			} `json:"candidates"`
+		} `json:"rows"`
+	}
+	if err := json.Unmarshal([]byte(machine), &decoded); err != nil {
+		t.Fatalf("the machine result does not decode: %v; body was:\n%s", err, machine)
+	}
+
+	got := decoded.Rows[0].Candidates
+	if len(got) != 5 {
+		t.Fatalf("the row carries %d candidates under the wire key \"candidates\", want 5: the retained evidence has to reach the result file, and a reader outside this package has only the key to find it by. Body was:\n%s", len(got), machine)
+	}
+	if got[3].Rank != 7 || got[3].ID != 404 || got[3].Similarity != 0.95 || got[3].Included {
+		t.Fatalf("the fourth candidate on the wire is rank %d #%d at %v included=%v, want rank 7 #404 at 0.95 included=false: rank, id, similarity and admission all have to survive the encoding",
+			got[3].Rank, got[3].ID, got[3].Similarity, got[3].Included)
+	}
+}
+
+func TestTheMachineResultKeepsARowThatSweptNothingDistinctFromARowThatNeverSwept(t *testing.T) {
+	t.Parallel()
+
+	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget)
+	swept := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), dispositions)
+	neverSwept := RowResult{Row: "r99", Stratum: StratumLabelled, Subject: 999, Error: "subject not found"}
+
+	machine, _ := render(t, resultWith(swept, neverSwept, intactControlRow()))
+
+	if got := candidatesOnTheWire(t, machine, "r01"); got != "[]" {
+		t.Fatalf("a row whose recall returned nothing carries %q on the wire, want \"[]\": it swept and found none, which is not the same fact as never having swept. Body was:\n%s", got, machine)
+	}
+	if got := candidatesOnTheWire(t, machine, "r99"); got != "null" {
+		t.Fatalf("a row the sweep could not reach carries %q on the wire, want \"null\": it produced no candidate set at all, which is not the same fact as an empty one. Body was:\n%s", got, machine)
+	}
+}
+
+func TestReportIndentsTheOutrankedLineUnderTheVerdictItExplains(t *testing.T) {
+	t.Parallel()
+
+	_, human := render(t, resultWith(missWithFiveCandidates(), intactControlRow()))
+
+	miss := lineContaining(t, human, "notRetrieved")
+	outranked := lineContaining(t, human, "outranked by")
+
+	if got := strings.Index(miss, "notRetrieved"); got != 19 {
+		t.Fatalf("the miss line starts its verdict at column %d, want 19; the outranked-by line indents to that same column, so the two move together or the block stops lining up. Line was:\n%q", got, miss)
+	}
+	if got := strings.Index(outranked, "outranked by"); got != 19 {
+		t.Fatalf("the outranked-by line starts its label at column %d, want 19: it sits under the verdict it explains, which is the relation design section 8.3's specimen shows. The column is this tree's, not the specimen's -- the specimen indents to 15. Line was:\n%q", got, outranked)
+	}
+	if got := strings.Index(outranked[19:], "#"); got != 15 {
+		t.Fatalf("the outranked-by line starts its candidates %d columns after its label, want 15: the payload sits under the verdict's payload. Line was:\n%q", got, outranked)
+	}
+}

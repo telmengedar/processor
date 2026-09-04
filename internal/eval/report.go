@@ -4,9 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
+
+	"github.com/telmengedar/processor/internal/loop"
 )
 
 const hashPrefixLength = 8
+
+const outrankedCandidateCount = 3
 
 const (
 	alarmControlAbsent = "no control stratum: this sweep verified nothing about itself, so a broken harness would report a plausible number"
@@ -112,22 +117,56 @@ func missLines(result Result, stratum string) []string {
 				continue
 			}
 			lines = append(lines, missLine(row, node))
+			if outranked := outrankedLine(row, node); outranked != "" {
+				lines = append(lines, outranked)
+			}
 		}
 	}
 	return lines
 }
 
+func missPrefix(row RowResult, node NodeResult) string {
+	return fmt.Sprintf("  %-5s #%-9d ", row.Row, node.Node)
+}
+
 func missLine(row RowResult, node NodeResult) string {
 	switch node.Verdict {
 	case Cut:
-		return fmt.Sprintf("  %-5s #%-9d cut at rank %-4d k'=%d, %d/%d bytes admitted%s",
-			row.Row, node.Node, node.Rank, row.AdmittedCount, row.AdmittedBytes, row.BudgetBytes, staleSuffix(node))
+		return missPrefix(row, node) + fmt.Sprintf("cut at rank %-4d k'=%d, %d/%d bytes admitted%s",
+			node.Rank, row.AdmittedCount, row.AdmittedBytes, row.BudgetBytes, staleSuffix(node))
 	case Unresolved:
-		return fmt.Sprintf("  %-5s #%-9d unresolved     the row is excluded from both rates", row.Row, node.Node)
+		return missPrefix(row, node) + "unresolved     the row is excluded from both rates"
 	default:
-		return fmt.Sprintf("  %-5s #%-9d notRetrieved   %d candidates, top similarity %.4f%s",
-			row.Row, node.Node, row.CandidateCount, row.TopSimilarity, staleSuffix(node))
+		return missPrefix(row, node) + fmt.Sprintf("notRetrieved   %d candidates, top similarity %.4f%s",
+			row.CandidateCount, row.TopSimilarity, staleSuffix(node))
 	}
+}
+
+func outrankedLine(row RowResult, node NodeResult) string {
+	above := outranking(row, node)
+	if len(above) == 0 {
+		return ""
+	}
+
+	named := make([]string, 0, len(above))
+	for _, d := range above {
+		named = append(named, fmt.Sprintf("#%d (%.2f)", d.ID, d.Similarity))
+	}
+	return strings.Repeat(" ", len(missPrefix(row, node))) + "outranked by   " + strings.Join(named, "  ")
+}
+
+func outranking(row RowResult, node NodeResult) []loop.Disposition {
+	above := make([]loop.Disposition, 0, outrankedCandidateCount)
+	for _, d := range row.Candidates {
+		if node.Rank != 0 && d.Rank >= node.Rank {
+			continue
+		}
+		above = append(above, d)
+		if len(above) == outrankedCandidateCount {
+			break
+		}
+	}
+	return above
 }
 
 func staleSuffix(node NodeResult) string {
