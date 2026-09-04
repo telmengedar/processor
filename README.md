@@ -47,6 +47,17 @@ words; that document carries the argument.
   stratum. A control node the byte budget merely cut exits zero under a named budget alarm — that is the
   assembler being measured, not the instrument failing. Needs the graph half of the boot configuration
   only.
+- `scripts/smoke.py` — the live smoke run, and the opposite instrument to the sweep: `python
+  scripts/smoke.py` builds `cmd/processor`, starts it on a free port and posts the **same input twice**,
+  printing per turn how many candidates were admitted out of how many, the block that was actually sent
+  to the model verbatim, the model's answer verbatim, and whether the supplementary lookup was used —
+  then the diff between the two turns on admitted count, rank-1 candidate and block size. **Two turns
+  and not one**, because a turn writes its record into the same graph the next turn recalls from: the
+  first turn is clean by construction, so only the second can show what the first left behind. It takes
+  the graph credential from `PROCESSOR_DIVOID_URL`/`PROCESSOR_DIVOID_KEY` when those are set and
+  otherwise from the ambient `DIVOID_URL`/`DIVOID_RAZIEL_KEY`, naming both pairs when neither is there.
+  It costs two model calls, writes two run records and names them on exit; it deletes nothing. Exits
+  non-zero when a turn admits zero candidates. Python 3, standard library only.
 - `internal/boot` — the boot configuration: the module's one environment read site, split into the
   listen address, a graph half and a model half, so a caller that needs only graph configuration is
   never asked for model configuration.
