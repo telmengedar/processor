@@ -592,7 +592,7 @@ func TestReportIndentsTheOutrankedLineUnderTheVerdictItExplains(t *testing.T) {
 		t.Fatalf("the miss line starts its verdict at column %d, want 19; the outranked-by line indents to that same column, so the two move together or the block stops lining up. Line was:\n%q", got, miss)
 	}
 	if got := strings.Index(outranked, "outranked by"); got != 19 {
-		t.Fatalf("the outranked-by line starts its label at column %d, want 19: it sits under the verdict it explains, per the specimen in design section 8.3. Line was:\n%q", got, outranked)
+		t.Fatalf("the outranked-by line starts its label at column %d, want 19: it sits under the verdict it explains, which is the relation design section 8.3's specimen shows. The column is this tree's, not the specimen's -- the specimen indents to 15. Line was:\n%q", got, outranked)
 	}
 	if got := strings.Index(outranked[19:], "#"); got != 15 {
 		t.Fatalf("the outranked-by line starts its candidates %d columns after its label, want 15: the payload sits under the verdict's payload. Line was:\n%q", got, outranked)
