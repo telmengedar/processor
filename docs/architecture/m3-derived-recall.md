@@ -1,8 +1,9 @@
 # Architectural Document: retrieval that thinks before it looks — derived queries, mechanical fusion, and the limit neither reaches
 
-> **This document is DiVoid node and deliberately has no repo file yet.** #1176's 2026-09-03 ruling: a design
-> that genuinely precedes any code is a node, not a repository PR. It earns a repo file at
-> `docs/architecture/m3-derived-recall.md` when the first implementation step ships, and *that* PR carries it.
+> **This document is DiVoid node #11235, and this file is its repo copy.** #1176's 2026-09-03 ruling: a design
+> that genuinely precedes any code is a node, not a repository PR. It earned this file when the first
+> implementation step shipped, and that PR carried it — the condition the paragraph below anticipated, now met.
+> Both sides are byte-identical and stay that way (P-40).
 >
 > Source task **#11134** · Baseline **#11133** · Instrument doctrine **#11142** · A/B protocol **#11069** /
 > **#11092** · Project **#10422** · Map root **#10454** · Self-recall exposure **#11179** · Corpus/hash unit
