@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +33,15 @@ const (
 	nodeFields      = "id,type,name,contentType,content"
 	candidateFields = "id,type,name,similarity,content"
 )
+
+const (
+	nodesPath = "/api/nodes"
+	linksPath = "/api/nodes/links"
+)
+
+const linksPageSize = 500
+
+const logPartialNeighbourhood = "neighbourhood read stopped before the graph's last page"
 
 // Client is a client for one specific external system, not a generic
 // "graph" (#6836's naming rule).
@@ -102,6 +112,16 @@ type listingResponse struct {
 	Total  int   `json:"total"`
 }
 
+type linkRow struct {
+	SourceID int64 `json:"sourceId"`
+	TargetID int64 `json:"targetId"`
+}
+
+type linksResponse struct {
+	Result   []linkRow `json:"result"`
+	Continue *int      `json:"continue"`
+}
+
 // Node fetches the subject node by id, with its content, over the listing
 // route rather than the single-node route: a missing id returns 200 with
 // an empty result (design C30), not 404 — the shape this method surfaces
@@ -119,7 +139,7 @@ func (c *Client) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) 
 	q.Set("fields", nodeFields)
 
 	var resp listingResponse
-	if err := c.get(ctx, q, &resp); err != nil {
+	if err := c.get(ctx, nodesPath, q, &resp); err != nil {
 		return loop.Anchor{}, false, err
 	}
 
@@ -137,16 +157,18 @@ func (c *Client) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) 
 	return loop.Anchor{}, false, nil
 }
 
-// Recall runs one semantic query and returns up to limit candidates in the
-// rank order the graph reported them. It does not re-sort.
-func (c *Client) Recall(ctx context.Context, query string, limit int) ([]loop.Candidate, error) {
+// Recall returns up to limit candidates in the graph's own rank order, never re-sorted; an empty scope ranks the whole graph.
+func (c *Client) Recall(ctx context.Context, query string, limit int, scope []int64) ([]loop.Candidate, error) {
 	q := url.Values{}
 	q.Set("query", query)
 	q.Set("count", strconv.Itoa(limit))
 	q.Set("fields", candidateFields)
+	for _, id := range scope {
+		q.Add("linkedto", strconv.FormatInt(id, 10))
+	}
 
 	var resp listingResponse
-	if err := c.get(ctx, q, &resp); err != nil {
+	if err := c.get(ctx, nodesPath, q, &resp); err != nil {
 		return nil, err
 	}
 
@@ -164,8 +186,52 @@ func (c *Client) Recall(ctx context.Context, query string, limit int) ([]loop.Ca
 	return candidates, nil
 }
 
-func (c *Client) get(ctx context.Context, query url.Values, out any) error {
-	reqURL := c.baseURL + "/api/nodes?" + query.Encode()
+// Neighbours returns the other endpoint of every edge incident to id, ascending and deduplicated.
+func (c *Client) Neighbours(ctx context.Context, id int64) ([]int64, error) {
+	seen := make(map[int64]struct{})
+
+	for cursor := 0; ; {
+		q := url.Values{}
+		q.Set("ids", strconv.FormatInt(id, 10))
+		q.Set("count", strconv.Itoa(linksPageSize))
+		if cursor > 0 {
+			q.Set("continue", strconv.Itoa(cursor))
+		}
+
+		var resp linksResponse
+		if err := c.get(ctx, linksPath, q, &resp); err != nil {
+			return nil, err
+		}
+
+		for _, edge := range resp.Result {
+			other := edge.SourceID
+			if other == id {
+				other = edge.TargetID
+			}
+			seen[other] = struct{}{}
+		}
+
+		if resp.Continue == nil {
+			break
+		}
+		if len(resp.Result) == 0 || *resp.Continue <= cursor {
+			c.log().Warn(logPartialNeighbourhood, "node", id, "cursor", cursor, "next", *resp.Continue, "neighbours", len(seen))
+			break
+		}
+		cursor = *resp.Continue
+	}
+
+	neighbours := make([]int64, 0, len(seen))
+	for n := range seen {
+		neighbours = append(neighbours, n)
+	}
+	slices.Sort(neighbours)
+
+	return neighbours, nil
+}
+
+func (c *Client) get(ctx context.Context, path string, query url.Values, out any) error {
+	reqURL := c.baseURL + path + "?" + query.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {

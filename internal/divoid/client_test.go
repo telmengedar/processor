@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -147,7 +149,7 @@ func TestRecallConstructsTheQueryWithTextAndCount(t *testing.T) {
 	// fixture that already satisfies those normalizations can't fail when
 	// the adapter silently applies one.
 	const wantQueryText = "  Why DOES   the Assembler ignore SCOPE?  "
-	if _, err := c.Recall(context.Background(), wantQueryText, 20); err != nil {
+	if _, err := c.Recall(context.Background(), wantQueryText, 20, nil); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
@@ -207,7 +209,7 @@ func TestRecallReturnsEveryCandidateTheServerSentUnfiltered(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), "q", 20)
+	got, err := c.Recall(context.Background(), "q", 20, nil)
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -240,7 +242,7 @@ func TestRecallMarksOnlyTheRunRecordsThisClientWrote(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), "q", 20)
+	got, err := c.Recall(context.Background(), "q", 20, nil)
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -276,7 +278,7 @@ func TestRecallPreservesReturnedOrderWithoutResorting(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), "q", 20)
+	got, err := c.Recall(context.Background(), "q", 20, nil)
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -306,7 +308,7 @@ func TestRecallDecodesSimilarityAndContent(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), "q", 20)
+	got, err := c.Recall(context.Background(), "q", 20, nil)
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -332,7 +334,7 @@ func TestRecallOnNon200ReturnsAnError(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	if _, err := c.Recall(context.Background(), "q", 20); err == nil {
+	if _, err := c.Recall(context.Background(), "q", 20, nil); err == nil {
 		t.Fatal("Recall returned nil error for a 500 response, want an error")
 	}
 }
@@ -440,5 +442,333 @@ func TestDefaultTimeoutIsFifteenSeconds(t *testing.T) {
 	const want = 15 * time.Second
 	if DefaultTimeout != want {
 		t.Fatalf("DefaultTimeout = %v, want %v", DefaultTimeout, want)
+	}
+}
+
+func TestRecallSendsOneLinkedToParameterPerScopeIDBecauseAnUnknownScopeKeyIsSilentlyIgnored(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	if _, err := c.Recall(context.Background(), "q", 20, []int64{7, 11, 13}); err != nil {
+		t.Fatalf("Recall: %v", err)
+	}
+
+	q, err := url.ParseQuery(gotQuery)
+	if err != nil {
+		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+	}
+
+	want := []string{"7", "11", "13"}
+	got := q["linkedto"]
+	if len(got) != len(want) {
+		t.Fatalf("linkedto = %v, want one value per scope id %v: the graph ignores a scope key it does not know and answers with the whole-graph ranking, so a wrong key or a collapsed list is an unscoped search that reads as a scoped one", got, want)
+	}
+	for i, id := range want {
+		if got[i] != id {
+			t.Fatalf("linkedto[%d] = %q, want scope id %q", i, got[i], id)
+		}
+	}
+
+	wantKeys := []string{"query", "count", "fields", "linkedto"}
+	if len(q) != len(wantKeys) {
+		t.Fatalf("query has keys %v, want exactly %v", keysOf(q), wantKeys)
+	}
+}
+
+func TestRecallSendsNoScopeKeyAtAllForAnEmptyScopeSoTheRankingStaysWholeGraph(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		scope []int64
+	}{
+		{name: "nil", scope: nil},
+		{name: "empty", scope: []int64{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			var gotQuery string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotQuery = r.URL.RawQuery
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"result":[],"total":0}`))
+			}))
+			defer srv.Close()
+
+			c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+			if _, err := c.Recall(context.Background(), "q", 20, tc.scope); err != nil {
+				t.Fatalf("Recall: %v", err)
+			}
+
+			q, err := url.ParseQuery(gotQuery)
+			if err != nil {
+				t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+			}
+			if _, present := q["linkedto"]; present {
+				t.Fatalf("linkedto = %v for an empty scope, want the key absent: the graph reads an empty scope value as no filter and returns the whole-graph ranking, so emitting the key claims a restriction the answer does not have", q["linkedto"])
+			}
+		})
+	}
+}
+
+func TestNeighboursReadsTheFarEndpointOfEveryEdgeInEitherDirectionCountingARepeatedPairOnce(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"result": []map[string]any{
+				{"sourceId": 500, "targetId": 42},
+				{"sourceId": 42, "targetId": 9},
+				{"sourceId": 42, "targetId": 9},
+				{"sourceId": 77, "targetId": 42},
+			},
+			"total": 4,
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	got, err := c.Neighbours(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("Neighbours: %v", err)
+	}
+
+	want := []int64{9, 77, 500}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Neighbours = %v, want %v: node 9 arrives as a target and nodes 77 and 500 as sources, so a reader that takes one endpoint by position drops half the neighbourhood, and the repeated 42-9 pair must widen the scope by one entry rather than two", got, want)
+	}
+}
+
+func TestNeighboursReturnsTheScopeAscendingSoOneEdgeSetAlwaysYieldsOneScope(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"result": []map[string]any{
+				{"sourceId": 42, "targetId": 900},
+				{"sourceId": 42, "targetId": 3},
+				{"sourceId": 42, "targetId": 71},
+				{"sourceId": 42, "targetId": 12},
+				{"sourceId": 42, "targetId": 500},
+				{"sourceId": 42, "targetId": 8},
+				{"sourceId": 42, "targetId": 44},
+			},
+			"total": 7,
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	got, err := c.Neighbours(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("Neighbours: %v", err)
+	}
+
+	want := []int64{3, 8, 12, 44, 71, 500, 900}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Neighbours = %v, want %v ascending: the rows arrive unordered and this slice becomes the linkedto list of a recall, so an arrival-ordered scope makes the same graph produce a different request from one run to the next", got, want)
+	}
+}
+
+func TestNeighboursFollowsTheContinueCursorSoAPagedNeighbourhoodArrivesWhole(t *testing.T) {
+	t.Parallel()
+
+	var gotCursors []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCursors = append(gotCursors, r.URL.Query().Get("continue"))
+		w.WriteHeader(http.StatusOK)
+		if r.URL.Query().Get("continue") == "" {
+			_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":8}],"total":2,"continue":1}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":64}],"total":2}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	got, err := c.Neighbours(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("Neighbours: %v", err)
+	}
+
+	want := []int64{8, 64}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Neighbours = %v, want %v: node 64 is only on the second page, so a single read silently returns a neighbourhood smaller than the node has and the narrowed scope is indistinguishable from a node with fewer edges", got, want)
+	}
+	if len(gotCursors) != 2 || gotCursors[1] != "1" {
+		t.Fatalf("continue values sent = %v, want the first page unset then the cursor the first page reported (\"1\")", gotCursors)
+	}
+}
+
+func TestNeighboursStopsWhenTheCursorRepeatsRatherThanRereadingOnePageForever(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls > 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"text":"the client re-read a page whose cursor had not advanced"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":8}],"total":1,"continue":1}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	got, err := c.Neighbours(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("Neighbours: %v", err)
+	}
+
+	want := []int64{8}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Neighbours = %v, want %v", got, want)
+	}
+	if calls != 2 {
+		t.Fatalf("the links route was read %d times, want 2: the second page reports the cursor the first page already served, and a client that trusts the cursor rather than its own progress reads that page until the context ends", calls)
+	}
+}
+
+func TestNeighboursConstructsTheLinksQueryWithTheNodeIDAndAnExplicitPageSize(t *testing.T) {
+	t.Parallel()
+
+	var gotPath, gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	if _, err := c.Neighbours(context.Background(), 42); err != nil {
+		t.Fatalf("Neighbours: %v", err)
+	}
+
+	const wantPath = "/api/nodes/links"
+	if gotPath != wantPath {
+		t.Fatalf("path = %q, want %q — the edges of a node are not on the node listing route", gotPath, wantPath)
+	}
+
+	q, err := url.ParseQuery(gotQuery)
+	if err != nil {
+		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+	}
+	if q.Get("ids") != "42" {
+		t.Fatalf("ids = %q, want the requested node %q", q.Get("ids"), "42")
+	}
+	if q.Get("count") != "500" {
+		t.Fatalf("count = %q, want an explicitly requested page size: relying on the route's own default makes the size of a neighbourhood a property of the server's configuration rather than of this client", q.Get("count"))
+	}
+
+	wantKeys := []string{"ids", "count"}
+	if len(q) != len(wantKeys) {
+		t.Fatalf("query has keys %v, want exactly %v on the first page", keysOf(q), wantKeys)
+	}
+}
+
+func TestNeighboursStopsAndWarnsWhenAPageIsEmptyThoughTheGraphOffersAnotherCursor(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusOK)
+		switch r.URL.Query().Get("continue") {
+		case "":
+			_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":8}],"total":2,"continue":1}`))
+		case "1":
+			_, _ = w.Write([]byte(`{"result":[],"total":2,"continue":2}`))
+		default:
+			_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":64}],"total":2}`))
+		}
+	}))
+	defer srv.Close()
+
+	logger, log := capturingLogger()
+	c := NewClient(srv.URL, "k", srv.Client(), logger)
+	got, err := c.Neighbours(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("Neighbours: %v", err)
+	}
+
+	if calls != 2 {
+		t.Fatalf("the links route was read %d times, want 2: an empty page carrying a cursor is the graph declining to serve the rest, and a client that keeps asking walks the cursor forward over empty pages for as long as the graph keeps offering one", calls)
+	}
+	want := []int64{8}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Neighbours = %v, want %v", got, want)
+	}
+	if !strings.Contains(log.String(), logPartialNeighbourhood) {
+		t.Fatalf("the operator log was %q, want it to carry %q: the caller receives a neighbourhood the graph never finished serving, and at step 3 that scope silently narrows a recall rather than failing it", log.String(), logPartialNeighbourhood)
+	}
+}
+
+func TestNeighboursWarnsWhenItStopsOnACursorThatDidNotAdvance(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls > 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"text":"the client kept asking for a cursor that never advanced"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":8}],"total":9,"continue":1}`))
+	}))
+	defer srv.Close()
+
+	logger, log := capturingLogger()
+	c := NewClient(srv.URL, "k", srv.Client(), logger)
+	if _, err := c.Neighbours(context.Background(), 42); err != nil {
+		t.Fatalf("Neighbours: %v", err)
+	}
+
+	if !strings.Contains(log.String(), logPartialNeighbourhood) {
+		t.Fatalf("the operator log was %q, want it to carry %q: stopping on a repeated cursor is the right move and it still returns fewer neighbours than the graph holds, so the only thing separating it from a complete read is this line", log.String(), logPartialNeighbourhood)
+	}
+}
+
+func TestNeighboursSaysNothingWhenTheGraphItselfReportsTheLastPage(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if r.URL.Query().Get("continue") == "" {
+			_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":8}],"total":2,"continue":1}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":64}],"total":2}`))
+	}))
+	defer srv.Close()
+
+	logger, log := capturingLogger()
+	c := NewClient(srv.URL, "k", srv.Client(), logger)
+	got, err := c.Neighbours(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("Neighbours: %v", err)
+	}
+
+	if !slices.Equal(got, []int64{8, 64}) {
+		t.Fatalf("Neighbours = %v, want [8 64]", got)
+	}
+	if strings.Contains(log.String(), logPartialNeighbourhood) {
+		t.Fatalf("a complete two-page read logged %q: every paged neighbourhood ends on a page with no cursor, so warning there warns on every ordinary read and the line stops meaning anything on the one read where it matters", logPartialNeighbourhood)
 	}
 }

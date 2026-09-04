@@ -39,9 +39,11 @@ type GraphPort interface {
 	// false when the id resolves to nothing.
 	Node(ctx context.Context, id int64) (anchor Anchor, found bool, err error)
 
-	// Recall runs one semantic query and returns up to limit candidates in
-	// the rank order the graph returned them. The port does not re-sort.
-	Recall(ctx context.Context, query string, limit int) ([]Candidate, error)
+	// Recall returns up to limit candidates in the graph's own rank order, never re-sorted; an empty scope ranks the whole graph.
+	Recall(ctx context.Context, query string, limit int, scope []int64) ([]Candidate, error)
+
+	// Neighbours returns the other endpoint of every edge incident to id, ascending and deduplicated.
+	Neighbours(ctx context.Context, id int64) ([]int64, error)
 
 	// WriteRun files the record and reports where it landed; the adapter alone chooses type, name and edge.
 	WriteRun(ctx context.Context, record Record) WriteReceipt
@@ -228,7 +230,7 @@ func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult) RecallExc
 		return RecallExchange{Error: result.RecallError, Dispositions: []Disposition{}}
 	}
 
-	candidates, err := t.Graph.Recall(ctx, result.RecallQuery, CandidateLimit)
+	candidates, err := t.Graph.Recall(ctx, result.RecallQuery, CandidateLimit, nil)
 	if err != nil {
 		t.log().Error("supplementary recall failed", "query", result.RecallQuery, "error", err)
 		return RecallExchange{Query: result.RecallQuery, Error: errSupplementaryRecallFailed, Dispositions: []Disposition{}}

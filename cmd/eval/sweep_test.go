@@ -20,6 +20,7 @@ const requiredNodeBodyHash = "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a3
 type recallCall struct {
 	Query string
 	Limit int
+	Scope []int64
 }
 
 type fakeGraph struct {
@@ -55,13 +56,15 @@ func (f *fakeGraph) Node(_ context.Context, id int64) (loop.Anchor, bool, error)
 	return anchor, found, nil
 }
 
-func (f *fakeGraph) Recall(_ context.Context, query string, limit int) ([]loop.Candidate, error) {
-	f.recallCalls = append(f.recallCalls, recallCall{Query: query, Limit: limit})
+func (f *fakeGraph) Recall(_ context.Context, query string, limit int, scope []int64) ([]loop.Candidate, error) {
+	f.recallCalls = append(f.recallCalls, recallCall{Query: query, Limit: limit, Scope: scope})
 	if f.recallErr != nil {
 		return nil, f.recallErr
 	}
 	return f.candidates[:min(limit, len(f.candidates))], nil
 }
+
+func (f *fakeGraph) Neighbours(context.Context, int64) ([]int64, error) { return nil, nil }
 
 func (f *fakeGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt {
 	if !f.writeAllowed {
