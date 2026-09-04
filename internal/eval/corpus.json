@@ -151,7 +151,7 @@
       {
         "node": 11262,
         "hash": "d3a817d0c1c8003992434025d1872e8875122d854521b15480fae90d7702752a",
-        "why": "An answer lacking this would look for the fault in ranking and treat the scope as applied, when the truth is measured: a bogus id in the scope fails closed, but a misspelled scope key and an empty value on the right key both fail open to the entire graph, with nothing in the response saying the filter was dropped, so a caller that believes it is ranking inside a neighbourhood is ranking inside ten thousand nodes and gets a plausible, wrong, passing answer."
+        "why": "An answer lacking this would look for the fault in ranking, when the truth is measured: a bogus scope id fails closed, but a misspelled scope key and an empty value on the right key both fail open to the whole graph, with nothing in the response saying the filter was dropped."
       }
     ]
   },
@@ -164,7 +164,7 @@
       {
         "node": 11078,
         "hash": "aed731f2eb1a79969a6e92b6191f9a9963b71e4b8357e0677b3b753a36d6cce1",
-        "why": "An answer lacking this would check that the new code reads the field, when the truth is that the audit runs the other way, asking which existing predicates were written only because no narrower scope existed and are under-scoped the moment the key arrives, that deletes are the urgent ones, and that the whole class lives outside the diff because the offending clause is untouched and so appears in no review surface."
+        "why": "An answer lacking this would check that the new code reads the field, when the truth is that the audit runs the other way, asking which existing predicates were written only because no narrower scope existed and are under-scoped the moment the key arrives, a class that lives outside the diff."
       }
     ]
   },
@@ -177,7 +177,7 @@
       {
         "node": 11125,
         "hash": "19c14d826628b11015276b87e78e75e88bf108f52279aef68e344d48bebfa57e",
-        "why": "An answer lacking this would read the two greens as one result, when the truth is a third kind of unfalsifiable distinct from a tautology and from a missing local mutant: a guard whose falsifier is reachable on one host and undecidable on another, so that the mutant died locally and the mutant dies in the gate are different claims and only the second one protects the branch."
+        "why": "An answer lacking this would read the two greens as one result, when the truth is a guard whose falsifier is reachable on one host and undecidable on another, so that the mutant died locally and the mutant dies in the gate are different claims and only the second one protects the branch."
       }
     ]
   },
@@ -190,7 +190,7 @@
       {
         "node": 11049,
         "hash": "5ac13e1d139e32e50bdeea04a0334e7174a264dbd23921118f717563d74ec914",
-        "why": "An answer lacking this would retune the ranking, when the truth is that an item larger than the whole byte budget can never be admitted at any rank and contributes a permanent zero for a reason that has nothing to do with retrieval, and that such a cut is indistinguishable from one tuning could rescue unless the item's own size ships beside its verdict."
+        "why": "An answer lacking this would retune the ranking, when the truth is that an item larger than the whole budget can never be admitted at any rank, and that such a cut is indistinguishable from one tuning could rescue unless the item's own size ships beside its verdict."
       }
     ]
   },
@@ -203,7 +203,7 @@
       {
         "node": 11278,
         "hash": "9450b373219547ca17e0e14f12c3d90113223f2dcf42eace671637c6079c36a3",
-        "why": "An answer lacking this would fix the one shared fixture, when the truth is that a fixture making its own assertion unfalsifiable is a class with at least three distinct mechanisms, value coincidence, supply coincidence and probabilistic coincidence, and that two of the three are found mechanically by computing the result for every proper subset of the operations and requiring each to differ from the expected value, which is stronger than a mutation matrix because a matrix tests only single omissions and runs each arm once."
+        "why": "An answer lacking this would fix the one shared fixture, when the truth is that a fixture making its own assertion unfalsifiable has at least three mechanisms, two of which are found by computing the result for every proper subset of the operations, which a mutation matrix cannot do because it tests single omissions."
       }
     ]
   },
@@ -216,7 +216,7 @@
       {
         "node": 11221,
         "hash": "ed55af13c3eb5455cd621d8dde082748ea2f585ad38fc3bdc0e84a40fbc1c77b",
-        "why": "An answer lacking this would treat the reviewer's literal as measured and hunt for a mistake in applying it, when the truth is that a worked literal inside a blocking finding is unmeasured by construction, derived by eye with no build running, yet typeset identically to the reviewer's measured figures, so the finding is owed a stated property rather than a literal and the implementer must validate any supplied remedy before adopting it."
+        "why": "An answer lacking this would treat the reviewer's literal as measured, when the truth is that a worked literal inside a blocking finding is derived by eye with no build running, yet is typeset identically to measured figures, so the finding is owed a property and the implementer must validate the remedy."
       }
     ]
   },
@@ -229,7 +229,7 @@
       {
         "node": 11228,
         "hash": "fd2ba283b5dad9b9e8b78261a4c94fdf1001e991b2d0806352a2a45c6f48f67b",
-        "why": "An answer lacking this would treat the miss as carelessness, when the truth is that a sweep keyed to the wording being deleted cannot reach the passage that wording pointed at, that the paraphrases a claim can take have to be enumerated and every count reported including the zeros, and that the copies of the document are themselves part of the count of sites, so a retraction reported without a count is untested."
+        "why": "An answer lacking this would call the correction done, when the truth is that a sweep keyed to the wording being deleted cannot reach the passage that wording pointed at, and that the copies of the document are themselves part of the count of sites."
       }
     ]
   },
@@ -242,7 +242,7 @@
       {
         "node": 11084,
         "hash": "3f08acc00985c4018010736c7aac23a328eb2776a6c034197e11fe645a604db6",
-        "why": "An answer lacking this would keep looking at the restored code, when the truth is that restoring a mechanism restores its shape and can invert its effect, because a mechanism's correctness is a property of its context rather than of itself, so what has to be verified is that everything the mechanism depended on came back with it and the check is to diff the surroundings rather than the guard."
+        "why": "An answer lacking this would keep looking at the restored code, when the truth is that restoring a mechanism restores its shape and can invert its effect, so what must be verified is that everything it depended on came back with it: diff the surroundings, not the guard."
       }
     ]
   },
@@ -255,7 +255,7 @@
       {
         "node": 11087,
         "hash": "1eafe75cb47693e05526cfe63e42c5d7bd8886b11616d75536d0b5363f4a455b",
-        "why": "An answer lacking this would treat citing the source as sufficient, when the truth is that a because-clause carried forward is a claim the transcriber now asserts, that it arrives in premise position where nothing about it asks to be checked, and that each hop strips the hedge and keeps the sentence, so the claim gains authority without ever strengthening and a false reason under a right decision survives review indefinitely."
+        "why": "An answer lacking this would treat citing the source as sufficient, when the truth is that a because-clause carried forward is a claim the transcriber now asserts, arriving in premise position where nothing asks it to be checked and gaining authority at each hop without ever strengthening."
       }
     ]
   },
@@ -268,7 +268,7 @@
       {
         "node": 11142,
         "hash": "d72e35fccfe64dcb8263aa6c42f59cf4ef4ec778db635f3417689a24544bda8b",
-        "why": "An answer lacking this would propose more rows or better labels, when the truth is that an instrument assembled from a subset of the product's steps is blind to every defect living in the steps it omits and to every defect that appears only across iterations, so a fault created at write-back and consumed on a later turn is unreachable by any corpus, and the remedy is a second instrument that is unrepresentative in the opposite direction and runs at least two turns."
+        "why": "An answer lacking this would propose more rows or better labels, when the truth is that an instrument built from a subset of the product's steps is blind to defects in the steps it omits and to defects that appear only across iterations, so no corpus could reach this one."
       }
     ]
   },
@@ -281,7 +281,7 @@
       {
         "node": 11271,
         "hash": "f442eb745a26737bf2685c0ed5366717625b60ec802195124e3a2dc064116a02",
-        "why": "An answer lacking this would blame the individual replacements, when the truth is that a fixture is part of the specification and can itself supply the property the code is supposed to establish, that the pressures a remedy has to satisfy at once can push toward the single value that dissolves a third property, and that the whole matrix has to be re-run after a fixture change rather than only the arm that prompted it."
+        "why": "An answer lacking this would blame the individual replacements, when the truth is that a fixture is part of the specification and can supply the property the code is supposed to establish, and the whole matrix must be re-run after a fixture change, not the arm that prompted it."
       }
     ]
   },
@@ -294,7 +294,7 @@
       {
         "node": 11140,
         "hash": "6c3c3a04276658540842013ce05a410d7b9ffefd2e1f0f95ccd6644eaa45baf5",
-        "why": "An answer lacking this would read unchanged assertions as unchanged coverage, when the truth is that reaching the same behaviour through a public entry point puts a catch between the test and the failure path, so a relocated positive survives the move while a relocated negative stops distinguishing anything and holds whether the code works or the path blew up and was swallowed."
+        "why": "An answer lacking this would read unchanged assertions as unchanged coverage, when the truth is that a public entry point puts a catch between the test and the failure path, so a relocated positive survives the move while a relocated negative stops distinguishing anything."
       }
     ]
   },
