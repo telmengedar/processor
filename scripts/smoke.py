@@ -22,6 +22,7 @@ or turn 1 never stored its record and turn 2 therefore had nothing new to retrie
 """
 
 import argparse
+import http.client
 import json
 import os
 import signal
@@ -132,8 +133,8 @@ def post_run(port, text, subject):
     except urllib.error.HTTPError as err:
         detail = err.read().decode("utf-8", "replace").strip()
         raise SmokeFailure(f"POST /runs returned {err.code}: {detail}") from err
-    except (urllib.error.URLError, OSError) as err:
-        raise SmokeFailure(f"POST /runs did not complete: {err}") from err
+    except (urllib.error.URLError, OSError, http.client.HTTPException) as err:
+        raise SmokeFailure(f"POST /runs did not complete: {type(err).__name__}: {err}") from err
 
     try:
         return json.loads(payload)
@@ -151,7 +152,7 @@ def stop_server(proc, log_path, run_in_flight):
     grace = DRAIN_GRACE_S if run_in_flight else IDLE_GRACE_S
     if run_in_flight:
         print(
-            f"server: a run is still in flight — waiting up to {grace // 60} minutes for its "
+            f"server: a run may still be in flight — waiting up to {grace // 60} minutes for its "
             f"write-back rather than killing it. Interrupt again to kill; a kill landing between "
             f"the run record's node and its body leaves a bodyless node in the graph."
         )
@@ -213,14 +214,19 @@ def print_turn(number, record):
         print(f"cut: {count} x {reason}")
 
     budget = (record.get("limits") or {}).get("assemblyByteBudget")
+    first_cut = next((r.get("rank") for r in rows if not r.get("included")), None)
     for row in rows:
         if budget and row.get("size", 0) > budget:
-            behind = len(rows) - row.get("rank", 0)
-            print(
+            line = (
                 f"UNADMITTABLE: #{row.get('id')} is {row.get('size')} bytes against a "
-                f"{budget}-byte assembly budget, so no run can ever admit it. Admission stops at "
-                f"the first candidate that does not fit, so it also cut the {behind} behind it."
+                f"{budget}-byte assembly budget, so no run can ever admit it."
             )
+            if row.get("rank") == first_cut:
+                line += (
+                    f" Admission stops at the first candidate that does not fit, so it also cut "
+                    f"the {len(rows) - row.get('rank', 0)} behind it."
+                )
+            print(line)
 
     anchor = record.get("anchor") or {}
     print(
