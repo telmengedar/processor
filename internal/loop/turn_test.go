@@ -34,6 +34,10 @@ type fakeGraph struct {
 	recallQuery string
 	recallLimit int
 
+	neighbours      []int64
+	neighboursErr   error
+	neighboursCalls []int64
+
 	writeRunCalled  bool
 	writeRunRecord  Record
 	writeRunCtx     context.Context
@@ -43,6 +47,7 @@ type fakeGraph struct {
 type recallCall struct {
 	Query string
 	Limit int
+	Scope []int64
 }
 
 type recallResponse struct {
@@ -57,10 +62,10 @@ func (f *fakeGraph) Node(_ context.Context, _ int64) (Anchor, bool, error) {
 	return f.node, f.nodeFound, f.nodeErr
 }
 
-func (f *fakeGraph) Recall(_ context.Context, query string, limit int) ([]Candidate, error) {
+func (f *fakeGraph) Recall(_ context.Context, query string, limit int, scope []int64) ([]Candidate, error) {
 	f.recallQuery = query
 	f.recallLimit = limit
-	f.recallCalls = append(f.recallCalls, recallCall{Query: query, Limit: limit})
+	f.recallCalls = append(f.recallCalls, recallCall{Query: query, Limit: limit, Scope: scope})
 
 	if len(f.recallQueue) > 0 {
 		resp := f.recallQueue[0]
@@ -68,6 +73,11 @@ func (f *fakeGraph) Recall(_ context.Context, query string, limit int) ([]Candid
 		return resp.Candidates, resp.Err
 	}
 	return f.candidates, f.recallErr
+}
+
+func (f *fakeGraph) Neighbours(_ context.Context, id int64) ([]int64, error) {
+	f.neighboursCalls = append(f.neighboursCalls, id)
+	return f.neighbours, f.neighboursErr
 }
 
 func (f *fakeGraph) WriteRun(ctx context.Context, record Record) WriteReceipt {
@@ -1228,5 +1238,32 @@ func TestTurnRunLogsNoRunFinishedWhenTheRunNeverReachedAnAnswer(t *testing.T) {
 	}
 	if strings.Contains(out, `msg="run finished"`) {
 		t.Fatalf("operator log carries a run-finished record for a run that never reached an answer; log:\n%s", out)
+	}
+}
+
+func TestTheSupplementaryRecallSendsTheModelsOwnQueryUnscopedAsExactlyOneCall(t *testing.T) {
+	t.Parallel()
+
+	graph := &fakeGraph{nodeFound: true, node: Anchor{ID: 7, Type: "documentation", Name: "S", Content: "anchor"}}
+	model := &fakeModel{results: []JudgeResult{
+		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the query the model composed"},
+		{Answer: "done", Reason: Answered, RawReason: "stop"},
+	}}
+	turn := NewTurn(graph, model, "system text", "test-model", testLogger())
+
+	if _, _, err := turn.Run(context.Background(), "the input", 7); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(graph.recallCalls) != 2 {
+		t.Fatalf("Recall was called %d times, want 2 (the primary recall and one supplementary): the model asked for one lookup, so a supplementary path that fans one ask into several is spending reads the model did not request", len(graph.recallCalls))
+	}
+
+	supplementary := graph.recallCalls[1]
+	if supplementary.Query != "the query the model composed" {
+		t.Fatalf("supplementary recall query = %q, want the model's own text %q verbatim: the model wrote this query knowing what the first block already gave it, and a path that rewrites or re-derives it answers a question nobody asked", supplementary.Query, "the query the model composed")
+	}
+	if len(supplementary.Scope) != 0 {
+		t.Fatalf("the supplementary recall carried scope %v, want none: the model asks for what the subject's own neighbourhood did not supply, so confining its one follow-up to that neighbourhood is the surest way to return the block it already has", supplementary.Scope)
 	}
 }

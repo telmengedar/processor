@@ -72,8 +72,8 @@ words; that document carries the argument.
   clock, no randomness) and its sequencing (`Turn.Run`): fetch, assemble, judge — dispatching the one
   supplementary-recall tool as the model asks for it, up to a call cap — then write the record back. See
   `docs/architecture/m1-skeleton-loop.md` §9.
-- `internal/divoid` — the graph adapter: reads the subject node and the semantic recall query, and
-  writes the run record back as one node linked to its subject.
+- `internal/divoid` — the graph adapter: reads the subject node, the semantic recall query and the
+  edges incident to a node, and writes the run record back as one node linked to its subject.
 - `internal/openaicompat` — the model adapter: one OpenAI-compatible chat-completions client. Named for
   the protocol, not a vendor — it will mostly point at things that are not OpenAI. Provider-agnostic by
   ruling (design **#10521**): a local runtime works with no credential and no per-token spend.
@@ -330,9 +330,9 @@ flags it.
   stops, so a candidate that does not fit cuts only itself; a candidate this system wrote is cut
   before the byte test and charges nothing; every candidate is hashed and sized including the cut
   ones; the render order is by node id — a score reshuffle does not move a byte; and a run that
-  admits nothing from a non-empty candidate set raises a warning on the operator log. `internal/divoid`'s two read operations are pinned
-  at the wire level against a local test server, including the C30 empty-result discrimination (a
-  missing subject is a `200` with an empty result, never a `404`). **Since verified live** against
+  admits nothing from a non-empty candidate set raises a warning on the operator log. `internal/divoid`'s three read
+  operations are pinned at the wire level against a local test server, including the C30 empty-result
+  discrimination (a missing subject is a `200` with an empty result, never a `404`). **Since verified live** against
   `divoid.mamgo.io`: every decode assumption held, including that the `fields` projection populates
   `content` inline rather than needing a second fetch, and that `Recall` must not re-sort what the graph
   already returned in rank order (**#10883**).

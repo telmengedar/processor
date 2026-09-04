@@ -23,7 +23,7 @@ func (g *poisoningGraph) Node(context.Context, int64) (loop.Anchor, bool, error)
 	return g.anchor, true, nil
 }
 
-func (g *poisoningGraph) Recall(_ context.Context, _ string, limit int) ([]loop.Candidate, error) {
+func (g *poisoningGraph) Recall(_ context.Context, _ string, limit int, _ []int64) ([]loop.Candidate, error) {
 	rows := append(append([]loop.Candidate{}, g.written...), g.base...)
 	if len(rows) > limit {
 		rows = rows[:limit]
@@ -33,6 +33,8 @@ func (g *poisoningGraph) Recall(_ context.Context, _ string, limit int) ([]loop.
 	}
 	return rows, nil
 }
+
+func (g *poisoningGraph) Neighbours(context.Context, int64) ([]int64, error) { return nil, nil }
 
 func (g *poisoningGraph) WriteRun(_ context.Context, record loop.Record) loop.WriteReceipt {
 	body, err := json.Marshal(record)
