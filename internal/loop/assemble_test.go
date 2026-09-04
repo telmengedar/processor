@@ -207,10 +207,10 @@ func TestAssembleReportsSelfProducedRatherThanBudgetForAFittingRunRecord(t *test
 	_, dispositions := Assemble(anchor, candidates, budget)
 
 	if dispositions[0].Included {
-		t.Fatal("a self-produced candidate that fits the budget was admitted, want it cut")
+		t.Fatal("a self-produced candidate that fits the budget was admitted; the byte rule ran first and admitted it, so the self-produced rule must be applied before the byte rule")
 	}
 	if dispositions[0].CutReason == cutReasonByteBudget {
-		t.Fatalf("CutReason = %q for a row that fits the budget; the self-produced rule must be applied before the byte rule", dispositions[0].CutReason)
+		t.Fatalf("CutReason = %q, want the self-produced reason rather than the budget reason", dispositions[0].CutReason)
 	}
 	if dispositions[0].CutReason != cutReasonSelfProduced {
 		t.Fatalf("CutReason = %q, want the self-produced reason", dispositions[0].CutReason)

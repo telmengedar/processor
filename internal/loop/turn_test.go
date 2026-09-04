@@ -1138,13 +1138,13 @@ func TestTurnRunWarnsWhenAssemblyAdmittedNothing(t *testing.T) {
 		t.Fatalf("test setup error: %d candidates of which %d were cut, want a non-empty set with nothing admitted", len(record.Candidates), cutCount(record.Candidates))
 	}
 
-	warning := logLineAtLevel(logBuf.String(), "WARN")
+	warning := shutoutLogLine(logBuf.String())
 	if warning == "" {
-		t.Fatalf("no WARN record for a run that admitted nothing from two candidates; log:\n%s", logBuf.String())
+		t.Fatalf("no shutout record for a run that admitted nothing from two candidates; log:\n%s", logBuf.String())
 	}
-	for _, want := range []string{"subject=42", "candidates=2"} {
+	for _, want := range []string{"level=WARN", "subject=42", "candidates=2"} {
 		if !strings.Contains(warning, want) {
-			t.Fatalf("the WARN record does not carry %q; it was:\n%s", want, warning)
+			t.Fatalf("the shutout record does not carry %q; it was:\n%s", want, warning)
 		}
 	}
 }
@@ -1171,7 +1171,7 @@ func TestTurnRunDoesNotWarnWhenAnythingWasAdmitted(t *testing.T) {
 		t.Fatalf("test setup error: %d of %d candidates were cut, want exactly one cut and one admitted", cutCount(record.Candidates), len(record.Candidates))
 	}
 
-	if warning := logLineAtLevel(logBuf.String(), "WARN"); warning != "" {
+	if warning := shutoutLogLine(logBuf.String()); warning != "" {
 		t.Fatalf("a run that admitted a candidate raised the shutout alarm:\n%s", warning)
 	}
 }
@@ -1194,14 +1194,14 @@ func TestTurnRunDoesNotWarnWhenRecallReturnedNothing(t *testing.T) {
 		t.Fatalf("test setup error: the candidate set has %d rows, want it empty", len(record.Candidates))
 	}
 
-	if warning := logLineAtLevel(logBuf.String(), "WARN"); warning != "" {
+	if warning := shutoutLogLine(logBuf.String()); warning != "" {
 		t.Fatalf("a run whose recall returned nothing raised the assembly shutout alarm:\n%s", warning)
 	}
 }
 
-func logLineAtLevel(log, level string) string {
+func shutoutLogLine(log string) string {
 	for _, line := range strings.Split(log, "\n") {
-		if strings.Contains(line, "level="+level) {
+		if strings.Contains(line, `msg="assembly admitted no candidate`) {
 			return line
 		}
 	}

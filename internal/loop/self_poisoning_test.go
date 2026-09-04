@@ -114,7 +114,7 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 
 	self, budget := cutReasons(t)
 	if second.Candidates[0].CutReason != self {
-		t.Fatalf("turn 2's rank-1 record was cut with reason %q, want %q — it is oversized too, so the self-produced rule must be applied first", second.Candidates[0].CutReason, self)
+		t.Fatalf("turn 2's rank-1 record was cut with reason %q, want %q — the row this loop wrote must be cut by the self-produced rule, not merely as one more oversized candidate", second.Candidates[0].CutReason, self)
 	}
 	if self == budget {
 		t.Fatal("test setup error: the two cut reasons are the same string, so this assertion cannot discriminate")
