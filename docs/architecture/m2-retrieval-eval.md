@@ -936,7 +936,15 @@ only what the specimen over-claims: `report.go:210` prints `shutouts  3/30 rows`
 specimen puts both on one; and `report.go:208` says `(admitted as a candidate in 9)` against the
 specimen's `(admitted in 9)`. **The first of those is the one to keep**: the missing denominator is exactly
 what §8.3 rule 1 and G-11 exist to guarantee, so the code is enforcing a rule the specimen quietly breaks.
-**A specimen may under-specify safely and over-specify never.**
+~~**A specimen may under-specify safely and over-specify never.**~~ **The code is right unless another
+section forbids the field — a specimen's silence is not permission** *(revision 8, corrected on QA #11293
+W-6 before shipping)*. The struck maxim was unconditional and **this document holds a live counter-case**:
+§8.3's newer-id reading aid is deliberately *"a hint for a reader, not a check"*, and promoting it to a
+computed field *"would be inventing exactly the flag §6.5 rules out"*. The specimen omits that field and
+the code omits it too — and under the struck wording, a later round shipping it would have been licensed by
+the specimen's silence. **The worked example above never depended on the broad reading**: the code wins on
+`shutouts 3/30 rows` because **§8.3 rule 1 and G-11 require the denominator**, not because code outranks
+specimen by default. The conclusion was right and the generalisation reached past it.
 
 ```
 corpus internal/eval/corpus.json — 34 rows (30 labelled, 4 control), hash 9f2c…
@@ -1368,10 +1376,20 @@ below now names at least one guard that exists in this tree.
 
 **The two populations this section had to keep apart have collapsed into one, and that is worth saying
 rather than quietly deleting the distinction.** *Rows whose guard is absent* and the status table's *owed
-to the tree* are now the **same four rows**. The distinction was real and load-bearing while
+to the tree* ~~are now the **same four rows**~~ **are now the same population, and that population is
+empty** *(revision 8, QA #11293 W-5: the struck text was revision 7's and correct on `7dff07b`; all four
+landed with `c6083e5` and `530458f`, as three lines above already state)*. The distinction was real and
+load-bearing while
 `fix/corpus-loader-guards` was outstanding, and it is not gone — only currently empty. **The moment any
 guard is written on a branch and not yet merged, the two diverge again**, and a reader who has learned to
 treat them as synonyms will re-create CF-1 exactly.
+
+> **This was the sixth site of one claim, and it is the one that shows why the count kept moving.** The
+> other five asserted the population *after* the sentence that corrected them; this one asserts it
+> **before** — three lines below `there are 0` in reading order, so a reader meets the right value first
+> and the wrong one second. That ordering is why two rounds of sweeping walked past it: it does not
+> contradict anything a reader has already read. **A claim-family sweep has to enumerate the family, not
+> stop where the contradiction becomes uncomfortable.**
 
 | Of the **four** rows whose guard was absent from this tree at revision 7 | Count | Which, and why |
 |---|---|---|
@@ -2078,11 +2096,20 @@ requirement and the gap is a task.
 
 **4. The sweep stopped one paragraph short of its own understanding, and QA #11291 caught it.** Revision 8's
 first pass enumerated §13's **table** correctly — 44 `G-` rows, zero stale sites, the first sweep in six not
-to lose one — and then left **five** falsified claims standing in the section's **closing paragraphs**:
+to lose one — and then left **six** falsified claims standing in the section's **closing paragraphs**:
 *"exactly one row in this table has that shape"*, *"until the guards land"*, *"(G-29, G-32 and G-33 cite
 nothing)"*, *"(G-28 cites the test it retargets)"*, and *"the residue is empty while four rows still owe a
-guard"*. Two more restated the starting point's residue of `2` in the **present tense**, in the position a
-reader treats as the section's answer.
+guard"*, and *"[the two populations] are now the **same four rows**"*. Two more restated the starting
+point's residue of `2` in the **present tense**, in the position a reader treats as the section's answer.
+
+**The count in this entry moved from five to six while the entry was being written, and that is left
+visible rather than silently corrected** *(QA #11293 W-7)*. QA's review of the repair found the sixth; a
+count of falsified claims, inside the entry recording that this document's counts keep being wrong, was
+itself wrong by one. **It moved 4 → 5 → 6 across three measurements** — QA #11291's finding, the repair's
+own claim-sweep, and QA #11293's re-sweep — rising every time, because each pass enumerated a little more
+of the family than the last. The rule and the diagnosis below are unaffected by the number, **which is the
+argument for stating the rule rather than the tally**: a tally is a measurement with a date, and this one
+had three.
 
 **The diff is the finding.** Line 1400 was struck and replaced; lines 1396–1399, which state the same
 falsified facts, were untouched **context in the same hunk**. The author corrected the sentence immediately
