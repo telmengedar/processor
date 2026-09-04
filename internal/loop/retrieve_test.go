@@ -60,10 +60,10 @@ func candidateIDs(candidates []Candidate) []int64 {
 	return ids
 }
 
-func TestRecallScopeIsTheSubjectFollowedByItsNeighboursAscendingWithoutRepeats(t *testing.T) {
+func TestRecallScopeIsTheSubjectAndItsNeighboursAscendingWithoutRepeats(t *testing.T) {
 	t.Parallel()
 
-	graph := &linkedGraph{edges: map[int64][]int64{300: {500, 100, 300}}}
+	graph := &linkedGraph{edges: map[int64][]int64{300: {500, 100, 100}}}
 
 	scope, err := RecallScope(context.Background(), graph, 300)
 	if err != nil {
@@ -72,7 +72,23 @@ func TestRecallScopeIsTheSubjectFollowedByItsNeighboursAscendingWithoutRepeats(t
 
 	want := []int64{100, 300, 500}
 	if !slices.Equal(scope, want) {
-		t.Fatalf("RecallScope = %v, want %v ascending and without repeats: this slice becomes a recall's linkedto list, so an order that depends on where the subject happens to sort makes one graph state produce more than one request, and a self-edge that survives sends the subject twice", scope, want)
+		t.Fatalf("RecallScope = %v, want %v: the subject sorts between its own neighbours and one neighbour arrives twice, so dropping the subject, dropping the neighbours, dropping the sort or dropping the repeat-collapse each produce a different list from this one", scope, want)
+	}
+}
+
+func TestRecallScopeCarriesTheSubjectOnceWhenASelfEdgeMakesItItsOwnNeighbour(t *testing.T) {
+	t.Parallel()
+
+	graph := &linkedGraph{edges: map[int64][]int64{300: {300}}}
+
+	scope, err := RecallScope(context.Background(), graph, 300)
+	if err != nil {
+		t.Fatalf("RecallScope: %v", err)
+	}
+
+	want := []int64{300}
+	if !slices.Equal(scope, want) {
+		t.Fatalf("RecallScope = %v, want %v: a node linked to itself is returned as its own neighbour, so the subject reaches the scope twice and only the repeat-collapse stops it being sent to the graph twice", scope, want)
 	}
 }
 

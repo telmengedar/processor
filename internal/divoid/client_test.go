@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -559,8 +560,11 @@ func TestNeighboursReturnsTheScopeAscendingSoOneEdgeSetAlwaysYieldsOneScope(t *t
 				{"sourceId": 42, "targetId": 3},
 				{"sourceId": 42, "targetId": 71},
 				{"sourceId": 42, "targetId": 12},
+				{"sourceId": 42, "targetId": 500},
+				{"sourceId": 42, "targetId": 8},
+				{"sourceId": 42, "targetId": 44},
 			},
-			"total": 4,
+			"total": 7,
 		})
 	}))
 	defer srv.Close()
@@ -571,7 +575,7 @@ func TestNeighboursReturnsTheScopeAscendingSoOneEdgeSetAlwaysYieldsOneScope(t *t
 		t.Fatalf("Neighbours: %v", err)
 	}
 
-	want := []int64{3, 12, 71, 900}
+	want := []int64{3, 8, 12, 44, 71, 500, 900}
 	if !slices.Equal(got, want) {
 		t.Fatalf("Neighbours = %v, want %v ascending: the rows arrive unordered and this slice becomes the linkedto list of a recall, so an arrival-ordered scope makes the same graph produce a different request from one run to the next", got, want)
 	}
@@ -674,5 +678,97 @@ func TestNeighboursConstructsTheLinksQueryWithTheNodeIDAndAnExplicitPageSize(t *
 	wantKeys := []string{"ids", "count"}
 	if len(q) != len(wantKeys) {
 		t.Fatalf("query has keys %v, want exactly %v on the first page", keysOf(q), wantKeys)
+	}
+}
+
+func TestNeighboursStopsAndWarnsWhenAPageIsEmptyThoughTheGraphOffersAnotherCursor(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusOK)
+		switch r.URL.Query().Get("continue") {
+		case "":
+			_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":8}],"total":2,"continue":1}`))
+		case "1":
+			_, _ = w.Write([]byte(`{"result":[],"total":2,"continue":2}`))
+		default:
+			_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":64}],"total":2}`))
+		}
+	}))
+	defer srv.Close()
+
+	logger, log := capturingLogger()
+	c := NewClient(srv.URL, "k", srv.Client(), logger)
+	got, err := c.Neighbours(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("Neighbours: %v", err)
+	}
+
+	if calls != 2 {
+		t.Fatalf("the links route was read %d times, want 2: an empty page carrying a cursor is the graph declining to serve the rest, and a client that keeps asking walks the cursor forward over empty pages for as long as the graph keeps offering one", calls)
+	}
+	want := []int64{8}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Neighbours = %v, want %v", got, want)
+	}
+	if !strings.Contains(log.String(), logPartialNeighbourhood) {
+		t.Fatalf("the operator log was %q, want it to carry %q: the caller receives a neighbourhood the graph never finished serving, and at step 3 that scope silently narrows a recall rather than failing it", log.String(), logPartialNeighbourhood)
+	}
+}
+
+func TestNeighboursWarnsWhenItStopsOnACursorThatDidNotAdvance(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls > 3 {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"text":"the client kept asking for a cursor that never advanced"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":8}],"total":9,"continue":1}`))
+	}))
+	defer srv.Close()
+
+	logger, log := capturingLogger()
+	c := NewClient(srv.URL, "k", srv.Client(), logger)
+	if _, err := c.Neighbours(context.Background(), 42); err != nil {
+		t.Fatalf("Neighbours: %v", err)
+	}
+
+	if !strings.Contains(log.String(), logPartialNeighbourhood) {
+		t.Fatalf("the operator log was %q, want it to carry %q: stopping on a repeated cursor is the right move and it still returns fewer neighbours than the graph holds, so the only thing separating it from a complete read is this line", log.String(), logPartialNeighbourhood)
+	}
+}
+
+func TestNeighboursSaysNothingWhenTheGraphItselfReportsTheLastPage(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if r.URL.Query().Get("continue") == "" {
+			_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":8}],"total":2,"continue":1}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"result":[{"sourceId":42,"targetId":64}],"total":2}`))
+	}))
+	defer srv.Close()
+
+	logger, log := capturingLogger()
+	c := NewClient(srv.URL, "k", srv.Client(), logger)
+	got, err := c.Neighbours(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("Neighbours: %v", err)
+	}
+
+	if !slices.Equal(got, []int64{8, 64}) {
+		t.Fatalf("Neighbours = %v, want [8 64]", got)
+	}
+	if strings.Contains(log.String(), logPartialNeighbourhood) {
+		t.Fatalf("a complete two-page read logged %q: every paged neighbourhood ends on a page with no cursor, so warning there warns on every ordinary read and the line stops meaning anything on the one read where it matters", logPartialNeighbourhood)
 	}
 }

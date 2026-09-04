@@ -41,6 +41,8 @@ const (
 
 const linksPageSize = 500
 
+const logPartialNeighbourhood = "neighbourhood read stopped before the graph's last page"
+
 // Client is a client for one specific external system, not a generic
 // "graph" (#6836's naming rule).
 type Client struct {
@@ -209,7 +211,11 @@ func (c *Client) Neighbours(ctx context.Context, id int64) ([]int64, error) {
 			seen[other] = struct{}{}
 		}
 
-		if len(resp.Result) == 0 || resp.Continue == nil || *resp.Continue <= cursor {
+		if resp.Continue == nil {
+			break
+		}
+		if len(resp.Result) == 0 || *resp.Continue <= cursor {
+			c.log().Warn(logPartialNeighbourhood, "node", id, "cursor", cursor, "next", *resp.Continue, "neighbours", len(seen))
 			break
 		}
 		cursor = *resp.Continue
