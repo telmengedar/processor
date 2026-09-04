@@ -56,8 +56,13 @@ words; that document carries the argument.
   first turn is clean by construction, so only the second can show what the first left behind. It takes
   the graph credential from `PROCESSOR_DIVOID_URL`/`PROCESSOR_DIVOID_KEY` when those are set and
   otherwise from the ambient `DIVOID_URL`/`DIVOID_RAZIEL_KEY`, naming both pairs when neither is there.
-  It costs two model calls, writes two run records and names them on exit; it deletes nothing. Exits
-  non-zero when a turn admits zero candidates. Python 3, standard library only.
+  It costs **two model calls at minimum and six at most** — one per turn, and up to the loop's own cap
+  of three per turn when the model asks for supplementary recall — writes two run records and names
+  them on exit; it deletes nothing. Its default input and subject match no corpus row on purpose: a run
+  writes a record that outranks every real candidate for its own input, so a default matching a row
+  would poison the next sweep of that row. Exits non-zero when a turn admits zero candidates, and also
+  when turn 1 never stored its record, which voids the two-turn premise. Python 3, standard library
+  only.
 - `internal/boot` — the boot configuration: the module's one environment read site, split into the
   listen address, a graph half and a model half, so a caller that needs only graph configuration is
   never asked for model configuration.
