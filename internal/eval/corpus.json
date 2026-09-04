@@ -7,7 +7,7 @@
     "required": [
       {
         "node": 10861,
-        "hash": "3c422707cac0146c27c624039fc88a06443260107baf61c697b35648723992d4",
+        "hash": "e7464acc177e83a67dfcdab6b54a65dba9247ef1444f6f2654a745054ad4d7f7",
         "why": "An answer lacking this would present the long-test-name convention as house style, when the truth is a dated ruling that the comment contract binds Go on this repo, that Go gets no [Description] escape hatch, and that no linter enforces any of it."
       }
     ]
@@ -111,7 +111,7 @@
     "required": [
       {
         "node": 10926,
-        "hash": "5ce196245b0a5ec02ee8213d9ffc7852fbe1fd237a13b9d84c26a0bc615bcc99",
+        "hash": "3187b5da9e7a9eb1010ac51af71fd76e5ba4a43491c69a9a48c901446bf0a788",
         "why": "An answer lacking this cannot say that a node whose body is the query plus its own answer key would outrank the content it scores, could consume or shut out the assembly budget, and would leak the answer key into any real run with a similar input."
       }
     ]
@@ -124,7 +124,7 @@
     "required": [
       {
         "node": 10943,
-        "hash": "593cae2fb9b1709f2f85fa203c40d12b9e85da0c25dd73e9b20fe802fcece791",
+        "hash": "5a34aa9d24696d106bd3bec846cb9030d871270fe8ef3c0e6b2262a9b5d947f1",
         "why": "An answer lacking this would accept the green, when the truth is that a green is evidence only when paired with a demonstration that red was reachable, which takes two separately-named witnesses and whose load-bearing half is the counterfactual non-compliant implementation."
       }
     ]

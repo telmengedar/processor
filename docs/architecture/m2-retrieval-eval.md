@@ -34,12 +34,16 @@ does exactly what a real run's first six steps do — fetch the anchor, run one 
 hand-labelled required-node set and prints two rates plus the misses by name.
 
 **`recall@k` is the wrong shape by one word, and the fix is the design's spine.** There are **two**
-boundaries, not one `k`: retrieval (`candidateLimit=20`) and admission (a *byte* budget with a
-stop-not-skip rule that makes the effective `k` data-dependent). They fail differently and imply opposite
+boundaries, not one `k`: retrieval (`candidateLimit=20`) and admission (a *byte* budget ~~with a
+stop-not-skip rule~~ that makes the effective `k` data-dependent). They fail differently and imply opposite
 fixes, so the harness reports **two rates** — *retrieved* and *admitted* — and the gap between them is the
 budget's cost, attributable per row. **Measured, in the only two runs that exist:** #10897 cut 13 of 20
 candidates at **96%** budget utilisation; #10898 cut 13 of 20 at **54%**, because one 30,902 B node at
-rank 8 tripped the stop while four candidates below it would have fitted trivially. One number cannot tell
+rank 8 ~~tripped the stop while four candidates below it would have fitted trivially~~ *(revision 8: **both
+figures were measured under the stop rule PR #22 replaced**, and they stand as a dated record of what that
+regime did. Under skip those four candidates are admitted — the change #11133 measured as ≈155 KB of extra
+admitted context across thirteen rows, at a rate that did not move. **The reason for two rates is untouched:**
+the two boundaries still fail differently and still want opposite tunings)*. One number cannot tell
 those apart, and they want opposite tunings.
 
 **Ground truth — the ruling, arguing with the brief's position.** Back-derivation (2) is **rejected
@@ -59,8 +63,12 @@ a ratio.
 **The corpus does not live in the graph, and that is measured rather than argued.** Querying the live
 graph on 2026-09-02 with #10897's exact input returns **#10897 itself at rank 1, similarity 0.7143** —
 above #10424 at 0.6704, which was rank 1 when the run actually executed. The record's body is **70,660 B**,
-larger than the whole 60,000 B assembly budget, so under stop-not-skip it is cut at rank 1 **and takes
-every candidate behind it with it**: the block would be the anchor and nothing else. A corpus node would be
+larger than the whole 60,000 B assembly budget, so ~~under stop-not-skip it is cut at rank 1 **and takes
+every candidate behind it with it**: the block would be the anchor and nothing else~~ *(revision 8, after
+PR #22: it is cut at rank 1 and **costs only its own slot** — the walk continues and the nineteen behind it
+are still measured against the budget, so the block is no longer the anchor alone.* **The conclusion never
+rested on that** *and is unchanged: a corpus node* **is** *the query text plus its own answer key, so it
+outranks the content it scores and leaks the key into any real run with a similar input.)*. A corpus node would be
 strictly worse — it *is* the query text, plus the answer key. **The corpus is a JSON file in the repo.**
 
 **#10822's R13 trigger has fired.** It asked for a session-log run record above rank 5; one is at rank 1
@@ -161,7 +169,7 @@ read-only query I ran on 2026-09-02. The two derivations are labelled.
 |---|---|---|
 | The recall query **is the raw input**, verbatim (`Record.Query == Record.Input`) | `turn.go`, `Recall(ctx, input, CandidateLimit)` | Scoring the retriever needs no query construction and no model |
 | **The anchor is fetched by id, not retrieved**, and is exempt from the budget | `assemble.go`, `renderBlock` | The subject can never be a recall miss. A corpus row listing its own subject as required is a free hit (§6.2 rejects it at load) |
-| Admission is **a stop, not a skip** | `assemble.go`, `admit` | The admitted set is always a rank *prefix*, so the byte budget behaves as a **variable `k`** (§5.1) |
+| ~~Admission is **a stop, not a skip**~~ **Admission is a skip** *(revision 8, PR #22 / #11158)* | `assemble.go`, `admit` | ~~The admitted set is always a rank *prefix*, so the byte budget behaves as a **variable `k`** (§5.1)~~ A candidate that does not fit costs its own slot and nothing else, so the admitted set is a **size-selected subset of the ranking, not a rank prefix**, and admission is **non-monotone in size**. The byte budget still behaves as a **variable `k`** (§5.1) — `k′` is the admitted count, which is what §8.2 reports |
 
 `Assemble` is pure — no I/O, no clock, no randomness — which is what makes it directly reusable by an
 instrument. `Disposition` already carries `Rank`, `Similarity`, `Size`, `ContentHash`, `Included` and
@@ -215,10 +223,22 @@ R13 and R14.
 | 3 | #10422 | 0.6683 | the project |
 
 `#10897`'s stored body is **70,660 B** — larger than the entire 60,000 B assembly budget, and larger than
-the biggest node M1 measured in this graph (42,978 B, C23). Under `admit`'s stop-not-skip rule a rank-1
+the biggest node M1 measured in this graph (42,978 B, C23). ~~Under `admit`'s stop-not-skip rule a rank-1
 candidate of 70,660 B is cut immediately and **`stopped` is set before any candidate is admitted**, so
 every one of the remaining nineteen is cut too. Replaying that input today yields a block containing the
-anchor and nothing else. I call this shape a **shutout** and §8.2 reports it by name.
+anchor and nothing else. I call this shape a **shutout** and §8.2 reports it by name.~~
+
+**Revision 8.** *(revision 8, 2026-09-04, after PR #22 / #11158 replaced the stop with a skip)* A rank-1 candidate of 70,660 B is still cut, and it now **costs only its own
+slot**: the walk continues and each of the remaining nineteen is measured against the full budget, so
+replaying that input today yields the anchor **plus whatever of the nineteen fits** — not the anchor alone.
+**The identifier `stopped` no longer exists in `admit`.**
+
+**The shutout survives as a name for a different and rarer shape:** candidates were retrieved and **none**
+was admitted, which under skip requires **every** candidate to be oversized rather than only the first.
+§8.2 reports it by name and §13 **G-16** guards it — that guard was renamed in the same commit
+(`58b02d8`), for exactly this reason. **What the section still establishes is untouched:** #10897 outranks
+everything for its own input and consumes the budget, which is R13's trigger and §3.4's whole point. Only
+the *severity* of the consequence changed, from *the block is empty* to *the block loses its largest slot*.
 
 Two things follow.
 
@@ -415,22 +435,44 @@ manufacture a larger disagreement than the evidence supports.
 ```
 input ──► Recall(input, candidateLimit=20) ──► 20 ranked candidates
                                                      │
-                                      admit(60,000 B, stop-not-skip)
+                                         admit(60,000 B, skip)
                                                      │
                                              ┌───────┴────────┐
-                                       admitted (a rank      cut
-                                        prefix, k' rows)
+                                       admitted (k' rows,    cut
+                                       size-selected)
 ```
+
+*(Revision 8: the diagram read `admit(60,000 B, stop-not-skip)` over `admitted (a rank prefix, k' rows)`
+until PR #22. Corrected rather than struck, because a struck ASCII diagram is unreadable and the shape it
+draws — two boundaries, one cut branch — is unchanged; only the admission rule's name and the description
+of the admitted set were wrong.)*
 
 | Boundary | Constant | Failure | What it means |
 |---|---|---|---|
 | **Retrieval** | `candidateLimit = 20` | the required node is not in the candidate set at all | the retriever never saw it. §5.2 of the vision's worst case |
 | **Admission** | `assemblyByteBudget = 60,000` | the required node is in the set with `included: false` | the retriever found it and the assembler threw it away |
 
-Because admission is a stop and not a skip, **the admitted set is always a rank prefix**, so
+~~Because admission is a stop and not a skip, **the admitted set is always a rank prefix**, so
 *admitted-recall* is exactly *recall@k′* where `k′` is that run's admitted count — a **variable `k`
 determined by the sizes of the bodies, not by a constant anyone chose.** `k′` is therefore reported per row
-(§8.2). Saying "recall@k" without saying which `k` is silently reporting a number whose denominator moved.
+(§8.2). Saying "recall@k" without saying which `k` is silently reporting a number whose denominator moved.~~
+
+**Revision 8 — the premise inverted, and one of the two conclusions did not survive it.** *(revision 8, 2026-09-04, after PR #22 / #11158 replaced the stop with a skip)*
+Admission **skips**: a candidate that does not fit costs **its own slot and nothing else**. So the admitted
+set is a **size-selected subset of the ranking, never a rank prefix**, and admission is **non-monotone in
+size** — a smaller candidate at rank 9 can be admitted while a larger one at rank 3 was cut.
+
+**What does not survive:** *admitted-recall* is **not** *recall@k′* in the top-`k` sense, and this document
+should stop calling it that. It is recall over **the set the assembler actually rendered**, whose *size* is
+`k′`. M1's design carries the same correction and states the concession this one owes: `included` now means
+*"outranked everything excluded **that was also small enough**"*, not *"outranked everything excluded"*.
+
+**What does survive, unchanged:** `k′` is still a **variable `k` determined by the sizes of the bodies, not
+by a constant anyone chose**; it is still reported per row (§8.2); and saying "recall@k" without saying
+which `k` is still reporting a number whose denominator moved. **The two boundaries §5 draws are
+untouched** — this changes *which* candidates admission discards, never *that* admission is a second
+boundary that fails differently from retrieval. That is why §5.2's rates, §8.2's fields and §9.2's split
+all stand on their own arguments rather than on this one.
 
 ### 5.2 The rates
 
@@ -480,12 +522,18 @@ load time as a rejection. The same answer binds here. Rejecting the row outright
 corpus from stating a true and important fact about the shipped pipeline.
 
 **It does not get its own stratum either.** A third member costs a third rate and would pull the row out of the
-labelled rate — discarding the true half of what it measures, which is that the retriever *did* surface a 95 KB
-design document for a question about it. §6.1's stratum has two members and keeps them.
+labelled rate — discarding the true half of what it measures, which is that the retriever *did* surface a
+~~95 KB~~ **95,661 B (as #11046 measured it; the file is larger at every later revision — §5.4's own rule
+above is not to quote a current size)** design document for a question about it. §6.1's stratum has two
+members and keeps them.
 
 **What ships is the fact, not a verdict about it.** The node's own byte size is already on the `Disposition`
 the scorer walks — admission is computed from it — so it is carried onto the required-node result and printed
-beside every `cut` (§8.2, §8.3), against a budget the same line already prints. The distinction that decides a
+beside every `cut` (§8.2, §8.3), against a budget the same line already prints. *(Revision 8: **"ships" is
+the specification's tense, not the tree's.** `NodeResult` carries no `size` and no miss line prints one;
+**#11049** is the unstarted task that implements this section together with §8.2's `required[]` row and
+§8.3's specimen. §12 E8 named this as a mitigation already in place and is corrected in the same revision.)*
+The distinction that decides a
 milestone is then immediate:
 
 | Reading | What it means | Who can act on it |
@@ -802,7 +850,7 @@ is the guard that says so.
 | `selfProducedCandidates` | **§3.4 / R13**, made countable |
 | `shutout` | `admittedCount == 0` while `candidateCount > 0` — §3.4's catastrophic shape, which a recall number alone reports as an ordinary miss |
 | `topSimilarity` | **§3.2's discriminator at the other end.** It separates *the required node was lost inside a near-tied top-20* (measured spread 0.0316) from *recall returned nothing useful at all* — a distinction a rank-less `notRetrieved` verdict cannot make. Read by whoever is deciding whether the retriever or the input is at fault |
-| `required[]` → `{node, verdict, rank, size, stale}` | the attribution that makes the number actionable. **`size`** is the required node's own byte count, present whenever the node was a candidate at all — it is what separates a `cut` M3 tuning can rescue from a `cut` no ranking can (§5.4), and it costs no read, because admission already computed it |
+| `required[]` → `{node, verdict, rank, size, stale}` | the attribution that makes the number actionable. **`size`** is the required node's own byte count, present whenever the node was a candidate at all — it is what separates a `cut` M3 tuning can rescue from a `cut` no ranking can (§5.4), and it costs no read, because admission already computed it. **Revision 8: `size` is specified here and is *not* in the shipped type** — `NodeResult` (`internal/eval/score.go`) carries `{node, verdict, rank, stale}`. **#11049** is the unstarted task; this row is a contract the tree does not yet meet, and §12 E8 is corrected in the same revision for claiming it as a mitigation in place |
 | `candidates[]` *(revision 7)* | **the row's full candidate set, in rank order** — the `[]loop.Disposition` the scorer already receives and today discards. It is what makes a labelled miss triageable: §4.3's three causes are byte-identical in every other field, and telling them apart is a human reading of **what outranked the required node**. A `Disposition` carries no content body (rank, id, type, name, similarity, size, content hash, included, cut reason), so a 34-row corpus adds roughly 680 scalar records to a local file — and **no extra graph read**, so §10's GET count is unchanged |
 
 **A *diagnostic* here is a value the sweep computes in order to name one known failure mode** — not the
@@ -847,14 +895,56 @@ Roughly twenty lines on stderr, and ~~three~~ **four** rules govern it:
 2. **Every miss is named** — row, node, verdict, rank — never only counted. This is the rule that answers
    Toni's test: `recall = 0.62` changes nobody's mind; *"row 07 required #10424, which ranked 8 and was cut
    by a 30 KB node at rank 8 while the budget was half empty"* changes it immediately.
-3. **The two control alarms are different sentences, and only one of them is an exit code** (§9.2). A control
+3. ~~**The two control alarms are different sentences, and only one of them is an exit code** (§9.2). A control
    that was never retrieved is an instrument failure; a control that was retrieved and cut is a budget
-   measurement. Printing them with the same words puts a reader back where §9.2 started.
+   measurement. Printing them with the same words puts a reader back where §9.2 started.~~
+   **Revision 8 — §9.2's table gives *four* control states, and each gets its own sentence.** They are:
+   *no control stratum at all*; *a control that was never retrieved* — an instrument failure; *a control row
+   that could not be scored at all* (`unresolved`, or the row errored) — **there was no self-check this
+   sweep**; and *a control that was retrieved and cut* — a budget measurement, and **the only one of the
+   four that exits 0**. Printing any two of them with the same words puts a reader back where §9.2
+   started. The binary prints **three** sentences today; the fourth is specified in the specimen below and
+   **#11130** is the task that prints it, with a guard pinning that the four states produce four *distinct*
+   sentences rather than merely that each prints something.
 4. **Every miss also names what outranked the required node** *(revision 7)* — uniformly the three
    highest-ranked candidates by id and similarity, **one rule with no branching on verdict**. For a
    `notRetrieved` it says what came back instead; for a `cut` at rank 9 it says what beat it. This is the
    line that lets a reader run §4.3's *look* without going back to the graph, which by then has moved. A
    miss with fewer than three candidates above it prints what exists rather than padding.
+
+**Read every specimen in this section as a *target*, not as a record of shipped output.** This is stated
+in the document because three consecutive rounds have had to re-derive it and two spent effort matching a
+specimen they had taken for a transcript. Measured against `internal/eval/report.go` on **2026-09-04**:
+
+| | The specimen below | What the code emits |
+|---|---|---|
+| miss-line prefix | **15** columns (`  r03  #10861  `) | **19** — `fmt.Sprintf("  %-5s #%-9d ", …)` |
+| payload column | every payload aligned at **45** | **34** for `notRetrieved`, `unresolved` and `outranked by`; **36** for `cut`, whose `%-4d` rank field is wider |
+| the `cut` line's `, node 30104 B` | present | **absent** — it is **#11049**'s unimplemented `size` field (§5.4, §8.2), not a formatting difference |
+
+**None of the three is drift**, and telling them apart decides what to do about each. The two column
+figures were **never** what the code produced — the specimen was hand-set to read well on the page. The
+`, node NNNNN B` suffix is a **specification of unbuilt work**. So: an implementer takes the **fields and
+their order** from a specimen and never its whitespace, and where a specimen and the code disagree about a
+**field**, the specimen is the requirement and the gap is a task — as `, node 30104 B` is #11049.
+
+**And the inverse case, which the rule above does not cover** *(revision 8, from QA #11291 W-2)*. Where the
+**code** carries a field the **specimen** omits, the *code* is right and the specimen is merely older —
+nothing is owed. Three such differences exist and are deliberately not in the table above, which measures
+only what the specimen over-claims: `report.go:210` prints `shutouts  3/30 rows` where the specimen shows
+`3 rows`; `report.go:211-212` puts `stale labels` and `unresolved required nodes` on two lines where the
+specimen puts both on one; and `report.go:208` says `(admitted as a candidate in 9)` against the
+specimen's `(admitted in 9)`. **The first of those is the one to keep**: the missing denominator is exactly
+what §8.3 rule 1 and G-11 exist to guarantee, so the code is enforcing a rule the specimen quietly breaks.
+~~**A specimen may under-specify safely and over-specify never.**~~ **The code is right unless another
+section forbids the field — a specimen's silence is not permission** *(revision 8, corrected on QA #11293
+W-6 before shipping)*. The struck maxim was unconditional and **this document holds a live counter-case**:
+§8.3's newer-id reading aid is deliberately *"a hint for a reader, not a check"*, and promoting it to a
+computed field *"would be inventing exactly the flag §6.5 rules out"*. The specimen omits that field and
+the code omits it too — and under the struck wording, a later round shipping it would have been licensed by
+the specimen's silence. **The worked example above never depended on the broad reading**: the code wins on
+`shutouts 3/30 rows` because **§8.3 rule 1 and G-11 require the denominator**, not because code outranks
+specimen by default. The conclusion was right and the generalisation reached past it.
 
 ```
 corpus internal/eval/corpus.json — 34 rows (30 labelled, 4 control), hash 9f2c…
@@ -887,6 +977,28 @@ control    retrieved   4/4 (1.00)   admitted   0/4 (0.00)
 budget alarm: the control stratum was retrieved in full and cut by the budget. Retrieval is intact and this
 sweep's retrieved rate is trustworthy; the admitted rate is a reading of the assembler, not of the retriever.
 ```
+
+**And the fourth state, which the binary does not yet print** *(revision 8, specifying **#11130**)*. A
+control row that could not be scored at all — its required node no longer resolves, or the graph call for
+that row failed. It exits **1**, and its sentence must **not** borrow the retrieval failure's words:
+
+```
+labelled   retrieved 31/41 (0.76)   admitted 20/41 (0.49)
+control    retrieved  3/4 (0.75)    admitted   3/4 (0.75)
+
+no self-check this sweep: a control row could not be scored at all, so the stratum did not run. Nothing this
+sweep reports about itself has been verified, and an absent guard is not a passing one.
+```
+
+**Why this is a fourth sentence and not a fourth clause on the third.** §9.2's table gives this arm its own
+row and its own reading — *there was no self-check this sweep* — and that is a different fact from
+*retrieval did not surface the node*. The first says the instrument was **not read**; the second says it
+**was** read and came back empty. A reader who cannot tell them apart cannot tell a broken harness from a
+polluted graph. **Both exit 1**, which is precisely why the exit code cannot carry the distinction and the
+sentence must. **Measured 2026-09-04:** `internal/eval/report.go` declares three alarm constants, and
+`alarmControlBroken` is an umbrella over states two and three. It is **not false** of either — it says
+*"either the graph moved, the harness broke, or the stratum could not be scored at all"* — and *not false*
+is not the same as *correct*, which is the whole of #11130.
 
 **Two things about the outranked-by line, both deliberate.** `r22` above prints **two** candidates, not
 three, because only two outranked it — padding to a fixed three with a zero-valued entry would report a
@@ -944,9 +1056,25 @@ decoration.**
 ~~As first written, guard 3 read the control stratum at the admission boundary alone: every control row's
 required node had to be `admitted`, and anything less exited 1 saying "either the graph moved or the harness
 broke".~~ **That verdict cannot mean what it says while §3.4's pollution is unfixed, and every fact that
-proves it is already in this document.** Admission is stop-not-skip (§5.1); #10897 is a **70,660 B** run
+proves it is already in this document.** ~~Admission is stop-not-skip (§5.1); #10897 is a **70,660 B** run
 record against a 60,000 B budget and #10898 is **56,302 B**; either at rank 1 admits nothing or nearly nothing
-and cuts every row beneath it, controls included. **So the most likely cause of a control failure today is the
+and cuts every row beneath it, controls included.~~
+
+> **Revision 8 — the premise inverted and this ruling now stands on a narrower base.** Admission **skips**
+> (§5.1). **#10897, at 70,660 B against a 60,000 B budget, is now cut alone** and costs the rows beneath it
+> nothing at all. **#10898, at 56,302 B, is admitted and leaves 3,698 B**, so it still cuts nearly
+> everything beneath it, controls included. The mechanism therefore survives for the *fits-but-crowds*
+> polluter and **not** for the *larger-than-budget* one — a materially smaller blast radius than the struck
+> sentence claimed, and half of its evidence is gone.
+>
+> **The split is not re-opened by that, and the reason is worth stating rather than assumed.** §9.2 split
+> guard 3 because the two boundaries **fail differently and want opposite fixes** — an argument about what
+> a verdict *means*, which is independent of how many rows any one polluter takes down. The struck sentence
+> was an argument about *likelihood*, and only the likelihood changed. **Measured since:** #11133's first
+> live sweep read the control stratum at **1.00 / 1.00** on both arms, so the control failure this
+> paragraph anticipated has not occurred once.
+
+**So the most likely cause of a control failure today is the
 known, unfixed self-recall pollution — which is neither the harness nor the graph**, and is the one thing the
 stratum exists to rule out. It is also the most likely way `cmd/eval` exits 1 on its first real run, and a
 first measurement that exits 1 for a misattributed reason is worse than no measurement, because it is read as
@@ -1150,7 +1278,7 @@ name the cause beside it.
 | E5 | **The harness reports plausible numbers while broken** | four independent guards, one running every sweep (§9.2) | the control stratum's **retrieved** rate reads below 1.00. *(Revision 6: as first written this row said "the control stratum reads below 1.0", which the admitted rate can do for a reason that is neither the harness nor the graph — §9.2)* |
 | E6 | **The eval drifts from the loop** as M3 changes assembly | behavioural test (G-14) plus two mutations on the loop's own constants and admission rule (§9.3, G-14b) | a `loop` constant changes and no eval test notices |
 | E7 | **The anchor duplication (§3.3) distorts every number** | rejected at load where it would be a free hit (§6.2); reported per row where it is budget cost (§8.2) | `anchorWasCandidate` is true on a majority of rows and the admitted byte totals are correspondingly inflated |
-| E8 | **The admitted rate carries permanent zeros nothing can move**, from required nodes larger than the budget (§5.4), and a reader attributes them to the retriever | the node's own `size` is printed beside every `cut`, against the budget on the same line | a `cut` line appears without the required node's size, or the admitted rate is quoted in a comparison without the count of oversized required nodes behind it |
+| E8 | **The admitted rate carries permanent zeros nothing can move**, from required nodes larger than the budget (§5.4), and a reader attributes them to the retriever | ~~the node's own `size` is printed beside every `cut`, against the budget on the same line~~ **Revision 8: this mitigation is *specified* (§5.4, §8.2, §8.3) and *not implemented*.** `NodeResult` (`internal/eval/score.go`) carries `{node, verdict, rank, stale}` and no miss line prints a size; **#11049** is the task and is unstarted. **E8 is therefore an open risk whose mitigation is designed but unbuilt**, and its falsifier fires on every sweep run today. | a `cut` line appears without the required node's size, or the admitted rate is quoted in a comparison without the count of oversized required nodes behind it |
 | E9 | **A reader treats exit 0 as "the numbers are good"** now that a budget collapse no longer exits 1 (§9.2) | §7.4 states what the code means; the budget alarm is printed in words, and in the same sweep the labelled admitted rate is visibly near zero | someone cites a sweep's exit 0 as evidence about the pipeline rather than about the sweep |
 | E10 | **A disappointing score is resolved by editing the answer key** *(revision 7)*. §4.3 makes *"update the corpus"* a legitimate outcome of a labelled miss — which is right, and is also the path of least resistance: every individual edit looks reasonable and the erosion is invisible | §6.5's three parts, all of which already exist: §6.2 re-validates an edited row exactly like a new one, git carries the date and the reason, and `corpusHash` breaks the comparison chain at the point of the edit. **No new mechanism** — building one is #11034 P-3's bad trade, and E1 already covers the definition drifting rather than the rows moving | **a corpus edit lands in the same commit as anything else**, or a comparison is quoted across two differing `corpusHash` values without the corpus diff beside it |
 
@@ -1185,22 +1313,31 @@ Line numbers therefore appear nowhere in this table. Where one would have pointe
 
 **Revision 6 adds two rows for guards the tree does not yet carry**, G-28 and G-29, and ~~check 1's `comm -23`
 will list both until they land~~ *(revision 7: **false, and it was checked this time.** Both rows cite
-`TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode` — the test they retarget — which exists
-today, so check 1 resolves them and never listed either. A claim about what a check would output, written into
+~~the test they retarget, named in §16 — which exists today~~ **the test they retarget** *(revision 8: the identifier is struck here and spelled only in §16, so a residual-citation sweep over §13 stays clean — the move §13 already makes for its own line-number instance)*, so check 1 resolves them and never listed either. A claim about what a check would output, written into
 the section about falsifiable claims, by an author who did not run it.)* ~~**That residue is this revision's
 to-do list, not a defect**; every other name in the table resolves today.~~
+
+> **Revision 8 corrects revision 7's correction, which had a shelf life nobody stated.** *"which exists
+> today"* was true on 2026-09-03 and is false on 2026-09-04:
+> **the test both rows cited does not exist in this tree** — it is named in §16's revision 8 table, and
+> deliberately not here.
+> PR #18 retargeted it rather than keeping it, so revision 7's *silent pass* became check 1's *residue* —
+> the one transition the preamble below did not anticipate, and the reason the residue measured **`2`
+> rather than `0` on `2bea35c`**, this revision's starting point. **It is `0` on the file you are reading**
+> (below). Note what the two revisions have in common: **both wrote a dated claim about the tree in the present
+> tense.** Revision 7 corrected the tense of a prediction and kept the tense of the fact.
 
 **Revision 7 adds six rows, and states the residue as a measurement rather than as a count of rows, because
 the two are different numbers:**
 
-| Rows | What check 1 does with them | Status, measured on this branch 2026-09-03 |
+| Rows | What check 1 does with them | Status, measured on this branch 2026-09-03; **re-measured `2bea35c` 2026-09-04 (revision 8)** |
 |---|---|---|
-| G-28, G-29 | **not in the residue.** ~~both cite an existing test by name~~ G-28 cites an existing test by name; **G-29 cites no name at all** *(corrected 2026-09-03 — this was QA #11102 W-5's misattribution surviving at a third site the finding did not name; see the invisibility table below)* | **owed to the tree.** No implementation exists; **#11048** is the task |
-| G-30, G-30b, G-31, G-31b | **not in the residue** — every cited name resolves | **DONE, and this is a third status the table did not have** — not owed, not in flight, but landed. ~~**written, and in flight on another branch.** The four rows' five tests and the two loader guards exist on `origin/fix/corpus-loader-guards` (tip `dd46f65`), and `git merge-base --is-ancestor origin/fix/corpus-loader-guards origin/main` reports **not merged** — so they are absent from `main` and from this branch. They land with that branch; **nobody should re-implement them**~~ *(corrected 2026-09-03: **PR #15 merged as `6d16803`** while this revision was in review, and `main` was merged into this branch at `7dff07b`. Re-measured there, not inferred: `git merge-base --is-ancestor origin/fix/corpus-loader-guards origin/main` now reports **merged**, `isContentHash` and the duplicate-node check are in `internal/eval/corpus.go` here, and all five cited tests resolve)* |
-| G-32, G-33 | **not in the residue** — neither cites a test name yet | **owed to the tree.** No implementation exists; **#11066** is the task |
+| G-28, G-29 | ~~**not in the residue.** both cite an existing test by name~~ ~~G-28 cites an existing test by name; **G-29 cites no name at all**~~ **Revision 8: G-28's cited name was *deleted* by the retarget, so it is now check 1's residue rather than its silent pass; G-29 still cited nothing. Both rows now name the shipped guards.** | ~~**owed to the tree.** No implementation exists; **#11048** is the task~~ **DONE — landed in `c6083e5` (PR #18).** |
+| G-30, G-30b, G-31, G-31b | **not in the residue** — every cited name resolves | **DONE, and this is a third status the table did not have** — not owed, not in flight, but landed *(corrected 2026-09-03: **PR #15 merged as `6d16803`**; all five cited tests resolve)*. **Unchanged at revision 8.** |
+| G-32, G-33 | ~~**not in the residue** — neither cites a test name yet~~ **Revision 8: both now cite the shipped guards.** | ~~**owed to the tree.** No implementation exists; **#11066** is the task~~ **DONE — landed in `530458f` (PR #20).** |
 
 ~~**Check 1's residue on this document at revision 7 is exactly those five names, and the check was run
-(2026-09-03).**~~ **Check 1's residue on this document is `0`, re-measured on `7dff07b`.** *(The struck
+(2026-09-03).**~~ ~~**Check 1's residue on this document is `0`, re-measured on `7dff07b`.**~~ *(The struck
 sentence was true when written and false a few hours later, and it is corrected rather than left to its
 date for one reason: **§13's subject is the residue.** A reader told to expect five names who runs the
 command and gets none concludes the document is stale and stops running it — this section's own named
@@ -1208,41 +1345,82 @@ failure mode, arriving as an unexplained **absence** rather than an unexplained 
 what changed it.)* ~~Six rows are owed to the tree and only four of them are visible to check 1 at all —
 which is the finding rather than the bookkeeping.~~
 
+**Check 1's residue on this document was `2` at `2bea35c`, measured on 2026-09-04 (revision 8) before any
+of this revision's edits.** The two
+names were the retargeted control guard (cited at G-28 and twice in this preamble) and the renamed shutout
+guard (cited at G-16). **Both identifiers are spelled in §16's revision 8 table and nowhere in §1–§15** — §13
+excludes §16 from check 1 by design, and repeating a dead name inside the checked range would leave the
+residue permanently non-zero for the very fix that cleared it. Both citations are corrected in this
+revision, so **the residue returns to `0` with it** — re-measured on the revised file, not predicted.
+
+> **The residue moved from `0` to `2` without a single guard being lost, and that is the finding.** Revision
+> 7 measured `0` and was right. Then PR #18 **retargeted** one test and PR #22 **renamed** another, and each
+> rename silently falsified every citation of the old name. **A rename is invisible to the round that makes
+> it** — `go test` passes, `gofmt` and `go vet` are silent, and nothing in the Go toolchain knows this
+> document cites the name. So check 1's residue is not a decreasing quantity a revision drives to zero; it
+> is a **live coupling to every test rename in the tree**, and it must be re-run on the tip being shipped
+> rather than inherited from the revision that last measured it. Revision 7's `0` was a correct measurement
+> of a tree that no longer exists.
+
 **The population, stated — because this section used one phrase for three different ones and got the count
 wrong twice** *(corrected after QA #11099 CF-1; §16 carried the same sentence with the numerator inverted)*.
 Count **rows in the table below whose guard does not exist in this tree**: ~~there are **eight** — G-28,
 G-29, G-30, G-30b, G-31, G-31b, G-32, G-33. That is deliberately **not** the status table's *"owed to the
 tree"*, which is the narrower **four** that no branch carries at all; the four on
 `fix/corpus-loader-guards` are absent from here and owed to nobody. Both counts are true and they are
-different populations, which is exactly how the wrong number got written.~~ there are **four** — G-28,
+different populations, which is exactly how the wrong number got written.~~ ~~there are **four** — G-28,
 G-29, G-32, G-33 *(re-measured on `7dff07b`. It was eight until **`6d16803`**; the four that were
-absent-but-written are now present)*.
+absent-but-written are now present)*.~~ **Revision 8, re-measured on `2bea35c`: there are `0`.** G-28 and
+G-29 landed with **`c6083e5`** (PR #18), G-32 and G-33 with **`530458f`** (PR #20). Every row in the table
+below now names at least one guard that exists in this tree.
 
 **The two populations this section had to keep apart have collapsed into one, and that is worth saying
 rather than quietly deleting the distinction.** *Rows whose guard is absent* and the status table's *owed
-to the tree* are now the **same four rows**. The distinction was real and load-bearing while
+to the tree* ~~are now the **same four rows**~~ **are now the same population, and that population is
+empty** *(revision 8, QA #11293 W-5: the struck text was revision 7's and correct on `7dff07b`; all four
+landed with `c6083e5` and `530458f`, as three lines above already state)*. The distinction was real and
+load-bearing while
 `fix/corpus-loader-guards` was outstanding, and it is not gone — only currently empty. **The moment any
 guard is written on a branch and not yet merged, the two diverge again**, and a reader who has learned to
 treat them as synonyms will re-create CF-1 exactly.
 
-| Of the **four** rows whose guard is absent from this tree | Count | Which, and why |
+> **This was the sixth site of one claim, and it is the one that shows why the count kept moving.** The
+> other five asserted the population *after* the sentence that corrected them; this one asserts it
+> **before** — three lines below `there are 0` in reading order, so a reader meets the right value first
+> and the wrong one second. That ordering is why two rounds of sweeping walked past it: it does not
+> contradict anything a reader has already read. **A claim-family sweep has to enumerate the family, not
+> stop where the contradiction becomes uncomfortable.**
+
+| Of the **four** rows whose guard was absent from this tree at revision 7 | Count | Which, and why |
 |---|---|---|
 | **visible** to check 1 — the row cites a name that does not resolve | **0** | **None.** ~~**4** — G-30, G-30b, G-31, G-31b — five names between them, because G-30b cites two~~ *(those four were the whole visible set; `6d16803` made every one of their names resolve, so check 1 now sees nothing here)* |
-| **invisible** to check 1 | **4** | **Two mechanisms, and they are not equally bad.** *Cites nothing, so nothing can fail:* **G-29, G-32, G-33**. *Cites a **different** existing test, so check 1 resolves it and passes:* **G-28** alone, which names `TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode` — the test it retargets. ~~G-32 and G-33 cite no test name at all; G-28 and G-29 cite the existing test they retarget~~ *(corrected after QA #11102 W-5: G-29 cites no test either — its cell names G-28, not a test. The counts are unaffected)* |
+| **invisible** to check 1 | ~~**4**~~ **0** *(revision 8)* | **Two mechanisms, and they are not equally bad.** *Cites nothing, so nothing can fail:* **G-29, G-32, G-33**. *Cites a **different** existing test, so check 1 resolves it and passes:* **G-28** alone, which named the test it retargets (spelled in §16, revision 8). ~~G-32 and G-33 cite no test name at all; G-28 and G-29 cite the existing test they retarget~~ *(corrected after QA #11102 W-5: G-29 cites no test either — its cell names G-28, not a test. The counts are unaffected)* **Revision 8: all four now cite guards that exist, so both mechanisms are empty. G-28's retargeted citation did not merely stop being a silent pass — the test it named was deleted, so it became a check-1 *residue* entry, which is how the silent pass finally surfaced.** |
 
-~~**Half of them are invisible, and that is the finding rather than the bookkeeping.**~~ **All four are
-invisible now, and *how* that happened is a sharper finding than the ratio ever was.** P-41 checks that
+~~**Half of them are invisible, and that is the finding rather than the bookkeeping.**~~ ~~**All four are
+invisible now, and *how* that happened is a sharper finding than the ratio ever was.**~~ *(Revision 8: the
+population is empty — every one of the four now cites a guard that exists, so there is nothing left to be
+visible or invisible. The mechanism the sentence named is real and is kept below, because it will recur the
+next time a row is written before its guard.)* P-41 checks that
 every cited name resolves; **it cannot check that a row owing a guard has cited a name for it** — a row
 citing nothing has nothing to fail on, and a row citing a *different, existing* test passes.
 
 **The second mechanism is the worse one, and it was measured rather than argued** (QA #11102, on G-28): the
 cited name is in the cited set, resolves in the present set, and occurs in the `comm -23` residue **zero**
 times. So check 1 does not merely stay quiet about a row whose guard does not exist — **it passes it**. A
-silent absence is a gap; a silent pass is a wrong answer, and exactly one row in this table has that shape.
+silent absence is a gap; a silent pass is a wrong answer, and ~~exactly one row in this table has that
+shape~~ *(revision 8: **no row in this table has that shape now.** G-28 was the one, and it is corrected
+here. The mechanism is retained above because it is a property of check 1 rather than of these rows —
+and because the way it finally surfaced is worth keeping: the cited test was **deleted**, which
+converted the silent pass into an ordinary residue entry. **The instrument caught it only after the defect
+had changed into a different defect.**)*
 
 That is the audit gap revision 6 named two paragraphs down, arriving from the other direction: revision 6
-found a *property* with no row, and revision 7 finds *rows* whose guard no name reaches. The status table
-above, not the residue, is what a reader should act on until the guards land.
+found a *property* with no row, and revision 7 finds *rows* whose guard no name reaches. ~~The status table
+above, not the residue, is what a reader should act on until the guards land.~~ *(Revision 8: **all four
+landed** — `c6083e5` and `530458f` — so the instruction has no remaining subject. What replaces it is
+narrower and still true: **the status table is what a reader should act on whenever the two disagree**,
+because the residue reports only on cited names that fail to resolve and stays silent about a row that
+cites nothing at all.)*
 
 **And `6d16803` demonstrated something no argument would have.** The residue fell from five names to **zero
 without one of the still-owed guards being written**, and check 1's view of this document's own gap fell
@@ -1256,11 +1434,27 @@ from four rows of eight to **none of four** — as a side effect of *good news*,
 
 **So an empty residue is not a clean document.** It licenses one claim and no others: *every test name this
 document cites resolves to a test that exists.* It does **not** say that a row owing a guard has cited one
-(G-29, G-32 and G-33 cite nothing), that a cited name is the **right** guard for its row (G-28 cites the
-test it retargets — the silent pass above), that a guard discriminates (check 3), that it stays green on a
+~~(G-29, G-32 and G-33 cite nothing)~~ *(revision 8: **all four rows now cite shipped guards**, so this
+document has no live instance of either mechanism — the claim is kept as the general property check 1
+lacks, not as a statement about these rows)*, that a cited name is the **right** guard for its row
+~~(G-28 cites the test it retargets — the silent pass above)~~ *(revision 8: corrected with the row)*, that a
+guard discriminates (check 3), that it stays green on a
 compliant implementation (check 4), or that its package can observe the property at all (check 2).
-**Four of this document's coverage rows name a guard that does not exist, and check 1 is green.** That is
-the argument for the other three checks, in one measured sentence.
+~~**Four of this document's coverage rows name a guard that does not exist, and check 1 is green.**~~
+**Revision 8: zero of them do, and check 1's residue on the shipped file is `0`.** The four rows that owed
+a guard (G-28, G-29, G-32, G-33) all have one now.
+
+**The route there is the part worth keeping, and it is dated rather than present-tense.** Measured on
+`2bea35c` — this revision's starting point — the residue was **`2`**, and neither name was a guard nobody
+had written: both were **citations left behind by tests that were renamed** (PR #18 retargeted one, PR #22
+renamed the other). Correcting those two citations is part of this revision, so **the residue is `0` on the
+file you are reading** — re-measured on the amended tip, not predicted from the starting point.
+
+So check 1 went green on the gap it could see *and* red on one it could not predict, **within a single
+revision** — which is the argument for the other three checks restated rather than withdrawn. **Do not read
+the `2` as this document's current state:** the preamble scopes it to `2bea35c` and so does this paragraph,
+because an unscoped figure in a section's conclusion is exactly the hedge-dropping P-51 names, and a reader
+who runs the command and gets `0` against a document claiming `2` learns to stop running it.
 
 ~~**That residue is a to-do list, not a defect**; every other name in the table resolves today. It is stated
 here because an unexplained residue is what trains a reader to stop running check 1 — this section's own
@@ -1268,9 +1462,14 @@ failure mode, one level up. **And the statuses must not be collapsed:** a reader
 as *unwritten* would file #11048's and #11066's work correctly and would then also re-write four rows whose
 guards already exist, instead of merging the branch that clears them.~~ *(Struck 2026-09-03 after
 **`6d16803`**: there is no residue left to explain, and the collapse it warned against — re-implementing
-four guards that already existed — is no longer available, because they are merged. **The inverse warning
+four guards that already existed — is no longer available, because they are merged.* ~~**The inverse warning
 replaces it:** the residue is empty while four rows still owe a guard, so what now trains a reader wrongly
-is not an unexplained residue but an unexamined absence of one.)*
+is not an unexplained residue but an unexamined absence of one.~~ *(**Revision 8:** the inverse
+warning has expired with the condition that made it true — **no row owes a guard any more.** It is kept
+struck rather than deleted because the shape recurs: whenever a row is written before its guard, an empty
+residue again means less than it appears to. **This site was not in QA #11291's list of four**; it was
+found by sweeping the claim — *that four rows are defective* — across the whole region instead of visiting
+the lines the finding named. That is P-52's remedy applied to the finding about P-52.)*
 
 **On the ordering of the ids below.** G-28 and G-29 sit before G-27, because revision 6 inserted them where
 the property they guard is discussed rather than at the end. Left as it is on #11034's own rule that **an id
@@ -1299,9 +1498,9 @@ cited**, and those are not the same audit. G-28 and G-29 close it here; the gene
 | G-12 | Every miss is named, never only counted. **Premise that makes it discriminate:** the fixture carries more misses than any plausible truncation limit, so an implementation that prints "the first five" fails it | `TestReportNamesAllTwelveMissesInAFixtureWithTwelveMisses` |
 | G-13 | The labelled and control strata are reported as separate rates and never summed | `TestReportKeepsTheLabelledAndControlRatesSeparate` |
 | G-14 | **Behavioural half of §9.3:** the sweep's dispositions equal what a real run's record carries for the same inputs | `TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidates` |
-| G-14b | **Structural half of §9.3** — a correct reimplementation would pass G-14, so this is not a test. **Revision 1's grep cannot come back clean:** it forbade "any numeric literal equal to a `loop` limit", while §4.3 of this same document mandates a required-node cap of **3**, which equals `loop.MaxModelCalls`. `internal/eval/corpus.go` — `const maxRequiredPerRow = 3` — violates it on a fully compliant implementation | **Two mutations, not a grep.** (a) Mutate `loop.AssemblyByteBudget`: the sweep's admitted counts **and** its reported limits must follow — a re-typed value does not. (b) Mutate `Assemble`'s admission from stop-not-skip to skip: `admittedCount` must follow — a reimplementation does not. The grep survives only in its checkable form: **every limit the eval reports resolves through the exported constant**, no re-typed limit *value* |
+| G-14b | **Structural half of §9.3** — a correct reimplementation would pass G-14, so this is not a test. **Revision 1's grep cannot come back clean:** it forbade "any numeric literal equal to a `loop` limit", while §4.3 of this same document mandates a required-node cap of **3**, which equals `loop.MaxModelCalls`. `internal/eval/corpus.go` — `const maxRequiredPerRow = 3` — violates it on a fully compliant implementation | **Two mutations, not a grep.** (a) Mutate `loop.AssemblyByteBudget`: the sweep's admitted counts **and** its reported limits must follow — a re-typed value does not. (b) ~~Mutate `Assemble`'s admission from stop-not-skip to skip~~ **Mutate `Assemble`'s admission to the other rule — currently from skip to stop-not-skip** *(revision 8: PR #22 shipped the skip, so this arm named its mutation* **backwards** *from the moment that merged. It is now stated as a* **direction** *rather than an endpoint pair, so the next change to the rule does not invert it again. Under* **P-30** *the arm must be re-run against the shipped code rather than inherited from the record above.)*: `admittedCount` must follow — a reimplementation does not. The grep survives only in its checkable form: **every limit the eval reports resolves through the exported constant**, no re-typed limit *value* |
 | G-15 | A corpus row demanding a node the query cannot surface is reported as a miss | `TestSweepReportsAMissForARequiredNodeTheQueryCannotSurface` |
-| G-16 | `shutout` is reported when candidates were retrieved and none admitted | `TestSweepReportsAShutoutWhenAnOversizedRankOneCandidateAdmitsNothing` |
+| G-16 | `shutout` is reported when candidates were retrieved and none admitted | ~~`TestSweepReportsAShutoutWhenAnOversizedRankOneCandidateAdmitsNothing`~~ `TestSweepReportsAShutoutWhenEveryCandidateWasOversized`, `TestSweepReportsNoShutoutWhenTheCandidateSetItselfWasEmpty` (`internal/eval/result_test.go`) *(revision 8: renamed in `58b02d8` — the same commit that replaced the stop with a skip, because under skip a shutout needs* **every** *candidate oversized, not only the rank-1 one. The rename is a consequence of §5.1's correction rather than an independent edit, and the empty-set dual arrived with it.)* |
 | G-17 | Whether the anchor also appeared as a candidate, and whether it was admitted, is recorded per row | `TestSweepRecordsThatTheAnchorAlsoAppearedAmongTheCandidates` |
 | G-18 | Admitted bytes and the budget are both recorded, so utilisation is derivable | `TestSweepRecordsTheAdmittedByteTotalBesideTheBudget` |
 | G-19 | A candidate written by the loop's own write path is counted as self-produced; a foreign `session-log` is not | `TestSweepCountsOnlyRunRecordsAsSelfProducedAndNotOtherSessionLogs` |
@@ -1317,15 +1516,15 @@ cited**, and those are not the same audit. G-28 and G-29 close it here; the gene
 | G-25b | A secret never appears in the **model** half's boot error — `PROCESSOR_MODEL_KEY` present, `PROCESSOR_MODEL_ID` empty. **Premise:** the split created a second secret in a second loader, so this half had no guard before it | `TestBootConfigErrorsNameTheVariableAndNeverItsValue`, model scenario |
 | G-26a | **§1 S1 — no model call is reachable.** Stronger than any grep, because it is a fact about the binary rather than about spellings | **Linker falsifier:** `go list -deps ./cmd/eval` does not contain `internal/openaicompat`; `go list -deps ./cmd/processor` does. Confirmed by QA #10945 ruling B |
 | G-26b | **§9.1 — the instrument never writes.** A grep cannot pin this: consuming `loop.GraphPort` forces every double to implement `WriteRun`, so a literal grep hits test sources on compliant code | `fakeGraph.WriteRun` calls `t.Fatal`, observed red by inserting one `WriteRun` into `sweepRow`. The grep remains as a backstop **scoped to non-test sources** |
-| G-28 | **A control node that was retrieved and cut does not fail the sweep** — it is a budget alarm, exit 0 (§9.2). **Premise that makes it discriminate:** the fixture's control row is `cut`, never `notRetrieved`, since a fixture conflating the two is passed by an implementation that reads either as a failure | **Guard required by revision 6; not yet in the tree.** It replaces `TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode`, which pins the semantics this revision overturns and is retargeted rather than deleted. **Falsifier:** restore the `Verdict != Admitted` condition; the guard must redden |
-| G-29 | **A control node that was never retrieved fails the sweep** — exit 1 (§9.2). **Premise:** paired with G-28 over otherwise identical fixtures, so neither passes an implementation that collapses the two verdicts | **Guard required by revision 6; not yet in the tree.** **Falsifier:** widen the condition to accept `notRetrieved`; the guard must redden. It runs as a pair with G-28 — either one alone is satisfied by a constant |
+| G-28 | **A control node that was retrieved and cut does not fail the sweep** — it is a budget alarm, exit 0 (§9.2). **Premise that makes it discriminate:** the fixture's control row is `cut`, never `notRetrieved`, since a fixture conflating the two is passed by an implementation that reads either as a failure | ~~**Guard required by revision 6; not yet in the tree.** It replaces `TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode`, which pins the semantics this revision overturns and is retargeted rather than deleted.~~ **In the tree since `c6083e5` (PR #18/#11048):** `TestControlVerifiedRetrievalIsTrueWhenTheBudgetCutAControlNodeTheRetrieverSurfaced` (`internal/eval/result_test.go`) and `TestTheSweepExitsZeroWhenTheBudgetCutAControlNodeTheRetrieverSurfaced` (`cmd/eval/sweep_test.go`). **The test the struck text cited no longer exists** — it was retargeted, not retained (it is named in §16's revision 8 table, and not here, so §13 stays clean under check 1), so the citation above was check 1's *silent pass* until this revision removed it *(revision 8)*. **Falsifier:** restore the `Verdict != Admitted` condition; the guard must redden |
+| G-29 | **A control node that was never retrieved fails the sweep** — exit 1 (§9.2). **Premise:** paired with G-28 over otherwise identical fixtures, so neither passes an implementation that collapses the two verdicts | ~~**Guard required by revision 6; not yet in the tree.**~~ **In the tree since `c6083e5` (PR #18/#11048):** `TestControlVerifiedRetrievalIsFalseWhenAControlNodeWasNeverRetrieved` (`internal/eval/result_test.go`) and `TestTheSweepExitsNonZeroWhenAControlNodeWasNeverRetrieved` (`cmd/eval/sweep_test.go`) *(revision 8 — this row cited no test name at all until now, which is the second invisibility mechanism the preamble names)*. **Falsifier:** widen the condition to accept `notRetrieved`; the guard must redden. It runs as a pair with G-28 — either one alone is satisfied by a constant |
 | G-27 | **`main()` binds the real streams in the right order.** `os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))` is one line no in-process test can reach — `main()` is not callable and the real file descriptors are not substitutable from inside the process | **Grep falsifier, admissible here:** exactly one hit for `os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))` in non-test source, and **zero** for the swapped spelling. See the admissibility note below |
 | G-30 | A `required[].hash` that is not 64 lowercase hex is rejected at load. **Premise that makes it discriminate:** the five rejected arms are *4 characters*, *outside the alphabet*, *uppercase*, *63 characters* and *a 128-character lowercase sha512 digest* — an implementation checking only non-emptiness passes none of them, one checking only length passes neither the alphabet nor the case arm, and one checking `len < 64` rather than `len != 64` passes the sha512 arm alone. That last arm was added after QA #11057 CF-1 found the `<` mutation surviving the whole suite green: the boundary needs both sides, and a sha512 digest is the most likely wrong-hash-function paste | `TestLoadRejectsARequiredHashThatIsNotLowercaseSha256Hex` (`internal/eval/corpus_test.go`) — ~~**on `origin/fix/corpus-loader-guards`, not on this branch**~~ **present in this tree since `6d16803`** |
 | G-30b | **The dual: a legitimate hash still loads.** Uppercase is excluded on purpose — `assemble.go`'s content hash is lowercase-only and `score.go` compares with plain equality, so an uppercase hash is guaranteed permanently stale — and the accepted set is therefore argued from what the **format** permits rather than from what the corpus writes today: an all-digit hash, an all-letter hash, and **the content hash `loop.Assemble` itself produces**, fed back in through the loader. The last of those pins the eval guard's premise to `loop.contentHash` rather than to eval's own encoder, which QA #11057 W1 identified as agreeing only by coincidence; mutating `loop.contentHash` to uppercase, or to a 128-character digest, reddens it | `TestLoadAcceptsAnAllDigitAndAnAllLetterSha256Hash`, `TestLoadAcceptsAsARequiredHashTheContentHashAssembleProduces` (`internal/eval/corpus_test.go`) — ~~**same branch caveat as G-30**~~ **present since `6d16803`, as G-30** |
 | G-31 | The same node id twice inside one row's `required` is rejected at load | `TestLoadRejectsARowListingTheSameRequiredNodeTwice` (`internal/eval/corpus_test.go`) — ~~**same branch caveat as G-30**~~ **present since `6d16803`, as G-30** |
 | G-31b | **The dual: three distinct required nodes still load**, so the guard cannot be satisfied by refusing every second entry. **Premise, verified by QA #11057:** `TestLoadRejectsARowListingTheSameRequiredNodeTwice` does *not* redden under `if len(required) > 0` — the mutant still rejects the duplicate row with the same message — so the rejection test cannot distinguish *rejects a repeated node* from *rejects any second entry*, and this dual is the sole discriminator. **Falsifier:** weaken the check to `if len(required) > 0`; observed reddening this row and nothing else | `TestLoadAcceptsThreeDistinctRequiredNodesOnOneRow` (`internal/eval/corpus_test.go`) — ~~**same branch caveat as G-30**~~ **present since `6d16803`, as G-30** |
-| G-32 | The row result carries **every** candidate the sweep produced, in **rank** order (§8.2). **Premise that makes it discriminate:** the fixture's candidates must differ from each other in id *and* in similarity, and must include at least one cut candidate, or an implementation retaining only the admitted prefix passes, and one re-sorting by similarity rather than preserving the rank the graph returned passes too | **Guard required by revision 7; not yet in the tree** — **#11066** is the task. **Falsifier:** retain `dispositions[:admittedCount]`; the guard must redden |
-| G-33 | A miss line names the three highest-ranked candidates, and a miss with fewer than three above it prints what exists rather than padding (§8.3 rule 4). **Premise:** the fixture carries one miss with three or more outranking candidates and one with exactly two, so an implementation that always prints three — padding with a zero-valued entry — fails the second, and one that prints by insertion order rather than by rank fails the first | **Guard required by revision 7; not yet in the tree** — **#11066** is the task. **Falsifier:** print `candidates[:3]` unconditionally; the guard must redden on the two-candidate row |
+| G-32 | The row result carries **every** candidate the sweep produced, in **rank** order (§8.2). **Premise that makes it discriminate:** the fixture's candidates must differ from each other in id *and* in similarity, and must include at least one cut candidate, or an implementation retaining only the admitted subset passes *(revision 8: "prefix" was §5.1's superseded framing; under skip the admitted set is not a prefix, and the falsifier below is unaffected because it names the expression, not the shape)*, and one re-sorting by similarity rather than preserving the rank the graph returned passes too | ~~**Guard required by revision 7; not yet in the tree** — **#11066** is the task.~~ **In the tree since `530458f` (PR #20):** `TestSweepRetainsEveryCandidateItSawInRankOrderIncludingTheOnesTheBudgetCut` (`internal/eval/result_test.go`) and `TestTheMachineResultCarriesTheRetainedCandidateSetUnderItsOwnWireKey` (`internal/eval/report_test.go`) *(revision 8)*. **Falsifier:** retain `dispositions[:admittedCount]`; the guard must redden |
+| G-33 | A miss line names the three highest-ranked candidates, and a miss with fewer than three above it prints what exists rather than padding (§8.3 rule 4). **Premise:** the fixture carries one miss with three or more outranking candidates and one with exactly two, so an implementation that always prints three — padding with a zero-valued entry — fails the second, and one that prints by insertion order rather than by rank fails the first | ~~**Guard required by revision 7; not yet in the tree** — **#11066** is the task.~~ **In the tree since `530458f` (PR #20):** `TestReportNamesTheThreeHighestRankedCandidatesThatOutrankedAMiss`, `TestReportNamesOnlyTheTwoCandidatesThatExistWhenFewerThanThreeOutrankedTheMiss` (`internal/eval/report_test.go`), with `TestReportNamesWhatOutrankedTheMissForEveryMissVerdictAlike` and `TestReportNamesNoOutrankingCandidatesForAMissThatNothingOutranked` covering the no-branching and empty arms *(revision 8)*. **Falsifier:** print `candidates[:3]` unconditionally; the guard must redden on the two-candidate row |
 
 Applying the table's own falsifier to the rows most at risk: G-4's empty-corpus half fails against code that
 returns `0/0` and exits 0 — the test asserts an error, so it discriminates. G-9 fails against code that
@@ -1494,7 +1693,7 @@ reader does not have to diff:
 |---|---|
 | **#10532 §9.4** — *"milestone 2 scores `input → the node ids that must be in scope`"* | It scores it at **two boundaries**, not one, and the *"recall@k is uncomputable without k"* argument for the `limits` field is the right argument for the wrong reason: the byte budget makes `k` **data-dependent**, so `limits` is necessary but not sufficient — `admittedCount` per run is what makes the denominator legible. `limits` already carries what is needed; no record change follows |
 | **#10904** — *"the stored node body ... reader: milestone 2's corpus"* | Precise correction: M2's **corpus** is authored in the repo; the stored node bodies are M2's **subject of study** and its regression material, not its corpus. The record-fate design's field decisions are all still right; the label on the reader was one word off |
-| **#10822 R13** — *"do not build it before the measurement"* | The measurement has been taken (§3.4) and the trigger has fired, harder than R13 anticipated: the record is larger than the budget, so it produces a **shutout** rather than merely crowding. The instruction stands — M2 still does not build the fix — and §11.3 explains why measuring it first is the point |
+| **#10822 R13** — *"do not build it before the measurement"* | The measurement has been taken (§3.4) and the trigger has fired, harder than R13 anticipated: the record is larger than the budget, so it produces a ~~**shutout**~~ *(revision 8, after PR #22: a* **cut of that one candidate** *— under skip an oversized rank-1 record costs only its own slot. A shutout now needs* **every** *candidate oversized. The trigger still fired and the instruction still stands; only the severity word was wrong)* rather than merely crowding. The instruction stands — M2 still does not build the fix — and §11.3 explains why measuring it first is the point |
 
 ### Revision 2 — 2026-09-02, after steps 1–2 were implemented (#10928)
 
@@ -1830,6 +2029,128 @@ Two sites were corrected when W-5 was raised and a third was not, because the re
 the finding **listed** rather than to the claim it was about. **Correcting the named instances of a duplicated
 claim is not the same as correcting the claim** — and what finally caught it was re-reading the section whole
 rather than patching it, which is the same instrument that found revision 6's contradiction and CF-1's.
+### Revision 8 — 2026-09-04, after PR #18, #20 and #22 landed under a document nobody re-read (#11101)
+
+**This revision pays a chain that five consecutive PRs correctly declined to pay.** Under **P-49** this file
+and `internal/eval/corpus.json`'s `r09` row are **one unit of change with one author**: the row records this
+document's sha256, so any edit here moves it, and moving it moves `corpusHash` — which is how **#11133**
+identifies the baseline three A/B arms are currently measured against. Paying that cost to fix one row while
+the rest stayed false would have produced a worse state than leaving it, so each code round deferred to
+**#11101** and was right to. **The chain is paid once, here, for all of it.**
+
+#### What was corrected, and the two kinds are not the same
+
+**P-43** distinguishes them and so does this list. A struck line that was **never true** and one that
+**stopped being true** carry different information, and a reader who cannot tell them apart learns nothing
+about how this document fails.
+
+**Records that aged — true when written, falsified by a later merge.** All of these are PR #22 (`58b02d8`,
+**#11158**) replacing admission's *stop* with a *skip*:
+
+| § | Site | What aged |
+|---|---|---|
+| TL;DR | the two-boundaries sentence, and #10898's *"tripped the stop"* | the byte budget still makes `k` data-dependent; the stop rule that framed it is gone |
+| §3.4 (corpus location) | *"takes every candidate behind it with it"* | an oversized rank-1 candidate now costs only its own slot |
+| §3.1 | the property row *"Admission is a stop, not a skip"* | inverted outright |
+| §3.4 | *"`stopped` is set before any candidate is admitted"* | **the identifier `stopped` no longer exists in `admit`** |
+| §5.1 | the pipeline diagram, and the *rank prefix / recall@k′* paragraph | the admitted set is a size-selected subset, non-monotone in size |
+| §9.2 | guard 3's *"either at rank 1 admits nothing and cuts every row beneath it"* | true of #10898 (56,302 B), **false of #10897** (70,660 B), so half the evidence is gone |
+| §13 G-14b(b) | the mutation arm *"from stop-not-skip to skip"* | **backwards since the day PR #22 merged** (**P-30**) |
+| §13 G-16 | `TestSweepReportsAShutoutWhenAnOversizedRankOneCandidateAdmitsNothing` | renamed in the same commit, because a shutout now needs *every* candidate oversized |
+| §13 G-28 | `TestControlIntactIsFalseWhenAControlRowDidNotAdmitEveryRequiredNode` | **retargeted, not retained**, by PR #18 — the citation outlived the test |
+| §16 | *"it produces a **shutout** rather than merely crowding"* | a cut of one candidate, not a shutout |
+| §13 status rows | G-28, G-29, G-32, G-33 as *"owed to the tree"* | all four landed — `c6083e5` (PR #18) and `530458f` (PR #20) |
+
+**Claims that were never true.** These are not drift and no merge caused them:
+
+| § | Site | Why it was never true |
+|---|---|---|
+| §8.3 | the specimen's **15**-column miss prefix and its payloads aligned at column **45** | the code has always emitted **19**, and **34 / 34 / 36**. The specimen was hand-set to read well on a page |
+| §8.3 | the `cut` line's `, node 30104 B` | **#11049**'s unimplemented `size` field, written as though shipped |
+| §8.2 | `required[]` → `{node, verdict, rank, size, stale}` | `NodeResult` has never carried `size` |
+| §5.4 | *"it is carried onto the required-node result and printed beside every `cut`"* | the specification's tense, stated as the tree's |
+| §12 **E8** | mitigation: *"the node's own `size` is printed beside every `cut`"* | **a risk register claiming a mitigation that was never built** — the worst instance in this document, because the register is what a reader consults to decide a risk is handled |
+| §8.3 rule 3 | *"the **two** control alarms"* | §9.2's table has always had **four** states (**#11130**) |
+
+#### Three things this revision learned that the next reader needs
+
+**1. Check 1's residue is not a debt that revisions pay down — it is a live coupling to every test rename.**
+Revision 7 measured `0` and was correct. This revision measured **`2`**, having lost no guard whatsoever:
+PR #18 retargeted one test and PR #22 renamed another, and each rename silently falsified every citation of
+the old name. **A rename is invisible to the round that makes it** — `go test` passes, `gofmt` and `go vet`
+are silent, and nothing in the toolchain knows this document cites the name. So the residue must be re-run
+**on the tip being shipped**, never inherited from the revision that last measured it.
+
+**2. G-28's citation completed the full arc P-41 cannot close, and it took a deletion to surface.** It began
+as revision 6's *silent pass* — a row owing a guard, citing a **different existing** test, which check 1
+resolves and **passes**. Revision 7 documented that as the worse of two invisibility mechanisms and still
+could not make the check see it. What finally surfaced it was PR #18 **deleting** the cited test, converting
+the silent pass into an ordinary residue entry. **The instrument caught it only after the defect changed
+into a different defect** — which is the argument for checks 2, 3 and 4 stated as an event rather than as a
+principle.
+
+**3. A specimen in this document is a *target*, not a record**, and §8.3 now says so in the section rather
+than leaving three consecutive rounds to rediscover it. Take **fields and their order** from a specimen;
+never its whitespace. Where a specimen and the code disagree about a **field**, the specimen is the
+requirement and the gap is a task.
+
+**4. The sweep stopped one paragraph short of its own understanding, and QA #11291 caught it.** Revision 8's
+first pass enumerated §13's **table** correctly — 44 `G-` rows, zero stale sites, the first sweep in six not
+to lose one — and then left **six** falsified claims standing in the section's **closing paragraphs**:
+*"exactly one row in this table has that shape"*, *"until the guards land"*, *"(G-29, G-32 and G-33 cite
+nothing)"*, *"(G-28 cites the test it retargets)"*, and *"the residue is empty while four rows still owe a
+guard"*, and *"[the two populations] are now the **same four rows**"*. Two more restated the starting
+point's residue of `2` in the **present tense**, in the position a reader treats as the section's answer.
+
+**The count in this entry moved from five to six while the entry was being written, and that is left
+visible rather than silently corrected** *(QA #11293 W-7)*. QA's review of the repair found the sixth; a
+count of falsified claims, inside the entry recording that this document's counts keep being wrong, was
+itself wrong by one. **It moved 4 → 5 → 6 across three measurements** — QA #11291's finding, the repair's
+own claim-sweep, and QA #11293's re-sweep — rising every time, because each pass enumerated a little more
+of the family than the last. The rule and the diagnosis below are unaffected by the number, **which is the
+argument for stating the rule rather than the tally**: a tally is a measurement with a date, and this one
+had three.
+
+**The diff is the finding.** Line 1400 was struck and replaced; lines 1396–1399, which state the same
+falsified facts, were untouched **context in the same hunk**. The author corrected the sentence immediately
+*below* and left the one immediately *above*. That is **P-52**'s corollary verbatim — *correcting a
+duplicated claim at one site leaves the worse copy alive* — and it is the **sixth consecutive round** on this
+repo to lose a §13 site: not in the sweep this time, and not in the handover, but **in the paragraph the
+author had open**.
+
+> **A region you are editing is not a region you have swept.** The three prior rounds lost sites by
+> searching too narrowly; this one lost them by assuming that proximity to the edit implied inspection. The
+> remedy is the same instrument either way — **enumerate by claim over the whole region, paragraph-joined
+> and strike-blanked** — and it has to be pointed at the prose, not only at the table. The repair pass ran
+> exactly that over §13's closing paragraphs and found a **fifth** site QA's own list of four did not carry.
+
+**And the residue restatements are P-51 in miniature**: a correctly scoped measurement (*`2`, on `2bea35c`*)
+travelled four paragraphs into an unscoped present-tense sentence, dropping the hedge and keeping the number
+— in the section that had just documented that exact failure mode. **Every statement of this document's
+residue is now either past-tense and pinned to a commit, or `0` and pinned to the shipped file.**
+
+#### What was verified rather than inherited, because P-51 requires it in the sentence
+
+- **All thirteen corpus rows were re-hashed** against live node content on 2026-09-04, at the moment of the
+  fix — not from any figure recorded in #11101, #11099 or #11133, since **#10943 has been edited since those
+  were written**. Exactly two rows were wrong, both mislabelled at authoring: **r01** (#10861) and **r10**
+  (#10943). The other eleven verify clean. `r09` was re-hashed **last**, against this file as revised.
+- **The §13 site list was re-derived, not inherited.** #11101's list of twelve stop-not-skip sites was
+  measured on a different branch; re-running the sweep on `2bea35c` — struck spans blanked, lines joined into
+  paragraphs before matching (**P-52** sharpening b) — reproduced all twelve and found **two more** the list
+  did not carry: the `stopped` sentence at §3.4 and the diagram's *"admitted (a rank prefix, k′ rows)"* leg.
+  Both are second-order sites that name no word of the rule.
+- **The `size` claim was swept as a claim, not as the one site the finding named** (**P-52**). #11101 named
+  §8.2. It is also asserted at §5.4, in two §8.3 specimen lines, and — most consequentially — as a *shipped
+  mitigation* in §12 **E8**, which no finding had reached.
+- **The container gate was not run for this revision.** It carries no Go change beyond `corpus.json`'s data,
+  and nothing here rests on a claim about container-only behaviour. Stated as a gap rather than derived
+  (**P-9**).
+- **Not verified, and named as such:** the `≈155 KB` figure quoted in the TL;DR correction is #11133's own,
+  measured across two live reads minutes apart, and #11133 already labels its magnitude an observation of one
+  moment rather than a constant. Its **direction** is provable without measurement — skip admits a superset of
+  what stop admits, by construction.
+
 
 ---
 
