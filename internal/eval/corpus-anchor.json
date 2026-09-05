@@ -1,0 +1,514 @@
+[
+  {
+    "id": "b01p",
+    "pair": "b01",
+    "input": "Pin the three unpinned axes in internal/server: the wrapped shutdown sentinel, the lifecycle log records and the serveErr buffer. Land the tests green.",
+    "subject": 10456,
+    "anchor": "place",
+    "anchorTitle": "internal/server/ \u2014 the HTTP surface and its lifecycle",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 12174,
+        "hash": "cafaa2357602f014b3274d1f89e8a1b8e2f7f80932eaa1775c457800f8d0e9d8",
+        "why": "An answer lacking this would add three tests, watch them pass and call the axes pinned, when the truth is that a green says nothing until the fixture is chosen to separate the shipped code from its most likely wrong neighbour, and a suite of thirty-six stayed green over a renderer whose every fixture was a fixed point of the defect."
+      }
+    ]
+  },
+  {
+    "id": "b01w",
+    "pair": "b01",
+    "input": "Pin the three unpinned axes in internal/server: the wrapped shutdown sentinel, the lifecycle log records and the serveErr buffer. Land the tests green.",
+    "subject": 10484,
+    "anchor": "work",
+    "anchorTitle": "Pin three unpinned axes in internal/server: wrapped sentinel, lifecycle log records, serveErr buffer",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 12174,
+        "hash": "cafaa2357602f014b3274d1f89e8a1b8e2f7f80932eaa1775c457800f8d0e9d8",
+        "why": "An answer lacking this would add three tests, watch them pass and call the axes pinned, when the truth is that a green says nothing until the fixture is chosen to separate the shipped code from its most likely wrong neighbour, and a suite of thirty-six stayed green over a renderer whose every fixture was a fixed point of the defect."
+      }
+    ]
+  },
+  {
+    "id": "b02p",
+    "pair": "b02",
+    "input": "Stop the loop reading our own write-ups back as evidence when a task is retried. The self-produced cut is already in, so establish what it does not cover before changing it.",
+    "subject": 10846,
+    "anchor": "place",
+    "anchorTitle": "internal/loop/ \u2014 the turn: assemble, judge, write back",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11396,
+        "hash": "76ea6fc385759da207aa8082b59a3e73502314f9de1c19754b338c167a2df6e5",
+        "why": "An answer lacking this would extend the self-produced cut and declare the class closed, when the truth is that the material outranking the retry is an ordinary session-log written by an agent about the system, carrying no run-record name prefix and not flagged as self-produced, so every mechanism that cuts the loop's own output is blind to it by construction."
+      }
+    ]
+  },
+  {
+    "id": "b02w",
+    "pair": "b02",
+    "input": "Stop the loop reading our own write-ups back as evidence when a task is retried. The self-produced cut is already in, so establish what it does not cover before changing it.",
+    "subject": 11141,
+    "anchor": "work",
+    "anchorTitle": "[processor] The loop poisons its own next turn \u2014 a run record outranks everything and is bigger than the whole assembly budget",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11396,
+        "hash": "76ea6fc385759da207aa8082b59a3e73502314f9de1c19754b338c167a2df6e5",
+        "why": "An answer lacking this would extend the self-produced cut and declare the class closed, when the truth is that the material outranking the retry is an ordinary session-log written by an agent about the system, carrying no run-record name prefix and not flagged as self-produced, so every mechanism that cuts the loop's own output is blind to it by construction."
+      }
+    ]
+  },
+  {
+    "id": "b03p",
+    "pair": "b03",
+    "input": "Raise the assembly byte budget so our own briefing documents stop being cut, and pin the new value in the boot configuration.",
+    "subject": 10937,
+    "anchor": "place",
+    "anchorTitle": "internal/boot/ \u2014 the boot configuration, and the module's one environment read",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11365,
+        "hash": "436a98d33bc5bc8b008b8c988a5725bb3c5aa674c449d1b161b8271bddda0fc4",
+        "why": "An answer lacking this would raise the constant and report the misses fixed, when the truth is that raising it was measured and then withdrawn: the blocks already run to twice the constant they claim, the defect is allocation rather than room, and the change that converts admission failures is a bounded compact version of a node at admission."
+      }
+    ]
+  },
+  {
+    "id": "b03w",
+    "pair": "b03",
+    "input": "Raise the assembly byte budget so our own briefing documents stop being cut, and pin the new value in the boot configuration.",
+    "subject": 11308,
+    "anchor": "work",
+    "anchorTitle": "[processor] Our own briefing documents are 66\u2013138 KB and can never be admitted \u2014 a question landing near them spends its top slots on nodes no run can use",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11365,
+        "hash": "436a98d33bc5bc8b008b8c988a5725bb3c5aa674c449d1b161b8271bddda0fc4",
+        "why": "An answer lacking this would raise the constant and report the misses fixed, when the truth is that raising it was measured and then withdrawn: the blocks already run to twice the constant they claim, the defect is allocation rather than room, and the change that converts admission failures is a bounded compact version of a node at admission."
+      }
+    ]
+  },
+  {
+    "id": "b04p",
+    "pair": "b04",
+    "input": "Pull the duplicated server-lifecycle protocol out of compare.py and smoke.py into one helper, and prove with a mutation round that the extraction is what makes the two rigs agree.",
+    "subject": 11340,
+    "anchor": "place",
+    "anchorTitle": "scripts/ \u2014 the three rigs that drive the built binary, and the generator that does not",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11253,
+        "hash": "a674736e49ec8049c54728d776c9bef0342cbdf96ff3d391414274a3c03cd641",
+        "why": "An answer lacking this would mutate the extracted helper, watch both rigs redden and call the extraction proven, when the truth is that both callers already shared everything such a mutation touches, so the only arm that discriminates mutates the extracted function and reverts one caller to its pre-extraction call in the same run."
+      }
+    ]
+  },
+  {
+    "id": "b04w",
+    "pair": "b04",
+    "input": "Pull the duplicated server-lifecycle protocol out of compare.py and smoke.py into one helper, and prove with a mutation round that the extraction is what makes the two rigs agree.",
+    "subject": 11326,
+    "anchor": "work",
+    "anchorTitle": "compare.py and smoke.py are diverging copies of one server-lifecycle protocol \u2014 5 identical, 8 already drifted",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11253,
+        "hash": "a674736e49ec8049c54728d776c9bef0342cbdf96ff3d391414274a3c03cd641",
+        "why": "An answer lacking this would mutate the extracted helper, watch both rigs redden and call the extraction proven, when the truth is that both callers already shared everything such a mutation touches, so the only arm that discriminates mutates the extracted function and reverts one caller to its pre-extraction call in the same run."
+      }
+    ]
+  },
+  {
+    "id": "b05p",
+    "pair": "b05",
+    "input": "Make sure a merged pull request always triggers the repo-map reconcile. Add the step to the merge hook so the obligation cannot be missed again.",
+    "subject": 10454,
+    "anchor": "place",
+    "anchorTitle": "Repo Map \u2014 processor",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11100,
+        "hash": "4b367cb9bdd71563b7778d34157b7b0729738a71fe9322b1776c42670fb09898",
+        "why": "An answer lacking this would add another reminder, when the truth is that the trigger already rides on the merge event and did fire: the emitted line is conditioned on mapped files having moved, which is false exactly when a new unmapped file lands, so the guard's condition excludes the case the guard exists for."
+      }
+    ]
+  },
+  {
+    "id": "b05w",
+    "pair": "b05",
+    "input": "Make sure a merged pull request always triggers the repo-map reconcile. Add the step to the merge hook so the obligation cannot be missed again.",
+    "subject": 10989,
+    "anchor": "work",
+    "anchorTitle": "Repo map: PR #11's two eval packages were never reconciled \u2014 the map does not describe `c890a37`",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11100,
+        "hash": "4b367cb9bdd71563b7778d34157b7b0729738a71fe9322b1776c42670fb09898",
+        "why": "An answer lacking this would add another reminder, when the truth is that the trigger already rides on the merge event and did fire: the emitted line is conditioned on mapped files having moved, which is false exactly when a new unmapped file lands, so the guard's condition excludes the case the guard exists for."
+      }
+    ]
+  },
+  {
+    "id": "b06p",
+    "pair": "b06",
+    "input": "Document the model temperature default in the README, and say plainly what setting it buys us.",
+    "subject": 10884,
+    "anchor": "place",
+    "anchorTitle": "internal/openaicompat/ \u2014 the model adapter",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11412,
+        "hash": "90bc7138792725af86b09d8394faa3cafc687c45f1fbf99e02e35cd4f1bfeaf1",
+        "why": "An answer lacking this would write that the same input now produces the same answer twice, when the truth is that this is a claim about a third-party endpoint that nothing in this repo measures: the default removes variation on our side of the wire, and the record reports what was requested rather than what the endpoint applied."
+      }
+    ]
+  },
+  {
+    "id": "b06w",
+    "pair": "b06",
+    "input": "Document the model temperature default in the README, and say plainly what setting it buys us.",
+    "subject": 11402,
+    "anchor": "work",
+    "anchorTitle": "Processor: decide whether a repetition penalty depresses identifier retention \u2014 experiment, not a config knob",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11412,
+        "hash": "90bc7138792725af86b09d8394faa3cafc687c45f1fbf99e02e35cd4f1bfeaf1",
+        "why": "An answer lacking this would write that the same input now produces the same answer twice, when the truth is that this is a claim about a third-party endpoint that nothing in this repo measures: the default removes variation on our side of the wire, and the record reports what was requested rather than what the endpoint applied."
+      }
+    ]
+  },
+  {
+    "id": "b07p",
+    "pair": "b07",
+    "input": "Make the sweep exit non-zero on any labelled miss, so a retrieval regression cannot be merged.",
+    "subject": 10991,
+    "anchor": "place",
+    "anchorTitle": "`internal/eval/`",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11065,
+        "hash": "17e04e6253d46d7763df95491c5c24be05f6e4090d46b01956516e5b2bce0d6e",
+        "why": "An answer lacking this would gate the build on the labelled rate, when the truth is that three causes produce a byte-identical red, the retriever getting worse, the graph gaining a better node that retrieval correctly preferred, and the label itself being wrong, so a labelled red obliges a look rather than a fix and updating the corpus is a legitimate outcome of that look."
+      }
+    ]
+  },
+  {
+    "id": "b07w",
+    "pair": "b07",
+    "input": "Make the sweep exit non-zero on any labelled miss, so a retrieval regression cannot be merged.",
+    "subject": 11048,
+    "anchor": "work",
+    "anchorTitle": "eval: read the control stratum at both boundaries \u2014 only a control that was never retrieved exits 1",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11065,
+        "hash": "17e04e6253d46d7763df95491c5c24be05f6e4090d46b01956516e5b2bce0d6e",
+        "why": "An answer lacking this would gate the build on the labelled rate, when the truth is that three causes produce a byte-identical red, the retriever getting worse, the graph gaining a better node that retrieval correctly preferred, and the label itself being wrong, so a labelled red obliges a look rather than a fix and updating the corpus is a legitimate outcome of that look."
+      }
+    ]
+  },
+  {
+    "id": "b08p",
+    "pair": "b08",
+    "input": "Give the comparison instrument an ANCHOR stage, so a task whose answer node was the anchor is scored on the same axis as every other outcome.",
+    "subject": 11686,
+    "anchor": "place",
+    "anchorTitle": "`scripts/step_trace.py` \u2014 the tracer that reconstructs one turn from one record, and what the record will not let it see",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11333,
+        "hash": "29a07bad39a1d49335dac40046223186cee33e628b91a2f7314709bdb5758149",
+        "why": "An answer lacking this would add the stage and rank it first, when the truth is that arrival route and retrieval stage are two axes: a node handed over as the anchor never entered the race, so it is removed from the population the stages describe rather than placed at the top of it, and ranking it first erases the task-level retrieval finding for every row that has one."
+      }
+    ]
+  },
+  {
+    "id": "b08w",
+    "pair": "b08",
+    "input": "Give the comparison instrument an ANCHOR stage, so a task whose answer node was the anchor is scored on the same axis as every other outcome.",
+    "subject": 11387,
+    "anchor": "work",
+    "anchorTitle": "trace.py: first honest step trace of a Processor turn, task = \"generate a webpage and a repo\"",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 11333,
+        "hash": "29a07bad39a1d49335dac40046223186cee33e628b91a2f7314709bdb5758149",
+        "why": "An answer lacking this would add the stage and rank it first, when the truth is that arrival route and retrieval stage are two axes: a node handed over as the anchor never entered the race, so it is removed from the population the stages describe rather than placed at the top of it, and ranking it first erases the task-level retrieval finding for every row that has one."
+      }
+    ]
+  },
+  {
+    "id": "b09p",
+    "pair": "b09",
+    "input": "Let the anonymous campaign-target listing filter by campaignId. The response already returns the field, so add it to the public filter set.",
+    "subject": 3531,
+    "anchor": "place",
+    "anchorTitle": "Repo Map \u2014 netcore/api",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10858,
+        "hash": "18ad1704082ba8db39d489b8175962e0a45b80607dd63002da28db5018d8d0c0",
+        "why": "An answer lacking this would add one property to the allow-list, when the truth is that the public gate's three legs are each derived from a different principle, the projection, an untested doc-comment claim and a set built from observed frontend usage, so the divergence runs in both directions and adding a field closes one instance of it."
+      }
+    ]
+  },
+  {
+    "id": "b09w",
+    "pair": "b09",
+    "input": "Let the anonymous campaign-target listing filter by campaignId. The response already returns the field, so add it to the public filter set.",
+    "subject": 11090,
+    "anchor": "work",
+    "anchorTitle": "[campaignservice] IsSet ignores defaultValue on its string/Array arms \u2014 a reference-type filter property with a non-empty initializer still takes the public endpoint down",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10858,
+        "hash": "18ad1704082ba8db39d489b8175962e0a45b80607dd63002da28db5018d8d0c0",
+        "why": "An answer lacking this would add one property to the allow-list, when the truth is that the public gate's three legs are each derived from a different principle, the projection, an untested doc-comment claim and a set built from observed frontend usage, so the divergence runs in both directions and adding a field closes one instance of it."
+      }
+    ]
+  },
+  {
+    "id": "b10p",
+    "pair": "b10",
+    "input": "Add the new broker's inbound webhook lane to hookservice, mirroring the sibling hook service the map names as the precedent.",
+    "subject": 4714,
+    "anchor": "place",
+    "anchorTitle": "netcore/hookservice",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 9344,
+        "hash": "4a1922360624fcb722b391da4b5910b68c9ed3ff81aebbb729c7131cc150b129",
+        "why": "An answer lacking this would copy the precedent as the map node describes it, when the truth is that the precedent node described a method that no longer exists and listed a dependency and a time window that are gone from the file, so a stale copy sitting exactly where the lookup lands beats no copy at all, and the same class hit a contract file on the same day."
+      }
+    ]
+  },
+  {
+    "id": "b10w",
+    "pair": "b10",
+    "input": "Add the new broker's inbound webhook lane to hookservice, mirroring the sibling hook service the map names as the precedent.",
+    "subject": 9416,
+    "anchor": "work",
+    "anchorTitle": "hookservice: webhook signature check logs instead of rejecting; typeform/mamflow bypass key checks entirely",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 9344,
+        "hash": "4a1922360624fcb722b391da4b5910b68c9ed3ff81aebbb729c7131cc150b129",
+        "why": "An answer lacking this would copy the precedent as the map node describes it, when the truth is that the precedent node described a method that no longer exists and listed a dependency and a time window that are gone from the file, so a stale copy sitting exactly where the lookup lands beats no copy at all, and the same class hit a contract file on the same day."
+      }
+    ]
+  },
+  {
+    "id": "b11p",
+    "pair": "b11",
+    "input": "Add a driving-licence question table to the screening prompt file and ship it to dev.",
+    "subject": 5542,
+    "anchor": "place",
+    "anchorTitle": "netcore/scoringservice/Services/Screening/IApplicationScreener.cs",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 7017,
+        "hash": "328f2328f810a118bfa0ae14902a05ed4e3b2b601a53aed8a0cb6bcc769c970d",
+        "why": "An answer lacking this would add the table and read a successful deploy as success, when the truth is that a JSON literal whose braces are not doubled crashes the script parser at runtime, and the failure surfaces as a persisted profile collapsing to a photo flag and a hash with every previously extracted field wiped."
+      }
+    ]
+  },
+  {
+    "id": "b11w",
+    "pair": "b11",
+    "input": "Add a driving-licence question table to the screening prompt file and ship it to dev.",
+    "subject": 10087,
+    "anchor": "work",
+    "anchorTitle": "scoring.cv.parse: evaluate a newer model \u2014 3.1-pro returns silently near-empty profiles, incumbent is 0/25",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 7017,
+        "hash": "328f2328f810a118bfa0ae14902a05ed4e3b2b601a53aed8a0cb6bcc769c970d",
+        "why": "An answer lacking this would add the table and read a successful deploy as success, when the truth is that a JSON literal whose braces are not doubled crashes the script parser at runtime, and the failure surfaces as a persisted profile collapsing to a photo flag and a hash with every previously extracted field wiped."
+      }
+    ]
+  },
+  {
+    "id": "b12p",
+    "pair": "b12",
+    "input": "Make the Lorenz import stop failing on jobs that carry no description, then confirm the source actually imports afterwards.",
+    "subject": 3532,
+    "anchor": "place",
+    "anchorTitle": "Repo Map \u2014 netcore/feedservice",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 7256,
+        "hash": "566da26da60a4eac81c806471f2cff1d1a4d2b8279dc04d4278cbcfc28f6057a",
+        "why": "An answer lacking this would tolerate the null description and report the import repaired, when the truth is that every item in that feed now carries an empty description and only a link to a landing page, so the tolerance stops the crash and yields zero valid jobs, and the declarative specification has no capability to follow the link and extract the detail page."
+      }
+    ]
+  },
+  {
+    "id": "b12w",
+    "pair": "b12",
+    "input": "Make the Lorenz import stop failing on jobs that carry no description, then confirm the source actually imports afterwards.",
+    "subject": 10072,
+    "anchor": "work",
+    "anchorTitle": "feedservice: surface feed sources whose consecutive failure count crosses a threshold \u2014 6 months of silent failure on source 75 went unnoticed",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 7256,
+        "hash": "566da26da60a4eac81c806471f2cff1d1a4d2b8279dc04d4278cbcfc28f6057a",
+        "why": "An answer lacking this would tolerate the null description and report the import repaired, when the truth is that every item in that feed now carries an empty description and only a link to a landing page, so the tolerance stops the crash and yields zero valid jobs, and the declarative specification has no capability to follow the link and extract the detail page."
+      }
+    ]
+  },
+  {
+    "id": "b13p",
+    "pair": "b13",
+    "input": "Make the Mamflow profile mapper consistent about null tolerance. One member tolerates a null form and the other throws, so add the missing guard.",
+    "subject": 9330,
+    "anchor": "place",
+    "anchorTitle": "netcore/scoringservice/Controllers/I1/MamflowProcessController.cs",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 9444,
+        "hash": "8ff33a01d1bad67947d69f0ece5bd67f0c45e99d4a7dbb8668437d18a6507a70",
+        "why": "An answer lacking this would add the guard and call the interface consistent, when the truth is that both call sites of the tolerant member pass an array built locally or behind a length check, so the tolerance is dead defence and the direction that removes the asymmetry is deleting it rather than spreading it."
+      }
+    ]
+  },
+  {
+    "id": "b13w",
+    "pair": "b13",
+    "input": "Make the Mamflow profile mapper consistent about null tolerance. One member tolerates a null form and the other throws, so add the missing guard.",
+    "subject": 682,
+    "anchor": "work",
+    "anchorTitle": "Mamflow: backend endpoints for the dynamic-questions flow",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 9444,
+        "hash": "8ff33a01d1bad67947d69f0ece5bd67f0c45e99d4a7dbb8668437d18a6507a70",
+        "why": "An answer lacking this would add the guard and call the interface consistent, when the truth is that both call sites of the tolerant member pass an array built locally or behind a length check, so the tolerance is dead defence and the direction that removes the asymmetry is deleting it rather than spreading it."
+      }
+    ]
+  },
+  {
+    "id": "b14p",
+    "pair": "b14",
+    "input": "Update Pooshit.Scripting to the 1.x line across the fleet, and set conservative timeouts first so the newly enforced bounds cannot start killing long-running scripts.",
+    "subject": 3527,
+    "anchor": "place",
+    "anchorTitle": "Repo Map \u2014 netcore/services (shared core library)",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 8930,
+        "hash": "e4b03f0f8ad3c5c8bbe81fa1ee84052580b7b2f56fc08c225b61e59b74e8174e",
+        "why": "An answer lacking this would spend the round configuring timeouts, when the truth inverts the stated worry: the wall-clock timeout and the step budget are both left unset by the default limits, so the update starts killing nothing, and the reference that reaches every service is a single entry in the shared core project file."
+      }
+    ]
+  },
+  {
+    "id": "b14w",
+    "pair": "b14",
+    "input": "Update Pooshit.Scripting to the 1.x line across the fleet, and set conservative timeouts first so the newly enforced bounds cannot start killing long-running scripts.",
+    "subject": 5823,
+    "anchor": "work",
+    "anchorTitle": "[aiservice/feedservice] VERIFY then fix: does jobsource.files.pdf.transform send documents as native inlineData (multimodal), or text-dump base64? (#189)",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 8930,
+        "hash": "e4b03f0f8ad3c5c8bbe81fa1ee84052580b7b2f56fc08c225b61e59b74e8174e",
+        "why": "An answer lacking this would spend the round configuring timeouts, when the truth inverts the stated worry: the wall-clock timeout and the step budget are both left unset by the default limits, so the update starts killing nothing, and the reference that reaches every service is a single entry in the shared core project file."
+      }
+    ]
+  },
+  {
+    "id": "b15p",
+    "pair": "b15",
+    "input": "Add a filter property to the campaign listing endpoint and wire it through to the query.",
+    "subject": 4543,
+    "anchor": "place",
+    "anchorTitle": "netcore/campaignservice",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 5791,
+        "hash": "b2b5def49a2ddf26d024010ccbe10d638f8888102fa0aa57db40610e8bb94836",
+        "why": "An answer lacking this would change the filter inside campaignservice, when the truth is that data access, filtering and service wiring all live in the shared core library every service references, where the per-domain connectors and the field mapping are registered, so a change made in the individual service sits at the wrong layer."
+      }
+    ]
+  },
+  {
+    "id": "b15w",
+    "pair": "b15",
+    "input": "Add a filter property to the campaign listing endpoint and wire it through to the query.",
+    "subject": 11121,
+    "anchor": "work",
+    "anchorTitle": "[campaignservice] Reads PostedFeedItem but does not provision it \u2014 brokerservice owns the schema, so a fresh environment 500s on every coverage call",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 5791,
+        "hash": "b2b5def49a2ddf26d024010ccbe10d638f8888102fa0aa57db40610e8bb94836",
+        "why": "An answer lacking this would change the filter inside campaignservice, when the truth is that data access, filtering and service wiring all live in the shared core library every service references, where the per-domain connectors and the field mapping are registered, so a change made in the individual service sits at the wrong layer."
+      }
+    ]
+  },
+  {
+    "id": "b16p",
+    "pair": "b16",
+    "input": "Bump extractionVersion whenever we change the extraction prompt, so a stored profile tells us which code produced it.",
+    "subject": 4436,
+    "anchor": "place",
+    "anchorTitle": "netcore/applicantapi",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10340,
+        "hash": "34b7bd0aab4f3c4d68cc0f36dc08982602ce5855efa738f868872dd00d430518",
+        "why": "An answer lacking this would treat the stamp as a version of the extractor code, when the truth is that it records which generation of the prompt contract actually ran, and it exists to separate a date the source never stated from one nobody ever asked for, two states that are byte-identical in the data."
+      }
+    ]
+  },
+  {
+    "id": "b16w",
+    "pair": "b16",
+    "input": "Bump extractionVersion whenever we change the extraction prompt, so a stored profile tells us which code produced it.",
+    "subject": 11272,
+    "anchor": "work",
+    "anchorTitle": "ApplicantProfile.cs:103's doc comment carries a fourth shift token (`nights-only`) outside the set #10299 canonicalises",
+    "stratum": "labelled",
+    "required": [
+      {
+        "node": 10340,
+        "hash": "34b7bd0aab4f3c4d68cc0f36dc08982602ce5855efa738f868872dd00d430518",
+        "why": "An answer lacking this would treat the stamp as a version of the extractor code, when the truth is that it records which generation of the prompt contract actually ran, and it exists to separate a date the source never stated from one nobody ever asked for, two states that are byte-identical in the data."
+      }
+    ]
+  }
+]

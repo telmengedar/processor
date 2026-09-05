@@ -292,3 +292,201 @@ func TestLoadAcceptsThreeDistinctRequiredNodesOnOneRow(t *testing.T) {
 		t.Fatalf("Required nodes = %v, want [200 201 202] in corpus order", nodes)
 	}
 }
+
+const validPairedCorpus = `[
+  {
+    "id": "b01p",
+    "pair": "b01",
+    "input": "pin the wrapped shutdown sentinel in the server package",
+    "subject": 100,
+    "anchor": "place",
+    "anchorTitle": "internal/server/ - the HTTP surface and its lifecycle",
+    "stratum": "labelled",
+    "required": [
+      {"node": 200, "hash": "5da7e2b28e10a231e97b202dd241d9df0e4a897ac6f5ccb5169c0b8492908cd6", "why": "an answer that omits it calls a passing test a discriminating one"}
+    ]
+  },
+  {
+    "id": "b01w",
+    "pair": "b01",
+    "input": "pin the wrapped shutdown sentinel in the server package",
+    "subject": 101,
+    "anchor": "work",
+    "anchorTitle": "Pin three unpinned axes in the server package",
+    "stratum": "labelled",
+    "required": [
+      {"node": 200, "hash": "5da7e2b28e10a231e97b202dd241d9df0e4a897ac6f5ccb5169c0b8492908cd6", "why": "an answer that omits it calls a passing test a discriminating one"}
+    ]
+  }
+]`
+
+func mutatePairedCorpus(t *testing.T, old, replacement string) string {
+	t.Helper()
+
+	mutated := strings.Replace(validPairedCorpus, old, replacement, 1)
+	if mutated == validPairedCorpus {
+		t.Fatalf("replacing %q with %q left the fixture unchanged, so the case under test was never built", old, replacement)
+	}
+	return mutated
+}
+
+func appendToPairedCorpus(t *testing.T, row string) string {
+	t.Helper()
+
+	const tail = "\n]"
+	trimmed := strings.TrimSuffix(validPairedCorpus, tail)
+	if trimmed == validPairedCorpus {
+		t.Fatal("the paired fixture does not end in the closing bracket this append relies on, so the case under test was never built")
+	}
+	return trimmed + ",\n" + row + tail
+}
+
+func TestLoadCarriesTheAnchorClassAndThePinnedTitleOfEveryRow(t *testing.T) {
+	t.Parallel()
+
+	corpus, err := Load(writeCorpus(t, validPairedCorpus))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(corpus.Rows) != 2 {
+		t.Fatalf("len(Rows) = %d, want 2", len(corpus.Rows))
+	}
+	place, work := corpus.Rows[0], corpus.Rows[1]
+	if place.Anchor != AnchorPlace || work.Anchor != AnchorWork {
+		t.Fatalf("anchor classes = %q and %q, want %q and %q", place.Anchor, work.Anchor, AnchorPlace, AnchorWork)
+	}
+	if place.Pair != "b01" || work.Pair != "b01" {
+		t.Fatalf("pairs = %q and %q, want both rows in b01", place.Pair, work.Pair)
+	}
+	if place.AnchorTitle != "internal/server/ - the HTTP surface and its lifecycle" {
+		t.Fatalf("AnchorTitle = %q, want the title the class was judged from, verbatim", place.AnchorTitle)
+	}
+	if work.AnchorTitle != "Pin three unpinned axes in the server package" {
+		t.Fatalf("AnchorTitle = %q, want the title the class was judged from, verbatim", work.AnchorTitle)
+	}
+}
+
+func TestLoadAcceptsARowThatCarriesNoAnchorClassAtAll(t *testing.T) {
+	t.Parallel()
+
+	corpus, err := Load(writeCorpus(t, validCorpus))
+	if err != nil {
+		t.Fatalf("Load rejected an unclassified corpus, which predates the anchor stratification: %v", err)
+	}
+	if corpus.Rows[0].Anchor != "" || corpus.Rows[0].Pair != "" {
+		t.Fatalf("row = %+v, want an empty anchor class and no pair", corpus.Rows[0])
+	}
+}
+
+func TestLoadRejectsAnAnchorClassOutsideTheClosedSet(t *testing.T) {
+	t.Parallel()
+
+	loadMustFail(t, mutatePairedCorpus(t, `"anchor": "place"`, `"anchor": "Place"`), "outside the closed set")
+}
+
+func TestLoadRejectsAClassifiedAnchorThatPinsNoTitle(t *testing.T) {
+	t.Parallel()
+
+	loadMustFail(t, mutatePairedCorpus(t, `"anchorTitle": "internal/server/ - the HTTP surface and its lifecycle"`, `"anchorTitle": ""`),
+		"no title is pinned")
+}
+
+func TestLoadRejectsAPinnedAnchorTitleThatRecordsNoClass(t *testing.T) {
+	t.Parallel()
+
+	loadMustFail(t, mutatePairedCorpus(t, `"anchor": "place",`, `"anchor": "",`), "no class is recorded")
+}
+
+func TestLoadRejectsACorpusInWhichOnlySomeRowsCarryAnAnchorClass(t *testing.T) {
+	t.Parallel()
+
+	body := mutatePairedCorpus(t, `"anchor": "work",
+    "anchorTitle": "Pin three unpinned axes in the server package",
+`, "")
+	loadMustFail(t, body, "only partly stratified")
+}
+
+func TestLoadRejectsACorpusInWhichOnlySomeRowsCarryAPair(t *testing.T) {
+	t.Parallel()
+
+	loadMustFail(t, mutatePairedCorpus(t, `"pair": "b01",
+    "input": "pin the wrapped shutdown sentinel in the server package",
+    "subject": 101`, `"input": "pin the wrapped shutdown sentinel in the server package",
+    "subject": 101`), "not half of")
+}
+
+func TestLoadRejectsAPairWhoseTwoRowsShareOneAnchorClass(t *testing.T) {
+	t.Parallel()
+
+	loadMustFail(t, mutatePairedCorpus(t, `"anchor": "work"`, `"anchor": "place"`), "varies nothing")
+}
+
+func TestLoadRejectsAPairWhoseTwoRowsCarryDifferentInputs(t *testing.T) {
+	t.Parallel()
+
+	body := mutatePairedCorpus(t, `"input": "pin the wrapped shutdown sentinel in the server package",
+    "subject": 101`, `"input": "pin the lifecycle log records in the server package",
+    "subject": 101`)
+	loadMustFail(t, body, "two different inputs")
+}
+
+func TestLoadRejectsAPairWhoseTwoRowsAreScoredAgainstDifferentRequiredNodes(t *testing.T) {
+	t.Parallel()
+
+	body := mutatePairedCorpus(t, `{"node": 200, "hash": "5da7e2b28e10a231e97b202dd241d9df0e4a897ac6f5ccb5169c0b8492908cd6", "why": "an answer that omits it calls a passing test a discriminating one"}
+    ]
+  }
+]`, `{"node": 201, "hash": "5da7e2b28e10a231e97b202dd241d9df0e4a897ac6f5ccb5169c0b8492908cd6", "why": "an answer that omits it calls a passing test a discriminating one"}
+    ]
+  }
+]`)
+	loadMustFail(t, body, "different required sets")
+}
+
+func TestLoadRejectsAPairThatHoldsMoreThanTwoRows(t *testing.T) {
+	t.Parallel()
+
+	body := appendToPairedCorpus(t, `  {
+    "id": "b01x",
+    "pair": "b01",
+    "input": "pin the wrapped shutdown sentinel in the server package",
+    "subject": 102,
+    "anchor": "place",
+    "anchorTitle": "internal/server/ - the HTTP surface and its lifecycle",
+    "stratum": "labelled",
+    "required": [
+      {"node": 200, "hash": "5da7e2b28e10a231e97b202dd241d9df0e4a897ac6f5ccb5169c0b8492908cd6", "why": "an answer that omits it calls a passing test a discriminating one"}
+    ]
+  }`)
+	loadMustFail(t, body, "are not both present")
+}
+
+func TestTheShippedAnchorStratifiedCorpusIsClassifiedPairedAndAnchoredOnDistinctNodes(t *testing.T) {
+	t.Parallel()
+
+	corpus, err := Load("corpus-anchor.json")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	pairs, subjects := map[string]bool{}, map[int64]string{}
+	for _, row := range corpus.Rows {
+		if row.Anchor != AnchorPlace && row.Anchor != AnchorWork {
+			t.Fatalf("row %q carries anchor class %q, want every row of this corpus classified", row.ID, row.Anchor)
+		}
+		if row.Pair == "" || row.AnchorTitle == "" || row.Stratum != StratumLabelled {
+			t.Fatalf("row %q = %+v, want a pair, a pinned anchor title and the labelled stratum", row.ID, row)
+		}
+		if owner, taken := subjects[row.Subject]; taken {
+			t.Fatalf("rows %q and %q share anchor %d, which lets one anchor dominate the population the strata are drawn from", owner, row.ID, row.Subject)
+		}
+		subjects[row.Subject] = row.ID
+		pairs[row.Pair] = true
+	}
+
+	const wantPairs = 16
+	if len(pairs) < wantPairs {
+		t.Fatalf("%d pairs, want at least %d so each stratum carries a distribution rather than an existence proof", len(pairs), wantPairs)
+	}
+}
