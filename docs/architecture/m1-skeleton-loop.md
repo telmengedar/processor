@@ -1267,12 +1267,13 @@ which is deterministic, which is why provider-agnosticism costs the test strateg
 **Why sampling is two parameters under two different unset rules — added 2026-09-05 (#11401), the home for
 3a's correction.** `temperature` has a default and is always sent; `top_p` has no default and is **omitted
 from the request** when the operator configures nothing. The asymmetry is not an oversight. `temperature: 0`
-is well-defined argmax decoding on every OpenAI-compatible runtime, so a value exists that is both
-meaningful and maximally reproducible, and sending it is benign. `top_p: 0` has no such standing: its
-behaviour is *endpoint-dependent* — some runtimes clamp it to top-1, others reject it as a validation error
-— and a configuration value whose meaning varies by runtime is precisely what a change made for
-reproducibility must not introduce. Asserting `1.0` instead would be worse than silence: it claims knowledge
-of an endpoint §6.6 deliberately refuses to model, and it newly sends a parameter some endpoints validate.
+is the conventional spelling of greedy decoding, so a value exists that is both meaningful and
+maximally reproducible, and sending it is benign. `top_p: 0` has no such standing: its behaviour
+is *endpoint-dependent* — the OpenAI-compatible protocol does not specify what a runtime must do
+with it, and runtimes differ — and a configuration value whose meaning varies by runtime is
+precisely what a change made for reproducibility must not introduce. Asserting `1.0` instead
+would be worse than silence: it claims knowledge of an endpoint §6.6 deliberately refuses to
+model, and it newly sends a parameter whose handling the protocol leaves open.
 So the pointer's `nil` is the wire's *absence*, not a zero, and the default configuration carries exactly
 one determinism lever rather than two overlapping ones — at `temperature: 0` the distribution is already
 collapsed and `top_p` is a no-op at best. **What the record can therefore claim, and what it cannot:** it
