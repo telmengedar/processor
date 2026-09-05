@@ -59,11 +59,20 @@ gets a reserved quota (`RecallScopeReserve`, mirrored below as RECALL_SCOPE_RESE
 the first `limit - reserve` fused entries, backfilled from the fused list only if the scope doesn't
 fill its reserve. Since a turn always passes exactly one query, RRF over that single list changes
 nothing -- it is order-preserving. Net, for every trace this script prints: positions 1 through
-`limit - RECALL_SCOPE_RESERVE` are the one unscoped recall's own plain-similarity order, verbatim;
-the last `RECALL_SCOPE_RESERVE` positions are backfilled from the anchor's two-hop-scoped recall.
-Fusion of multiple ranked lists is real and does real work in `cmd/eval`, which passes more than one
-query -- it is simply inert inside a turn, which never does. The two-hop half of the mechanism
-(`RecallScope` = subject + its linked neighbours) is accurate as stated.
+`limit - RECALL_SCOPE_RESERVE` are the one unscoped recall's own plain-similarity order, verbatim.
+The last `RECALL_SCOPE_RESERVE` positions are RESERVED FOR the scoped recall, which is not the same
+as filled from it. `fuse` runs THREE passes, not two: fill to `limit - reserve` from the fused list;
+take up to `reserve` UNSEEN rows from the scoped list; then fill any slot the scope left over FROM
+THE FUSED LIST AGAIN, continuing its plain-similarity order past where the first pass stopped. So a
+run whose scoped recall returned fewer than `RECALL_SCOPE_RESERVE` unseen rows ends with tail rows
+that are not neighbourhood hits at all, and which pass placed any given tail row is NOT recoverable
+from the record: `Disposition` carries rank, id, type, name, similarity, size, content hash and the
+admit decision, the `Candidate` it is built from carries no provenance member either, and the scoped
+list is not in the record to compare against. The trace therefore reports the reservation and
+declines to label the rows -- inventing a per-row distinction the record cannot support would be the
+same defect one level up. Fusion of multiple ranked lists is real and does real work in `cmd/eval`,
+which passes more than one query -- it is simply inert inside a turn, which never does. The two-hop
+half of the mechanism (`RecallScope` = subject + its linked neighbours) is accurate as stated.
 
 BUDGET ARITHMETIC, corrected after review (C2/C3): the anchor is not exempt from the assembly
 budget. `internal/loop/assemble.go`: `remaining := budget - len(anchor.Content)`, floored at zero --
@@ -399,9 +408,15 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
             f"(internal/loop/retrieve.go's fuse/fuseByReciprocalRank) is a no-op over it -- rows 1-"
             f"{fused_slots} below are that one UNSCOPED recall's own plain-similarity order, "
             f"verbatim. The last {RECALL_SCOPE_RESERVE} slots ({fused_slots + 1}-{candidate_limit}) "
-            f"are reserved for and backfilled from a second recall scoped to the anchor's two-hop "
-            f"neighbourhood (subject + its linked nodes). Fusion across multiple queries only does "
-            f"real work in cmd/eval, which passes more than one -- it never touches the order here"
+            f"are RESERVED FOR a second recall scoped to the anchor's two-hop neighbourhood (subject "
+            f"+ its linked nodes) -- which is not the same as filled from it: fuse takes unseen "
+            f"scoped rows up to the reserve and then fills whatever the scope left over from the "
+            f"unscoped list AGAIN, continuing its plain-similarity order. Which pass placed any one "
+            f"of those {RECALL_SCOPE_RESERVE} rows is not in the record -- no candidate carries its "
+            f"provenance and the scoped list is not recorded -- so each of them may be a "
+            f"neighbourhood hit or a similarity continuation, and this trace will not guess which. "
+            f"Fusion across multiple queries only does real work in cmd/eval, which passes more than "
+            f"one -- it never touches the order here"
         )
     else:
         rank_note = (

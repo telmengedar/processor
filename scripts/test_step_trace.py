@@ -41,6 +41,17 @@ import step_trace
 # and `sampling=None` is how a test asks for it.
 ABSENT = object()
 
+# internal/loop/turn.go's five run constants as the record carries them. A module constant, not an
+# inline literal, so a test that needs one value different (ScopeReserveLineTests moves the candidate
+# limit) can copy this and change that one key instead of restating a dict the fixture also owns.
+LIMITS = {
+    "candidateLimit": 20,
+    "assemblyByteBudget": 60_000,
+    "supplementaryByteBudget": 20_000,
+    "maxModelCalls": 3,
+    "maxOutputTokens": 4096,
+}
+
 
 def record(
     input_text="does not matter",
@@ -75,13 +86,7 @@ def record(
         "capReached": cap_reached,
         "usage": usage if usage is not None else [{"inTokens": 100, "outTokens": 10}] * model_calls,
         "stopReason": stop_reason if stop_reason is not None else {"reason": "answered", "raw": "stop"},
-        "limits": limits if limits is not None else {
-            "candidateLimit": 20,
-            "assemblyByteBudget": 60_000,
-            "supplementaryByteBudget": 20_000,
-            "maxModelCalls": 3,
-            "maxOutputTokens": 4096,
-        },
+        "limits": limits if limits is not None else dict(LIMITS),
         "written": written if written is not None else {"state": "stored", "nodeId": 12345},
     }
     # The default is the shape the binary writes with no sampling variable set at all: the
@@ -333,6 +338,49 @@ class AnnounceWrittenTests(unittest.TestCase):
         out = capture(step_trace.announce_written, rec)
         self.assertIn("no run record stored", out)
         self.assertIn("notStored", out)
+
+
+class ScopeReserveLineTests(unittest.TestCase):
+    """STEP 2's rank note, tested by reading the printed output for the same reason the sampling
+    classes are: it is prose this script PRINTS about a mechanism in another language, and it went
+    false once already by claiming the reserved tail slots are FILLED FROM the scoped recall.
+
+    retrieve.go's `fuse` runs three passes, not two -- fill to `limit - reserve` from the fused list,
+    take up to `reserve` unseen rows from the scoped list, then fill whatever the scope left over
+    from the fused list AGAIN. A tail row is therefore a neighbourhood hit or a plain-similarity
+    continuation, and the record cannot say which: Disposition has no provenance member, nor does the
+    Candidate behind it, and the scoped list is not recorded. These tests pin both halves -- the
+    corrected mechanism, and the refusal to attribute a row the record cannot attribute."""
+
+    def test_reserved_slots_are_not_claimed_to_come_from_the_scoped_recall(self):
+        out = render(record())
+        self.assertIn("RESERVED FOR a second recall scoped to the anchor's two-hop neighbourhood", out)
+        self.assertIn("which is not the same as filled from it", out)
+        self.assertIn("from the unscoped list AGAIN", out)
+        self.assertNotIn("reserved for and backfilled from", out)
+
+    def test_line_refuses_to_attribute_a_tail_row_the_record_cannot_attribute(self):
+        out = render(record())
+        self.assertIn("is not in the record", out)
+        self.assertIn("no candidate carries its provenance", out)
+        self.assertIn("may be a neighbourhood hit or a similarity continuation", out)
+        self.assertIn("this trace will not guess which", out)
+
+    def test_split_point_is_computed_from_the_record_not_hardcoded(self):
+        """The reserve is 3 whatever the limit is, so the boundary moves with limits.candidateLimit.
+        A trace that printed 1-17 / 18-20 against a record whose limit was 10 would be describing a
+        different run than the table underneath it."""
+        out = render(record(limits=dict(LIMITS, candidateLimit=10)))
+        self.assertIn("rows 1-7 below", out)
+        self.assertIn("The last 3 slots (8-10)", out)
+
+    def test_absent_candidate_limit_computes_nothing_and_claims_nothing(self):
+        """With no limits.candidateLimit there is no boundary to name. The fallback must not fall
+        back to the old claim about where the tail rows came from either."""
+        out = render(record(limits={}))
+        self.assertIn("the fused/scoped split point cannot be computed", out)
+        self.assertNotIn("RESERVED FOR", out)
+        self.assertNotIn("neighbourhood", out)
 
 
 class SamplingLineTests(unittest.TestCase):
