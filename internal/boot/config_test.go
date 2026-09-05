@@ -154,6 +154,25 @@ func TestLoadGraphRejectsDivoidURLWhosePathEndsInAPI(t *testing.T) {
 	}
 }
 
+func TestLoadGraphRejectAPIBaseErrorNamesTheDoubledPathThatWouldActuallyBeRequested(t *testing.T) {
+	t.Parallel()
+
+	// The third of the three URL-shaped values in the error, and the one
+	// naming the actual failure this whole check exists to prevent. Nothing
+	// else pinned it: mutating wouldRequest.Path from "path + nodesPathSuffix"
+	// down to just "path" left the rest of the suite green.
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": "https://graph.example/api"})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadGraph returned nil error, want an error naming the doubled path")
+	}
+	const doubled = "https://graph.example/api/api/nodes"
+	if !strings.Contains(err.Error(), quoted(doubled)) {
+		t.Fatalf("error = %q, want it to name the doubled path %s that would actually be requested", err.Error(), quoted(doubled))
+	}
+}
+
 func TestLoadGraphRejectsDivoidURLWhosePathEndsInAPIWithTrailingSlash(t *testing.T) {
 	t.Parallel()
 
@@ -181,6 +200,36 @@ func TestLoadGraphRejectsDivoidURLThatAlreadyContainsAPINodes(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
 		t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
+	}
+	// Pins what this branch actually computes, not just that it rejected:
+	// nothing previously checked the /api/nodes branch's own suggestion.
+	const suggestion = "https://graph.example"
+	if !strings.Contains(err.Error(), quoted(suggestion)) {
+		t.Fatalf("error = %q, want it to suggest the corrected value %s", err.Error(), quoted(suggestion))
+	}
+}
+
+func TestLoadGraphRejectAPIBaseTrimsTheFullAPINodesTailNotJustTheConstantSuffix(t *testing.T) {
+	t.Parallel()
+
+	// A path that contains "/api/nodes" without ending on it exactly (a node
+	// id appended after it, e.g. a pasted single-node REST URL) still names
+	// the full offending tail. A mutant that hard-codes badSuffix to the
+	// "/api/nodes" constant instead of computing it from the match index
+	// would call strings.TrimSuffix with a suffix that is not actually at
+	// the end of this path, leave it untouched, and suggest back the very
+	// value that was just rejected — the divergence the two branches
+	// (Contains vs. HasSuffix) only produce on a fixture shaped like this.
+	const bad = "https://graph.example/api/nodes/123"
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": bad})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatalf("loadGraph returned nil error for %q, want an error naming the /api/nodes trap", bad)
+	}
+	const suggestion = "https://graph.example"
+	if !strings.Contains(err.Error(), quoted(suggestion)) {
+		t.Fatalf("error = %q, want it to suggest the corrected value %s, not the rejected value unchanged", err.Error(), quoted(suggestion))
 	}
 }
 
@@ -333,6 +382,29 @@ func TestLoadGraphAcceptsADivoidURLWithNoSchemeEvenThoughItsPathEndsInAPI(t *tes
 	}
 	if cfg.URL != want {
 		t.Fatalf("divoidURL = %q, want %q (used verbatim)", cfg.URL, want)
+	}
+}
+
+func TestLoadGraphRejectAPIBaseErrorOmitsAUserinfoPasswordFromEveryRendering(t *testing.T) {
+	t.Parallel()
+
+	// config.go builds all three URL-shaped values in the error (the supplied
+	// value, the doubled path, the corrected suggestion) as *url.URL copies
+	// rendered via Redacted() specifically so a userinfo password never
+	// reaches the error text — a sibling guarantee to the one already pinned
+	// for PROCESSOR_DIVOID_KEY (TestBootConfigErrorsNameTheVariableAndNeverItsValue),
+	// but previously nothing held it for this path.
+	const password = "hunter2"
+	env := validEnv(map[string]string{
+		"PROCESSOR_DIVOID_URL": "https://user:" + password + "@graph.example/api",
+	})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadGraph returned nil error, want an error rejecting the /api trap")
+	}
+	if strings.Contains(err.Error(), password) {
+		t.Fatalf("error = %q, must not contain the userinfo password %q", err.Error(), password)
 	}
 }
 

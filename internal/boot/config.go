@@ -92,22 +92,28 @@ func loadGraph(lookup lookupFunc) (GraphConfig, error) {
 
 // rejectAPIBase catches the credentials-file trap: ~/.claude/secrets/.divoid-online
 // holds a Url= line ending in "/api", which is the correct base for direct REST
-// calls but the wrong one here — the graph client appends "/api/nodes" itself, so
-// an operator who pastes that value gets ".../api/api/nodes", which the graph
-// does not serve as intended: it surfaces at request time as rows that
-// silently retrieve nothing, not as a boot failure (DiVoid #11328).
+// calls but the wrong one here — the graph client (internal/divoid) appends
+// "/api/nodes" itself, so an operator who pastes that value would get
+// ".../api/api/nodes" (DiVoid #11328). What that doubled path actually does at
+// request time has not been measured and is deliberately not claimed here —
+// the only defensible statement is that the value is wrong and boot is the
+// cheap place to catch it, before whatever happens downstream happens.
 //
 // Two separate things keep this from misfiring on a legitimate origin that
 // merely contains "api": checking only the parsed path — never the host, never
 // the raw string — is what leaves a host like "api.example.com" untouched;
 // matching the path segment boundary ("/api" as a suffix, never the bare
 // substring "api") is what leaves a path like "/graph-api" or "/apis"
-// untouched. Whitespace is trimmed before a trailing slash, and both before
-// parsing, so a stray leading space or a trailing "\r"/space/tab — a
-// realistic paste artefact from a credentials file — is caught the same as a
-// clean "/api": left in place, that whitespace would otherwise reach the HTTP
-// client, get percent-escaped to "%20", and reproduce exactly the doubled-path
-// failure this check exists to prevent.
+// untouched.
+//
+// Whitespace is trimmed before a trailing slash, and both before parsing —
+// but only for the purpose of this check. The value returned to the caller
+// below is the untrimmed input; whitespace in an otherwise-accepted value
+// still reaches the client unchanged, which is a separate, pre-existing gap
+// this change does not close. The trim here exists solely so a stray leading
+// space or a trailing "\r"/space/tab on an /api-suffixed value — a realistic
+// paste artefact from a credentials file — cannot slip past this check by
+// accident of looking like a different path than "/api".
 func rejectAPIBase(divoidURL string) error {
 	trimmed := strings.TrimRight(strings.TrimSpace(divoidURL), "/")
 
@@ -140,6 +146,12 @@ func rejectAPIBase(divoidURL string) error {
 	// password from all three renderings below — DiVoid itself uses bearer
 	// auth, not userinfo, but this check runs on operator-supplied input in
 	// general and must not be the thing that echoes a credential into a log.
+	// This makes the "set it to the origin only, e.g." suggestion literally
+	// correct as a redaction and imprecise as a suggestion: for a userinfo
+	// URL it renders as "https://user:xxxxx@graph.example", and pasting that
+	// back verbatim would not restore the real password. Accepted as-is —
+	// the shape does not occur for DiVoid's own bearer auth, and the
+	// alternative is printing a live credential into an error message.
 	wouldRequest := *parsed
 	wouldRequest.Path = path + nodesPathSuffix
 
