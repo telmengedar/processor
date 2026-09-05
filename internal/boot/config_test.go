@@ -14,7 +14,9 @@ func fixedLookup(values map[string]string) lookupFunc {
 
 func validEnv(overrides map[string]string) map[string]string {
 	env := map[string]string{
-		"PROCESSOR_DIVOID_URL": "https://graph.example/api",
+		// Origin only: the graph client appends "/api/nodes" itself (#11328).
+		// A "/api" suffix here is the credentials-file trap, not a valid base.
+		"PROCESSOR_DIVOID_URL": "https://graph.example",
 		"PROCESSOR_DIVOID_KEY": "test-key-12345",
 		"PROCESSOR_MODEL_URL":  "https://model.example/v1",
 		"PROCESSOR_MODEL_ID":   "test-model-id",
@@ -99,7 +101,7 @@ func TestLoadGraphErrorsWhenDivoidURLPresentButEmpty(t *testing.T) {
 func TestLoadGraphUsesDivoidURLVerbatimWhenPresent(t *testing.T) {
 	t.Parallel()
 
-	const want = "https://custom.graph.internal/api"
+	const want = "https://custom.graph.internal"
 	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": want})
 
 	cfg, err := loadGraph(fixedLookup(env))
@@ -108,6 +110,127 @@ func TestLoadGraphUsesDivoidURLVerbatimWhenPresent(t *testing.T) {
 	}
 	if cfg.URL != want {
 		t.Fatalf("divoidURL = %q, want %q", cfg.URL, want)
+	}
+}
+
+func TestLoadGraphRejectsDivoidURLWhosePathEndsInAPI(t *testing.T) {
+	t.Parallel()
+
+	// This is the credentials-file trap (#11328): ~/.claude/secrets/.divoid-online's
+	// Url= line is the correct base for direct REST calls, but the graph client
+	// appends "/api/nodes" itself, so pasting that value here would silently
+	// double the path.
+	const bad = "https://graph.example/api"
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": bad})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatalf("loadGraph returned nil error for %q, want an error naming the /api trap", bad)
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
+	}
+	if !strings.Contains(err.Error(), bad) {
+		t.Fatalf("error = %q, want it to name the supplied value %q", err.Error(), bad)
+	}
+}
+
+func TestLoadGraphRejectsDivoidURLWhosePathEndsInAPIWithTrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	const bad = "https://graph.example/api/"
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": bad})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatalf("loadGraph returned nil error for %q, want an error naming the /api trap", bad)
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
+	}
+}
+
+func TestLoadGraphRejectsDivoidURLThatAlreadyContainsAPINodes(t *testing.T) {
+	t.Parallel()
+
+	const bad = "https://graph.example/api/nodes"
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": bad})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatalf("loadGraph returned nil error for %q, want an error naming the /api/nodes trap", bad)
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
+	}
+}
+
+func TestLoadGraphRejectAPIBaseErrorSuggestsTheOriginWithTheSuffixStripped(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": "https://graph.example/api"})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadGraph returned nil error, want an error suggesting the corrected value")
+	}
+	const suggestion = "https://graph.example"
+	if !strings.Contains(err.Error(), suggestion) {
+		t.Fatalf("error = %q, want it to suggest the corrected value %q", err.Error(), suggestion)
+	}
+}
+
+func TestLoadGraphRejectAPIBaseDoesNotRejectAHostThatMerelyContainsAPI(t *testing.T) {
+	t.Parallel()
+
+	// "api" appearing somewhere in the URL is not the trap; only the path
+	// segment "/api" (or "/api/nodes") is. A host like api.example.com, or a
+	// path like "/graph-api" that merely ends with the substring "api"
+	// without the segment boundary, must stay accepted.
+	for _, want := range []string{
+		"https://api.example.com",
+		"https://graph.example/graph-api",
+		"https://graph.example/apis",
+	} {
+		env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": want})
+
+		cfg, err := loadGraph(fixedLookup(env))
+		if err != nil {
+			t.Fatalf("loadGraph(%q): %v, want no error — it does not literally end in the /api segment", want, err)
+		}
+		if cfg.URL != want {
+			t.Fatalf("divoidURL = %q, want %q", cfg.URL, want)
+		}
+	}
+}
+
+func TestLoadGraphAcceptsLegitimateDivoidURLShapes(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{"bare origin", "https://graph.example"},
+		{"trailing slash", "https://graph.example/"},
+		{"explicit port", "https://graph.example:8443"},
+		{"http scheme", "http://graph.internal"},
+		{"non-api path prefix", "https://graph.example/graph"},
+		{"localhost with port and path prefix", "http://localhost:9000/graph"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": tc.url})
+
+			cfg, err := loadGraph(fixedLookup(env))
+			if err != nil {
+				t.Fatalf("loadGraph(%q): %v, want a legitimate origin to be accepted", tc.url, err)
+			}
+			if cfg.URL != tc.url {
+				t.Fatalf("divoidURL = %q, want %q (used verbatim)", cfg.URL, tc.url)
+			}
+		})
 	}
 }
 
@@ -159,7 +282,7 @@ func TestGraphBootConfigLoadsWhenNoModelVariableIsSet(t *testing.T) {
 	t.Parallel()
 
 	env := map[string]string{
-		"PROCESSOR_DIVOID_URL": "https://graph.example/api",
+		"PROCESSOR_DIVOID_URL": "https://graph.example",
 		"PROCESSOR_DIVOID_KEY": "test-key-12345",
 	}
 
@@ -347,7 +470,7 @@ func TestLoadModelUsesModelKeyVerbatimWhenPresent(t *testing.T) {
 
 func TestExportedLoadersReadTheProcessEnvironment(t *testing.T) {
 	t.Setenv("PROCESSOR_HTTP_ADDR", "0.0.0.0:7070")
-	t.Setenv("PROCESSOR_DIVOID_URL", "https://env.graph.example/api")
+	t.Setenv("PROCESSOR_DIVOID_URL", "https://env.graph.example")
 	t.Setenv("PROCESSOR_DIVOID_KEY", "env-graph-key")
 	t.Setenv("PROCESSOR_MODEL_URL", "https://env.model.example/v1")
 	t.Setenv("PROCESSOR_MODEL_ID", "env-model-id")
@@ -365,7 +488,7 @@ func TestExportedLoadersReadTheProcessEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadGraph: %v", err)
 	}
-	if graph.URL != "https://env.graph.example/api" || graph.Key != "env-graph-key" {
+	if graph.URL != "https://env.graph.example" || graph.Key != "env-graph-key" {
 		t.Fatalf("graph = %+v, want the PROCESSOR_DIVOID_ variables", graph)
 	}
 
