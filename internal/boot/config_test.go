@@ -1,9 +1,24 @@
 package boot
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
+
+// quoted renders s the way %q would render it inside the boot package's own
+// error text. A bare strings.Contains(err, s) is not discriminating here: the
+// rejectAPIBase error deliberately renders three URL-shaped values that are
+// each other's prefixes by construction (the corrected origin is a prefix of
+// the supplied value with its bad suffix trimmed; the "would request" value
+// is the supplied value with more appended) — so an assertion against the
+// unquoted text can pass even when the argument that was supposed to fill
+// that slot has been swapped out. Requiring the closing quote immediately
+// after the value pins it to one specific %q slot instead of any substring
+// occurrence.
+func quoted(s string) string {
+	return fmt.Sprintf("%q", s)
+}
 
 func fixedLookup(values map[string]string) lookupFunc {
 	return func(key string) (string, bool) {
@@ -130,8 +145,12 @@ func TestLoadGraphRejectsDivoidURLWhosePathEndsInAPI(t *testing.T) {
 	if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
 		t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
 	}
-	if !strings.Contains(err.Error(), bad) {
-		t.Fatalf("error = %q, want it to name the supplied value %q", err.Error(), bad)
+	// quoted, not a bare Contains(err, bad): the "requests would go to" clause
+	// always renders bad as a literal prefix of its own text (it is bad with
+	// "/api/nodes" appended), so an unquoted assertion here would still pass
+	// even if the code stopped naming the supplied value in its own slot.
+	if !strings.Contains(err.Error(), quoted(bad)) {
+		t.Fatalf("error = %q, want it to name the supplied value %s", err.Error(), quoted(bad))
 	}
 }
 
@@ -174,9 +193,36 @@ func TestLoadGraphRejectAPIBaseErrorSuggestsTheOriginWithTheSuffixStripped(t *te
 	if err == nil {
 		t.Fatal("loadGraph returned nil error, want an error suggesting the corrected value")
 	}
+	// quoted, not a bare Contains: the corrected origin is a prefix of both
+	// the supplied value and the "would request" value by construction (it
+	// is the supplied value with the bad suffix trimmed off), so an unquoted
+	// assertion is satisfied by either of those and never actually checks
+	// that the corrected value's own slot was filled correctly — proved by
+	// mutation: swapping corrected.Redacted() for a constant leaves an
+	// unquoted Contains(err, "https://graph.example") passing, because that
+	// text still appears (as a prefix) inside the supplied and would-request
+	// renderings.
 	const suggestion = "https://graph.example"
-	if !strings.Contains(err.Error(), suggestion) {
-		t.Fatalf("error = %q, want it to suggest the corrected value %q", err.Error(), suggestion)
+	if !strings.Contains(err.Error(), quoted(suggestion)) {
+		t.Fatalf("error = %q, want it to suggest the corrected value %s", err.Error(), quoted(suggestion))
+	}
+}
+
+func TestLoadGraphRejectAPIBaseErrorSuggestsTheOriginWithAMountedPathPreserved(t *testing.T) {
+	t.Parallel()
+
+	// The bad suffix ("/api") sits at the end of a longer, legitimate path
+	// prefix here, so the correction must trim only the suffix and keep the
+	// mount point — the code handles this correctly, but nothing pinned it.
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": "https://graph.example/divoid/api"})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadGraph returned nil error, want an error suggesting the corrected value")
+	}
+	const suggestion = "https://graph.example/divoid"
+	if !strings.Contains(err.Error(), quoted(suggestion)) {
+		t.Fatalf("error = %q, want it to suggest the corrected value %s, preserving the /divoid mount", err.Error(), quoted(suggestion))
 	}
 }
 
@@ -231,6 +277,62 @@ func TestLoadGraphAcceptsLegitimateDivoidURLShapes(t *testing.T) {
 				t.Fatalf("divoidURL = %q, want %q (used verbatim)", cfg.URL, tc.url)
 			}
 		})
+	}
+}
+
+func TestLoadGraphRejectAPIBaseCatchesTheTrapEvenWithSurroundingWhitespace(t *testing.T) {
+	t.Parallel()
+
+	// The trap's source is a credentials file, so a pasted value realistically
+	// carries a stray leading space, a trailing space, a trailing "\t", or a
+	// trailing "\r" (a CRLF-saved file read on a line-oriented parser). Left
+	// unstripped, a trailing space in particular would reach the HTTP client,
+	// get percent-escaped to "%20", and reproduce this exact failure under a
+	// value that superficially looks like it was rejected already.
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{"trailing space", "https://graph.example/api "},
+		{"leading space", " https://graph.example/api"},
+		{"trailing carriage return", "https://graph.example/api\r"},
+		{"trailing tab", "https://graph.example/api\t"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": tc.url})
+
+			_, err := loadGraph(fixedLookup(env))
+			if err == nil {
+				t.Fatalf("loadGraph(%q) returned nil error, want the /api trap caught despite the whitespace", tc.url)
+			}
+			if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
+				t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
+			}
+		})
+	}
+}
+
+func TestLoadGraphAcceptsADivoidURLWithNoSchemeEvenThoughItsPathEndsInAPI(t *testing.T) {
+	t.Parallel()
+
+	// A bare host-and-path with no scheme — exactly the credentials file's
+	// Url= value pasted without its "https://" — parses via net/url as a
+	// relative reference with an empty Host, so rejectAPIBase's guard clause
+	// lets it through untouched: this is the documented, deliberate limit of
+	// the check (see the comment on the parse-failure branch in config.go),
+	// not an oversight. Pinning it here means a future change to that branch
+	// is a visible, deliberate decision instead of a silent regression.
+	const want = "divoid.mamgo.io/api"
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": want})
+
+	cfg, err := loadGraph(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadGraph(%q): %v, want no error — a scheme-less value is accepted by design, not validated", want, err)
+	}
+	if cfg.URL != want {
+		t.Fatalf("divoidURL = %q, want %q (used verbatim)", cfg.URL, want)
 	}
 }
 

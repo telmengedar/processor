@@ -93,22 +93,33 @@ func loadGraph(lookup lookupFunc) (GraphConfig, error) {
 // rejectAPIBase catches the credentials-file trap: ~/.claude/secrets/.divoid-online
 // holds a Url= line ending in "/api", which is the correct base for direct REST
 // calls but the wrong one here — the graph client appends "/api/nodes" itself, so
-// an operator who pastes that value gets ".../api/api/nodes", a 404 the client
-// treats as "no results" rather than a boot failure (DiVoid #11328).
+// an operator who pastes that value gets ".../api/api/nodes", which the graph
+// does not serve as intended: it surfaces at request time as rows that
+// silently retrieve nothing, not as a boot failure (DiVoid #11328).
 //
-// Only the parsed path is checked, never the raw string, so a legitimate origin
-// that merely contains "api" elsewhere — a host named "api.example.com", a
-// deployment mounted under "/graph-api" — stays accepted; matching on the path
-// segment boundary ("/api", not just the substring "api") is what keeps
-// "/graph-api" out of scope. A trailing slash is trimmed first so "/api/" is
-// caught the same as "/api".
+// Two separate things keep this from misfiring on a legitimate origin that
+// merely contains "api": checking only the parsed path — never the host, never
+// the raw string — is what leaves a host like "api.example.com" untouched;
+// matching the path segment boundary ("/api" as a suffix, never the bare
+// substring "api") is what leaves a path like "/graph-api" or "/apis"
+// untouched. Whitespace is trimmed before a trailing slash, and both before
+// parsing, so a stray leading space or a trailing "\r"/space/tab — a
+// realistic paste artefact from a credentials file — is caught the same as a
+// clean "/api": left in place, that whitespace would otherwise reach the HTTP
+// client, get percent-escaped to "%20", and reproduce exactly the doubled-path
+// failure this check exists to prevent.
 func rejectAPIBase(divoidURL string) error {
-	trimmed := strings.TrimRight(divoidURL, "/")
+	trimmed := strings.TrimRight(strings.TrimSpace(divoidURL), "/")
 
 	parsed, err := neturl.Parse(trimmed)
 	if err != nil || parsed.Host == "" {
 		// Not a parseable absolute URL; let the caller (or the client's own
 		// request construction) surface that failure instead of guessing here.
+		// This is deliberate, not an oversight: a scheme-less value such as
+		// "divoid.mamgo.io/api" (the credentials file's Url= pasted without
+		// its scheme) parses with an empty Host and is accepted rather than
+		// rejected. Teaching this check to also resolve scheme-less
+		// references is how a config validator grows into a URL parser.
 		return nil
 	}
 
@@ -124,11 +135,20 @@ func rejectAPIBase(divoidURL string) error {
 		return nil
 	}
 
+	// wouldRequest and corrected are built from copies of the parsed URL,
+	// not string concatenation, so Redacted() can strip any userinfo
+	// password from all three renderings below — DiVoid itself uses bearer
+	// auth, not userinfo, but this check runs on operator-supplied input in
+	// general and must not be the thing that echoes a credential into a log.
+	wouldRequest := *parsed
+	wouldRequest.Path = path + nodesPathSuffix
+
 	corrected := *parsed
 	corrected.Path = strings.TrimSuffix(path, badSuffix)
+
 	return fmt.Errorf(
 		"%s is %q, which already includes the graph API path (%q); the client appends %q itself, so requests would go to %q — set it to the origin only, e.g. %q",
-		envDivoidURL, divoidURL, badSuffix, nodesPathSuffix, trimmed+nodesPathSuffix, corrected.String(),
+		envDivoidURL, parsed.Redacted(), badSuffix, nodesPathSuffix, wouldRequest.Redacted(), corrected.Redacted(),
 	)
 }
 

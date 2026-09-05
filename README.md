@@ -163,7 +163,7 @@ the first offending variable is the one named:
 | Variable | Default | Behaviour |
 |---|---|---|
 | `PROCESSOR_HTTP_ADDR` | `127.0.0.1:8080` | Listen address, used verbatim when set and non-empty. Set but empty is a startup error (an explicitly-emptied variable is treated as an operator mistake, not a request for the default). |
-| `PROCESSOR_DIVOID_URL` | *(none — required)* | The DiVoid API base URL, used verbatim. Absent or present-but-empty is a startup error: there is no defensible default for a base URL. |
+| `PROCESSOR_DIVOID_URL` | *(none — required)* | The DiVoid API **origin only** — `internal/boot` appends `/api/nodes` itself. Absent or present-but-empty is a startup error: there is no defensible default for a base URL. A value whose path already ends in `/api` (or already contains `/api/nodes`) is also a startup error naming the supplied value and suggesting the corrected origin — that shape is what `~/.claude/secrets/.divoid-online`'s `Url=` line holds for direct REST calls, and pasting it here would otherwise double the path and fail silently at request time instead of at boot. |
 | `PROCESSOR_DIVOID_KEY` | *(none — required)* | The DiVoid API bearer key, used verbatim. Absent or present-but-empty is a startup error. Never logged, never echoed in an error, never written to the graph. |
 | `PROCESSOR_MODEL_URL` | *(none — required)* | The model endpoint's base URL (an OpenAI-compatible chat-completions server), used verbatim. Absent or present-but-empty is a startup error: a local runtime and a hosted gateway serve different addresses, so there is no defensible default. |
 | `PROCESSOR_MODEL_ID` | *(none — required)* | The model id sent with every request, and the value recorded in the run record's `model` field. Absent or present-but-empty is a startup error. |
@@ -171,7 +171,7 @@ the first offending variable is the one named:
 
 ```sh
 PROCESSOR_HTTP_ADDR=:9090 \
-PROCESSOR_DIVOID_URL=https://divoid.example/api \
+PROCESSOR_DIVOID_URL=https://divoid.example \
 PROCESSOR_DIVOID_KEY=xxxxxxxx \
 PROCESSOR_MODEL_URL=http://127.0.0.1:11434/v1 \
 PROCESSOR_MODEL_ID=llama-3.1-8b-instruct \

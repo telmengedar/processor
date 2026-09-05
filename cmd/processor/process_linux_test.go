@@ -52,7 +52,7 @@ const (
 
 func validEnv(overrides map[string]string) map[string]string {
 	env := map[string]string{
-		envDivoidURL: "https://graph.example/api",
+		envDivoidURL: "https://graph.example",
 		envDivoidKey: graphKeySentinel,
 		envModelURL:  "https://model.example/v1",
 		envModelID:   modelIDSentinel,
