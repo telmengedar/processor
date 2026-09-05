@@ -619,10 +619,34 @@ func TestTheSummaryNamesTheDerivationSidecarAndItsHashSoTwoReadingsAreTellableAp
 	result.Arm = "internal/eval/derivations.json"
 	result.DerivationHash = "4f7c1a90b6d3e58217c4be09f1a2d3c4e5f60718293a4b5c6d7e8f90a1b2c3d4"
 	result.DerivedRows = 11
+	result.RowCount = 25
 
 	_, human := render(t, result)
 
-	mustContainLine(t, human, "arm internal/eval/derivations.json - 11 rows derived, hash 4f7c1a90")
+	mustContainLine(t, human, "arm internal/eval/derivations.json - 11/25 rows derived, hash 4f7c1a90")
+}
+
+func TestTheSummaryNamesTheFractionOfTheCorpusTheSidecarPinsSoAPartialSidecarDoesNotReadAsFull(t *testing.T) {
+	t.Parallel()
+
+	// A sidecar authored against a smaller corpus can still validate once
+	// rows are appended to that corpus later -- LoadDerivations only checks
+	// that every sidecar row resolves to a corpus row, not the reverse. Left
+	// as a bare row count, "13 rows derived" reads as sufficiency next to a
+	// derivationHash; only the fraction against the full corpus shows the
+	// thirteen rows are twelve short of the twenty-five actually swept.
+	result := resultWith(intactControlRow())
+	result.Arm = "internal/eval/derivations.json"
+	result.DerivationHash = "23b505521234567890abcdef1234567890abcdef1234567890abcdef123456"
+	result.DerivedRows = 13
+	result.RowCount = 25
+
+	_, human := render(t, result)
+
+	mustContainLine(t, human, "arm internal/eval/derivations.json - 13/25 rows derived, hash 23b50552")
+	if strings.Contains(human, "13 rows derived,") {
+		t.Fatalf("the summary still names the row count without its denominator, which is the exact reading that hid the coverage gap:\n%s", human)
+	}
 }
 
 func TestTheSummaryCarriesTheScopeReserveBesideTheOtherLimits(t *testing.T) {

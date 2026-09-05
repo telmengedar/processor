@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/telmengedar/processor/internal/boot"
@@ -49,6 +50,7 @@ func run(args []string, machine, human io.Writer) int {
 		logger.Error("derivations", "error", err)
 		return exitError
 	}
+	warnOnUnpinnedRows(logger, derivations, corpus)
 
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 
@@ -78,6 +80,26 @@ func loadDerivations(path string, corpus eval.Corpus) (eval.Derivations, error) 
 		return eval.Derivations{}, nil
 	}
 	return eval.LoadDerivations(path, corpus)
+}
+
+// warnOnUnpinnedRows names, on the operator stream, any corpus row the
+// derivation sidecar does not pin. LoadDerivations validates that every
+// sidecar row resolves to a corpus row; it cannot validate the reverse
+// without the corpus that grew past it, which is exactly what happened when
+// a corpus grew from thirteen rows to twenty-five and the sidecar did not
+// grow with it. Left unreported, those rows sweep on raw input on every arm
+// and are identical between arms by construction, diluting every rate the
+// sweep prints without anything saying so. This is a warning, not a hard
+// failure: it is a defect in the corpus/sidecar pair, not in the sweep the
+// operator asked for, and failing the run would block every existing
+// invocation until every sidecar is regenerated in full.
+func warnOnUnpinnedRows(logger *slog.Logger, derivations eval.Derivations, corpus eval.Corpus) {
+	unpinned := derivations.Unpinned(corpus)
+	if len(unpinned) == 0 {
+		return
+	}
+	logger.Warn("derivations", "unpinned", len(unpinned), "of", len(corpus.Rows),
+		"rows", strings.Join(unpinned, ","))
 }
 
 func parseFlags(args []string, human io.Writer) (corpusPath, derivationsPath string, ok bool) {

@@ -174,6 +174,48 @@ func TestLoadDerivationsRejectsASidecarHoldingNoRows(t *testing.T) {
 	loadDerivationsMustFail(t, `[]`, "no rows")
 }
 
+func TestUnpinnedNamesTheCorpusRowsTheSidecarDoesNotPin(t *testing.T) {
+	t.Parallel()
+
+	// validDerivations pins only r01; derivationCorpus also carries r02.
+	derivations, err := LoadDerivations(writeDerivations(t, validDerivations), derivationCorpus())
+	if err != nil {
+		t.Fatalf("LoadDerivations: %v", err)
+	}
+
+	got := derivations.Unpinned(derivationCorpus())
+
+	want := []string{"r02"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Unpinned = %q, want %q: LoadDerivations only checks that every sidecar row resolves to a corpus row, so a corpus row the sidecar never mentions passes validation silently and sweeps on raw input alone", got, want)
+	}
+}
+
+func TestUnpinnedIsEmptyWhenTheSidecarCoversEveryCorpusRow(t *testing.T) {
+	t.Parallel()
+
+	body := `[
+	  {"row": "r01", "queries": ["a question about the first row"]},
+	  {"row": "r02", "queries": ["a question about the second row"]}
+	]`
+	derivations, err := LoadDerivations(writeDerivations(t, body), derivationCorpus())
+	if err != nil {
+		t.Fatalf("LoadDerivations: %v", err)
+	}
+
+	if got := derivations.Unpinned(derivationCorpus()); len(got) != 0 {
+		t.Fatalf("Unpinned = %q, want none: every corpus row carries a pinned query set", got)
+	}
+}
+
+func TestUnpinnedOnTheZeroSidecarReportsNoGapBecauseTheRawInputArmPinsNothingByDefinition(t *testing.T) {
+	t.Parallel()
+
+	if got := (Derivations{}).Unpinned(derivationCorpus()); got != nil {
+		t.Fatalf("Unpinned on the zero sidecar = %q, want nil: the raw-input arm never pins any row, and that is not a coverage gap to warn about", got)
+	}
+}
+
 func TestLoadDerivationsReportsTheAbsentFileRatherThanSweepingTheRawArmUnderItsName(t *testing.T) {
 	t.Parallel()
 

@@ -42,6 +42,26 @@ func (d Derivations) Rows() int {
 	return len(d.Queries)
 }
 
+// Unpinned returns the ids of corpus rows this sidecar does not pin, in
+// corpus order. A sidecar that validated against an earlier, smaller corpus
+// can still be missing rows a later corpus added -- LoadDerivations only
+// checks that every sidecar row resolves to a corpus row, not the reverse.
+// The zero sidecar (the raw-input arm) pins nothing by definition, which is
+// not itself a coverage gap, so it reports none.
+func (d Derivations) Unpinned(corpus Corpus) []string {
+	if d.Path == "" {
+		return nil
+	}
+
+	var unpinned []string
+	for _, row := range corpus.Rows {
+		if _, ok := d.Queries[row.ID]; !ok {
+			unpinned = append(unpinned, row.ID)
+		}
+	}
+	return unpinned
+}
+
 // QueriesFor is the row's own input followed by whatever the sidecar pinned for it, without repeats.
 func (d Derivations) QueriesFor(row Row) []string {
 	queries := []string{row.Input}

@@ -292,8 +292,35 @@ func TestRunIssuesEveryPinnedDerivationAndNamesTheArmItSweptOnBothStreams(t *tes
 	if decoded.DerivedRows != 1 {
 		t.Fatalf("DerivedRows = %d, want 1 of the two corpus rows", decoded.DerivedRows)
 	}
-	if !strings.Contains(human.String(), "1 rows derived") {
-		t.Fatalf("the human summary does not name the arm it swept on:\n%s", human.String())
+	if !strings.Contains(human.String(), "1/2 rows derived") {
+		t.Fatalf("the human summary does not name the arm it swept on, or does not name it against the full corpus:\n%s", human.String())
+	}
+}
+
+func TestRunWarnsOnTheOperatorStreamAloneWhenTheSidecarLeavesCorpusRowsUnpinned(t *testing.T) {
+	server := recordingGraphServer(t, &[]string{})
+	graphEnv(t, server.URL)
+
+	// runCorpus carries two rows, r01 and c01; this sidecar pins only r01,
+	// so c01 sweeps on raw input on both arms without anything in the
+	// output saying so unless this warning fires.
+	sidecar := filepath.Join(t.TempDir(), "derivations.json")
+	body := `[{"row": "r01", "queries": ["why would a mutation leave the suite green"]}]`
+	if err := os.WriteFile(sidecar, []byte(body), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var machine, human bytes.Buffer
+	code := run([]string{"-corpus", corpusFile(t, runCorpus), "-derivations", sidecar}, &machine, &human)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; the human stream was:\n%s", code, human.String())
+	}
+
+	if !strings.Contains(human.String(), "unpinned=1") || !strings.Contains(human.String(), "rows=c01") {
+		t.Fatalf("the operator stream does not name the unpinned row: a corpus row the sidecar never mentions still validates and sweeps on raw input on both arms, silently diluting every rate the sweep prints. Human stream was:\n%s", human.String())
+	}
+	if strings.Contains(machine.String(), "unpinned") {
+		t.Fatalf("the coverage warning leaked into the machine stream, which a consumer decodes as the eval.Result schema:\n%s", machine.String())
 	}
 }
 
