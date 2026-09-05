@@ -35,7 +35,11 @@ The two few-shot examples embedded in the prompt are themselves rows that
 are NOT being regenerated (r01, r06) and are shown as (input, queries)
 pairs only -- their `required`/`subject`/`why` fields are not included --
 so they demonstrate the desired query *shape* without leaking any answer
-key for the rows this script actually generates.
+key for the rows this script actually generates. They are harmless only as
+long as r01/r06 stay untouched: were either ever regenerated, its own
+pinned queries would be sitting in its prompt history verbatim. `--only`
+refuses to overwrite an already-pinned row without `--force` precisely to
+keep that from happening silently.
 
 Usage
 -----
@@ -46,8 +50,13 @@ Usage
     # Dry run: print what would be generated without writing the sidecar.
     python scripts/generate_derivations.py --dry-run
 
-    # Point at a different model or endpoint, or regenerate specific rows.
+    # Regenerate specific unpinned rows (fails if any of them is already pinned).
     python scripts/generate_derivations.py --model ai/qwen3-coder --only r12,r13
+
+    # Overwrite an already-pinned row deliberately -- this replaces the measured
+    # baseline that row was pinned against and invalidates any prior sweep taken
+    # with it, so it requires the explicit --force.
+    python scripts/generate_derivations.py --only r02 --force
 
 Requires only the Python standard library. Talks to an OpenAI-compatible
 chat/completions endpoint (Docker Model Runner on this network, by default
@@ -240,6 +249,50 @@ def dedupe_against(raw_input: str, candidates: list[str], already: list[str]) ->
     return kept
 
 
+QUESTION_STARTERS = {
+    "how", "why", "what", "is", "are", "was", "were", "does", "do", "did",
+    "can", "could", "should", "would", "will", "where", "who", "whom",
+    "which", "when", "must", "shall", "may", "might",
+}
+
+
+def looks_like_a_question(line: str) -> bool:
+    """Ends in '?', or opens with a common interrogative/auxiliary word.
+
+    A trailing '?' alone under-detects: a line does not stop being a prose question just
+    because the model forgot the mark. A line reading "How does the ranking system prevent
+    item cycling in top positions" is unmistakably phrased as a question and not a dense
+    keyword line, even though it satisfies "does not end in '?'" -- exactly the gap that let
+    r15's fifth line through unnoticed before this check existed.
+    """
+    stripped = line.strip()
+    if stripped.endswith("?"):
+        return True
+    first_word = stripped.split(" ", 1)[0].strip(",.:;\"'").lower()
+    return first_word in QUESTION_STARTERS
+
+
+def shape_errors(queries: list[str]) -> list[str]:
+    """Report ways `queries` misses the 4-question + 1-keyword-line shape the prompt asks for.
+
+    Judges only whether the model followed the requested shape, not whether a query is a *good*
+    derived question -- that judgment is off-limits here (tuning against a measurement is the
+    contamination this unit exists to avoid). Kept separate from dedupe_against because it
+    judges the assembled set's shape, not any one candidate in isolation.
+    """
+    if len(queries) != QUERIES_PER_ROW:
+        return [f"expected {QUERIES_PER_ROW} queries, got {len(queries)}"]
+
+    errors = []
+    for i, query in enumerate(queries[:-1], start=1):
+        if not looks_like_a_question(query):
+            errors.append(f"line {i} should be phrased as a question: {query!r}")
+    last = queries[-1]
+    if looks_like_a_question(last):
+        errors.append(f"line {QUERIES_PER_ROW} should be a dense keyword line, not phrased as a question: {last!r}")
+    return errors
+
+
 def generate_for_row(
     endpoint: str,
     model: str,
@@ -258,7 +311,10 @@ def generate_for_row(
         log(f"    attempt {attempt}: model returned {len(candidates)} line(s), "
             f"{len(fresh)} new/valid, {len(collected)}/{QUERIES_PER_ROW} collected")
         if len(collected) >= QUERIES_PER_ROW:
-            return collected[:QUERIES_PER_ROW]
+            final = collected[:QUERIES_PER_ROW]
+            for problem in shape_errors(final):
+                log(f"    WARNING: row {row.id} shape: {problem}")
+            return final
     if not collected:
         raise RuntimeError(
             f"row {row.id}: the model never produced a usable query after "
@@ -266,12 +322,59 @@ def generate_for_row(
         )
     log(f"    WARNING: row {row.id} only reached {len(collected)}/{QUERIES_PER_ROW} "
         f"distinct queries after {MAX_FILL_ATTEMPTS} attempts; pinning what was collected")
+    for problem in shape_errors(collected):
+        log(f"    WARNING: row {row.id} shape: {problem}")
     return collected
 
 
 def corpus_order_key(corpus_ids: list[str]):
     index = {row_id: i for i, row_id in enumerate(corpus_ids)}
     return lambda entry: index.get(entry["row"], len(index))
+
+
+def select_targets(
+    blind_rows: list[BlindRow],
+    corpus_ids: list[str],
+    already_pinned: set[str],
+    only: str | None,
+    force: bool,
+) -> tuple[list[BlindRow], str | None]:
+    """Resolve which rows to generate. Returns (targets, error); error is None on success.
+
+    Without --only, targets are every unpinned row -- this path can never touch a pinned row.
+    With --only, a name that is already pinned is refused unless force is set, since silently
+    honoring it would overwrite the measured baseline that row was pinned against (F2).
+    """
+    if not only:
+        return [row for row in blind_rows if row.id not in already_pinned], None
+
+    target_ids = {rid.strip() for rid in only.split(",") if rid.strip()}
+    unknown = target_ids - set(corpus_ids)
+    if unknown:
+        return [], f"--only names rows not in the corpus: {sorted(unknown)}"
+
+    already = sorted(target_ids & already_pinned)
+    if already and not force:
+        return [], (
+            f"--only names rows already pinned: {already} (pass --force to overwrite; this "
+            f"replaces the measured baseline those rows were pinned against, invalidating any "
+            f"prior sweep taken with them)"
+        )
+
+    return [row for row in blind_rows if row.id in target_ids], None
+
+
+def merge_sidecar(
+    sidecar_entries: list[dict],
+    generated: dict[str, list[str]],
+    corpus_ids: list[str],
+) -> list[dict]:
+    """Replace/add `generated` rows into `sidecar_entries`, returned in corpus order."""
+    kept = [entry for entry in sidecar_entries if entry["row"] not in generated]
+    new = [{"row": row_id, "queries": queries} for row_id, queries in generated.items()]
+    merged = kept + new
+    merged.sort(key=corpus_order_key(corpus_ids))
+    return merged
 
 
 def main() -> int:
@@ -282,7 +385,9 @@ def main() -> int:
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--temperature", type=float, default=0.5)
     parser.add_argument("--timeout", type=int, default=REQUEST_TIMEOUT_SECONDS)
-    parser.add_argument("--only", help="comma-separated row ids to (re)generate, default: all unpinned")
+    parser.add_argument("--only", help="comma-separated row ids to generate, default: all unpinned")
+    parser.add_argument("--force", action="store_true",
+                         help="allow --only to overwrite rows that are already pinned")
     parser.add_argument("--dry-run", action="store_true", help="print generated queries, do not write the sidecar")
     args = parser.parse_args()
 
@@ -296,15 +401,10 @@ def main() -> int:
     sidecar_entries = load_sidecar(args.derivations)
     already_pinned = pinned_ids(sidecar_entries)
 
-    if args.only:
-        target_ids = {rid.strip() for rid in args.only.split(",") if rid.strip()}
-        unknown = target_ids - set(corpus_ids)
-        if unknown:
-            log(f"error: --only names rows not in the corpus: {sorted(unknown)}")
-            return 2
-        targets = [row for row in blind_rows if row.id in target_ids]
-    else:
-        targets = [row for row in blind_rows if row.id not in already_pinned]
+    targets, error = select_targets(blind_rows, corpus_ids, already_pinned, args.only, args.force)
+    if error:
+        log(f"error: {error}")
+        return 2
 
     if not targets:
         log("nothing to generate: every requested row is already pinned")
@@ -332,12 +432,12 @@ def main() -> int:
         print(json.dumps({rid: qs for rid, qs in generated.items()}, indent=2))
         return 0
 
-    kept_entries = [e for e in sidecar_entries if e["row"] not in generated]
-    new_entries = [{"row": rid, "queries": qs} for rid, qs in generated.items()]
-    merged = kept_entries + new_entries
-    merged.sort(key=corpus_order_key(corpus_ids))
+    merged = merge_sidecar(sidecar_entries, generated, corpus_ids)
 
-    args.derivations.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
+    # newline="\n" pins LF regardless of platform: LoadDerivations hashes the
+    # working-tree bytes, not the git blob, so a platform-dependent newline here
+    # makes the recorded hash unreproducible from a fresh checkout (F1, DiVoid PR review).
+    args.derivations.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8", newline="\n")
     log(f"wrote {args.derivations} ({len(merged)} rows pinned)")
     return 0
 

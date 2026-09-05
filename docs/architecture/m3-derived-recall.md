@@ -27,8 +27,8 @@ questions — not the request — are what the graph is asked; results are fused
 takes labelled retrieval from 8/11 to 10/11 and admitted from 7/11 to ~~9/11~~ 8/11** *(retrieved simulated
 2026-09-04 and confirmed by a real sweep 2026-09-05; the admitted figure was **predicted as 9/11 and is
 struck** — the binary returns 8/11, and §6 item 3 says why. All of these are on the eleven-labelled-row
-corpus that PR #27 has since replaced with a 23-labelled-row one: **§9.1 owns the current rates and this line
-is not the place to read them.**)*
+corpus that PR #27 has since replaced with a 23-labelled-row one: **§9.2 owns the current rates — §9.1 is the
+reading it supersedes — and this line is not the place to read them.**)*
 
 **But it does not fix the row the source task was written from, and the reason is not a query problem.**
 #10883 — r07's required node — is a **9,519-byte task node about an M1 hand-off**, and the passage that
@@ -432,8 +432,8 @@ produce **the same candidate set as a raw-only run** — not merely that it prod
 | # | Risk | Mitigation | Falsifier |
 |---|---|---|---|
 | R1 | **A real model's derivations are worse than the hand-written ones this design was measured on.** The largest risk in the document | §9's A/B compares a live-derived arm against the pinned arm on one graph state; §4.4 records the derived queries verbatim so a bad derivation is readable rather than inferred | a live-derivation sweep **fails to beat a raw-input arm taken in the same session** ~~scores at or below 10/13~~ *(converted 2026-09-05: `/13` identified the corpus `corpusHash 6c1ba696` that PR #27 replaced. This is a forward-looking acceptance threshold rather than a dated record, so it is restated as arm-vs-arm on whatever the corpus then is — the same conversion §9 acceptance item 1 and §11 step 1 already carry, and for the same reason: the graph is live and unversioned, so a fixed denominator is a comparison against a system that no longer exists)* |
-| R2 | **The design was selected on the same 13 rows it *was* scored on.** Six combiners were compared and the best kept — that is selection on the test set, and the honest reading of 12/13 is *an upper bound*. *(Tense corrected 2026-09-05: it is now scored on 25. The twelve rows PR #27 added are the only ones it was **not** selected on — and the sidecar pins derivations for none of them, §12 q5, which is why they cannot yet answer the question they exist to answer.)* | Stated here rather than mitigated. The corpus was authored before this design existed and none of its rows were changed; #11092 §11 Q1's task-set question is the place this gets resolved | **Fired — and §9.1 already explains it. Do not read this row as an unfired falsifier.** The advantage did shrink on rows added after this document: **+0.09 on eleven rows** (0.82 → 0.91) became **+0.04 on twenty-three** (0.39 → 0.43). §9.1 reads that as **coverage dilution, not generalisation failure** — twelve of the twenty-three labelled rows are identical between the arms *by construction*, because the sidecar gives them no derivations, so they are incapable of showing an advantage either way. **That explanation is on the record and is itself testable**: §12 q5 option (a) or (b) would settle it by giving the twelve rows derivations. Until one of them happens this firing is **uninformative rather than answered**. **Note also that R2a below was re-confirmed on 2026-09-05 and this row was not.** |
-| R2a | **R2 bites hardest on precisely the row carrying the derived half of the hypothesis, and that is not a coincidence.** The derived arm's advantage over the scope-only arm is **one corpus row, r03** *(re-confirmed 2026-09-05. `Retrieve` builds the scope and issues the scoped recall unconditionally, so a sweep with no `-derivations` **is** the scope-only arm — and r03 is the single row separating it from the pinned arm on retrieved, 9/11 → 10/11)*. **r03's first pinned query is §2.2's own measured best derived question, verbatim** — and §2.2 already flags its author as contaminated for r03, r07 and r08. So the one row that distinguishes derivation from scope alone is a row whose winning query was written by someone who had read the diagnosis first. **Step 4's case rests on it** | Not mitigable inside this corpus, and naming it is the mitigation. R1's live-derivation reading (§9 item 4) is the only thing that answers it: it asks whether a model, uncontaminated, produces a query as good as the hand-written one. Until that reading exists, treat the derived arm's margin over the scope-only arm as **one hand-written query's worth of evidence** | a live-derived sweep leaves r03 `notRetrieved`, collapsing the derived arm onto the scope-only arm |
+| R2 | **The design was selected on the same 13 rows it *was* scored on.** Six combiners were compared and the best kept — that is selection on the test set, and the honest reading of 12/13 is *an upper bound*. *(Tense corrected 2026-09-05: it is now scored on 25. The twelve rows PR #27 added are the only ones it was **not** selected on — ~~and the sidecar pins derivations for none of them, §12 q5, which is why they cannot yet answer the question they exist to answer.~~ **Struck later the same day: PR #32 pinned all twelve (§12 q5 closed), so they now *can* answer it. §9.2 is what they answer — and the answer is one row.**)* | Stated here rather than mitigated. The corpus was authored before this design existed and none of its rows were changed; #11092 §11 Q1's task-set question is the place this gets resolved | **Fired — and §9.1 already explains it. Do not read this row as an unfired falsifier.** The advantage did shrink on rows added after this document: **+0.09 on eleven rows** (0.82 → 0.91) became **+0.04 on twenty-three** (0.39 → 0.43). §9.1 reads that as **coverage dilution, not generalisation failure** — twelve of the twenty-three labelled rows are identical between the arms *by construction*, because the sidecar gives them no derivations, so they are incapable of showing an advantage either way. **That explanation is on the record and is itself testable**: §12 q5 option (a) or (b) would settle it by giving the twelve rows derivations. ~~Until one of them happens this firing is **uninformative rather than answered**.~~ ~~**Note also that R2a below was re-confirmed on 2026-09-05 and this row was not.**~~ *(Both struck 2026-09-05, later the same day: (b) happened — PR #32 closed the sidecar to 25/25 with blind, model-generated queries — and **§9.2 is the reading.** **Ruling: the dilution explanation is confirmed as the cause of the shrinkage and refuted as a complete account of it.** Confirmed, because closing coverage restores the full-corpus margin to **+0.09 on twenty-three** (0.39 → 0.48), which is the eleven-row figure to two decimals; the +0.04 was an artifact of rows incapable of differing. Refuted as complete, because dilution implied the twelve rows were merely **silent** — given queries, **eleven of the twelve still miss**, and the restored margin is wins and denominator growing at the same rate rather than evidence of generalisation: derivation converts **1 of 2** available misses on the eleven selected-on rows and **1 of 12** on the out-of-sample twelve. **This row is answered, not closed** — the charge it names has moved from unmeasurable to measurable-and-unsettled, and §9.2 carries the restated falsifier.)* |
+| R2a | **R2 bites hardest on precisely the row carrying the derived half of the hypothesis, and that is not a coincidence.** The derived arm's advantage over the scope-only arm is **one corpus row, r03** *(re-confirmed 2026-09-05. `Retrieve` builds the scope and issues the scoped recall unconditionally, so a sweep with no `-derivations` **is** the scope-only arm — and r03 is the single row separating it from the pinned arm on retrieved, 9/11 → 10/11)*. **r03's first pinned query is §2.2's own measured best derived question, verbatim** — and §2.2 already flags its author as contaminated for r03, r07 and r08. So the one row that distinguishes derivation from scope alone is a row whose winning query was written by someone who had read the diagnosis first. **Step 4's case rests on it** | Not mitigable inside this corpus, and naming it is the mitigation. R1's live-derivation reading (§9 item 4) is the only thing that answers it: it asks whether a model, uncontaminated, produces a query as good as the hand-written one. Until that reading exists, treat the derived arm's margin over the scope-only arm as **one hand-written query's worth of evidence** | a live-derived sweep leaves r03 `notRetrieved`, collapsing the derived arm onto the scope-only arm. *(**Weakened in the design's favour 2026-09-05, later the same day** — and this is the best news in §9.2. The derived arm's advantage over the scope-only arm is **no longer one row**. At 25/25 sidecar coverage it is **two — r03 and r12** — and **r12's queries had no author in the sense this row means**: they were generated by a model that never saw the row's `required`, `subject`, `hash` or `why` fields, blindness enforced structurally rather than by care (PR #32; `project_corpus_blind()` discards those fields before any model-facing value is constructed). **So r03 could collapse entirely and the arms would still separate.** This falsifier is not retired — it is simply no longer sufficient on its own to collapse the arms, and the row's core charge is correspondingly narrowed: the derived half of the hypothesis no longer rests **only** on a contaminated query. One uncontaminated row is not a result, but it is the first evidence in this document that is not r03's.)* |
 | R3 | **Cost per turn rises from 1 graph read to 1 + N + 2** (N derived queries, one scoped recall, one links read), plus one model call | All reads are `GET`s against one host; the model call is small — a derivation prompt carries the input, not the block. **The sweep's model cost stays zero** (§4.5) | a turn's wall time or graph error rate rises materially in the smoke rig |
 | R4 | **More of the graph reachable means more self-produced content reachable** (#11179) | `admit` already cuts self-produced rows (#11158) and the sweep counts them. **The smoke rig must report the self-produced count among admitted rows**, which #11179 asks for anyway | a two-turn smoke run admits a `processor-run` record and nothing reports it |
 | R5 | **The sweep and the turn drift apart** — the instrument stops measuring the product (#11142) | §4.3's extraction: one `Retrieve`, two callers, and G-5's cross-package mutation arm | a fusion constant is mutated and only one of `internal/loop` / `cmd/eval` reddens |
@@ -462,15 +462,21 @@ its own hash. **This unit does not enter #11101's queue**, which is the point of
 > correct and was spent on a hash that a different change moved anyway. **The lesson is not that the ruling was
 > wrong** — a design cannot hold a shared file still — **but that `corpusHash` was never a stable identifier
 > for a baseline, only a detector of change to one file**, and #11133's baseline is pinned by a graph state
-> that carries no hash at all (§9.1's third identity). Sidecar coverage did not follow the corpus: it still
-> pins 13 of the 25 rows, which §9.1 measures the consequence of.
+> that carries no hash at all (§9.1's third identity). ~~Sidecar coverage did not follow the corpus: it still
+> pins 13 of the 25 rows, which §9.1 measures the consequence of.~~
+>
+> **Struck 2026-09-05, later the same day.** PR #32 closed the sidecar to **25 of 25**, and **§9.2 measures
+> the consequence of closing it**. The sentence was true when written and is struck rather than deleted
+> because §9.1's numbers are still read under it — but the gap it describes no longer exists, and the note
+> above now has *two* expired premises rather than one, which is itself the point it was written to make.
 
 ---
 
 ## 9. Verification
 
 **Which rate moves, and why it can.** The **retrieved** rate. It was at 0.73 labelled when #11134 was filed
-against it *(see §9.1 for what it reads now — the corpus and the graph have both moved since)*, and a
+against it *(see §9.2 for what it reads now, and §9.1 for the reading it supersedes — the corpus, the sidecar
+and the graph have all moved since)*, and a
 required node entering the top 20 flips its verdict — which is exactly what
 r03 and r08 do. The **admitted** rate also moves here, and #11133's trap is *not* violated by saying so: that
 trap is about admission changes on a corpus with one `cut` row, and this is a retrieval change (§6 item 3).
@@ -507,7 +513,12 @@ constructs no model client at all — it reads only the graph half of the boot c
 | arm | labelled retrieved | labelled admitted | control |
 |---|---|---|---|
 | raw-input (no `-derivations`) | 9/23 = 0.39 | 7/23 = 0.30 | 2/2 = 1.00 |
-| pinned — `internal/eval/derivations.json`, `derivationHash 23b50552` | **10/23 = 0.43** | **8/23 = 0.35** | 2/2 = 1.00 |
+| pinned — `internal/eval/derivations.json` at **13/25 coverage**, `derivationHash 23b50552` | **10/23 = 0.43** | **8/23 = 0.35** | 2/2 = 1.00 |
+
+> **The paragraph below describes the sidecar as it stood when the table above was taken — 13 of 25.** PR #32
+> has since closed it to 25/25, so the "by construction" claim is true **of that sidecar** and not of the one
+> a sweep loads today. It is left standing because the table above cannot be read without it. **§9.2 is the
+> measurement of the closed state.** *(2026-09-05, later the same day.)*
 
 **Read those full-corpus rates as a measurement of this design and you will be wrong, and the reason is a
 coverage gap rather than a result.** The sidecar pins **13 of the 25 rows** — r01–r11 plus both controls —
@@ -545,6 +556,152 @@ sidecar, at 13-of-25 coverage), and **the graph's own content**, which carries n
 moved. Item 2 above is the proof that the third is not hypothetical — which is why the acceptance step below
 compares two arms **taken in one session** and never a fresh arm against a rate recorded on another day.
 
+**The second identity has since expired too** *(2026-09-05, later the same day)*. PR #32 replaced the sidecar
+with a 25-of-25 one, so **`23b50552` now identifies a file that is not in the tree**. Every number in §9.1
+remains a valid reading **of that file**; none of them is a reading of the sidecar a sweep loads today.
+**That is two of the three identities expiring inside two days** — and it is why §9.2 states its ruling in
+terms of arm-vs-arm differences per population rather than in rates, since a difference between two arms taken
+in one session survives all three moving and a rate survives none of them.
+
+### 9.2 Coverage closed — the addendum §9.1 asked for *(2026-09-05, later the same day)*
+
+**PR #32 closed the sidecar to 25 of 25**, and it did so by §12 q5's option **(b)**: r12–r23 were generated by
+a local model that never saw its rows' `required`, `subject`, `hash` or `why` fields. The blindness is
+**structural rather than a matter of care** — `project_corpus_blind()` discards those fields before any
+model-facing value is constructed — which is the only form of blindness that survives an author in a hurry.
+**r01–r11 and both controls are byte-identical** to the sidecar §9.1 measured (120 insertions, 0 deletions),
+so the two readings differ in exactly the twelve rows that were added, and nothing else. Record: **#11348**.
+
+**Measured twice independently** — once after generation, once by QA re-running both arms from a fresh build —
+**identical both times**, on **one graph state** and with **zero model calls**. `corpusHash ffa291d5`, limits
+`candidateLimit=20 assemblyByteBudget=60000 recallScopeReserve=3`:
+
+| arm | labelled retrieved | labelled admitted | control |
+|---|---|---|---|
+| raw-input (no `-derivations`) | 9/23 = 0.39 | 7/23 = 0.30 | 2/2 = 1.00 |
+| pinned at **13/25** — the state §9.1 records, `derivationHash 23b50552` | 10/23 = 0.43 | 8/23 = 0.35 | 2/2 = 1.00 |
+| **pinned at 25/25** — `derivationHash` **`PENDING-LF-NORMALISATION`** | **11/23 = 0.48** | **9/23 = 0.39** | 2/2 = 1.00 |
+
+> **The 25/25 sidecar's hash is deliberately not transcribed, and the placeholder is the honest form.** The
+> generator wrote CRLF, so the hash the sweep printed is a hash of **the working tree** rather than of what a
+> fresh checkout produces; the line-ending fix and the correct LF hash are in flight separately. Under **P-51**
+> a hash written into this document is a hash this document asserts, and this one is currently ambiguous —
+> so **`PENDING-LF-NORMALISATION` must be replaced with the measured LF hash before this section is read as a
+> record.** No rate above is affected: the sweep loads the file it loads, whatever a hash says about it.
+
+**Per-row, raw-input → 25/25: exactly four verdict changes and no others.**
+
+| row | raw-input | 25/25 | among the twelve added? |
+|---|---|---|---|
+| r02 | admitted | **`cut` at rank 6**, 59,615 / 60,000 B | no |
+| r03 | `notRetrieved` | **admitted** | no |
+| r08 | `cut` | **admitted** | no |
+| r12 | `notRetrieved` | **admitted** | **yes — and the only one** |
+
+r02, r03 and r08 lie in r01–r11, which PR #32 left byte-identical, so they are the same three moves §9.1
+already recorded. **Of the twelve rows the PR adds, exactly one moved. Eleven of twelve changed nothing.**
+
+#### The ruling on §7 R2's falsifier: confirmed as a cause, refuted as a complete account
+
+**Confirmed.** §9.1 read the shrinkage from **+0.09 on eleven rows** to **+0.04 on twenty-three** as coverage
+dilution rather than generalisation failure, and — correctly — flagged that reading as *testable rather than
+established*. The test has now run and it agrees. Closing coverage moves the full-corpus margin to **+0.09 on
+twenty-three** (0.39 → 0.48), the eleven-row figure to two decimals. The +0.04 was an artifact of twelve rows
+that were incapable of differing. **R2's "uninformative rather than answered" clause is discharged.**
+
+**Refuted as a complete account, and this is the half that matters.** Dilution carried an implicit promise:
+that the twelve rows were *silent*, not *negative* — that once given queries they would behave like the
+eleven. They do not. The margin is restored only because the wins and the denominator grew at the same rate,
+which is arithmetic coincidence and not mechanism. Decompose by population and the halves are nothing alike:
+
+| population | raw-input | pinned 25/25 | margin | raw misses converted |
+|---|---|---|---|---|
+| **r01–r11** — hand-authored; the rows the design was selected on | 9/11 = 0.82 | 10/11 = 0.91 | +0.09 | **1 of 2** |
+| **r12–r23** — blind-generated; the only rows it was **not** selected on | **0/12 = 0.00** | 1/12 = 0.08 | +0.08 | **1 of 12** |
+
+*(The 0/12 is not a separate reading — it is forced by §9.1's own two tables, whose raw arm scores 9/23 in
+total and 9/11 on the eleven. It is recorded here because a figure that falls out of arithmetic is still a
+figure the next reader should not have to re-derive.)*
+
+**The margins are near-identical and the conversion rates differ by a factor of six.** So a full-corpus
+*margin* is no more a measurement of this design than a full-corpus *rate* was — §9.1's own lesson arriving
+one level up, and the reason this section rules on differences **per population** rather than on any rate.
+
+**And the six-fold gap cannot be attributed.** The two populations differ in raw difficulty by far more than
+the effect being measured — raw-input scores **0.82** on the eleven and **0.00** on the twelve — so
+*hand-written versus model-written* is completely confounded with *easy versus hard*. Nothing here licenses
+the reading that blind derivations are worse than contaminated ones, and nothing here rules it out. **What has
+changed is that R2's charge is measurable at all**, and the first measurement of it is one row.
+
+**One row is the size of this instrument's own documented overnight drift.** §9.1 item 2 records the
+**baseline itself** moving by one row between 2026-09-04 and 2026-09-05, because the graph is live and
+unversioned. The within-session protocol is what makes the +1 a real difference rather than drift — both arms
+were taken minutes apart on one graph state, twice, by two parties — so this is **not** a claim that the
+measurement is invalid. It is a bound on what a one-row margin can carry: **the design's entire demonstrated
+out-of-sample effect is the same size as the noise the document already had to control for.** Read r12 as an
+existence proof, never as a rate.
+
+**Restated falsifier for R2, replacing the one that has fired:** *derivation fails to beat a raw-input arm on
+rows outside the selection set by **more than one row**, on a corpus large enough that one row is not the
+whole margin.* This is not answerable at twelve out-of-sample rows and does not become answerable by
+re-measuring them; it needs the next corpus growth (#11101), and that is the honest cost of the finding.
+
+#### Why eleven of the twelve still miss — two causes, not one
+
+**Ranking depth dominates.** On **r13, r14, r16 and r17** the required node **is in the candidate pool**,
+scoring **0.73–0.80**, and is edged out of the top 20 by near-identical neighbours. **r16 is the clean case:
+the required node sits at 0.8041 and is displaced by the row's own subject at 0.80.** A node that loses its
+slot to something scoring *below it* is not losing on relevance — it is losing to the fusion's rank arithmetic
+and the cap, which is **G-1's premise working exactly as designed and showing its cost for the first time**.
+**No rewriting of the question reaches these rows.** They are a `candidateLimit` and ranking-resolution
+problem, adjacent to §2.4's mode C and to F1 — and they are the majority of the twelve.
+
+**But "ranking depth alone" would be overstated as the sole explanation, and the second cause is the more
+actionable one.** QA measured the twelve new rows' derived queries as carrying **higher lexical overlap with
+their own inputs** than the pinned eleven do: **r13 and r14 recycle the input's nouns**, and **r15 walks into
+the distractor its corpus row was built to catch**. The generation prompt forbade exactly this — it instructed
+the model to surface vocabulary likely to appear in the **documentation** rather than to reword the
+**request**, on the stated ground that rewording is what the raw-input arm already is. On at least three of
+twelve rows the model did not honour its own brief, and **that is a finding about the method, not about those
+rows.**
+
+**Which gives the one win a mechanism worth stating — as a hypothesis, not a finding.** r12's derived set
+introduces terms its input does not contain (*filter contract*, *boundary enforcement*, *scope enforcement*),
+and r12 is the row that moved; r13 and r14 restate their inputs, and did not. **The hypothesis: a derived
+query earns its keep exactly when it introduces vocabulary the input lacks, and a derivation that merely
+rewords is indistinguishable from the raw-input arm by construction.** It would explain the hand-written
+eleven doing well for the same reason under another name — a contaminated author bridges the vocabulary gap
+*because* they have read the target — which would make **R2a's contamination and derivation quality one axis
+rather than two concerns.**
+
+**It rests on n=1 and must not be read as established.** Its measuring half costs nothing: lexical overlap
+between each derived set and its own input is arithmetic over two files already in the tree, and the
+hypothesis makes a falsifiable prediction — r12's overlap is the lowest of the twelve, r13's and r14's among
+the highest. **Its regeneration half has a trap that must not be walked into.** Regenerating r13, r14 and r15
+*because they were seen to miss* is selection on the test set, and it would destroy the only uncontaminated
+rows the corpus has — the precise failure (a) was rejected for. **The admissible form is to change the
+prompt** (add the overlap constraint), **regenerate all twelve blind, and re-measure.** Blindness is a
+property of the procedure and not of the intention; it survives a prompt change only if no row is exempted.
+
+#### What this discharges elsewhere in the document
+
+- **§7 R2a is materially weakened, in the design's favour** — see that row. The derived arm's advantage over
+  the scope-only arm is now two rows, and one of them has no author.
+- **§9 acceptance item 4 is partly discharged, cheaply and half by accident.** Item 4 asks whether a real
+  model's derivations score like the hand-written ones. Twelve sidecar rows now *are* that — an
+  uncontaminated model's output, pinned and swept — on a disjoint row set. It is **not** item 4, which wants
+  one model's derivations across the whole corpus on a live turn, and the confounding above is exactly why
+  this cannot substitute for it. But **R1, the largest risk in this document, has its first real reading for
+  the price of one local generation run, and the reading is not a firing**: the model-derived rows beat their
+  raw arm, by one row.
+- **§6's cost side has its first measured instance, with the byte figure §9.1 lacked.** **r02 went admitted →
+  `cut` at rank 6 with 59,615 of 60,000 bytes consumed.** Derivation did not fail on r02 — it succeeded on the
+  rows *above* r02's required node and spent the budget on them. **The binding constraint on admission is the
+  assembly byte budget, not the candidate cap.** That is why raising `candidateLimit` to rescue
+  r13/r14/r16/r17 would move the **retrieved** rate close to definitionally — that rate *is* "entered the top
+  N" — while leaving **admitted** to the budget. **Any unit proposing a deeper cap must state which of the two
+  rates it expects to move and why**, or it is buying a number rather than measuring one.
+
 ### Acceptance
 
 1. **A sweep on the raw-input arm** (no `-derivations`), taken **in the same session** as every reading it
@@ -570,6 +727,11 @@ compares two arms **taken in one session** and never a fresh arm against a rate 
    draft of §6 item 3 did exactly that and declined to re-measure a figure the JSON was already carrying.
 4. **A live-derivation reading** on the same graph state, to answer R1: do a real model's derivations score
    like the pinned ones? This one costs model calls, one per row, and is the only part that does.
+   *(**Partly discharged 2026-09-05, later the same day** — §9.2's closing subsection. Twelve of the sidecar's
+   rows are now an uncontaminated model's output, pinned and swept. That is **not** this item, which wants one
+   model across the whole corpus on a live turn, and §9.2 states the confounding that stops the two being
+   substituted for one another. The item stays open; what has changed is that it is no longer the *only*
+   evidence bearing on R1.)*
 5. **Two-turn smoke run** (`scripts/smoke.py`), which is the only surface for what no rate sees (#11142): the
    derived queries printed verbatim, the block, the answer, the admitted count, **and the self-produced count
    among admitted rows** (R4). A single-turn run re-creates the blindness the rig exists to remove.
@@ -651,3 +813,29 @@ cost with nothing measured behind it (P-3).
    either and should happen regardless** — it is the only one of the three that costs nothing and it is what
    turns a silent dilution into a visible one. **My recommendation is (c) now, (b) next**; (a) buys a
    headline number at the cost of the evidence it is supposed to be.
+
+   **Closed 2026-09-05, later the same day.** The recommendation was followed in order: **(c) shipped as PR
+   #30** and **(b) as PR #32**. The sidecar is 25/25 and every option in this list is now either done or ruled
+   out. **What (b) cost:** one generation run — twelve rows at roughly 0.4 s each, 5/5 valid distinct queries
+   on the first attempt for every row, 120 insertions and 0 deletions, plus a re-runnable generator kept in
+   the tree. *(The preferred 32B model would not load — a CUDA KV-cache allocation failed outright — and the
+   run fell back to a 30B coder. Worth recording, because the result below is that model's and not the
+   preferred one's.)* **What it bought:** **one row.** r12 moved `notRetrieved` → admitted; eleven of twelve
+   changed nothing (§9.2). **So the headline answer to "was it worth it" is *barely* — and the headline is the
+   wrong reading.** The row is not what (b) purchased. It purchased **twelve rows capable of falsifying
+   something**, and under (a) the corpus would now hold twenty-three contaminated rows and none such. That is
+   the entire return, and it appears in no rate.
+
+   **What this implies for the framing if the corpus grows again.** **(b) is the default and the question is
+   settled** — the generator exists, the run is minutes, and its blindness is structural rather than a matter
+   of the author's care, which is the only form that survives a deadline. **(a) is not merely disfavoured but
+   positively ruled out by what (b) measured:** hand-authoring would have converted more of the twelve — an
+   author who has read the required node can write a query that reaches it, very nearly by definition — and
+   every conversion so bought would have been uninterpretable. **(c) is confirmed load-bearing and needs
+   extending rather than repeating.** The coverage counter did its job; the next silent dilution will not be a
+   coverage gap but the thing §9.1 walked into one level up — a full-corpus **margin** read as a measurement
+   of the design when the corpus mixes selected-on and out-of-sample rows. The counter that catches it prints
+   the **composition** of a rate beside the rate: **`25/25 rows derived` should become `25/25 derived, 11 in
+   the selection set`**, and the sweep should be able to report the two populations separately. That is the
+   natural successor to (c), it costs nothing, and it is the only one of these that prevents a misreading
+   rather than producing a number.
