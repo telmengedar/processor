@@ -77,8 +77,8 @@ func TestSweepRecordsAnAnchorCandidateTheBudgetCutAsPresentButNotAdmitted(t *tes
 	t.Parallel()
 
 	candidates := []loop.Candidate{
-		{ID: 201, Content: strings.Repeat("x", loop.AssemblyByteBudget)},
-		{ID: 100, Content: "the subject body"},
+		{ID: 100, Content: strings.Repeat("x", loop.AssemblyByteBudget)},
+		{ID: 201, Content: "another body"},
 	}
 	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
 

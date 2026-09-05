@@ -157,8 +157,8 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 			admitted++
 		}
 	}
-	if admitted != 2 {
-		t.Fatalf("the fixture admitted %d of 3 candidates, want 2 so a different budget would change the answer", admitted)
+	if admitted != 1 {
+		t.Fatalf("the fixture admitted %d of 3 candidates, want 1 so a different budget would change the answer", admitted)
 	}
 }
 
