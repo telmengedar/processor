@@ -44,28 +44,31 @@ def record(
     answer="the answer",
     block="x" * 10,
 ):
+    # `is not None` throughout, deliberately -- not `x or default`: an explicitly empty dict (e.g.
+    # limits={} for MissingLimitsDoesNotFabricateNumbersTests) must stay empty, not silently fall
+    # back to the default just because {} is falsy. This fixture had exactly that bug once.
     return {
         "input": input_text,
         "subject": subject,
         "query": input_text,
-        "anchor": anchor or {"id": 1, "type": "documentation", "name": "anchor node", "size": 10, "contentHash": "abc123"},
-        "candidates": candidates or [],
+        "anchor": anchor if anchor is not None else {"id": 1, "type": "documentation", "name": "anchor node", "size": 10, "contentHash": "abc123"},
+        "candidates": candidates if candidates is not None else [],
         "block": block,
         "answer": answer,
         "model": "test-model",
-        "toolCalls": tool_calls or [],
+        "toolCalls": tool_calls if tool_calls is not None else [],
         "modelCalls": model_calls,
         "capReached": cap_reached,
         "usage": usage if usage is not None else [{"inTokens": 100, "outTokens": 10}] * model_calls,
-        "stopReason": stop_reason or {"reason": "answered", "raw": "stop"},
-        "limits": limits or {
+        "stopReason": stop_reason if stop_reason is not None else {"reason": "answered", "raw": "stop"},
+        "limits": limits if limits is not None else {
             "candidateLimit": 20,
             "assemblyByteBudget": 60_000,
             "supplementaryByteBudget": 20_000,
             "maxModelCalls": 3,
             "maxOutputTokens": 4096,
         },
-        "written": written or {"state": "stored", "nodeId": 12345},
+        "written": written if written is not None else {"state": "stored", "nodeId": 12345},
     }
 
 
@@ -212,12 +215,16 @@ class ShutoutOversizedAnchorTests(unittest.TestCase):
     it must NOT be described as 'anchor exempt', and every candidate should read as unadmittable."""
 
     def test_remaining_budget_floors_to_zero_and_shutout_fires(self):
+        # block is deliberately >= the anchor's own size: renderBlock always contains the anchor in
+        # full, so a block shorter than its anchor is a shape the binary cannot emit (reviewer note).
+        # No candidate here is admitted, so the block need not account for any candidate bytes.
         rec = record(
             anchor={"id": 1, "type": "documentation", "name": "huge", "size": 70_660, "contentHash": "deadbeef"},
             candidates=[
                 {"rank": 1, "id": 2, "type": "task", "name": "a", "similarity": 0.9, "size": 500, "included": False, "cutReason": "byte budget exceeded"},
                 {"rank": 2, "id": 3, "type": "task", "name": "b", "similarity": 0.8, "size": 300, "included": False, "cutReason": "byte budget exceeded"},
             ],
+            block="x" * 70_700,
         )
         out = render(rec)
         self.assertNotIn("anchor exempt", out)
@@ -234,15 +241,48 @@ class UnadmittableUsesRemainingBudgetTests(unittest.TestCase):
     500 B; a 5,000-byte cut candidate is well under the raw budget but can never be admitted here."""
 
     def test_candidate_under_full_budget_but_over_remaining_is_flagged(self):
+        # Same block-size note as ShutoutOversizedAnchorTests above: block must be >= the anchor's
+        # own size, since renderBlock always contains the anchor in full.
         rec = record(
             anchor={"id": 1, "type": "documentation", "name": "big", "size": 59_500, "contentHash": "cafe"},
             candidates=[
                 {"rank": 1, "id": 2, "type": "task", "name": "a", "similarity": 0.9, "size": 5_000, "included": False, "cutReason": "byte budget exceeded"},
             ],
+            block="x" * 59_600,
         )
         out = render(rec)
         self.assertIn("leaving 500 B for every candidate", out)
         self.assertIn("UNADMITTABLE: 5000 bytes alone exceeds the 500-byte budget", out)
+
+
+class MissingLimitsDoesNotFabricateNumbersTests(unittest.TestCase):
+    """Reviewer note: with `limits` absent, the old anchor/assemble lines used `or 0` and printed a
+    concrete, fabricated number ("consumes 4,000 B of the 0 B budget") for a field the record simply
+    did not carry. Unreachable from the binary today (Limits is a value struct, always present), but
+    the record is an external boundary this script should not assume never changes shape."""
+
+    def test_anchor_note_admits_it_cannot_compute_the_charge(self):
+        rec = record(
+            anchor={"id": 1, "type": "documentation", "name": "a", "size": 4_000, "contentHash": "x"},
+            limits={},
+            block="x" * 4_100,
+        )
+        out = render(rec)
+        self.assertIn("the anchor's charge against it cannot be computed", out)
+        self.assertNotIn("of the 0 B budget", out)
+        self.assertNotIn("leaving 0 B", out)
+
+
+class ModelCallsZeroWithToolCallsTests(unittest.TestCase):
+    """Reviewer note: a modelCalls=0 record carrying a toolCalls entry would silently iterate zero
+    times and drop that round from the trace with no mention at all -- the one silent drop in the
+    file. Unreachable from the loop's own control flow (every round is dispatched from inside the
+    model-call loop), but flagged explicitly rather than swallowed if it ever occurs."""
+
+    def test_inconsistency_is_reported_not_swallowed(self):
+        rec = record(model_calls=0, tool_calls=[{"query": "q", "results": []}], usage=[])
+        out = render(rec)
+        self.assertIn("modelCalls is 0 but the record carries 1 toolCalls entry", out)
 
 
 class RenderTraceUsesRecordFieldsTests(unittest.TestCase):

@@ -17,9 +17,11 @@ If a run does something useless, this script's job is to show that clearly, not 
 
 What "one turn" actually is (internal/loop/turn.go, DiVoid #10850 / #10846), verified against this
 tree rather than assumed: fetch the anchor by id -> retrieve candidates (Retrieve, DiVoid #11259 --
-a two-list reciprocal-rank fusion of an unscoped recall plus a recall scoped to the anchor's two-hop
-neighbourhood, NOT a single similarity-sorted query) -> assemble a byte-budgeted block -> call the
-model, looping while it asks for supplementary recall, bounded by MaxModelCalls=3 -> write a run
+one unscoped recall plus one recall scoped to the anchor's two-hop neighbourhood, combined by
+reciprocal-rank fusion IN PRINCIPLE, but turn.go always calls Retrieve with exactly one query
+(`[]string{input}`), and RRF over a single list is order-preserving -- see the RECALL RANKING note
+below for what that actually means for the order you see) -> assemble a byte-budgeted block -> call
+the model, looping while it asks for supplementary recall, bounded by MaxModelCalls=3 -> write a run
 record. The model's only tool is that supplementary "recall"; there is no file, shell, network or
 repo tool, and no notion of a task spanning more than one HTTP call. A task like "generate a webpage
 and a repo" has no mechanism to succeed here by construction -- that is expected, and is not what
@@ -50,6 +52,19 @@ RecallExchange construction on this path never sets Query at all). Printing a fa
 step here was the exact defect a reviewer caught: it read as "the model asked the graph and the
 graph had nothing" when the truth was "the model's tool call never reached the graph".
 
+RECALL RANKING, corrected after review (W-N2 -- a prose defect, not a logic one, but it printed on
+every trace and asserted the opposite of what retrieve.go does): `retrieve.go`'s `fuse` does NOT fuse
+the scoped list in. `fuseByReciprocalRank(lists)` runs over the UNSCOPED lists only; the scoped list
+gets a reserved quota (`RecallScopeReserve`, mirrored below as RECALL_SCOPE_RESERVE = 3) taken after
+the first `limit - reserve` fused entries, backfilled from the fused list only if the scope doesn't
+fill its reserve. Since a turn always passes exactly one query, RRF over that single list changes
+nothing -- it is order-preserving. Net, for every trace this script prints: positions 1 through
+`limit - RECALL_SCOPE_RESERVE` are the one unscoped recall's own plain-similarity order, verbatim;
+the last `RECALL_SCOPE_RESERVE` positions are backfilled from the anchor's two-hop-scoped recall.
+Fusion of multiple ranked lists is real and does real work in `cmd/eval`, which passes more than one
+query -- it is simply inert inside a turn, which never does. The two-hop half of the mechanism
+(`RecallScope` = subject + its linked neighbours) is accurate as stated.
+
 BUDGET ARITHMETIC, corrected after review (C2/C3): the anchor is not exempt from the assembly
 budget. `internal/loop/assemble.go`: `remaining := budget - len(anchor.Content)`, floored at zero --
 the anchor's bytes are charged against the budget, in full, before any candidate is even considered.
@@ -59,8 +74,14 @@ being cut, not from being charged"). This script computes and prints the actual 
 budget (`assemblyByteBudget - anchor.size`, floored at zero) and tests admissibility against THAT
 number, not the raw constant -- a candidate that fits the constant but not the anchor-adjusted
 remainder is unadmittable for this run and previously got no marker at all (C3). The supplementary
-round is unaffected by this: `dispatchRecall` passes `SupplementaryByteBudget` to `admit` as-is, with
-no anchor subtraction, because the anchor is not re-sent on that path.
+round is unaffected by this, but not for the reason an earlier version of this file claimed: the
+anchor IS re-sent on every model call -- `wire.go`'s `buildMessages` rebuilds the same
+`buildUserContent(in.Block, in.Input)` (the whole block, anchor included) on every call, so its bytes
+go over the wire again each time. The real reason `SupplementaryByteBudget` is used unadjusted is
+simpler: `dispatchRecall` has no anchor in scope at all -- it calls `admit(candidates,
+SupplementaryByteBudget)` directly, with nothing available to subtract even if the mechanism wanted
+to. The repeated anchor bytes are a token-cost fact (see WHAT THE RECORD CANNOT TELL A READER's
+system-prompt bullet), not a budget-arithmetic one.
 
 WHAT THE RECORD CANNOT TELL A READER -- found while building this, not fixed (constraint: no Go
 file changes):
@@ -133,6 +154,11 @@ ERR_SUPPLEMENTARY_RECALL_FAILED = "supplementary recall failed"
 CUT_SELF_PRODUCED = "self-produced"
 CUT_BYTE_BUDGET = "byte budget exceeded"
 
+# internal/loop/turn.go's RecallScopeReserve -- not carried in the record's `limits` object (Limits
+# only has the five members turn.go stamps into it), so it is mirrored here the same way the two
+# error-string literals above are, purely for narrating STEP 2's actual rank order (W-N2).
+RECALL_SCOPE_RESERVE = 3
+
 # classify_round's return values.
 ROUND_DISPATCHED = "dispatched"          # error == "": real Graph.Recall call, real results.
 ROUND_CAPPED = "capped"                  # error == ERR_CALL_CAP_REACHED: recorded, never dispatched.
@@ -177,7 +203,10 @@ def render_candidate_table(dispositions, budget):
     """`budget` is the cumulative admission ceiling this specific round of candidates was actually
     measured against -- for the initial round that is `assemblyByteBudget - anchor.size` (floored at
     zero), NOT the raw constant (C2/C3: the anchor is charged, not exempt); for a supplementary round
-    it is the raw `supplementaryByteBudget`, unadjusted, since the anchor is not re-sent on that path.
+    it is the raw `supplementaryByteBudget`, unadjusted, because `dispatchRecall` has no anchor in
+    scope to subtract -- NOT because the anchor is omitted from that call's prompt (it isn't: the
+    whole block, anchor included, is resent on every model call; see the module docstring's BUDGET
+    ARITHMETIC section for the corrected reasoning).
     """
     lines = []
     for d in dispositions:
@@ -205,6 +234,22 @@ def render_candidate_table(dispositions, budget):
 
 def admitted_bytes(dispositions):
     return sum(d.get("size", 0) for d in dispositions if d.get("included"))
+
+
+def anchor_charge_phrase(anchor_size, assembly_budget, remaining_budget):
+    """Text for how much of the assembly budget the anchor consumes, or an honest admission that it
+    cannot be said -- a missing `limits.assemblyByteBudget` must never be silently treated as 0 (a
+    reviewer caught this: `or 0` elsewhere in this file would otherwise print a fabricated concrete
+    number, e.g. "consumes 4,000 B of the 0 B budget", for a field the record simply did not carry).
+    Unreachable from the binary today (Limits is a value struct, always present), but the record is
+    an external boundary and this script should not assume today's shape survives unchanged.
+    """
+    if assembly_budget is None:
+        return "the record carries no limits.assemblyByteBudget, so the anchor's charge against it cannot be computed"
+    return (
+        f"this anchor consumes {fmt_bytes(anchor_size)} of the {fmt_bytes(assembly_budget)} budget, "
+        f"leaving {fmt_bytes(remaining_budget)} for every candidate below -- see STEP 3"
+    )
 
 
 def render_trace(record, model_url, model_id, temperature_requested, prior_note):
@@ -258,10 +303,9 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
         f"{'':<24} note: the anchor is never CUT -- its full content always reaches the model "
         f"(internal/loop/assemble.go's renderBlock writes it first, unconditionally, regardless of "
         f"size) -- but it IS CHARGED against the assembly budget before any candidate is considered "
-        f"(remaining := budget - len(anchor.Content), floored at zero). This anchor consumes "
-        f"{fmt_bytes(anchor_size)} of the {fmt_bytes(assembly_budget or 0)} budget, leaving "
-        f"{fmt_bytes(remaining_budget or 0)} for every candidate below -- see STEP 3. Its raw text "
-        f"is not itself in the record -- only this summary and, indirectly, whatever of it survives "
+        f"(remaining := budget - len(anchor.Content), floored at zero). "
+        f"{anchor_charge_phrase(anchor_size, assembly_budget, remaining_budget)}. Its raw text is "
+        f"not itself in the record -- only this summary and, indirectly, whatever of it survives "
         f"inside the block below."
     )
     out.append("")
@@ -271,11 +315,24 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     candidate_limit = limits.get("candidateLimit")
     admitted_count = sum(1 for c in candidates if c.get("included"))
     out.append(f"{head('recall')} input: query={record.get('query')!r} (the task input, verbatim -- no rewrite, no model in the path)")
+    if candidate_limit is not None:
+        fused_slots = max(candidate_limit - RECALL_SCOPE_RESERVE, 0)
+        rank_note = (
+            f"a turn always issues exactly one query, so the reciprocal-rank fusion step "
+            f"(internal/loop/retrieve.go's fuse/fuseByReciprocalRank) is a no-op over it -- rows 1-"
+            f"{fused_slots} below are that one UNSCOPED recall's own plain-similarity order, "
+            f"verbatim. The last {RECALL_SCOPE_RESERVE} slots ({fused_slots + 1}-{candidate_limit}) "
+            f"are reserved for and backfilled from a second recall scoped to the anchor's two-hop "
+            f"neighbourhood (subject + its linked nodes). Fusion across multiple queries only does "
+            f"real work in cmd/eval, which passes more than one -- it never touches the order here"
+        )
+    else:
+        rank_note = (
+            f"the record carries no limits.candidateLimit, so the fused/scoped split point cannot be "
+            f"computed; see the module docstring's RECALL RANKING section for the mechanism"
+        )
     out.append(
-        f"{'':<24} output: {len(candidates)} candidate(s) returned (limit {candidate_limit}), "
-        f"mechanism: reciprocal-rank fusion of an unscoped recall with a recall scoped to the anchor's "
-        f"two-hop neighbourhood (internal/loop/retrieve.go's Retrieve/fuse) -- 'rank' below is fused "
-        f"rank, not a plain similarity sort"
+        f"{'':<24} output: {len(candidates)} candidate(s) returned (limit {candidate_limit}); {rank_note}"
     )
     out.extend(render_candidate_table(candidates, remaining_budget))
     out.append("")
@@ -292,8 +349,8 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
             cut_tally[reason] = cut_tally.get(reason, 0) + 1
     out.append(
         f"{head('assemble')} input: anchor ({fmt_bytes(anchor_size)}, charged in full) + "
-        f"{len(candidates)} candidate(s); assembly budget {fmt_bytes(assembly_budget or 0)} total, "
-        f"{fmt_bytes(remaining_budget or 0)} remaining for candidates after the anchor charge"
+        f"{len(candidates)} candidate(s); "
+        f"{anchor_charge_phrase(anchor_size, assembly_budget, remaining_budget)}"
     )
     out.append(
         f"{'':<24} output: {admitted_count} of {len(candidates)} admitted, block {fmt_bytes(block_size)} "
@@ -322,6 +379,16 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     cap_reached = bool(record.get("capReached"))
     stop_reason = record.get("stopReason") or {}
     supplementary_budget = limits.get("supplementaryByteBudget")
+
+    if model_calls == 0 and tool_calls:
+        out.append(
+            f"NOTE: modelCalls is 0 but the record carries {len(tool_calls)} toolCalls entr"
+            f"{'y' if len(tool_calls) == 1 else 'ies'} -- a shape the loop should not be able to "
+            f"produce (every recall round is dispatched from inside the model-call loop). Printed "
+            f"here explicitly rather than silently iterating zero times, which would otherwise drop "
+            f"these rounds from the trace with no trace of the drop itself."
+        )
+        out.append("")
 
     for i in range(model_calls):
         call_no = i + 1
