@@ -14,19 +14,27 @@ import (
 // ArmRawInput is the arm name a sweep carries when no derivation sidecar was supplied.
 const ArmRawInput = "raw-input"
 
-// Derivation is one corpus row's pinned query set.
+// SourceHandAuthored marks a derivation written directly against the row's required nodes.
+const SourceHandAuthored = "hand-authored"
+
+// SourceBlindGenerated marks a derivation a model produced without seeing the row's required nodes, subject, hash or reasoning.
+const SourceBlindGenerated = "blind-generated"
+
+// Derivation is one corpus row's pinned query set and how that set was produced.
 type Derivation struct {
 	Row     string   `json:"row"`
 	Queries []string `json:"queries"`
+	Source  string   `json:"source,omitempty"`
 }
 
-// Derivations is a validated sidecar: the pinned queries per row id, the path
-// they were read from, and the hash of those bytes. The zero value is the
-// raw-input arm and yields each row its own input alone.
+// Derivations is a validated sidecar: the pinned queries and source per row id,
+// the path they were read from, and the hash of those bytes. The zero value is
+// the raw-input arm and yields each row its own input alone.
 type Derivations struct {
 	Path    string
 	Hash    string
 	Queries map[string][]string
+	Sources map[string]string
 }
 
 // Arm names the retrieval arm a sweep taken with these derivations ran under.
@@ -40,6 +48,17 @@ func (d Derivations) Arm() string {
 // Rows reports how many corpus rows carry a pinned query set.
 func (d Derivations) Rows() int {
 	return len(d.Queries)
+}
+
+// HandAuthoredRows reports how many of corpus's labelled rows this sidecar pins with hand-authored queries.
+func (d Derivations) HandAuthoredRows(corpus Corpus) int {
+	count := 0
+	for _, row := range corpus.Rows {
+		if row.Stratum == StratumLabelled && d.Sources[row.ID] == SourceHandAuthored {
+			count++
+		}
+	}
+	return count
 }
 
 // Unpinned returns the ids of corpus rows this sidecar does not pin, in corpus order.
@@ -81,18 +100,18 @@ func LoadDerivations(path string, corpus Corpus) (Derivations, error) {
 		return Derivations{}, fmt.Errorf("eval: decode derivations: %w", err)
 	}
 
-	queries, err := validateDerivations(entries, corpus)
+	queries, sources, err := validateDerivations(entries, corpus)
 	if err != nil {
 		return Derivations{}, err
 	}
 
 	sum := sha256.Sum256(raw)
-	return Derivations{Path: path, Hash: hex.EncodeToString(sum[:]), Queries: queries}, nil
+	return Derivations{Path: path, Hash: hex.EncodeToString(sum[:]), Queries: queries, Sources: sources}, nil
 }
 
-func validateDerivations(entries []Derivation, corpus Corpus) (map[string][]string, error) {
+func validateDerivations(entries []Derivation, corpus Corpus) (map[string][]string, map[string]string, error) {
 	if len(entries) == 0 {
-		return nil, errors.New("eval: the derivation sidecar holds no rows, and a sweep would then report a derived arm's name over the raw-input arm's ranking (design 4.5)")
+		return nil, nil, errors.New("eval: the derivation sidecar holds no rows, and a sweep would then report a derived arm's name over the raw-input arm's ranking (design 4.5)")
 	}
 
 	known := make(map[string]bool, len(corpus.Rows))
@@ -101,13 +120,15 @@ func validateDerivations(entries []Derivation, corpus Corpus) (map[string][]stri
 	}
 
 	queries := make(map[string][]string, len(entries))
+	sources := make(map[string]string, len(entries))
 	for _, entry := range entries {
 		if err := validateDerivation(entry, known, queries); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		queries[entry.Row] = entry.Queries
+		sources[entry.Row] = entry.Source
 	}
-	return queries, nil
+	return queries, sources, nil
 }
 
 func validateDerivation(entry Derivation, known map[string]bool, seen map[string][]string) error {
@@ -119,6 +140,9 @@ func validateDerivation(entry Derivation, known map[string]bool, seen map[string
 	}
 	if len(entry.Queries) == 0 {
 		return fmt.Errorf("eval: derivation %q: no queries, which is the raw-input arm carrying a derived arm's hash (design 4.5)", entry.Row)
+	}
+	if entry.Source != "" && entry.Source != SourceHandAuthored && entry.Source != SourceBlindGenerated {
+		return fmt.Errorf("eval: derivation %q: source %q is outside the closed set %q/%q, so a sweep could not tell a hand-authored row from a blind-generated one", entry.Row, entry.Source, SourceHandAuthored, SourceBlindGenerated)
 	}
 	for i, query := range entry.Queries {
 		if strings.TrimSpace(query) == "" {

@@ -255,3 +255,65 @@ func TestLoadDerivationsReportsTheAbsentFileRatherThanSweepingTheRawArmUnderItsN
 		t.Fatal("LoadDerivations returned a nil error for a path that holds no file, want the read failure")
 	}
 }
+
+func TestLoadDerivationsAcceptsARowThatNamesNoSource(t *testing.T) {
+	t.Parallel()
+
+	derivations, err := LoadDerivations(writeDerivations(t, validDerivations), derivationCorpus())
+	if err != nil {
+		t.Fatalf("LoadDerivations: %v", err)
+	}
+	if derivations.Rows() != 1 {
+		t.Fatalf("Rows = %d, want 1: an absent source must not be treated as an invalid row", derivations.Rows())
+	}
+}
+
+func TestLoadDerivationsRejectsASourceOutsideTheClosedSet(t *testing.T) {
+	t.Parallel()
+
+	loadDerivationsMustFail(t, `[{"row": "r01", "queries": ["a question"], "source": "guessed"}]`, "closed set")
+}
+
+func TestHandAuthoredRowsCountsOnlyLabelledRowsTheSidecarMarksHandAuthored(t *testing.T) {
+	t.Parallel()
+
+	corpus := Corpus{Hash: "a-corpus-hash", Rows: []Row{
+		{ID: "r01", Input: "the first input", Subject: 100, Stratum: StratumLabelled},
+		{ID: "r02", Input: "the second input", Subject: 101, Stratum: StratumLabelled},
+		{ID: "c01", Input: "the control input", Subject: 102, Stratum: StratumControl},
+	}}
+	body := `[
+	  {"row": "r01", "queries": ["a question"], "source": "hand-authored"},
+	  {"row": "r02", "queries": ["another question"], "source": "blind-generated"},
+	  {"row": "c01", "queries": ["a control question"], "source": "hand-authored"}
+	]`
+	derivations, err := LoadDerivations(writeDerivations(t, body), corpus)
+	if err != nil {
+		t.Fatalf("LoadDerivations: %v", err)
+	}
+
+	if got := derivations.HandAuthoredRows(corpus); got != 1 {
+		t.Fatalf("HandAuthoredRows = %d, want 1: c01 is hand-authored but not labelled, and r02 is labelled but blind-generated, so only r01 qualifies", got)
+	}
+}
+
+func TestHandAuthoredRowsIsZeroWhenNoRowNamesASource(t *testing.T) {
+	t.Parallel()
+
+	derivations, err := LoadDerivations(writeDerivations(t, validDerivations), derivationCorpus())
+	if err != nil {
+		t.Fatalf("LoadDerivations: %v", err)
+	}
+
+	if got := derivations.HandAuthoredRows(derivationCorpus()); got != 0 {
+		t.Fatalf("HandAuthoredRows = %d, want 0: a sidecar entry that names no source cannot be counted as hand-authored", got)
+	}
+}
+
+func TestHandAuthoredRowsOnTheZeroSidecarIsZero(t *testing.T) {
+	t.Parallel()
+
+	if got := (Derivations{}).HandAuthoredRows(derivationCorpus()); got != 0 {
+		t.Fatalf("HandAuthoredRows on the zero sidecar = %d, want 0", got)
+	}
+}

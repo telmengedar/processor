@@ -284,14 +284,25 @@ class MergeSidecarTests(unittest.TestCase):
         self.assertEqual(merged[1]["queries"], ["new2"])
         self.assertEqual(merged[2]["queries"], ["new3"])
 
+    def test_generated_rows_are_stamped_blind_generated(self):
+        """The source field is what lets a sweep tell a hand-authored row from one this script
+        produced without ever re-typing a count anywhere -- see SourceBlindGenerated in
+        internal/eval/derivations.go."""
+        sidecar = []
+        merged = gd.merge_sidecar(sidecar, {"r02": ["new2"]}, ["r02"])
+        self.assertEqual(merged, [{"row": "r02", "queries": ["new2"], "source": "blind-generated"}])
+
     def test_generated_row_replaces_pinned_row_of_the_same_id(self):
         """This is the only path via which a pinned row's queries in the file actually change --
         select_targets is what must have already agreed to it (F2); merge_sidecar just performs
         the replacement once targets are legitimate."""
-        sidecar = [{"row": "r01", "queries": ["old"]}, {"row": "r02", "queries": ["untouched"]}]
+        sidecar = [{"row": "r01", "queries": ["old"], "source": "hand-authored"}, {"row": "r02", "queries": ["untouched"]}]
         generated = {"r01": ["replaced"]}
         merged = gd.merge_sidecar(sidecar, generated, ["r01", "r02"])
-        self.assertEqual(merged, [{"row": "r01", "queries": ["replaced"]}, {"row": "r02", "queries": ["untouched"]}])
+        self.assertEqual(merged, [
+            {"row": "r01", "queries": ["replaced"], "source": "blind-generated"},
+            {"row": "r02", "queries": ["untouched"]},
+        ])
 
     def test_untouched_pinned_rows_are_byte_identical(self):
         sidecar = [{"row": "r01", "queries": ["a", "b"]}, {"row": "c01", "queries": ["c"]}]

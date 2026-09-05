@@ -364,14 +364,25 @@ def select_targets(
     return [row for row in blind_rows if row.id in target_ids], None
 
 
+SOURCE_BLIND_GENERATED = "blind-generated"
+
+
 def merge_sidecar(
     sidecar_entries: list[dict],
     generated: dict[str, list[str]],
     corpus_ids: list[str],
 ) -> list[dict]:
-    """Replace/add `generated` rows into `sidecar_entries`, returned in corpus order."""
+    """Replace/add `generated` rows into `sidecar_entries`, returned in corpus order.
+
+    Every row this script produces is stamped `source: blind-generated` at the point of
+    generation, since that is the only place the fact is known -- see internal/eval/derivations.go's
+    SourceBlindGenerated for the reader.
+    """
     kept = [entry for entry in sidecar_entries if entry["row"] not in generated]
-    new = [{"row": row_id, "queries": queries} for row_id, queries in generated.items()]
+    new = [
+        {"row": row_id, "queries": queries, "source": SOURCE_BLIND_GENERATED}
+        for row_id, queries in generated.items()
+    ]
     merged = kept + new
     merged.sort(key=corpus_order_key(corpus_ids))
     return merged

@@ -40,25 +40,27 @@ type RowResult struct {
 // Result is one sweep: what produced it, which retrieval arm it ran, and one
 // entry per corpus row in corpus order.
 type Result struct {
-	CorpusHash     string      `json:"corpusHash"`
-	Arm            string      `json:"arm"`
-	DerivationHash string      `json:"derivationHash"`
-	DerivedRows    int         `json:"derivedRows"`
-	SweptAt        time.Time   `json:"sweptAt"`
-	Limits         Limits      `json:"limits"`
-	RowCount       int         `json:"rowCount"`
-	Rows           []RowResult `json:"rows"`
+	CorpusHash       string      `json:"corpusHash"`
+	Arm              string      `json:"arm"`
+	DerivationHash   string      `json:"derivationHash"`
+	DerivedRows      int         `json:"derivedRows"`
+	HandAuthoredRows int         `json:"handAuthoredRows"`
+	SweptAt          time.Time   `json:"sweptAt"`
+	Limits           Limits      `json:"limits"`
+	RowCount         int         `json:"rowCount"`
+	Rows             []RowResult `json:"rows"`
 }
 
 // NewResult opens a result for corpus swept on derivations' arm, carrying both
 // identities and the loop limits a sweep runs under.
 func NewResult(corpus Corpus, derivations Derivations, sweptAt time.Time) Result {
 	return Result{
-		CorpusHash:     corpus.Hash,
-		Arm:            derivations.Arm(),
-		DerivationHash: derivations.Hash,
-		DerivedRows:    derivations.Rows(),
-		SweptAt:        sweptAt,
+		CorpusHash:       corpus.Hash,
+		Arm:              derivations.Arm(),
+		DerivationHash:   derivations.Hash,
+		DerivedRows:      derivations.Rows(),
+		HandAuthoredRows: derivations.HandAuthoredRows(corpus),
+		SweptAt:          sweptAt,
 		Limits: Limits{
 			CandidateLimit:     loop.CandidateLimit,
 			AssemblyByteBudget: loop.AssemblyByteBudget,

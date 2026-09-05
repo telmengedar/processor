@@ -619,11 +619,12 @@ func TestTheSummaryNamesTheDerivationSidecarAndItsHashSoTwoReadingsAreTellableAp
 	result.Arm = "internal/eval/derivations.json"
 	result.DerivationHash = "4f7c1a90b6d3e58217c4be09f1a2d3c4e5f60718293a4b5c6d7e8f90a1b2c3d4"
 	result.DerivedRows = 11
+	result.HandAuthoredRows = 9
 	result.RowCount = 25
 
 	_, human := render(t, result)
 
-	mustContainLine(t, human, "arm internal/eval/derivations.json - 11/25 rows derived, hash 4f7c1a90")
+	mustContainLine(t, human, "arm internal/eval/derivations.json - 11/25 rows derived, 9 hand-authored, hash 4f7c1a90")
 }
 
 func TestTheSummaryNamesTheFractionOfTheCorpusTheSidecarPinsSoAPartialSidecarDoesNotReadAsFull(t *testing.T) {
@@ -633,14 +634,30 @@ func TestTheSummaryNamesTheFractionOfTheCorpusTheSidecarPinsSoAPartialSidecarDoe
 	result.Arm = "internal/eval/derivations.json"
 	result.DerivationHash = "23b505521234567890abcdef1234567890abcdef1234567890abcdef12345678"
 	result.DerivedRows = 13
+	result.HandAuthoredRows = 11
 	result.RowCount = 25
 
 	_, human := render(t, result)
 
-	mustContainLine(t, human, "arm internal/eval/derivations.json - 13/25 rows derived, hash 23b50552")
+	mustContainLine(t, human, "arm internal/eval/derivations.json - 13/25 rows derived, 11 hand-authored, hash 23b50552")
 	if strings.Contains(human, "13 rows derived,") {
 		t.Fatalf("the summary still names the row count without its denominator, which is the exact reading that hid the coverage gap:\n%s", human)
 	}
+}
+
+func TestTheSummaryNamesTheHandAuthoredCountEvenWhenCoverageReadsComplete(t *testing.T) {
+	t.Parallel()
+
+	result := resultWith(intactControlRow())
+	result.Arm = "internal/eval/derivations.json"
+	result.DerivationHash = "38349b3c1234567890abcdef1234567890abcdef1234567890abcdef12345678"
+	result.DerivedRows = 25
+	result.HandAuthoredRows = 11
+	result.RowCount = 25
+
+	_, human := render(t, result)
+
+	mustContainLine(t, human, "arm internal/eval/derivations.json - 25/25 rows derived, 11 hand-authored, hash 38349b3c")
 }
 
 func TestTheSummaryCarriesTheScopeReserveBesideTheOtherLimits(t *testing.T) {

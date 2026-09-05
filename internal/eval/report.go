@@ -81,7 +81,8 @@ func armLine(result Result) string {
 	if result.Arm == ArmRawInput {
 		return ArmRawInput
 	}
-	return fmt.Sprintf("%s - %d/%d rows derived, hash %s", result.Arm, result.DerivedRows, result.RowCount, shortHash(result.DerivationHash))
+	return fmt.Sprintf("%s - %d/%d rows derived, %d hand-authored, hash %s",
+		result.Arm, result.DerivedRows, result.RowCount, result.HandAuthoredRows, shortHash(result.DerivationHash))
 }
 
 func controlAlarm(result Result) string {
