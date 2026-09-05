@@ -192,27 +192,57 @@ func TestResultHeaderCarriesTheCorpusHashAndTheLoopLimits(t *testing.T) {
 	}
 }
 
-func TestNewResultCarriesTheHandAuthoredRowCountAlongsideTheDerivedOne(t *testing.T) {
+func TestNewResultCarriesTheHandAuthoredAndBlindGeneratedRowCountsAlongsideTheDerivedOne(t *testing.T) {
 	t.Parallel()
 
 	corpus := Corpus{Hash: "a-corpus-hash", Rows: []Row{
 		{ID: "r01", Input: "an input", Subject: 100, Stratum: StratumLabelled},
 		{ID: "r02", Input: "another input", Subject: 101, Stratum: StratumLabelled},
+		{ID: "r03", Input: "a third input", Subject: 103, Stratum: StratumLabelled},
 	}}
 	derivations := Derivations{
 		Path:    "internal/eval/derivations.json",
 		Hash:    "a-derivation-hash",
-		Queries: map[string][]string{"r01": {"q1"}, "r02": {"q2"}},
-		Sources: map[string]string{"r01": SourceHandAuthored, "r02": SourceBlindGenerated},
+		Queries: map[string][]string{"r01": {"q1"}, "r02": {"q2"}, "r03": {"q3"}},
+		Sources: map[string]string{"r01": SourceHandAuthored, "r02": SourceHandAuthored, "r03": SourceBlindGenerated},
 	}
 
 	got := NewResult(corpus, derivations, time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC))
 
-	if got.DerivedRows != 2 {
-		t.Fatalf("DerivedRows = %d, want 2", got.DerivedRows)
+	if got.DerivedRows != 3 {
+		t.Fatalf("DerivedRows = %d, want 3", got.DerivedRows)
 	}
-	if got.HandAuthoredRows != 1 {
-		t.Fatalf("HandAuthoredRows = %d, want 1: only r01 is marked hand-authored", got.HandAuthoredRows)
+	if got.HandAuthoredRows != 2 {
+		t.Fatalf("HandAuthoredRows = %d, want 2: r01 and r02 are marked hand-authored -- a fixture with equal hand-authored and blind-generated counts cannot tell this field apart from one wired to the wrong source", got.HandAuthoredRows)
+	}
+	if got.BlindGeneratedRows != 1 {
+		t.Fatalf("BlindGeneratedRows = %d, want 1: only r03 is marked blind-generated", got.BlindGeneratedRows)
+	}
+	if !got.ProvenanceRecorded {
+		t.Fatal("ProvenanceRecorded = false, want true: every row names a source")
+	}
+}
+
+func TestNewResultLeavesProvenanceUnrecordedWhenTheSidecarNamesNoSource(t *testing.T) {
+	t.Parallel()
+
+	corpus := Corpus{Hash: "a-corpus-hash", Rows: []Row{
+		{ID: "r01", Input: "an input", Subject: 100, Stratum: StratumLabelled},
+	}}
+	derivations := Derivations{
+		Path:    "internal/eval/derivations.json",
+		Hash:    "a-derivation-hash",
+		Queries: map[string][]string{"r01": {"q1"}},
+		Sources: map[string]string{"r01": ""},
+	}
+
+	got := NewResult(corpus, derivations, time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC))
+
+	if got.ProvenanceRecorded {
+		t.Fatal("ProvenanceRecorded = true, want false: r01 names no source")
+	}
+	if got.HandAuthoredRows != 0 || got.BlindGeneratedRows != 0 {
+		t.Fatalf("HandAuthoredRows/BlindGeneratedRows = %d/%d, want 0/0 alongside ProvenanceRecorded=false", got.HandAuthoredRows, got.BlindGeneratedRows)
 	}
 }
 

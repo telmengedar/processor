@@ -368,6 +368,15 @@ live derivation and prints it, so a drifting deriver shows up as derived questio
 pinned ones. **`derivationHash` is what makes that comparison possible**, and a sweep whose sidecar hash is
 not recorded beside its result is a sweep whose arm nobody can identify later.
 
+**The zero value of `Derivations` (`internal/eval/derivations.go`) is the raw-input arm.** An empty `Path`,
+`Hash` and `Queries`/`Sources` map yields every row its own input alone and names itself `ArmRawInput` — a
+caller that never loads a sidecar gets today's behaviour rather than a nil-map panic, which is P-33's
+injected-collaborator archetype applied to the sidecar rather than to a port. Each pinned row also carries a
+`source` — `hand-authored` or `blind-generated` — recorded at the point its queries were written, since that
+is the only place the fact is known; a row that predates the field, or a caller that never sets it, is not an
+error but reads as **provenance unrecorded** rather than a measured zero, so the two states stay
+distinguishable on the arm line.
+
 ### 4.6 Node type as a weight — deferred, with the measurement that would settle it
 
 Toni: *"type of nodes could play a role… different relevance in application even though there match-score is
@@ -449,6 +458,7 @@ produce **the same candidate set as a raw-only run** — not merely that it prod
 | F1 | **Sub-node (chunk-level) retrieval.** §2.4's measurement is the evidence: a 357-byte answer inside a 9,519-byte node is unreachable by any query, and this is a property of the substrate's embedding granularity | **DiVoid**, not Processor. File as a DiVoid task citing the rank-34 measurement |
 | F2 | **Type weighting.** §4.6. The settling measurement is arithmetic over #11066's retained candidate set | Processor, after #11066 lands |
 | F3 | **The `Recall`-signature change touches #11092 §4.2's decorating `GraphPort`.** That decorator implements the port as it stands today; widening `Recall` widens the decorator | Note on #11092 — no design change, but the A/B runner's brief must know |
+| F4 | **Nothing binds a sidecar row's `source` to its `queries` bytes.** Hand-editing a blind-generated row's query text leaves `source: blind-generated` asserting a provenance the text no longer has, and vice versa — the field can silently lie the moment someone edits queries without also updating it. A per-row content hash (query-set → source, checked at load) would make a stale `source` a load failure instead of a quiet one, but that is a bigger decision than the unit that added the field: it needs a ruling on what counts as a small enough edit to not require re-derivation | Processor, `internal/eval/derivations.go`, next time the sidecar's shape is touched |
 
 **Collision check against #11101, run rather than assumed:** this design changes no corpus row, so
 `corpusHash` does not move and `6c1ba696` keeps identifying #11133's baseline. The sidecar is a new file with
@@ -583,15 +593,26 @@ the instrument, which both runs share entirely.)* `corpusHash ffa291d5`, limits
 |---|---|---|---|
 | raw-input (no `-derivations`) | 9/23 = 0.39 | 7/23 = 0.30 | 2/2 = 1.00 |
 | pinned at **13/25** — the state §9.1 records, `derivationHash 23b50552` | 10/23 = 0.43 | 8/23 = 0.35 | 2/2 = 1.00 |
-| **pinned at 25/25** — `derivationHash` **`38349b3c`** | **11/23 = 0.48** | **9/23 = 0.39** | 2/2 = 1.00 |
+| **pinned at 25/25** — `derivationHash` **`2ec61afc`** | **11/23 = 0.48** | **9/23 = 0.39** | 2/2 = 1.00 |
 
 > **The 25/25 sidecar's hash was written after the line endings were fixed, not before.** The generator
 > originally wrote CRLF, so the hash the first sweeps printed was a hash of **the working tree** rather than
-> of what a fresh checkout produces — `38349b3c` is the LF hash, and it is what the loader reports on a
-> normalised file. It was measured through `LoadDerivations` on the corrected file rather than transcribed
-> from a report, because under **P-51** a hash written into this document is a hash this document asserts.
-> No rate above was ever affected: the sweep loads the file it loads, whatever a hash says about it — only
-> the identity a later reader would use to decide whether their re-run is comparable.
+> of what a fresh checkout produces — `38349b3c` was the LF hash of the queries-only file, and it is what the
+> loader reported on a normalised file at that point. It was measured through `LoadDerivations` on the
+> corrected file rather than transcribed from a report, because under **P-51** a hash written into this
+> document is a hash this document asserts. No rate above was ever affected: the sweep loads the file it
+> loads, whatever a hash says about it — only the identity a later reader would use to decide whether their
+> re-run is comparable.
+>
+> **Superseded again, same day, by a provenance field rather than a query change.** The unit that gives the
+> arm line its own composition (`25/25 rows derived, 11 hand-authored, 12 blind-generated`) added a `source`
+> field to every one of the sidecar's 25 rows, so a reader could tell which rows the combiner was selected
+> against without joining to this section. Every query byte is unchanged; only the file's bytes moved, and
+> with them `derivationHash`: **`38349b3c` → `2ec61afc`** (10,700 bytes, sha256
+> `2ec61afc7effed77d4cd61048281c0c7353e970f2644358bb5c2be70899862f5`, measured through `LoadDerivations` on
+> the file in the tree, per P-51). No rate in this section moved — the eleven-hand-authored/twelve-blind-
+> generated split this hash now sits beside is the same split §9.2's own table already reads from
+> `required`/`subject`/`why` provenance, just no longer requiring that join.
 
 **Per-row, raw-input → 25/25: exactly four verdict changes and no others.**
 

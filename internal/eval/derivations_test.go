@@ -274,26 +274,124 @@ func TestLoadDerivationsRejectsASourceOutsideTheClosedSet(t *testing.T) {
 	loadDerivationsMustFail(t, `[{"row": "r01", "queries": ["a question"], "source": "guessed"}]`, "closed set")
 }
 
-func TestHandAuthoredRowsCountsOnlyLabelledRowsTheSidecarMarksHandAuthored(t *testing.T) {
-	t.Parallel()
-
-	corpus := Corpus{Hash: "a-corpus-hash", Rows: []Row{
+func asymmetricSourceCorpus() Corpus {
+	return Corpus{Hash: "a-corpus-hash", Rows: []Row{
 		{ID: "r01", Input: "the first input", Subject: 100, Stratum: StratumLabelled},
 		{ID: "r02", Input: "the second input", Subject: 101, Stratum: StratumLabelled},
+		{ID: "r03", Input: "the third input", Subject: 103, Stratum: StratumLabelled},
 		{ID: "c01", Input: "the control input", Subject: 102, Stratum: StratumControl},
 	}}
+}
+
+func loadAsymmetricSourceDerivations(t *testing.T) (Derivations, Corpus) {
+	t.Helper()
+
+	corpus := asymmetricSourceCorpus()
 	body := `[
 	  {"row": "r01", "queries": ["a question"], "source": "hand-authored"},
-	  {"row": "r02", "queries": ["another question"], "source": "blind-generated"},
+	  {"row": "r02", "queries": ["another question"], "source": "hand-authored"},
+	  {"row": "r03", "queries": ["a third question"], "source": "blind-generated"},
 	  {"row": "c01", "queries": ["a control question"], "source": "hand-authored"}
 	]`
 	derivations, err := LoadDerivations(writeDerivations(t, body), corpus)
 	if err != nil {
 		t.Fatalf("LoadDerivations: %v", err)
 	}
+	return derivations, corpus
+}
 
-	if got := derivations.HandAuthoredRows(corpus); got != 1 {
-		t.Fatalf("HandAuthoredRows = %d, want 1: c01 is hand-authored but not labelled, and r02 is labelled but blind-generated, so only r01 qualifies", got)
+func TestHandAuthoredRowsCountsOnlyLabelledRowsTheSidecarMarksHandAuthored(t *testing.T) {
+	t.Parallel()
+
+	derivations, corpus := loadAsymmetricSourceDerivations(t)
+
+	if got := derivations.HandAuthoredRows(corpus); got != 2 {
+		t.Fatalf("HandAuthoredRows = %d, want 2: c01 is hand-authored but not labelled, r03 is labelled but blind-generated, and only r01/r02 are both -- a fixture with equal hand-authored and blind-generated counts cannot tell this function apart from one that counts the wrong source, which is why the two counts here differ", got)
+	}
+}
+
+func TestBlindGeneratedRowsCountsOnlyLabelledRowsTheSidecarMarksBlindGenerated(t *testing.T) {
+	t.Parallel()
+
+	derivations, corpus := loadAsymmetricSourceDerivations(t)
+
+	if got := derivations.BlindGeneratedRows(corpus); got != 1 {
+		t.Fatalf("BlindGeneratedRows = %d, want 1: only r03 is labelled and blind-generated", got)
+	}
+}
+
+func TestBlindGeneratedRowsIsZeroWhenNoRowNamesASource(t *testing.T) {
+	t.Parallel()
+
+	derivations, err := LoadDerivations(writeDerivations(t, validDerivations), derivationCorpus())
+	if err != nil {
+		t.Fatalf("LoadDerivations: %v", err)
+	}
+
+	if got := derivations.BlindGeneratedRows(derivationCorpus()); got != 0 {
+		t.Fatalf("BlindGeneratedRows = %d, want 0: a sidecar entry that names no source cannot be counted as blind-generated", got)
+	}
+}
+
+func TestBlindGeneratedRowsOnTheZeroSidecarIsZero(t *testing.T) {
+	t.Parallel()
+
+	if got := (Derivations{}).BlindGeneratedRows(derivationCorpus()); got != 0 {
+		t.Fatalf("BlindGeneratedRows on the zero sidecar = %d, want 0", got)
+	}
+}
+
+func TestSourcesRecordedIsTrueWhenAnyLabelledRowNamesASource(t *testing.T) {
+	t.Parallel()
+
+	derivations, corpus := loadAsymmetricSourceDerivations(t)
+
+	if !derivations.SourcesRecorded(corpus) {
+		t.Fatal("SourcesRecorded = false, want true: r01, r02 and r03 all name a source")
+	}
+}
+
+func TestSourcesRecordedIsFalseWhenNoRowNamesASource(t *testing.T) {
+	t.Parallel()
+
+	derivations, err := LoadDerivations(writeDerivations(t, validDerivations), derivationCorpus())
+	if err != nil {
+		t.Fatalf("LoadDerivations: %v", err)
+	}
+
+	if derivations.SourcesRecorded(derivationCorpus()) {
+		t.Fatal("SourcesRecorded = true, want false: validDerivations names no source for r01")
+	}
+}
+
+func TestSourcesRecordedOnTheZeroSidecarIsFalse(t *testing.T) {
+	t.Parallel()
+
+	if (Derivations{}).SourcesRecorded(derivationCorpus()) {
+		t.Fatal("SourcesRecorded on the zero sidecar = true, want false")
+	}
+}
+
+func TestRealSidecarCarriesElevenHandAuthoredAndTwelveBlindGeneratedLabelledRows(t *testing.T) {
+	t.Parallel()
+
+	corpus, err := Load("corpus.json")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	derivations, err := LoadDerivations("derivations.json", corpus)
+	if err != nil {
+		t.Fatalf("LoadDerivations: %v", err)
+	}
+
+	if got := derivations.Rows(); got != 25 {
+		t.Fatalf("Rows = %d, want 25: the real sidecar's coverage has drifted from 25/25 -- this test guards the composition claim, not just its shape, so update it deliberately if coverage genuinely changed", got)
+	}
+	if got := derivations.HandAuthoredRows(corpus); got != 11 {
+		t.Fatalf("HandAuthoredRows = %d, want 11: r01-r11 are the hand-authored labelled rows the combiner was selected against -- if this moved, either the real sidecar's provenance was edited or the counting logic broke, and a green suite must not hide either", got)
+	}
+	if got := derivations.BlindGeneratedRows(corpus); got != 12 {
+		t.Fatalf("BlindGeneratedRows = %d, want 12: r12-r23 are the blind-generated labelled rows added after the design was selected", got)
 	}
 }
 

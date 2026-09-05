@@ -27,9 +27,7 @@ type Derivation struct {
 	Source  string   `json:"source,omitempty"`
 }
 
-// Derivations is a validated sidecar: the pinned queries and source per row id,
-// the path they were read from, and the hash of those bytes. The zero value is
-// the raw-input arm and yields each row its own input alone.
+// Derivations is a validated sidecar: the pinned queries and source per row id, the path they were read from, and the hash of those bytes.
 type Derivations struct {
 	Path    string
 	Hash    string
@@ -52,9 +50,23 @@ func (d Derivations) Rows() int {
 
 // HandAuthoredRows reports how many of corpus's labelled rows this sidecar pins with hand-authored queries.
 func (d Derivations) HandAuthoredRows(corpus Corpus) int {
+	return d.labelledRowsSourced(corpus, SourceHandAuthored)
+}
+
+// BlindGeneratedRows reports how many of corpus's labelled rows this sidecar pins with blind-generated queries.
+func (d Derivations) BlindGeneratedRows(corpus Corpus) int {
+	return d.labelledRowsSourced(corpus, SourceBlindGenerated)
+}
+
+// SourcesRecorded reports whether any of corpus's labelled rows this sidecar pins names a source.
+func (d Derivations) SourcesRecorded(corpus Corpus) bool {
+	return d.labelledRowsSourced(corpus, SourceHandAuthored)+d.labelledRowsSourced(corpus, SourceBlindGenerated) > 0
+}
+
+func (d Derivations) labelledRowsSourced(corpus Corpus, source string) int {
 	count := 0
 	for _, row := range corpus.Rows {
-		if row.Stratum == StratumLabelled && d.Sources[row.ID] == SourceHandAuthored {
+		if row.Stratum == StratumLabelled && d.Sources[row.ID] == source {
 			count++
 		}
 	}
