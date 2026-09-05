@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/telmengedar/processor/internal/boot"
@@ -49,6 +50,7 @@ func run(args []string, machine, human io.Writer) int {
 		logger.Error("derivations", "error", err)
 		return exitError
 	}
+	warnOnUnpinnedRows(logger, derivations, corpus)
 
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 
@@ -78,6 +80,15 @@ func loadDerivations(path string, corpus eval.Corpus) (eval.Derivations, error) 
 		return eval.Derivations{}, nil
 	}
 	return eval.LoadDerivations(path, corpus)
+}
+
+func warnOnUnpinnedRows(logger *slog.Logger, derivations eval.Derivations, corpus eval.Corpus) {
+	unpinned := derivations.Unpinned(corpus)
+	if len(unpinned) == 0 {
+		return
+	}
+	logger.Warn("derivations", "unpinned", len(unpinned), "of", len(corpus.Rows),
+		"rows", strings.Join(unpinned, ","))
 }
 
 func parseFlags(args []string, human io.Writer) (corpusPath, derivationsPath string, ok bool) {

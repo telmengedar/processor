@@ -42,6 +42,21 @@ func (d Derivations) Rows() int {
 	return len(d.Queries)
 }
 
+// Unpinned returns the ids of corpus rows this sidecar does not pin, in corpus order.
+func (d Derivations) Unpinned(corpus Corpus) []string {
+	if d.Path == "" {
+		return nil
+	}
+
+	var unpinned []string
+	for _, row := range corpus.Rows {
+		if _, ok := d.Queries[row.ID]; !ok {
+			unpinned = append(unpinned, row.ID)
+		}
+	}
+	return unpinned
+}
+
 // QueriesFor is the row's own input followed by whatever the sidecar pinned for it, without repeats.
 func (d Derivations) QueriesFor(row Row) []string {
 	queries := []string{row.Input}
