@@ -24,9 +24,11 @@
 
 **Toni's shape is right and is adopted.** The model derives several questions from the request; the derived
 questions — not the request — are what the graph is asked; results are fused mechanically. **Measured: it
-takes labelled retrieval from 8/11 to 10/11 and admitted from 7/11 to 9/11** *(measured 2026-09-04, simulated
-against the live graph with the shipped `admit` rule; overall including control, 10/13 → 12/13 retrieved and
-9/13 → 11/13 admitted)*.
+takes labelled retrieval from 8/11 to 10/11 and admitted from 7/11 to ~~9/11~~ 8/11** *(retrieved simulated
+2026-09-04 and confirmed by a real sweep 2026-09-05; the admitted figure was **predicted as 9/11 and is
+struck** — the binary returns 8/11, and §6 item 3 says why. All of these are on the eleven-labelled-row
+corpus that PR #27 has since replaced with a 23-labelled-row one: **§9.1 owns the current rates and this line
+is not the place to read them.**)*
 
 **But it does not fix the row the source task was written from, and the reason is not a query problem.**
 #10883 — r07's required node — is a **9,519-byte task node about an M1 hand-off**, and the passage that
@@ -83,7 +85,9 @@ keywording or rewriting anywhere between the HTTP handler and the embedding *(me
 the tree at `1dc361f`)*.
 
 **The problem.** One semantic query over the raw request is the whole of retrieval. #11133 measured what that
-costs: labelled retrieved 0.73, three rows `notRetrieved`. #11134 diagnosed the cause as a vocabulary gap
+costs: labelled retrieved 0.73, three rows `notRetrieved` *(#11133's figure, a **dated record** on the
+eleven-row corpus — the same arm reads 9/11 = 0.82 today and the third row is no longer a miss; §9.1 item 2
+carries the re-measurement, and §2.1 the same note)*. #11134 diagnosed the cause as a vocabulary gap
 between the question's phrasing and the node's. **That diagnosis is half right and the half it misses changes
 the design**, which is §2.
 
@@ -103,6 +107,10 @@ Issuing every corpus input as a plain `GET /api/nodes?query=…&count=20` return
 and r07's top similarity is **0.68031085** *(measured 2026-09-04)* — digit-for-digit the figure #11134 records,
 and consistent with #11133's 8/11 labelled + 2/2 control. **The instrument used for every number below agrees
 with the harness's own reading**, which is the precondition for believing any of them.
+
+*(Dated record, kept as measured. The baseline has since moved on its own: the same raw-input arm over the
+same eleven rows read **9/11 labelled** on 2026-09-05, because the graph is live and unversioned. §9.1 item 2
+carries the re-measurement; nothing in this section is retro-edited to match it.)*
 
 ### 2.2 Mode A — query-side. The question is a bad query. **Derivation fixes it.**
 
@@ -143,7 +151,13 @@ for r03, r07, r08 *(measured 2026-09-04)*.
 - **`rootNodeId` is not a usable scope here.** `?rootNodeId=10422` returns `{"result":[],"total":0}` — the
   Processor nodes carry no `rootNodeId` grouping *(measured 2026-09-04)*. Worse, the spellings `rootnode` and
   `root_node_id` are **silently ignored** and return the unscoped result, so a typo'd scope parameter produces
-  a full-graph search that looks like a working one. Guard G-6 exists for this.
+  a full-graph search that looks like a working one.
+- **There are two ways to fail open, not one, and the second is the right key.** Besides the wrong-key case
+  above, `linkedto=` **with an empty value** also returns the full-graph ranking *(measured 2026-09-04, table
+  in #11262; written down here at #11275 item 1's request)*. So a scope that computes to empty does not
+  narrow nothing — it silently searches everything, which is the more dangerous of the two because the key is
+  correct and only the value is wrong. Guard G-6 covers **both**: one `linkedto` per scope id, and **no
+  `linkedto` key at all** for an empty scope.
 
 ### 2.4 Mode C — document-side. The answer is 3.8% of its node. **Nothing here fixes it.**
 
@@ -235,18 +249,22 @@ exactly the line between the two.
       ├─ Queries.Derive(input)  ── model call ── []string ──┐  §5 rules failure
       │      degraded: [] or error  →  fall back to {input} │
       │                                                     ▼
-      │                                        queries = {input} ∪ derived
-      │
-      ├─ Graph.Neighbours(subject) ──────────────► scope = {subject} ∪ neighbours(subject)
+      │                                        queries = {input} ∪ derived (input first)
       │
       ▼
   ┌──────────────────────────────────────────────────────────────────────┐
-  │  loop.Retrieve  —  MODEL-FREE BY CONSTRUCTION (takes []string, not   │
-  │  a ModelPort). One implementation, called by BOTH turn.go and        │
-  │  cmd/eval/sweep.go.                                                  │
+  │  loop.Retrieve(ctx, graph, anchor, queries, limit, reserve)          │
+  │      MODEL-FREE BY CONSTRUCTION (takes []string, never a ModelPort). │
+  │      One implementation, called by BOTH turn.go and cmd/eval.        │
+  │      The caller passes the ANCHOR; the scope is built in here, so    │
+  │      there is exactly one copy of scope construction in the tree.    │
   │                                                                      │
   │    for each q in queries:  Graph.Recall(q, CandidateLimit, nil)      │
-  │    once:                   Graph.Recall(input, CandidateLimit, scope)│
+  │    then:  scope = RecallScope(anchor.ID)                             │
+  │             └─ Graph.Neighbours(anchor.ID); {anchor.ID} ∪ those,     │
+  │                sorted and deduplicated                               │
+  │    once:  Graph.Recall(queries[0], CandidateLimit, scope)            │
+  │             └─ queries[0] is the raw input                           │
   │    fuse: reciprocal-rank over the unscoped lists,                    │
   │          then RecallScopeReserve slots from the scoped list,         │
   │          then backfill from the fused list, capped at CandidateLimit │
@@ -296,11 +314,11 @@ arriving in the one place that rule was written about.
 
 | Package | Change |
 |---|---|
-| `internal/loop/retrieve.go` **(new)** | `Retrieve(ctx, graph GraphPort, anchor Anchor, queries []string, limit, reserve int) ([]Candidate, error)`. Fan-out, the scoped recall, and fusion. **Takes no `ModelPort`** — the mechanical boundary of §3 expressed as a signature. The fusion itself is a separate **pure** function with no `ctx` and no port, on `Assemble`'s discipline |
+| `internal/loop/retrieve.go` **(new)** | `Retrieve(ctx, graph GraphPort, anchor Anchor, queries []string, limit, reserve int) ([]Candidate, error)`. Fan-out, the scoped recall, and fusion. **Takes no `ModelPort`** — the mechanical boundary of §3 expressed as a signature. The fusion itself is a separate **pure** function with no `ctx` and no port, on `Assemble`'s discipline. **`Retrieve` builds the anchor scope itself**, via `RecallScope(ctx, graph, anchor.ID)`: the caller passes the **anchor** and never a scope, so exactly one copy of scope construction exists in the tree — the caller-builds reading would put a second one in `cmd/eval/sweep.go`, which is **R5 realised and invisible to any single-package test**. `queries[0]` is the raw input and is what the scoped recall carries; the unscoped fan-out covers all of `queries`, `queries[0]` included |
 | `internal/loop/turn.go` | `Run` calls `Queries.Derive`, then `Retrieve`. `Assemble`, `judge`, `dispatchRecall`, `logFinished` unchanged. New constants `RecallScopeReserve = 3` and `MaxDerivedQueries` beside the existing five |
 | `internal/loop/types.go` | `QueriesPort` with one method, `Derive(ctx, input string) ([]string, error)`. `Record` gains the derived queries and the per-query provenance of each candidate — §4.4 |
 | `internal/loop/turn.go` (`GraphPort`) | `Recall` gains a `scope []int64` parameter, `nil` meaning global — one method rather than a near-duplicate `RecallScoped`. New `Neighbours(ctx, id int64) ([]int64, error)` |
-| `internal/divoid/client.go` | `Recall` emits `linkedto` when scope is non-empty; `Neighbours` reads `GET /api/nodes/links?ids=<id>` and returns the other endpoint of every incident edge, **sorted**, so the scope is order-stable |
+| `internal/divoid/client.go` | `Recall` emits `linkedto` when scope is non-empty; `Neighbours` reads `GET /api/nodes/links?ids=<id>` and returns the other endpoint of every incident edge, **sorted and deduplicated**. Sorting makes the scope order-stable. **Dedup is load-bearing, not tidiness:** a node linked to itself is returned by the API as its own neighbour, and repeated edges between one pair are possible, so without the collapse the same id is sent to `linkedto` twice. Guarded by `TestNeighboursReadsTheFarEndpointOfEveryEdgeInEitherDirectionCountingARepeatedPairOnce` and `TestRecallScopeCarriesTheSubjectOnceWhenASelfEdgeMakesItItsOwnNeighbour`. **It also follows the `continue` cursor** — the row says *every* incident edge, which one page satisfies only while no node exceeds the page size — and **warns on the operator log when it stops before the graph's last page**, so a truncated neighbourhood is readable rather than silent |
 | `cmd/eval/sweep.go` | `rowDispositions` calls `loop.Retrieve` — the same function the turn calls. Queries come from the pinned sidecar (§4.5) or, absent one, are `{row.Input}` alone |
 | `cmd/eval/main.go`, `internal/eval` | `-derivations <path>` flag; `derivationHash` and the arm's name reported beside `corpusHash` |
 
@@ -333,7 +351,8 @@ computed once and pinned. **Ruling: pinned derivations live in a sidecar file, n
 **Why not in the corpus, and this is the collision the orchestrator asked about.** `eval.Load` hashes the
 corpus file's raw bytes as `Corpus.Hash` *(measured 2026-09-04, `internal/eval/corpus.go`)*. Adding
 derivations to it moves `corpusHash`, and **#11133 identifies the baseline by `corpusHash 6c1ba696`** — the
-figure #11101 item 9 already flags as the one that will be forgotten. Putting derivations in the corpus would
+figure #11101 item 9 already flags as the one that will be forgotten *(and which PR #27 has since moved to
+`ffa291d5` for unrelated reasons; the ruling below stands, its premise does not — §8's dated note)*. Putting derivations in the corpus would
 move it a second time, for a second reason, in a unit that has already been deferred four times. A sidecar
 with its own `derivationHash` keeps the two identities independent and keeps this design off #11101's
 critical path entirely.
@@ -383,8 +402,9 @@ query set degrades to `queries = {input}`, which is today's shipped behaviour ex
 | Port is nil | `{input}`. The zero value degrades rather than panicking — P-33's injected-collaborator archetype, step 6: **bound what the fallback returns** |
 
 **The turn does not fail because derivation failed.** A derivation failure costs retrieval quality, and
-retrieval quality was 0.73 before this design existed; erroring the whole run instead would trade a degraded
-answer for no answer, which is strictly worse. **`ErrModelUnavailable` is not returned from the derivation
+retrieval quality on the raw input alone is whatever §9.1's raw-input arm currently reads — it was never
+better than a bit over half the labelled rows; erroring the whole run instead would trade a degraded answer
+for no answer, which is strictly worse. **`ErrModelUnavailable` is not returned from the derivation
 step** — it stays what it is, the judgement step's failure.
 
 **The degraded path must be visible, not silent.** A run that fell back is a run whose retrieval is the old
@@ -400,7 +420,7 @@ produce **the same candidate set as a raw-only run** — not merely that it prod
 |---|---|---|
 | 1 | **r07, the row the task was written from** | §2.4. Its answering passage is 3.8% of a 9,519-byte node and the node ranks **34** on that passage's own text. Fixed only by sub-node retrieval — chunk-level embedding — which is a **DiVoid-side** change, not a Processor one (§8 F1) |
 | 2 | **r09** | The required node is 163,590 bytes against a 60,000-byte budget. Retrieval already finds it; nothing here or anywhere admits it whole |
-| 3 | **The admitted rate's structural blindness to admission changes** | #11133's trap is intact and is **not** contradicted by this design moving the admitted rate. The rate is blind to *admission* changes on this corpus because only r09 is `cut` and it exceeds the budget either way; it is **not** blind to *retrieval* changes, because a required node newly entering the top 20 and fitting the budget flips its verdict. r03 and r08 do exactly that *(measured 2026-09-04)* |
+| 3 | **The admitted rate's structural blindness to admission changes** | #11133's trap is intact and is **not** contradicted by this design moving the admitted rate. The rate is blind to *admission* changes on this corpus because only r09 is `cut` and it exceeds the budget either way; it is **not** blind to *retrieval* changes, because a required node newly entering the top 20 and fitting the budget flips its verdict. r03 and r08 do exactly that *(measured 2026-09-04)*. **And it cuts both ways, which this row originally did not say:** a retrieval change moves the admitted rate in **both directions** — a required node newly entering the top 20 flips its verdict upward, and a required node newly **outranked by larger admitted material** flips downward *without leaving the retrieved set*. **r02 does the second** — admitted on the raw-input arm, `cut at rank 6` on the pinned arm, still retrieved, because the widened candidate set consumes the byte budget ahead of it *(re-measured 2026-09-05 on `corpusHash ffa291d5`: r02 is not a miss on the raw-input arm and is `cut at rank 6, k'=6, 59,615/60,000 B admitted` on the pinned one — the same cut #11288 recorded on the eleven-row corpus, reproduced digit for digit; and its raw-arm counterpart is **re-measured here on the raw-input arm: 7 admitted / 56,031 B against a 60,000 B budget** — #11288's figure reproduced digit for digit too, which is the stronger reading, because it shows r02's raw-arm candidate set survived the corpus change unchanged)*. This is the shape §4.2 measured and rejected for the 50/50 interleave — *"it buys one row's survival at the exact margin with a general degradation"* — arriving on the **admitted** rate rather than the retrieved one, where §9's framing did not look for it |
 | 4 | **The vocabulary gap in general** | Derivation narrows it and does not close it. Mode A is fixed for the two rows measured; the population of symptom-phrased questions is not eleven rows wide, and #11092 §5.3's blindness — tasks no node answers — is untouched |
 | 5 | **Self-recall (#11179)** | Not fixed, and **made more exposed**, which is §7 R4. This design increases how much of the graph is reachable per turn, and run records are part of that graph |
 | 6 | **Determinism of a live turn** | Lost, deliberately (§3). Retained for the sweep |
@@ -411,12 +431,13 @@ produce **the same candidate set as a raw-only run** — not merely that it prod
 
 | # | Risk | Mitigation | Falsifier |
 |---|---|---|---|
-| R1 | **A real model's derivations are worse than the hand-written ones this design was measured on.** The largest risk in the document | §9's A/B compares a live-derived arm against the pinned arm on one graph state; §4.4 records the derived queries verbatim so a bad derivation is readable rather than inferred | a sweep on live derivations scores at or below 10/13 |
-| R2 | **The design was selected on the same 13 rows it is scored on.** Six combiners were compared and the best kept — that is selection on the test set, and the honest reading of 12/13 is *an upper bound* | Stated here rather than mitigated. The corpus was authored before this design existed and none of its rows were changed; #11092 §11 Q1's task-set question is the place this gets resolved | the arm's advantage shrinks on any row added to the corpus after this document |
+| R1 | **A real model's derivations are worse than the hand-written ones this design was measured on.** The largest risk in the document | §9's A/B compares a live-derived arm against the pinned arm on one graph state; §4.4 records the derived queries verbatim so a bad derivation is readable rather than inferred | a live-derivation sweep **fails to beat a raw-input arm taken in the same session** ~~scores at or below 10/13~~ *(converted 2026-09-05: `/13` identified the corpus `corpusHash 6c1ba696` that PR #27 replaced. This is a forward-looking acceptance threshold rather than a dated record, so it is restated as arm-vs-arm on whatever the corpus then is — the same conversion §9 acceptance item 1 and §11 step 1 already carry, and for the same reason: the graph is live and unversioned, so a fixed denominator is a comparison against a system that no longer exists)* |
+| R2 | **The design was selected on the same 13 rows it *was* scored on.** Six combiners were compared and the best kept — that is selection on the test set, and the honest reading of 12/13 is *an upper bound*. *(Tense corrected 2026-09-05: it is now scored on 25. The twelve rows PR #27 added are the only ones it was **not** selected on — and the sidecar pins derivations for none of them, §12 q5, which is why they cannot yet answer the question they exist to answer.)* | Stated here rather than mitigated. The corpus was authored before this design existed and none of its rows were changed; #11092 §11 Q1's task-set question is the place this gets resolved | **Fired — and §9.1 already explains it. Do not read this row as an unfired falsifier.** The advantage did shrink on rows added after this document: **+0.09 on eleven rows** (0.82 → 0.91) became **+0.04 on twenty-three** (0.39 → 0.43). §9.1 reads that as **coverage dilution, not generalisation failure** — twelve of the twenty-three labelled rows are identical between the arms *by construction*, because the sidecar gives them no derivations, so they are incapable of showing an advantage either way. **That explanation is on the record and is itself testable**: §12 q5 option (a) or (b) would settle it by giving the twelve rows derivations. Until one of them happens this firing is **uninformative rather than answered**. **Note also that R2a below was re-confirmed on 2026-09-05 and this row was not.** |
+| R2a | **R2 bites hardest on precisely the row carrying the derived half of the hypothesis, and that is not a coincidence.** The derived arm's advantage over the scope-only arm is **one corpus row, r03** *(re-confirmed 2026-09-05. `Retrieve` builds the scope and issues the scoped recall unconditionally, so a sweep with no `-derivations` **is** the scope-only arm — and r03 is the single row separating it from the pinned arm on retrieved, 9/11 → 10/11)*. **r03's first pinned query is §2.2's own measured best derived question, verbatim** — and §2.2 already flags its author as contaminated for r03, r07 and r08. So the one row that distinguishes derivation from scope alone is a row whose winning query was written by someone who had read the diagnosis first. **Step 4's case rests on it** | Not mitigable inside this corpus, and naming it is the mitigation. R1's live-derivation reading (§9 item 4) is the only thing that answers it: it asks whether a model, uncontaminated, produces a query as good as the hand-written one. Until that reading exists, treat the derived arm's margin over the scope-only arm as **one hand-written query's worth of evidence** | a live-derived sweep leaves r03 `notRetrieved`, collapsing the derived arm onto the scope-only arm |
 | R3 | **Cost per turn rises from 1 graph read to 1 + N + 2** (N derived queries, one scoped recall, one links read), plus one model call | All reads are `GET`s against one host; the model call is small — a derivation prompt carries the input, not the block. **The sweep's model cost stays zero** (§4.5) | a turn's wall time or graph error rate rises materially in the smoke rig |
 | R4 | **More of the graph reachable means more self-produced content reachable** (#11179) | `admit` already cuts self-produced rows (#11158) and the sweep counts them. **The smoke rig must report the self-produced count among admitted rows**, which #11179 asks for anyway | a two-turn smoke run admits a `processor-run` record and nothing reports it |
 | R5 | **The sweep and the turn drift apart** — the instrument stops measuring the product (#11142) | §4.3's extraction: one `Retrieve`, two callers, and G-5's cross-package mutation arm | a fusion constant is mutated and only one of `internal/loop` / `cmd/eval` reddens |
-| R6 | **A silently-ignored scope parameter yields a full-graph search that looks scoped** — measured: `rootnode` and `root_node_id` are accepted and ignored (§2.3) | G-6 | a scoped recall returns a candidate outside the scope set and nothing fails |
+| R6 | **A silently-ignored scope parameter yields a full-graph search that looks scoped** — measured: `rootnode`, `root_node_id`, **and the right key with an empty value** are all accepted and ignored (§2.3) | G-6 | **the request** a scoped recall issues carries no `linkedto` key, or carries one the caller did not ask for, and G-6 stays green. *Deliberately not "a scoped recall returns a candidate outside the scope set and nothing fails": that is a real **production** symptom, and it is also the verbatim assertion §10 G-6 struck on 2026-09-05 as structurally incapable of discriminating. The filtering is the graph's, not this code's, so inside a fixture a fake that honours `linkedto` passes whether the client sent `linkedto`, `rootnode`, or nothing at all. The symptom is what you would see in production; **the request is the only thing observable from inside this process**, so it is what the falsifier has to name.* |
 | R7 | **The derivation step becomes a place to smuggle node ids**, voiding §3's ruling | G-4, and the ruling states its own falsifier | `Derive`'s return type is ever anything but `[]string`, or any downstream code parses ids out of a derived query |
 
 ---
@@ -433,37 +454,120 @@ produce **the same candidate set as a raw-only run** — not merely that it prod
 `corpusHash` does not move and `6c1ba696` keeps identifying #11133's baseline. The sidecar is a new file with
 its own hash. **This unit does not enter #11101's queue**, which is the point of §4.5's ruling.
 
+> **Overtaken 2026-09-05, and worth recording because the reasoning was sound and the premise still expired.**
+> The half of this check about *this design* holds: it changes no corpus row, and the sidecar remains a
+> separate file with its own `derivationHash`. But **`6c1ba696` no longer identifies anything a sweep prints.**
+> PR #27 took `internal/eval/corpus.json` from thirteen rows to twenty-five, moving `corpusHash` to
+> **`ffa291d5`** for reasons unrelated to this design. The care §4.5 took to keep the corpus hash still was
+> correct and was spent on a hash that a different change moved anyway. **The lesson is not that the ruling was
+> wrong** — a design cannot hold a shared file still — **but that `corpusHash` was never a stable identifier
+> for a baseline, only a detector of change to one file**, and #11133's baseline is pinned by a graph state
+> that carries no hash at all (§9.1's third identity). Sidecar coverage did not follow the corpus: it still
+> pins 13 of the 25 rows, which §9.1 measures the consequence of.
+
 ---
 
 ## 9. Verification
 
-**Which rate moves, and why it can.** The **retrieved** rate. It is at 0.73 labelled, it is the number
-#11134 was filed against, and a required node entering the top 20 flips its verdict — which is exactly what
+**Which rate moves, and why it can.** The **retrieved** rate. It was at 0.73 labelled when #11134 was filed
+against it *(see §9.1 for what it reads now — the corpus and the graph have both moved since)*, and a
+required node entering the top 20 flips its verdict — which is exactly what
 r03 and r08 do. The **admitted** rate also moves here, and #11133's trap is *not* violated by saying so: that
 trap is about admission changes on a corpus with one `cut` row, and this is a retrieval change (§6 item 3).
 
 **Predicted, from the simulation** *(measured 2026-09-04, against the live graph with the shipped `admit`
-rule and pinned hand-written derivations)*:
+rule and pinned hand-written derivations, on the **eleven-labelled-row** corpus of that date —
+`corpusHash 6c1ba696`)*:
 
 | | labelled retrieved | labelled admitted | control |
 |---|---|---|---|
 | baseline (#11133) | 8/11 = 0.73 | 7/11 = 0.64 | 2/2 |
-| this arm, simulated | **10/11 = 0.91** | **9/11 = 0.82** | 2/2 |
+| this arm, simulated | **10/11 = 0.91** | ~~9/11 = 0.82~~ → **8/11 = 0.73** | 2/2 |
+
+**The admitted cell was a wrong prediction and is corrected in place, not retro-edited** *(P-43; struck
+2026-09-05, first measured in #11288)*. The **retrieved** prediction reproduced digit for digit against a real
+sweep. The **admitted** one did not, and the whole gap is **r02** — §6 item 3 states the mechanism and why it
+was not looked for.
 
 **These are a prediction from a simulation, not a sweep result.** The simulation reproduces `admit`'s rule in
 Python against live content; it is not the binary. **A number this document predicts and a number a sweep
 returns are not the same kind of thing** — which is #11133's own 0.64/0.64 lesson, and the reason the
-acceptance criterion below is a re-run and not a match against this table.
+acceptance criterion below is a re-run and not a match against this table. The corrected cell is itself the
+worked example: the prediction was arithmetic over a simulated `admit`, and the binary disagreed.
+
+### 9.1 Re-measured against the current corpus *(2026-09-05)*
+
+**The table above has a denominator no sweep prints any more.** PR #27 took `internal/eval/corpus.json` from
+thirteen rows to **25 — 23 labelled, 2 control** — so `corpusHash` is now **`ffa291d5`** and the eleven-row
+figures above are a dated record rather than a live expectation.
+
+Two sweeps, same tree, same graph state, minutes apart, **both free of model calls** (§4.5; the `eval` binary
+constructs no model client at all — it reads only the graph half of the boot configuration):
+
+| arm | labelled retrieved | labelled admitted | control |
+|---|---|---|---|
+| raw-input (no `-derivations`) | 9/23 = 0.39 | 7/23 = 0.30 | 2/2 = 1.00 |
+| pinned — `internal/eval/derivations.json`, `derivationHash 23b50552` | **10/23 = 0.43** | **8/23 = 0.35** | 2/2 = 1.00 |
+
+**Read those full-corpus rates as a measurement of this design and you will be wrong, and the reason is a
+coverage gap rather than a result.** The sidecar pins **13 of the 25 rows** — r01–r11 plus both controls —
+because it was authored against the eleven-row corpus and PR #27 did not extend it. `LoadDerivations`
+validates that every sidecar row resolves to a corpus row, but **does not require that every corpus row
+carries a derivation**, so **r12–r23 sweep on their raw input alone on *both* arms**. Twelve of the
+twenty-three labelled rows are identical between the arms by construction, and all twelve are misses. The
+full-corpus rates are this design applied to eleven rows and diluted by twelve it was never given queries for.
+
+Restricted to the eleven labelled rows where the two arms **can** differ — they receive different query sets
+on all eleven, and differ in *verdict* on three of them (r02, r03, r08):
+
+| arm | labelled retrieved | labelled admitted |
+|---|---|---|
+| raw-input | 9/11 = 0.82 | 7/11 = 0.64 |
+| pinned | **10/11 = 0.91** | **8/11 = 0.73** |
+
+Row by row, the whole of the difference: **r03** `notRetrieved` → admitted, **r08** `cut` → admitted, **r02**
+admitted → `cut at rank 6`. Net **+1 retrieved, +1 admitted**.
+
+**Two things in that subset table deserve to be read carefully.**
+
+1. **The pinned arm reproduces #11288's step-3 reading exactly** — 10/11 = 0.91 retrieved, 8/11 = 0.73
+   admitted. So `0.73` was never stale in the sense of being wrong; what went stale is the **denominator**.
+   Both halves of the prediction have now been checked against the binary twice, a day apart.
+2. **The baseline moved, and this document's own acceptance step is what catches it.** #11133's raw-input arm
+   scored **8/11 = 0.73** retrieved; the same arm on the same eleven rows today scores **9/11 = 0.82**,
+   because r08's required node **#10839** is now retrieved (`cut at rank 18`) where it was `notRetrieved`
+   before. Nothing in this design caused that — **the graph is live, unversioned, and moved under the
+   baseline between 2026-09-04 and 2026-09-05.**
+
+**What would invalidate every number in this section.** Each hangs on three identities, and a rate quoted
+without all three names nothing: `corpusHash ffa291d5` (the corpus file), `derivationHash 23b50552` (the
+sidecar, at 13-of-25 coverage), and **the graph's own content**, which carries no hash and is the one that
+moved. Item 2 above is the proof that the third is not hypothetical — which is why the acceptance step below
+compares two arms **taken in one session** and never a fresh arm against a rate recorded on another day.
 
 ### Acceptance
 
-1. **A sweep on `main`'s arm** (no `-derivations`) returns **0.73 / 0.64 / control 1.00** with `corpusHash
-   6c1ba696`. If it does not, the graph moved and nothing below is comparable — stop and re-baseline.
+1. **A sweep on the raw-input arm** (no `-derivations`), taken **in the same session** as every reading it
+   will be compared against. ~~returns **0.73 / 0.64 / control 1.00** with `corpusHash 6c1ba696`. If it does
+   not, the graph moved and nothing below is comparable — stop and re-baseline.~~ *(Struck 2026-09-05: both
+   halves are dead. `6c1ba696` identified the thirteen-row corpus PR #27 replaced with `ffa291d5`, and 0.73
+   no longer reproduces even on the eleven surviving rows, which now read 0.82 — §9.1 item 2.)* **The step's
+   purpose survives its numbers, and is now the whole of it:** the raw-input arm is a **control taken
+   alongside**, not a constant to match. Compare the two arms against each other; never against a rate
+   recorded on another day, because the graph is live and unversioned and a cross-day comparison is two
+   different systems. A raw-input arm that disagrees with §9.1 is evidence the graph moved — which is
+   information, not a stop.
 2. **A sweep on the pinned arm**, same session, minutes apart, returns the retrieved rate. Both readings carry
    `corpusHash`, `derivationHash` and the arm's name. **Both are free of model calls**, so this is the whole
    A/B for the retrieval question and it costs nothing.
 3. **`admittedBytes` and `admittedCount` are carried on both readings**, per #11133's explicit instruction —
-   a rate match across a change that moves context is the trap that node exists to prevent.
+   a rate match across a change that moves context is the trap that node exists to prevent. **They are carried
+   for every row whatever its verdict**, because they are plain fields on the row struct and are marshalled
+   unconditionally (`internal/eval/result.go:25-26`, read from the tree 2026-09-05). Only the **human**
+   report's byte diagnostic is miss-only — `writeMisses` skips a row whose verdict is `Admitted`
+   (`internal/eval/report.go:123-127`), so the figure for a non-miss row is read off the machine stream, not
+   the printed report. Do not mistake the human report's silence for the number being unavailable: an earlier
+   draft of §6 item 3 did exactly that and declined to re-measure a figure the JSON was already carrying.
 4. **A live-derivation reading** on the same graph state, to answer R1: do a real model's derivations score
    like the pinned ones? This one costs model calls, one per row, and is the only part that does.
 5. **Two-turn smoke run** (`scripts/smoke.py`), which is the only surface for what no rate sees (#11142): the
@@ -490,9 +594,9 @@ cost. The A/B answers *did the answers get better*, which is the next question a
 | **G-3** | A derivation failure produces the raw-input candidate set | Assert the **candidate set equals a raw-only run's**, not that the call returned without error. A test asserting non-nil passes an implementation that returns an empty set on failure — which is a shutout, not a fallback |
 | **G-4** | An empty or all-blank derivation degrades exactly as an error does | Two fixtures, not one: `([], nil)` and `(nil, err)`. They are different branches, and a model that refuses returns the first. An implementation handling only the error branch passes any single-fixture test |
 | **G-5** | The sweep and the turn share one retrieval implementation | A **cross-package mutation arm**: mutate the fusion constant in `internal/loop` and assert **both** `internal/loop` and `cmd/eval` redden. If only one reddens there are two pipelines, which is R5 already realised and invisible to any single-package test |
-| **G-6** | A scoped recall is actually scoped | Assert **every returned candidate is inside the scope set**, against a fixture whose unscoped result contains an out-of-scope node ranked first. Premise: the API **silently ignores** unknown scope parameters and returns the unscoped result *(measured 2026-09-04: `rootnode=` and `root_node_id=` return the full-graph ranking)* — so a wrong parameter name produces a plausible, wrong, passing result |
+| **G-6** | A scoped recall is actually scoped | Assert **the request carries `linkedto` once per scope id**, and carries **no `linkedto` key at all** for an empty scope. Premise: the graph ignores an unknown scope key **and an empty scope value**, returning the full-graph ranking either way *(measured 2026-09-04: `rootnode=` and `root_node_id=` return the full-graph ranking, and so does `linkedto=` with an empty value — table in #11262)* — so there are **two** ways to fail open on the right key, and the only thing distinguishable from inside this process is **the request**. ~~Assert every returned candidate is inside the scope set, against a fixture whose unscoped result contains an out-of-scope node ranked first.~~ **Struck 2026-09-05:** the filtering is the graph's, not this code's, so against an `httptest` server that assertion tests the fixture's obedience rather than the client's key — a fake that honours `linkedto` passes whether the client sends `linkedto`, `rootnode`, or nothing. It was structurally incapable of failing for the reason this row names. Shipped as `TestRecallSendsOneLinkedToParameterPerScopeIDBecauseAnUnknownScopeKeyIsSilentlyIgnored` and `TestRecallSendsNoScopeKeyAtAllForAnEmptyScopeSoTheRankingStaysWholeGraph`, measured red on `linkedto`→`rootnode`, on `Add`→`Set` (only the last id survives), on dropping the loop, and on emitting an empty `linkedto` |
 | **G-7** | The scope is two hops, not one | The fixture's required node must be a neighbour **of a neighbour** of the anchor and **not** a direct neighbour. Premise: measured, one-hop scoping scores 10/13 and two-hop 13/13 on the scoped arm; a fixture where the required node is directly linked cannot tell them apart |
-| **G-8** | `Neighbours` is order-stable | Assert the returned slice is sorted against a fixture whose edge rows arrive out of order. Premise: the scope feeds a `linkedto` list, and an unstable scope makes the sweep non-reproducible for a reason no rate would ever surface |
+| **G-8** | `Neighbours` is order-stable **and repeat-free** | Assert the returned slice is sorted against a fixture whose edge rows arrive out of order, **and that a pair joined by more than one edge appears once**. Premise: the scope feeds a `linkedto` list, and an unstable scope makes the sweep non-reproducible for a reason no rate would ever surface; a repeated id sends the same node to `linkedto` twice, which a sorted-only assertion cannot see. **Shipped as three fixtures, one per half plus the self-edge:** `TestNeighboursReadsTheFarEndpointOfEveryEdgeInEitherDirectionCountingARepeatedPairOnce` (the repeat-free half), `TestNeighboursReturnsTheScopeAscendingSoOneEdgeSetAlwaysYieldsOneScope` (the order-stable half — this is what discharges "sorted against an out-of-order fixture"), and `TestRecallScopeCarriesTheSubjectOnceWhenASelfEdgeMakesItItsOwnNeighbour`. **The self-edge earns its own fixture**: the API returns a node linked to itself as its own neighbour, so the subject reaches the scope twice by a route no repeated-pair fixture exercises |
 | **G-9** | The derived queries and the fallback flag reach the record | Assert a **distinctive** derived string survives into `Record`, and that the flag is `true` on the fallback path and `false` otherwise. Premise (P-17): a `false`/`""` expectation is what a dropped field decodes to |
 
 **Not guarded, deliberately:** derivation *quality*. No test can assert that a model's questions are good ones;
@@ -504,7 +608,7 @@ that is what §9 item 4 measures and what R1 carries.
 
 | # | Step | Why this order |
 |---|---|---|
-| 1 | **Extract `loop.Retrieve` and have `cmd/eval/sweep.go` call it**, with today's single-query behaviour and no new capability. Sweep re-run must return **0.73 / 0.64 / 1.00** unchanged | A pure refactor with a **zero-delta acceptance criterion** — the only step whose correctness is checkable against an existing number. Doing it after the behaviour change would leave nothing to check it against |
+| 1 | **Extract `loop.Retrieve` and have `cmd/eval/sweep.go` call it**, with today's single-query behaviour and no new capability. Sweep re-run must return **the same rates as a raw-input sweep taken immediately before the extraction** — ~~**0.73 / 0.64 / 1.00** unchanged~~ *(struck 2026-09-05: that pair identified a corpus and a graph state that no longer exist; §9.1)* | A pure refactor with a **zero-delta acceptance criterion** — the only step whose correctness is checkable against an existing number. **The number must be taken, not quoted:** the delta is zero against a reading from the same session, and against nothing else. Doing this step after the behaviour change would leave nothing to check it against |
 | 2 | **`GraphPort.Recall` scope parameter + `Neighbours`**, `internal/divoid` implementing both. Still no derivation | G-6, G-7, G-8 land here. Independently valuable and independently reviewable |
 | 3 | **Fusion + the scope reserve**, wired into `Retrieve`. Sweep gains `-derivations`; a pinned sidecar is authored | G-1, G-2 land here. **This is where the retrieved rate is expected to move, with zero model calls on either arm** — the whole A/B of §9 items 1–3 is runnable at the end of this step |
 | 4 | **`QueriesPort`, the derivation prompt, the degraded mode, the record fields** | G-3, G-4, G-9. The live half. Deliberately last, because steps 1–3 are measurable without a model and this one is not |
@@ -532,3 +636,18 @@ cost with nothing measured behind it (P-3).
 4. **Should `Record.Query` be deprecated in favour of the derived set?** Kept as the raw input here, on
    YAGNI. If nothing ever reads it once the derived set exists, it is a deletion candidate — but that is a
    later reading of a real inventory, not a guess now.
+5. **Who writes derivations for r12–r23, and does anyone?** *(Raised 2026-09-05, from §9.1.)* The sidecar
+   pins 13 of the corpus's 25 rows; PR #27 added twelve labelled rows and no derivations for them, and
+   `LoadDerivations` permits the shortfall silently — it validates that every *sidecar* row exists in the
+   corpus, never that every *corpus* row is pinned. **Every full-corpus rate this sweep prints is therefore
+   a blend of a derived arm over eleven rows and a raw arm over twelve**, and it will keep drifting downward
+   as the corpus grows. Three options, and the choice is Toni's because two of them cost something real:
+   **(a)** hand-author the twelve — cheap, and it **reproduces R2a's contamination twelve more times**, since
+   the author would again be writing queries with the diagnosis in hand; **(b)** generate them with the live
+   model once and pin the output — uncontaminated and it makes the sidecar a *record of a model run* rather
+   than a hand-tuned ideal, which is arguably what it should have been from the start; **(c)** make the
+   shortfall loud — have `LoadDerivations` report coverage, and have the sweep print `13/25 rows derived`
+   beside `derivationHash` so no reading is ever mistaken for a full-corpus one. **(c) is not exclusive with
+   either and should happen regardless** — it is the only one of the three that costs nothing and it is what
+   turns a silent dilution into a visible one. **My recommendation is (c) now, (b) next**; (a) buys a
+   headline number at the cost of the evidence it is supposed to be.
