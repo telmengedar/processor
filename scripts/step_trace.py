@@ -59,11 +59,21 @@ gets a reserved quota (`RecallScopeReserve`, mirrored below as RECALL_SCOPE_RESE
 the first `limit - reserve` fused entries, backfilled from the fused list only if the scope doesn't
 fill its reserve. Since a turn always passes exactly one query, RRF over that single list changes
 nothing -- it is order-preserving. Net, for every trace this script prints: positions 1 through
-`limit - RECALL_SCOPE_RESERVE` are the one unscoped recall's own plain-similarity order, verbatim;
-the last `RECALL_SCOPE_RESERVE` positions are backfilled from the anchor's two-hop-scoped recall.
-Fusion of multiple ranked lists is real and does real work in `cmd/eval`, which passes more than one
-query -- it is simply inert inside a turn, which never does. The two-hop half of the mechanism
-(`RecallScope` = subject + its linked neighbours) is accurate as stated.
+`limit - RECALL_SCOPE_RESERVE` are the one unscoped recall's own plain-similarity order, verbatim.
+The last `RECALL_SCOPE_RESERVE` positions are RESERVED FOR the scoped recall, which is not the same
+as filled from it. `fuse` runs THREE passes, not two: fill to `limit - reserve` from the fused list;
+take up to `reserve` UNSEEN rows from the scoped list; then fill any slot the scope left over FROM
+THE FUSED LIST AGAIN, continuing its plain-similarity order past where the first pass stopped. So a
+run whose scoped recall returned fewer than `RECALL_SCOPE_RESERVE` unseen rows ends with tail rows
+that are not neighbourhood hits at all, and which pass placed any given tail row is NOT recoverable
+from the record: `Disposition` carries rank, id, type, name, similarity, size, content hash and the
+admit decision, the `Candidate` it is built from records only whether the row is self-produced --
+never WHICH RECALL RETURNED IT -- and the scoped list is not in the record to compare against. The
+trace therefore reports the reservation and declines to label the rows -- inventing a per-row
+distinction the record cannot support would be the same defect one level up. Fusion of multiple
+ranked lists is real and does real work in `cmd/eval`, which passes more than one query -- it is
+simply inert inside a turn, which never does. The two-hop
+half of the mechanism (`RecallScope` = subject + its linked neighbours) is accurate as stated.
 
 BUDGET ARITHMETIC, corrected after review (C2/C3): the anchor is not exempt from the assembly
 budget. `internal/loop/assemble.go`: `remaining := budget - len(anchor.Content)`, floored at zero --
@@ -103,12 +113,18 @@ file changes):
     on a run whose last round shows a plain malformed-tool-call error instead of the cap's own
     literal. This script flags that ambiguity inline when it can detect the shape (see below) rather
     than guessing which one actually fired.
-  - Temperature is not configurable. internal/openaicompat's chatRequest wire type
-    (internal/openaicompat/wire.go) has no temperature field and boot/config.go exposes no such
-    setting, so --temperature below is accepted and reported but is NOT sent to the endpoint. The
-    operator's own measurement elsewhere found a 57% output-size swing across identical runs at
-    default sampling; this trace is run under whatever the endpoint's own default is, and is not
-    reproducible byte-for-byte on that account. This is a finding, not a bug this script papers over.
+  - Whether the endpoint HONOURED the sampling the record reports. internal/boot reads
+    PROCESSOR_MODEL_TEMPERATURE (optional, defaulting to 0) and PROCESSOR_MODEL_TOP_P (optional, no
+    default -- unset means the parameter is omitted from the request entirely, never sent as 0);
+    internal/openaicompat's client puts exactly those two on the wire and hands the same pair back,
+    which is what the record's `sampling` object carries. So the record -- and the SAMPLING line this
+    script prints off it -- is an account of what was REQUESTED, AS SENT, and of nothing else. An
+    endpoint that clamps a value, or ignores it, yields a record true about the request and false
+    about the generation, and nothing on this side of the wire can see which happened. Temperature 0,
+    the default, stops the sampler being a source of run-to-run variation IF the endpoint honours it;
+    that is the whole of the claim, and it is not a claim that the run repeats. --temperature below
+    sets PROCESSOR_MODEL_TEMPERATURE for the run it traces, so the flag does reach the endpoint --
+    but the SAMPLING line is still read back off the record, never off the flag.
 
 Server lifecycle (build, free port, health wait, post, drain, stop) is reused from
 scripts/compare.py by import rather than copied a third time -- DiVoid #11326 already found eight
@@ -158,6 +174,12 @@ CUT_BYTE_BUDGET = "byte budget exceeded"
 # only has the five members turn.go stamps into it), so it is mirrored here the same way the two
 # error-string literals above are, purely for narrating STEP 2's actual rank order (W-N2).
 RECALL_SCOPE_RESERVE = 3
+
+# internal/boot's own variable name. The binary has no flag surface at all -- boot/config.go reads
+# the process environment and nothing else -- so setting this on the child's environment is the only
+# way --temperature can reach the endpoint, and it is the same mechanism this script already uses for
+# the model url, id and key.
+ENV_MODEL_TEMPERATURE = "PROCESSOR_MODEL_TEMPERATURE"
 
 # classify_round's return values.
 ROUND_DISPATCHED = "dispatched"          # error == "": real Graph.Recall call, real results.
@@ -252,11 +274,94 @@ def anchor_charge_phrase(anchor_size, assembly_budget, remaining_budget):
     )
 
 
+def fmt_sampling(value):
+    """The number the record carries, spelled with no conversion and no rounding.
+
+    `repr` and not a format spec, deliberately: `f"{value:g}"` rounds to six significant figures, so
+    a temperature of 0.123456789 -- really sent, really recorded -- would print as 0.123457, and
+    1234567.0 as 1.23457e+06. Numbers the endpoint was never asked for, printed by the one line in
+    this script whose whole claim is what was REQUESTED, AS SENT. `repr` of a float is its shortest
+    round-tripping decimal, so what prints here parses back to exactly what the record holds; 0.1+0.2
+    printing as 0.30000000000000004 is the honest outcome and stays.
+
+    Not `repr(float(value))` either: the binary marshals a temperature of 0 as the JSON number `0`,
+    which decodes to a Python int, and converting it would print `0.0` -- a spelling the record does
+    not contain. Quoting the decoded value is the whole job; every conversion on the way is a chance
+    to quote something else.
+    """
+    return repr(value)
+
+
+def sampling_lines(record, temperature_requested):
+    """The SAMPLING block: what the record says was put on the wire, and the exact limit of that
+    claim.
+
+    Three record shapes, kept apart deliberately. A record with no `sampling` object at all is older
+    than the field and says nothing about what was sent; a `sampling` object with neither member set
+    says nothing was sent for either; a member with a value is a value that was sent. None of the
+    three may be rendered as any of the others -- a missing field must not print as 0, which is a
+    real number this endpoint would really have been asked for.
+    """
+    sampling = record.get("sampling")
+    if sampling is None:
+        lines = [
+            "SAMPLING: this record carries no sampling object at all -- it was written before the "
+            "run record had the field. What that run sent for temperature or top_p cannot be read "
+            "off it, and this trace does not invent it."
+        ]
+        temperature = None
+    else:
+        temperature = sampling.get("temperature")
+        top_p = sampling.get("topP")
+        if temperature is None and top_p is None:
+            lines = [
+                "SAMPLING: nothing sent -- the record's sampling object carries neither temperature "
+                "nor top_p, so both were left to whatever the endpoint's own default is. What that "
+                "default is, the record cannot say: it reports the near side of the wire only."
+            ]
+        else:
+            temp_text = (
+                f"temperature {fmt_sampling(temperature)}" if temperature is not None
+                else "temperature not sent"
+            )
+            top_p_text = (
+                f"top_p {fmt_sampling(top_p)}" if top_p is not None
+                else "top_p not sent (omitted from the request entirely, never sent as 0)"
+            )
+            lines = [
+                f"SAMPLING: {temp_text}, {top_p_text}. This is what was REQUESTED, AS SENT -- not "
+                f"what the endpoint applied. An endpoint that clamps a value, or ignores it, yields "
+                f"a record true about the request and false about the generation, and nothing on "
+                f"this side of the wire can see which happened."
+            ]
+        if temperature == 0:
+            lines.append(
+                "          temperature 0 is greedy decoding: IF the endpoint honours it, the sampler "
+                "stops being a source of run-to-run variation. That is the whole of the claim -- it "
+                "is not a claim that this run repeats."
+            )
+
+    if temperature_requested is not None:
+        lines.append(
+            f"          --temperature {temperature_requested} was passed to this script, which set "
+            f"{ENV_MODEL_TEMPERATURE} for this run; the SAMPLING line above is the record's own "
+            f"account of what the client sent, read back rather than restated from the flag."
+        )
+        if sampling is not None and temperature != temperature_requested:
+            lines.append(
+                f"          MISMATCH: the record reports {temperature!r}, not the "
+                f"{temperature_requested!r} this script asked for. The request did not reach the "
+                f"client the way this script assumes it does -- trust the record, not the flag."
+            )
+    return lines
+
+
 def render_trace(record, model_url, model_id, temperature_requested, prior_note):
     """Pure function: every value comes from `record` (W4 -- the record is the source of truth,
     not the argv that produced the request that produced it) plus display-only context the record
-    itself has no way to carry (the endpoint address, the un-sent --temperature, the duplicate-run
-    warning computed against the graph before the run started).
+    itself has no way to carry (the endpoint address, the --temperature this script was asked for --
+    reported only so a disagreement with the record is visible, never as a substitute for it -- and
+    the duplicate-run warning computed against the graph before the run started).
     """
     task_text = record.get("input", "")
     subject = record.get("subject")
@@ -275,13 +380,7 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     out.append(THIN)
     out.append(task_text)
     out.append(THIN)
-    if temperature_requested is not None:
-        out.append(
-            f"NOTE: --temperature {temperature_requested} was requested but the binary's model client "
-            f"(internal/openaicompat) has no temperature field on its wire request and no config "
-            f"surface for one -- it was NOT sent. Sampling is whatever the endpoint defaults to, and "
-            f"this trace is not reproducible byte-for-byte on that account."
-        )
+    out.extend(sampling_lines(record, temperature_requested))
     if prior_note:
         out.append(prior_note)
     out.append("")
@@ -322,9 +421,15 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
             f"(internal/loop/retrieve.go's fuse/fuseByReciprocalRank) is a no-op over it -- rows 1-"
             f"{fused_slots} below are that one UNSCOPED recall's own plain-similarity order, "
             f"verbatim. The last {RECALL_SCOPE_RESERVE} slots ({fused_slots + 1}-{candidate_limit}) "
-            f"are reserved for and backfilled from a second recall scoped to the anchor's two-hop "
-            f"neighbourhood (subject + its linked nodes). Fusion across multiple queries only does "
-            f"real work in cmd/eval, which passes more than one -- it never touches the order here"
+            f"are RESERVED FOR a second recall scoped to the anchor's two-hop neighbourhood (subject "
+            f"+ its linked nodes) -- which is not the same as filled from it: fuse takes unseen "
+            f"scoped rows up to the reserve and then fills whatever the scope left over from the "
+            f"unscoped list AGAIN, continuing its plain-similarity order. Which pass placed any one "
+            f"of those {RECALL_SCOPE_RESERVE} rows is not in the record -- no candidate records "
+            f"which recall returned it, and the scoped list is not recorded -- so each of them may be a "
+            f"neighbourhood hit or a similarity continuation, and this trace will not guess which. "
+            f"Fusion across multiple queries only does real work in cmd/eval, which passes more than "
+            f"one -- it never touches the order here"
         )
     else:
         rank_note = (
@@ -480,6 +585,25 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     return "\n".join(out)
 
 
+def apply_temperature(env, temperature):
+    """Put --temperature where the binary will actually read it, mutating and returning `env`.
+
+    Only when asked: compare.py's child_env starts from os.environ.copy(), so an ambient
+    PROCESSOR_MODEL_TEMPERATURE already reaches the child unaided, and writing the key
+    unconditionally would overwrite that inherited value with this script's own idea of a default.
+    Absent the flag, the binary's own default (boot/config.go: 0 when the variable is unset) wins.
+    """
+    if temperature is None:
+        return env
+    # repr() of a float is its shortest round-tripping decimal, so the number Go parses back is
+    # bit-for-bit the one argparse produced -- which is what lets sampling_lines compare the record's
+    # value against the request by equality without inventing a tolerance. The float() is deliberate
+    # HERE and deliberately absent in fmt_sampling: this writes a value Go must parse as a float
+    # literal, that one quotes a value the record already holds. Do not unify them.
+    env[ENV_MODEL_TEMPERATURE] = repr(float(temperature))
+    return env
+
+
 def check_prior_run(divoid_url, divoid_key, task_text):
     try:
         prior = harness.find_prior_run(divoid_url, divoid_key, task_text)
@@ -512,7 +636,9 @@ def announce_written(record):
 
 
 def run_one(model_url, model_id, model_key, divoid_url, divoid_key, task_text, subject, temperature):
-    env = harness.child_env(model_url, model_id, model_key, divoid_url, divoid_key)
+    env = apply_temperature(
+        harness.child_env(model_url, model_id, model_key, divoid_url, divoid_key), temperature
+    )
 
     prior_note = check_prior_run(divoid_url, divoid_key, task_text)
 
@@ -554,7 +680,9 @@ def parse_args():
     parser.add_argument("--model-key", default=os.environ.get("PROCESSOR_MODEL_KEY", ""))
     parser.add_argument(
         "--temperature", type=float, default=None,
-        help="requested but NOT sent -- the binary has no temperature knob; see the script docstring",
+        help=f"sets {ENV_MODEL_TEMPERATURE} for this run; omit to leave the environment alone and "
+             f"take the binary's own default (0). The trace reports the sampling the record says was "
+             f"sent, not this flag -- and says what that can and cannot claim",
     )
     return parser.parse_args()
 
