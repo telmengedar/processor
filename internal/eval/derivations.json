@@ -110,6 +110,126 @@
     ]
   },
   {
+    "row": "r12",
+    "queries": [
+      "How does the search engine apply group filters to query results?",
+      "What happens when a search is scoped to a single group but returns cross-group matches?",
+      "Is there a mechanism for enforcing group boundaries in search queries?",
+      "What does the filter contract say about cross-group result inclusion?",
+      "group filter scope enforcement search boundary"
+    ]
+  },
+  {
+    "row": "r13",
+    "queries": [
+      "How does the Type column change the lookup strategy for image rows?",
+      "What indexes need to be updated to support the new Type column?",
+      "How does the Size-only lookup differ from Type+Size lookup?",
+      "What query patterns benefit from the Type column?",
+      "image lookup type size column index"
+    ]
+  },
+  {
+    "row": "r14",
+    "queries": [
+      "How does the vocabulary gate behave differently in containerized vs native environments?",
+      "What environmental factors cause token counting discrepancies between Windows and container runs?",
+      "Why might a containerized run report fewer tokens than a native Windows run?",
+      "What validation criteria determine if a containerized run is truly green?",
+      "vocabulary gate token count container windows environment"
+    ]
+  },
+  {
+    "row": "r15",
+    "queries": [
+      "How does the ranking algorithm handle items that repeatedly appear at the top?",
+      "What determines item persistence in the ranked list across multiple runs?",
+      "How does the system treat items that are consistently near the top?",
+      "What causes items to be dropped despite high ranking position?",
+      "How does the ranking system prevent item cycling in top positions"
+    ]
+  },
+  {
+    "row": "r16",
+    "queries": [
+      "How does the test verify image type uniqueness in the fixture data?",
+      "What patterns indicate shared byte arrays in image fixtures?",
+      "Are there other test cases with identical byte representations?",
+      "What distinguishes image types when bytes are duplicated?",
+      "image fixture byte array duplication test case"
+    ]
+  },
+  {
+    "row": "r17",
+    "queries": [
+      "How does a test fixture's exact values relate to mutation testing outcomes?",
+      "What happens when a mutation survives despite a precise test fixture?",
+      "Why might a mutation pass when values are exactly as specified?",
+      "What does it mean when a test passes but the mutation is still alive?",
+      "test fixture exact values mutation survival"
+    ]
+  },
+  {
+    "row": "r18",
+    "queries": [
+      "How does the review process handle documentation comments in code?",
+      "What scope does a sweep operation cover in source files?",
+      "Why are doc comments not included in the review coverage?",
+      "What mechanism checks for consistency between code and comments?",
+      "doc comment review sweep consistency"
+    ]
+  },
+  {
+    "row": "r19",
+    "queries": [
+      "How does the date formatting pipeline handle normalization case changes?",
+      "What components in the rendering chain could cause a dash to appear?",
+      "What validation rules might prevent birthday display after normalization?",
+      "What data flow steps could override the normalization changes?",
+      "birthday date rendering dash normalization pipeline"
+    ]
+  },
+  {
+    "row": "r20",
+    "queries": [
+      "How does the attribution window size affect the reporting period?",
+      "What are the technical requirements for per-target window calculations?",
+      "Can the reporting period be derived from the attribution window?",
+      "What are the constraints on window size in the attribution model?",
+      "attribution window reporting period zero days"
+    ]
+  },
+  {
+    "row": "r21",
+    "queries": [
+      "How does the assembly process depend on model initialization?",
+      "What triggers the model loading sequence in the harness?",
+      "What configuration step is required for model availability?",
+      "What component fails to initialize without model registration?",
+      "assembly harness model initialization merge dependency"
+    ]
+  },
+  {
+    "row": "r22",
+    "queries": [
+      "How does the test framework detect when a replacement implementation is incorrect?",
+      "What assertion mechanism fails when the replacement passes against wrong code?",
+      "What does the reviewer's replacement actually verify?",
+      "What verification method is bypassed by incorrect implementations?",
+      "test assertion replacement verification mechanism"
+    ]
+  },
+  {
+    "row": "r23",
+    "queries": [
+      "How does a test retirement affect assertion equality in the codebase?",
+      "What mechanism removes test assertions during code cleanup?",
+      "What happens to test coverage when assertions are removed?",
+      "How does the diff handle assertion retention during refactoring?",
+      "test assertion removal code cleanup coverage"
+    ]
+  },
+  {
     "row": "c01",
     "queries": [
       "What state remains when a node is created but its content write fails?",
