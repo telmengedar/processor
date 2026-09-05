@@ -91,14 +91,20 @@
 > well-chosen 60 KB"* cannot emit 130 KB. The ruling is **#11365 §4** and is **cited, not restated** — read
 > it at the node.
 >
-> **And it is a bound with a named residual, not a ceiling — stated here so a reader who stops at the header
-> is not left with the rounded version.** The invariant is
-> `block = anchorSize + admittedBytes ≤ max(anchorSize, AssemblyByteBudget)`. **#11365's falsifier F3 was
-> *"no block exceeds `blockBudget`"* and it does not fully hold:** eighteen of twenty-three sweep rows now
-> respect 60,000 strictly, and **r05 does not — 70,660 B, because its anchor alone is 70,660 B**. That run
-> contributes zero extraneous candidate bytes, which is all this change was able to reach. Closing the
-> remainder needs anchor **compaction** (#11365 §3), the next unit, which carries an unmeasured risk this
-> one does not. §11 R4 carries the whole of it with the measurements.
+> **And it is a bound with two named residuals, not a ceiling — stated here so a reader who stops at the
+> header is not left with the rounded version.** The budget governs **content bytes**; `Assemble` returns a
+> **rendered string**, and `renderBlock`'s banners and `id:` / `type:` / `name:` headers are framing no budget
+> sees. So `len(block) = anchorSize + Σ admittedBytes + framing(1 + admittedCount)`, of which only
+> `anchorSize + Σ admittedBytes ≤ max(anchorSize, AssemblyByteBudget)` is bounded — **framing measured at
+> 178–2,444 B across the sweep, mean 1,384 B, unbudgeted.** **#11365's falsifier F3 —
+> *"no block exceeds `blockBudget`"* — therefore passes on content bytes and fails on the rendered
+> artifact:** on content, **22 of 23 rows respect 60,000** and r05 does not, at 70,660 B, because its anchor
+> alone is; on `len(block)`, **5 of 23 respect it and 18 do not**, the worst at **70,838 B**. Both numbers are
+> stated because F3's own words are about the block, and the content-only yardstick — this document's
+> pre-existing convention — is not the one F3 was written in. Closing the anchor remainder needs
+> **compaction** (#11365 §3), the next unit, which carries an unmeasured risk this one does not; **the framing
+> residual lands on that unit too, and §11 R4 says why it is not a rounding error.** §11 R4 carries the whole
+> of it with the measurements.
 >
 > | # | Section | What is falsified | Correction |
 > |---|---|---|---|
@@ -106,14 +112,14 @@
 > | **E2** | **§6.4a**, the *Exemption* row | *"The anchor (§11 R4)"* as the assembly path's standing exemption | The assembly path's exemption is now from *cutting*, not from *accounting* |
 > | **E3** | **§6.4a**, *"Why there is no exemption"* | Its premise — *"the anchor's exemption from the assembly budget is this design's one unbounded input"* | The argument survives and its premise moves: the unbounded input is gone, the never-cut input is not |
 > | **E4** | **§6.4a**, the per-run ceiling block | *"and the anchor on top + \|anchor\|, unbounded"* | The anchor is inside `AssemblyByteBudget`; what remains outside is the residual, stated as such |
-> | **E5** | **§8.4**, the ceiling block and the window table | *"+ the anchor \|anchor\| — unbounded"*, the column *"anchor excluded"*, and *"leaving ≈ 3,200 tokens — about 12,500 bytes — for the anchor"* | The ceiling now includes the anchor; the 32,768 row's leftover becomes slack rather than an unfunded allocation for it |
+> | **E5** | **§8.4**, the ceiling block, the *~2,000 B* allowance and the window table | *"+ the anchor \|anchor\| — unbounded"*, the column *"anchor excluded"*, *"leaving ≈ 3,200 tokens — about 12,500 bytes — for the anchor"*, and — found in review — *"~2,000 B for the system text and framing"*, measured at **3,656 B, about 1.8× short** | The ceiling now includes the anchor; the 32,768 row's leftover becomes slack rather than an unfunded allocation for it; the allowance and that row's 90% figure are corrected, with no verdict changing |
 > | **E6** | **§8.4**, the *Assembly byte budget* row | What the constant bounds, and its measured admission profile *"admits ranks 1–5, uses 44,931 B, cuts 15 of 20"*, which held only for a zero-length anchor | Restated as a block budget, with the measured cost; **the name stays `AssemblyByteBudget` and §8.4 records why**, so it is not re-opened |
 > | **E7** | **TL;DR**, **§10.3**, **§11 R5**, **§11 R7**, **§11 R14** | Five sites of one claim — *"100,000 bytes per run, **plus the anchor**"*, *"the block is up to 60,000 bytes"* (false before, nearly true now), the **50,000–110,000 B** record size, *"~15,000 input tokens **plus the anchor** per call"*, *"183% … **before the anchor**"* | Corrected in place. Enumerated as one row because they are one claim in five places (#11034 P-52) |
 > | **E8** | **the 2026-09-04 set's own** *"What this does not change"* | *"the anchor stays exempt (§11 R4)"* | Struck above, dated, not deleted (#11034 P-43) |
 > | **E9** | **§6.5**, the supplementary-shutout row | Its analogy — *"§11 R4's anchor exemption"* — cited an exemption that has since narrowed | The analogy holds against the narrower exemption and says which one it means |
 > | **E10** | **§14** unit A step 3 and *Do not add* | Step 3 pins an admission rule that no longer describes the run; *Do not add*'s *"a size exemption is still forbidden on either budget"* is now ambiguous about the one exemption that stands | Corrected in place; step 3 gains the two pins this change ships with |
 > | **E11** | **§10.3**, the shutout WARN | Nothing — **extended, not struck.** The alarm now fires on a cause it could not previously reach | Recorded, because the detector needed no change to reach it |
-> | **E12** | **§6.1 step 5** and **§6.3**'s admission walk | Both describe the walk as spending `AssemblyByteBudget`; neither says the anchor is charged first | The mechanism's own two sites — the budget the walk starts from is the budget minus the anchor, floored at zero |
+> | **E12** | **§6.1 step 5**, **§6.3**'s admission walk, and **§6.3**'s block layout | The first two describe the walk as spending `AssemblyByteBudget` and never say the anchor is charged first; the layout presents its banners as free | The mechanism's own sites — the walk starts from the budget minus the anchor, floored at zero, and the layout gains the framing term that no budget sees |
 >
 > **What this does not change.** `Assemble` stays pure (§9.1) and its signature is unchanged. The render
 > order is still by id (§6.3), the skip-don't-stop walk is still the admission rule (§6.3, #11158 B1–B3),
@@ -643,7 +649,9 @@ against that remainder. Nothing else about the walk changes: it is still one pas
 `<=` at the boundary, and the anchor is still rendered whole and never cut (§11 R4). The two facts are
 independent — **the anchor is charged but not cuttable** — and keeping them apart is what makes the
 invariant a bound with a residual rather than a ceiling:
-`block = anchorSize + admittedBytes ≤ max(anchorSize, AssemblyByteBudget)`.
+`content = anchorSize + admittedBytes ≤ max(anchorSize, AssemblyByteBudget)` — **content bytes, not the
+rendered artifact.** The render adds a framing term that no budget sees; it is stated with the block layout
+at the end of this section.
 
 **The admission rule, as it now stands.** Walk the candidates once, in the order recall returned. For
 each, record its disposition exactly as before — rank, id, type, name, similarity, size, hash — and then,
@@ -688,6 +696,23 @@ having; the run record is the wrong vehicle for it** (#11158 §4).
 
 The anchor first because it is the run's stable subject; candidates second because they are the volatile
 part. That is the same stability gradient milestone 3 generalises, expressed with the two things M1 has.
+
+**What the layout costs, and it is outside every budget — recorded 2026-09-05 (#11335, E12).** Those two
+lines are section banners, not free: each section carries a banner line and `id:` / `type:` / `name:`
+headers, and those bytes reach the model without passing any budget. The artifact `Assemble` returns is
+therefore two terms, not one:
+
+```
+  len(block) = anchorSize + Σ admittedBytes + framing(1 + admittedCount)
+               └──────── ≤ max(anchorSize, blockBudget) ────────┘
+               framing 178–2,444 B on this corpus (mean 1,384 B), unbudgeted
+```
+
+**Measured across the 23-row sweep:** about 178 B for the anchor section, and 120–190 B per admitted
+candidate, worst on a thirteen-candidate row. At `AssemblyByteBudget = 60,000` that is under 4% of the
+block, and the honest reading is *a second, small residual*. **It stops being small when the budget is
+swept downward** — which is exactly what #11365 F5 proposes, to answer #11364's floor question. §11 R4
+carries that arithmetic and why it lands on the next unit rather than this one.
 
 ### 6.4 The tool cycle, and where a tool result goes
 
@@ -1085,27 +1110,39 @@ they state how large a run's prompt can get — and that number is what an endpo
 
 **CORRECTED 2026-09-05 (#11335, E5). The anchor line is struck: it is inside the first line, not a fifth
 term.** `AssemblyByteBudget` bounds the anchor plus the admitted candidates, so **100,000 B is the whole
-graph-derived prompt** and the ceiling is now a ceiling. The residual is one line rather than an unbounded
-term, and it is the only case in which a run exceeds 100,000 B:
+graph-derived prompt in content bytes** and the ceiling is a ceiling over what the budgets can see. What
+was an unbounded term becomes **two bounded-or-measured residuals**, and they are the only ways a run
+exceeds 100,000 B:
 
 ```
-  ordinary run     block = |anchor| + admitted   ≤  60,000 B     supplementary ≤ 40,000 B  →  ≤ 100,000 B
-  residual run     |anchor| > 60,000 B: the anchor renders whole and nothing else is admitted (§11 R4)
-                   block = |anchor|                              →  |anchor| + 40,000 B
+  ordinary run   content = |anchor| + admitted  ≤  60,000 B    supplementary ≤ 40,000 B  →  ≤ 100,000 B
+  residual 1     |anchor| > 60,000 B: the anchor renders whole and nothing else is admitted (§11 R4)
+                 content = |anchor|                            →  |anchor| + 40,000 B
+  residual 2     render framing, on EVERY run: 178–2,444 B measured, outside every budget (§11 R4, §6.3)
 ```
 
-**Measured, on the largest anchor this graph holds (70,660 B, r05):** the residual run's prompt is
-**110,660 B ≈ 27,700 tokens**, plus 500 for the framing and 4,096 reserved, which is **98.5% of a
-32,768-token window — it still fits.** Before this change the same run's block alone measured **130,383 B**
-and the whole prompt would not have fitted that window at all. **That is the change stated at its most
-useful: the worst measured run moves from over the target window to inside it, with the residual named.**
+**Measured, on the largest anchor this graph holds (70,660 B, r05):** its rendered block is **70,838 B**
+(70,660 B of content plus 178 B of framing, no candidates admitted), so the residual run's prompt is
+**110,838 B ≈ 27,710 tokens**, plus 303 for the system text and 4,096 reserved — **98.0% of a
+32,768-token window, and it still fits.** Before this change the same run's block alone measured
+**130,383 B** and the whole prompt would not have fitted that window at all. **That is the change stated at
+its most useful: the worst measured run moves from over the target window to inside it, with both residuals
+named.**
+
+**ALSO CORRECTED 2026-09-05 (#11335, E5): the *"~2,000 B for the system text and framing"* line above
+under-provisions the one term that was accounted for at all.** Measured: the system text is **1,212 B** and
+the block's render framing runs **178–2,444 B** (§11 R4, §6.3), so the pair reaches **3,656 B — about 1.8×
+the allowance.** Read that line as **~3,700 B ≈ 925 tokens**. The 32,768 row of the table below moves from
+≈ 29,600 tokens to ≈ **30,000 tokens (92%)**; **no verdict in the table changes**, and the 8,192 row was
+already unreachable by a wide margin. The allowance is stated here rather than edited into the fence,
+because a fence carries no strikethrough and the original figure is dated record (#11034 P-43).
 
 At the same four-bytes-per-token ratio this table already uses for the budget itself:
 
 | Endpoint window | The block alone | A worst-case run, ~~anchor excluded~~ **anchor included (E5)** | Verdict |
 |---|---|---|---|
 | **8,192 tokens** | **183%** | does not fit | **M1 cannot run here at all** — and the tool is not why. §11 R14 |
-| **32,768 tokens** | 46% | ≈ 29,600 tokens, **90%** | Fits, leaving ≈ 3,200 tokens — about **12,500 bytes** — ~~for the anchor~~ **CORRECTED 2026-09-05 (#11335, E5): as slack. The anchor is funded from the 46% column now, so this leftover stopped being an unfunded allocation and became headroom** |
+| **32,768 tokens** | 46% | ~~≈ 29,600 tokens, **90%**~~ **≈ 30,000 tokens, 92% — CORRECTED 2026-09-05 (#11335, E5): the framing allowance was 1.8× short; the verdict is unchanged** | Fits, leaving ~~≈ 3,200 tokens — about **12,500 bytes** — for the anchor~~ **CORRECTED 2026-09-05 (#11335, E5): ≈ 2,750 tokens, about 11,000 bytes, and it is slack rather than an allocation. The anchor is funded from the 46% column now; the leftover shrank because the framing allowance in the same row grew** |
 | **131,072 tokens** | 11% | 23% | Comfortable |
 | **1,000,000 tokens** | 1.5% | 3% | The figure revision 1 quoted, and the window it was quoting |
 
@@ -1400,8 +1437,8 @@ Per run, two structured records on stderr: run started (subject id, input length
 id written, candidate count, cut count, model calls, **the model id**, token usage summed across the calls that reported it — or its absence, never a zero (§8.2) — outcome). **The
 assembled block is never logged** — ~~it is up to 60,000 bytes~~ **CORRECTED 2026-09-05 (#11335, E7): this
 was false when written and is now nearly true. Blocks measured 60,601–130,383 B under the old accounting;
-the bound is `max(anchorSize, 60,000)` from this date (§11 R4). The rule it justifies never depended on the
-number** — and it has a home (§8.2). On a failed
+the bound on its content is `max(anchorSize, 60,000)` from this date, plus 178–2,444 B of render framing
+that no budget sees (§11 R4, §6.3). The rule it justifies never depended on the number** — and it has a home (§8.2). On a failed
 external call, log the upstream status and, **when the endpoint volunteers a request id, that** — but do
 not require one: C41 measured the reference implementation returning an error with **no** request id at
 all, and local runtimes generally have no such concept. The old text treated Anthropic's `request_id` as
@@ -1585,8 +1622,8 @@ section just learned about itself.
 | R1 | **Retrieval noise makes the context useless.** Measured: an unrelated project's node at rank 7 (C28) | The record shows it, per run, with scores. §6.2's falsifier is a ten-run experiment on unit A. Milestone 2 is the durable answer |
 | R2 | **The budget starves a run.** One 42,978 B node (C23) can consume most of 60,000 | Legible in the cut column. ~~§6.3 states the back-fill alternative and why it loses.~~ **CORRECTED 2026-09-04 (#11158): §6.3 now states the back-fill as the rule.** *"If the record shows it repeatedly, the rule changes with evidence"* is the sentence this row should be read for — the record showed it twice and the rule changed (§6.3, §11 R13) |
 | R3 | **Deictic input retrieves noise.** Measured, spectacularly (C27) | Stated, not hidden. M1 does not claim to solve deixis; #10424 §5.1 assigns it to the tiers and to `intent`, both milestone 3. The anchor gives every run *something* stable regardless |
-| R4 | ~~**The anchor is exempt from the budget**, so a pathologically large subject node is an unbounded input — and after §6.4a bounded the recall path, **it is the only one left**~~ **STRUCK 2026-09-05 (#11335, E1). The anchor is charged; what is left is a bounded residual, not an unbounded input — see the correction in the next column, which is this correction set's home.** | **Re-derived in revision 3, and it changed direction.** The measured ceiling in this graph is unchanged — 42,978 B (C23) — but revision 2 judged it against the *budget*, where an oversized anchor merely crowds the candidates, and concluded *"no instance exists"*. §8.4 now judges it against the *window*, where the anchor is the one term that can push a run past what the endpoint can hold: on a 32,768-token window a worst-case run leaves about **12,500 bytes** for it, and this graph already contains a node **3.4× that**. **The instance exists and is measured.** The fix is unchanged and still cheap — truncate with an explicit marker and record the truncation — but it is a change to unit A's shipped assembly, so revision 3 records it with the number rather than making it. **Falsifier, now answerable rather than hypothetical:** run any node over ≈ 12,500 B as the subject against a 32K-window endpoint. **CORRECTED 2026-09-05 (#11335, ruled by #11365 §4). The falsifier was answered by measurement and the accounting changed; the remedy this row proposed is not the one that shipped.** `Assemble` now spends `remaining = AssemblyByteBudget − anchorSize`, floored at zero, and admits candidates against that remainder rather than against the whole budget. **`renderBlock` is untouched — the anchor renders whole and is never cut**, which #11335 is ruled on: a turn whose subject was dropped for size answers about nothing. **So the remedy stated above — *"truncate with an explicit marker and record the truncation"* — was rejected as the mechanism while its goal was adopted**, the same shape R13 took under #11158 B5. Truncation of the *anchor* is a live proposal, but it belongs to compaction (#11365 §3), not here. **The invariant, stated as a bound with a named residual rather than as a ceiling with an exception:** `block = anchorSize + admittedBytes ≤ max(anchorSize, AssemblyByteBudget)`. **#11365's own falsifier F3 was *"no block exceeds `blockBudget`"*, and it does not fully hold.** On the 23-row sweep, eighteen rows now respect 60,000 strictly; **r05 does not — its block stays at 70,660 B, because its anchor alone is 70,660 B.** What that run no longer carries is a single extraneous candidate byte: `70,660 + 59,723 = 130,383 B` before, `70,660 + 0 = 70,660 B` after. **Measured on the live graph either side of the change** (`corpusHash ffa291d5`, `candidateLimit=20 assemblyByteBudget=60000 recallScopeReserve=3`): retrieved **11/23 → 11/23**; admitted **9/23 → 9/23, and a different nine**; mean documents per block **8.09 → 6.91**; shutouts **0/23 → 1/23** (r05). **Answer-neutral, and it is a trade rather than a free win:** r02 is rescued — a tighter budget starves the 29,325 B candidate at rank 4 — and r05 is lost, its anchor leaving zero candidate room. **What survives as a live risk:** the residual itself. A subject node larger than 60,000 B still produces a block larger than 60,000 B, and one exists in this graph today. **Closing it needs anchor compaction — #11365 §3, the next unit — and that unit carries an unmeasured risk this one does not:** compaction is measured to establish byte headroom and is *not* measured to preserve meaning, which is #11365 F1's whole subject and the reason it is a separate decision rather than an extension of this one. **Falsifier for what is claimed now:** sweep the corpus and read `anchorSize + admittedBytes` per row against `max(anchorSize, 60,000)`. One row over that bound falsifies the invariant; more than one row over 60,000 B falsifies the residual's claim to be a single, anchor-sized remainder |
-| R5 | **Run records flood the graph.** One node per request | Deliberate and visible at M1, where a human drives every run. #10424 §5.7's retention tiering is the durable answer and belongs with the milestone that has volume to tier. **Revision 3 adds the size, which nobody had stated:** a record carries the block verbatim, so one run writes a node of roughly ~~**50,000–110,000 B** — **10 to 19× the median node in this graph** (C23: 5,758 B).~~ **CORRECTED 2026-09-05 (#11335, E7): both numbers were derived from a block of `AssemblyByteBudget + anchorSize`, and the anchor is now inside the budget. The block is `max(anchorSize, AssemblyByteBudget)`, so an ordinary run's record shrinks by the anchor's size — a measured mean of 12,174 B (#11365 §4) — and only a run whose anchor exceeds 60,000 B still reaches the old upper end. The multiple against C23's 5,758 B median narrows with it. The row's point is untouched: one run still writes a node an order of magnitude above the median.** Ten runs put more bytes into this neighbourhood than the ≈22 nodes it currently holds (C25). That is a fact about the graph; **R13 is the fact about the runs that follows from it** |
+| R4 | ~~**The anchor is exempt from the budget**, so a pathologically large subject node is an unbounded input — and after §6.4a bounded the recall path, **it is the only one left**~~ **STRUCK 2026-09-05 (#11335, E1). The anchor is charged; what is left is two named residuals — one bounded by the anchor's own size, one measured — rather than an unbounded input. See the correction in the next column, which is this correction set's home.** | **Re-derived in revision 3, and it changed direction.** The measured ceiling in this graph is unchanged — 42,978 B (C23) — but revision 2 judged it against the *budget*, where an oversized anchor merely crowds the candidates, and concluded *"no instance exists"*. §8.4 now judges it against the *window*, where the anchor is the one term that can push a run past what the endpoint can hold: on a 32,768-token window a worst-case run leaves about **12,500 bytes** for it, and this graph already contains a node **3.4× that**. **The instance exists and is measured.** The fix is unchanged and still cheap — truncate with an explicit marker and record the truncation — but it is a change to unit A's shipped assembly, so revision 3 records it with the number rather than making it. **Falsifier, now answerable rather than hypothetical:** run any node over ≈ 12,500 B as the subject against a 32K-window endpoint. **CORRECTED 2026-09-05 (#11335, ruled by #11365 §4). The falsifier was answered by measurement and the accounting changed; the remedy this row proposed is not the one that shipped.** `Assemble` now spends `remaining = AssemblyByteBudget − anchorSize`, floored at zero, and admits candidates against that remainder rather than against the whole budget. **`renderBlock` is untouched — the anchor renders whole and is never cut**, which #11335 is ruled on: a turn whose subject was dropped for size answers about nothing. **So the remedy stated above — *"truncate with an explicit marker and record the truncation"* — was rejected as the mechanism while its goal was adopted**, the same shape R13 took under #11158 B5. Truncation of the *anchor* is a live proposal, but it belongs to compaction (#11365 §3), not here. **The invariant, and it names two objects rather than one — corrected 2026-09-05 after review.** The budget governs **content bytes**; `Assemble` returns a **rendered string**, and `renderBlock`'s `===== ANCHOR =====` / `===== CANDIDATE =====` banners, `id:` / `type:` / `name:` headers and section newlines are framing that no budget sees. So the statement is two residuals, not one: `len(block) = anchorSize + Σ admittedBytes + framing(1 + admittedCount)`, in which **only `anchorSize + Σ admittedBytes ≤ max(anchorSize, AssemblyByteBudget)` is bounded by this change**, and **framing is a second, unbudgeted residual measured at 178–2,444 B across the sweep, mean 1,384 B** — about 178 B for the anchor section plus 120–190 B per admitted candidate, worst on a thirteen-candidate row. §6.3 carries the same statement as a diagram, beside the layout that produces it. **So #11365's own falsifier F3 — *"no block exceeds `blockBudget`"* — passes on content bytes and fails on the rendered artifact, and the yardstick is the whole of the difference.** On content bytes, **22 of 23 rows respect 60,000** and one does not: r05, at 70,660 B, because its anchor alone is 70,660 B. **On `len(block)` — what `Assemble` actually returns — 5 of 23 respect it and 18 do not, the worst at 70,838 B**, which also breaks the `max(anchorSize, …)` form, because framing sits outside it. The content-only yardstick is this document's pre-existing convention rather than one adopted to flatter the result, but **F3's own words are about the block**, so both figures are stated and neither stands alone. **Why 1,384 B is not a quibble, and why it lands on the next unit: framing does not shrink with the dial.** #11365 F5 — the product of this very change — makes `blockBudget` a dial to sweep *downward* to answer #11364's floor question. At 60,000 framing is under 4% of the block. **At `blockBudget = 4,000` with twenty candidates it is roughly 3,100 B — about 78% of the dial's value — and the model receives ~7,100 B while the constant reads 4,000.** A floor measurement taken that way is wrong by nearly 2×, in the direction that makes the harness look like it survives smaller windows than it does. What r05 no longer carries is a single extraneous candidate byte: `70,660 + 59,723 = 130,383 B` of content before, `70,660 + 0 = 70,660 B` after (70,838 B rendered). **Measured on the live graph either side of the change** (`corpusHash ffa291d5`, `candidateLimit=20 assemblyByteBudget=60000 recallScopeReserve=3`): retrieved **11/23 → 11/23**; admitted **9/23 → 9/23, and a different nine**; mean documents per block **8.09 → 6.91**; shutouts **0/23 → 1/23** (r05). **Answer-neutral, and it is a trade rather than a free win:** r02 is rescued — a tighter budget starves the 29,325 B candidate at rank 4 — and r05 is lost, its anchor leaving zero candidate room. **What survives as a live risk: both residuals, and they are different in kind.** The **anchor** residual is that a subject node larger than 60,000 B still produces a block larger than 60,000 B, and one exists in this graph today; **closing it needs anchor compaction — #11365 §3, the next unit — and that unit carries an unmeasured risk this one does not:** compaction is measured to establish byte headroom and is *not* measured to preserve meaning, which is #11365 F1's whole subject and the reason it is a separate decision rather than an extension of this one. The **framing** residual is that no budget sees the render, on any run; **it is small at 60,000 and is not small at the bottom of F5's sweep**, per the arithmetic above. Both land on the unit after this one, and neither is repaired here. **Falsifier for what is claimed now, and it takes two readings because the claim names two objects:** sweep the corpus and read **(a)** `anchorSize + Σ admittedBytes` per row against `max(anchorSize, 60,000)` — one row over that falsifies the bound, and more than one row over 60,000 B falsifies the anchor residual's claim to be a single, anchor-sized remainder; and **(b)** `len(block)` per row against the same figure. **The gap between the two readings is framing**, and a gap outside the 178–2,444 B band recorded here falsifies the framing residual as stated |
+| R5 | **Run records flood the graph.** One node per request | Deliberate and visible at M1, where a human drives every run. #10424 §5.7's retention tiering is the durable answer and belongs with the milestone that has volume to tier. **Revision 3 adds the size, which nobody had stated:** a record carries the block verbatim, so one run writes a node of roughly ~~**50,000–110,000 B** — **10 to 19× the median node in this graph** (C23: 5,758 B).~~ **CORRECTED 2026-09-05 (#11335, E7): both numbers were derived from a block of `AssemblyByteBudget + anchorSize`, and the anchor is now inside the budget. The block's content is `max(anchorSize, AssemblyByteBudget)` plus render framing (§11 R4), so an ordinary run's record shrinks by the anchor's size — a measured mean of 12,174 B (#11365 §4) — and only a run whose anchor exceeds 60,000 B still reaches the old upper end. The multiple against C23's 5,758 B median narrows with it. The row's point is untouched: one run still writes a node an order of magnitude above the median.** Ten runs put more bytes into this neighbourhood than the ≈22 nodes it currently holds (C25). That is a fact about the graph; **R13 is the fact about the runs that follows from it** |
 | R6 | **The success response shape is unmeasured** (§9.5; C41 measured only the route, the auth header and the error shape) | Fixture-driven decoding, isolated in one adapter, blast radius one file. **And the mitigation got stronger under the ruling:** confirming it needs a local runtime rather than a credential, so §14 makes it a condition of hand-off instead of a post-merge hope |
 | R7 | **Cost per run is unmeasured** — and after the ruling, *cost* means two different things | Against a local endpoint the marginal cost is machine time, not money, which is the ruling's point. Against a paid endpoint it is ~15,000 input tokens ~~plus the anchor~~ **CORRECTED 2026-09-05 (#11335, E7): the anchor included, except on a run whose anchor alone exceeds the budget (§11 R4)** per call. The record carries usage, so ten runs turn either estimate into a number. #10424's framing still applies: *"more expensive per task but better/faster results is a valid outcome and a business decision"* |
 | **R11** | **An endpoint does not honour §6.6's subset** — the family is a de facto standard with no conformance suite | §6.6 states the subset, keeps it deliberately small, and §6.5 makes the failure loud and immediate rather than silent. **Falsifier:** point it at two different runtimes; if D1–D6 do not both hold, the subset is too large and must shrink |
