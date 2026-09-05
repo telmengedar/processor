@@ -341,6 +341,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 		writeReceipt: loop.WriteReceipt{State: loop.Stored, NodeID: 4242},
 	}
 	temperature := 0.4
+	topP := 0.91
 	model := &stubModel{results: []loop.JudgeResult{
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing thing"},
 		{
@@ -348,7 +349,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 			Reason:    loop.Answered,
 			RawReason: "stop",
 			Usage:     &loop.Usage{InTokens: 11, OutTokens: 22},
-			Sampling:  loop.Sampling{Temperature: &temperature},
+			Sampling:  loop.Sampling{Temperature: &temperature, TopP: &topP},
 		},
 	}}
 	turn := loop.NewTurn(graph, model, "system text", "test-model-id", testLogger())
@@ -437,8 +438,8 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 	if got.Sampling.Temperature == nil || *got.Sampling.Temperature != 0.4 {
 		t.Fatalf("record.sampling.temperature = %v, want a pointer to 0.4", got.Sampling.Temperature)
 	}
-	if got.Sampling.TopP != nil {
-		t.Fatalf("record.sampling.topP = %v, want nil — the model never reported one", got.Sampling.TopP)
+	if got.Sampling.TopP == nil || *got.Sampling.TopP != 0.91 {
+		t.Fatalf("record.sampling.topP = %v, want a pointer to 0.91 under the literal JSON tag", got.Sampling.TopP)
 	}
 }
 

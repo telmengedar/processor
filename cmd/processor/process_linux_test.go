@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -42,12 +44,18 @@ const (
 	envModelURL  = "PROCESSOR_MODEL_URL"
 	envModelID   = "PROCESSOR_MODEL_ID"
 	envModelKey  = "PROCESSOR_MODEL_KEY"
+
+	envModelTemperature = "PROCESSOR_MODEL_TEMPERATURE"
+	envModelTopP        = "PROCESSOR_MODEL_TOP_P"
 )
 
 const (
 	graphKeySentinel = "test-key-12345"
 	modelKeySentinel = "test-model-key-67890"
 	modelIDSentinel  = "test-model-id"
+
+	temperatureSentinel = 0.37
+	topPSentinel        = 0.91
 )
 
 func validEnv(overrides map[string]string) map[string]string {
@@ -514,4 +522,96 @@ func TestACompletedRunEmitsTheStartedAndFinishedPairInOrder(t *testing.T) {
 	}
 
 	assertEachEndpointReceivedItsOwnCredential(t, graphAuth, modelAuth)
+}
+
+type requestBodyRecorder struct {
+	mu   sync.Mutex
+	body []byte
+}
+
+func (b *requestBodyRecorder) record(r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.body = body
+}
+
+func (b *requestBodyRecorder) get() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.body
+}
+
+func TestTheConfiguredSamplingReachesTheModelEndpointUncrossed(t *testing.T) {
+	t.Parallel()
+
+	if temperatureSentinel == topPSentinel {
+		t.Fatal("the sampling sentinels are identical, so a crossed pair is indistinguishable from a correct one")
+	}
+	if temperatureSentinel == 0 || topPSentinel == 0 {
+		t.Fatal("a zero sampling sentinel is indistinguishable from a binary that configures no sampling at all")
+	}
+
+	bin := buildProcessorBinary(t)
+
+	stored := &storedBody{}
+	graphSrv, _ := graphServer(t, stored, "")
+
+	modelRequest := &requestBodyRecorder{}
+	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		modelRequest.record(r)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"the answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":22}}`))
+	}))
+	t.Cleanup(modelSrv.Close)
+
+	rp := startServingProcess(t, bin, harnessEnvWith(map[string]string{
+		envHTTPAddr:         "127.0.0.1:0",
+		envDivoidURL:        graphSrv.URL,
+		envModelURL:         modelSrv.URL,
+		envModelKey:         modelKeySentinel,
+		envModelTemperature: strconv.FormatFloat(temperatureSentinel, 'f', -1, 64),
+		envModelTopP:        strconv.FormatFloat(topPSentinel, 'f', -1, 64),
+	}))
+	defer func() {
+		_ = rp.cmd.Process.Kill()
+		_ = rp.cmd.Wait()
+	}()
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Post("http://"+rp.addr+"/runs", "application/json", strings.NewReader(`{"input":"what changed","subject":42}`))
+	if err != nil {
+		t.Fatalf("POST /runs: %v; stderr:\n%s", err, rp.stderr.String())
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /runs status = %d, want %d; stderr:\n%s", resp.StatusCode, http.StatusOK, rp.stderr.String())
+	}
+
+	sent := modelRequest.get()
+	if len(sent) == 0 {
+		t.Fatalf("the model endpoint recorded no request body, so nothing about the request the binary sends is pinned; stderr:\n%s", rp.stderr.String())
+	}
+
+	var wire struct {
+		Temperature *float64 `json:"temperature"`
+		TopP        *float64 `json:"top_p"`
+	}
+	if err := json.Unmarshal(sent, &wire); err != nil {
+		t.Fatalf("decode the request the model endpoint received: %v; body=%s", err, sent)
+	}
+
+	if wire.Temperature == nil {
+		t.Fatalf("the model endpoint received no temperature, want %v — %s never reached the wire; body=%s", temperatureSentinel, envModelTemperature, sent)
+	}
+	if *wire.Temperature != temperatureSentinel {
+		t.Fatalf("the model endpoint received temperature %v, want %v — %s reached the wire as some other value; body=%s", *wire.Temperature, temperatureSentinel, envModelTemperature, sent)
+	}
+	if wire.TopP == nil {
+		t.Fatalf("the model endpoint received no top_p, want %v — %s never reached the wire; body=%s", topPSentinel, envModelTopP, sent)
+	}
+	if *wire.TopP != topPSentinel {
+		t.Fatalf("the model endpoint received top_p %v, want %v — %s reached the wire as some other value; body=%s", *wire.TopP, topPSentinel, envModelTopP, sent)
+	}
 }
