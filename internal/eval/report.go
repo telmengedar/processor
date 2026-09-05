@@ -81,7 +81,12 @@ func armLine(result Result) string {
 	if result.Arm == ArmRawInput {
 		return ArmRawInput
 	}
-	return fmt.Sprintf("%s - %d/%d rows derived, hash %s", result.Arm, result.DerivedRows, result.RowCount, shortHash(result.DerivationHash))
+	if !result.ProvenanceRecorded {
+		return fmt.Sprintf("%s - %d/%d rows derived, provenance unrecorded, hash %s",
+			result.Arm, result.DerivedRows, result.RowCount, shortHash(result.DerivationHash))
+	}
+	return fmt.Sprintf("%s - %d/%d rows derived, %d hand-authored, %d blind-generated, hash %s",
+		result.Arm, result.DerivedRows, result.RowCount, result.HandAuthoredRows, result.BlindGeneratedRows, shortHash(result.DerivationHash))
 }
 
 func controlAlarm(result Result) string {

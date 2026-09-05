@@ -619,11 +619,14 @@ func TestTheSummaryNamesTheDerivationSidecarAndItsHashSoTwoReadingsAreTellableAp
 	result.Arm = "internal/eval/derivations.json"
 	result.DerivationHash = "4f7c1a90b6d3e58217c4be09f1a2d3c4e5f60718293a4b5c6d7e8f90a1b2c3d4"
 	result.DerivedRows = 11
+	result.HandAuthoredRows = 9
+	result.BlindGeneratedRows = 2
+	result.ProvenanceRecorded = true
 	result.RowCount = 25
 
 	_, human := render(t, result)
 
-	mustContainLine(t, human, "arm internal/eval/derivations.json - 11/25 rows derived, hash 4f7c1a90")
+	mustContainLine(t, human, "arm internal/eval/derivations.json - 11/25 rows derived, 9 hand-authored, 2 blind-generated, hash 4f7c1a90")
 }
 
 func TestTheSummaryNamesTheFractionOfTheCorpusTheSidecarPinsSoAPartialSidecarDoesNotReadAsFull(t *testing.T) {
@@ -633,13 +636,53 @@ func TestTheSummaryNamesTheFractionOfTheCorpusTheSidecarPinsSoAPartialSidecarDoe
 	result.Arm = "internal/eval/derivations.json"
 	result.DerivationHash = "23b505521234567890abcdef1234567890abcdef1234567890abcdef12345678"
 	result.DerivedRows = 13
+	result.HandAuthoredRows = 11
+	result.BlindGeneratedRows = 0
+	result.ProvenanceRecorded = true
 	result.RowCount = 25
 
 	_, human := render(t, result)
 
-	mustContainLine(t, human, "arm internal/eval/derivations.json - 13/25 rows derived, hash 23b50552")
+	mustContainLine(t, human, "arm internal/eval/derivations.json - 13/25 rows derived, 11 hand-authored, 0 blind-generated, hash 23b50552")
 	if strings.Contains(human, "13 rows derived,") {
 		t.Fatalf("the summary still names the row count without its denominator, which is the exact reading that hid the coverage gap:\n%s", human)
+	}
+}
+
+func TestTheSummaryNamesBothPopulationsEvenWhenCoverageReadsComplete(t *testing.T) {
+	t.Parallel()
+
+	result := resultWith(intactControlRow())
+	result.Arm = "internal/eval/derivations.json"
+	result.DerivationHash = "c0ffee001234567890abcdef1234567890abcdef1234567890abcdef1234567"
+	result.DerivedRows = 25
+	result.HandAuthoredRows = 11
+	result.BlindGeneratedRows = 12
+	result.ProvenanceRecorded = true
+	result.RowCount = 25
+
+	_, human := render(t, result)
+
+	mustContainLine(t, human, "arm internal/eval/derivations.json - 25/25 rows derived, 11 hand-authored, 12 blind-generated, hash c0ffee00")
+	if strings.Contains(human, "25/25 rows derived, hash") {
+		t.Fatalf("full coverage still hid the composition behind the denominator, which is the exact misreading this line exists to prevent:\n%s", human)
+	}
+}
+
+func TestTheSummaryNamesProvenanceUnrecordedRatherThanAMeasuredZeroWhenNoRowNamesASource(t *testing.T) {
+	t.Parallel()
+
+	result := resultWith(intactControlRow())
+	result.Arm = "internal/eval/derivations.json"
+	result.DerivationHash = "deadbeef1234567890abcdef1234567890abcdef1234567890abcdef1234567"
+	result.DerivedRows = 2
+	result.RowCount = 25
+
+	_, human := render(t, result)
+
+	mustContainLine(t, human, "arm internal/eval/derivations.json - 2/25 rows derived, provenance unrecorded, hash deadbeef")
+	if strings.Contains(human, "0 hand-authored") {
+		t.Fatalf("a sidecar that never names a source printed a measured 0, indistinguishable from a sidecar that genuinely has no hand-authored rows:\n%s", human)
 	}
 }
 
