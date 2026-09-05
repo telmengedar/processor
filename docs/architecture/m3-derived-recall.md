@@ -259,6 +259,10 @@ exactly the line between the two.
   │      The caller passes the ANCHOR; the scope is built in here, so    │
   │      there is exactly one copy of scope construction in the tree.    │
   │                                                                      │
+  │    queries += grounded(anchor, queries[0])   ── ANCHOR-GROUNDED ──   │
+  │             └─ the anchor's identity text joined with the caller's   │
+  │                first query; never its body. Omitted when the anchor  │
+  │                has no name or the composition repeats a query        │
   │    for each q in queries:  Graph.Recall(q, CandidateLimit, nil)      │
   │    then:  scope = RecallScope(anchor.ID)                             │
   │             └─ Graph.Neighbours(anchor.ID); {anchor.ID} ∪ those,     │
@@ -268,6 +272,7 @@ exactly the line between the two.
   │    fuse: reciprocal-rank over the unscoped lists,                    │
   │          then RecallScopeReserve slots from the scoped list,         │
   │          then backfill from the fused list, capped at CandidateLimit │
+  │          ── the anchor's own id is excluded on all three paths ──    │
   └──────────────────────────────────────────────────────────────────────┘
       │
       ▼
@@ -291,8 +296,16 @@ fused order.
 | Reserved allocation at 5, 7 or 10 slots | 12/13 at 5 and 7; 12/13 at 10 (r07 enters at 19, r02 falls out) | No reserve size reaches 13/13 without the 50/50 split. **12/13 is the measured ceiling of this family**, and reserve=3 is the smallest value achieving it |
 | Derived queries **without** any scoped list | 12/13 | Equal on the headline; ranks are comparable. **Kept the scoped list anyway**, and the reason is stated below rather than hidden |
 | Anchor-scoped list **without** derivation | 13/13 | The 50/50 interleave case above. Same objection, and additionally it does nothing for the class Toni's shape addresses |
+| **Anchor-grounded query added to the unscoped fan-out** | see the dated note below | **Not a member of this family and not measured against it.** It does not re-allocate slots between the two arms; it adds a query *source* to the unscoped side. Designed and measured separately in `anchor-grounded-recall.md` |
 
 *(all measured 2026-09-04, same corpus, same instant, one graph state)*
+
+**Dated note, 2026-09-05.** The four rejections above are re-allocations *between the two arms* and that
+account still stands — nothing in the anchor-grounded change re-allocates a slot, retunes the reciprocal-rank
+constant, or moves `RecallScopeReserve`. What has moved is the baseline the figures sit on: swept at one graph
+state on 2026-09-05, the raw-input arm reads **9/23 retrieved, 6/23 admitted** on the current 23-row corpus,
+so the 12/13 and 13/13 figures above identify a comparison that no later sweep reproduces. They are retained
+as the record of what decided this design and must not be quoted as a current rate.
 
 **Why the scoped list stays when it does not move the headline.** It costs no model call and one extra
 request; it is the only arm that reaches r07 at all; and it is the mechanism that generalises to the
@@ -314,9 +327,9 @@ arriving in the one place that rule was written about.
 
 | Package | Change |
 |---|---|
-| `internal/loop/retrieve.go` **(new)** | `Retrieve(ctx, graph GraphPort, anchor Anchor, queries []string, limit, reserve int) ([]Candidate, error)`. Fan-out, the scoped recall, and fusion. **Takes no `ModelPort`** — the mechanical boundary of §3 expressed as a signature. The fusion itself is a separate **pure** function with no `ctx` and no port, on `Assemble`'s discipline. **`Retrieve` builds the anchor scope itself**, via `RecallScope(ctx, graph, anchor.ID)`: the caller passes the **anchor** and never a scope, so exactly one copy of scope construction exists in the tree — the caller-builds reading would put a second one in `cmd/eval/sweep.go`, which is **R5 realised and invisible to any single-package test**. `queries[0]` is the raw input and is what the scoped recall carries; the unscoped fan-out covers all of `queries`, `queries[0]` included |
+| `internal/loop/retrieve.go` **(new)** | `Retrieve(ctx, graph GraphPort, anchor Anchor, queries []string, limit, reserve int) (Retrieval, error)` — returning the queries actually issued beside the candidates, because the step now composes one the caller never wrote. Fan-out, the scoped recall, and fusion. **Takes no `ModelPort`** — the mechanical boundary of §3 expressed as a signature. The fusion itself is a separate **pure** function with no `ctx` and no port, on `Assemble`'s discipline. **`Retrieve` builds the anchor scope itself**, via `RecallScope(ctx, graph, anchor.ID)`: the caller passes the **anchor** and never a scope, so exactly one copy of scope construction exists in the tree — the caller-builds reading would put a second one in `cmd/eval/sweep.go`, which is **R5 realised and invisible to any single-package test**. `queries[0]` is the raw input and is what the scoped recall carries; the unscoped fan-out covers all of `queries`, `queries[0]` included. **The anchor-grounded query is composed here for the same reason the scope is** — one copy in the tree, both callers inheriting it, neither able to compose its own. The anchor's own id is excluded from the returned candidates on every path |
 | `internal/loop/turn.go` | `Run` calls `Queries.Derive`, then `Retrieve`. `Assemble`, `judge`, `dispatchRecall`, `logFinished` unchanged. New constants `RecallScopeReserve = 3` and `MaxDerivedQueries` beside the existing five |
-| `internal/loop/types.go` | `QueriesPort` with one method, `Derive(ctx, input string) ([]string, error)`. `Record` gains the derived queries and the per-query provenance of each candidate — §4.4 |
+| `internal/loop/types.go` | `QueriesPort` with one method, `Derive(ctx, input string) ([]string, error)`. `Record` gains the derived queries and the per-query provenance of each candidate — §4.4. **Shipped 2026-09-05 as `Record.Queries` and `Disposition.Sources`**, carrying every issued query in issue order and, per candidate, which of them returned it at what rank and whether that recall was scoped. `QueriesPort` is not built: no model-derived arm exists in the product, and the queries the field now carries are the caller's own plus the anchor-grounded one |
 | `internal/loop/turn.go` (`GraphPort`) | `Recall` gains a `scope []int64` parameter, `nil` meaning global — one method rather than a near-duplicate `RecallScoped`. New `Neighbours(ctx, id int64) ([]int64, error)` |
 | `internal/divoid/client.go` | `Recall` emits `linkedto` when scope is non-empty; `Neighbours` reads `GET /api/nodes/links?ids=<id>` and returns the other endpoint of every incident edge, **sorted and deduplicated**. Sorting makes the scope order-stable. **Dedup is load-bearing, not tidiness:** a node linked to itself is returned by the API as its own neighbour, and repeated edges between one pair are possible, so without the collapse the same id is sent to `linkedto` twice. Guarded by `TestNeighboursReadsTheFarEndpointOfEveryEdgeInEitherDirectionCountingARepeatedPairOnce` and `TestRecallScopeCarriesTheSubjectOnceWhenASelfEdgeMakesItItsOwnNeighbour`. **It also follows the `continue` cursor** — the row says *every* incident edge, which one page satisfies only while no node exceeds the page size — and **warns on the operator log when it stops before the graph's last page**, so a truncated neighbourhood is readable rather than silent |
 | `cmd/eval/sweep.go` | `rowDispositions` calls `loop.Retrieve` — the same function the turn calls. Queries come from the pinned sidecar (§4.5) or, absent one, are `{row.Input}` alone |

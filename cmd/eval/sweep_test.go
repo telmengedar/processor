@@ -137,7 +137,7 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 		t.Fatalf("Turn.Run: %v", err)
 	}
 
-	dispositions, found, err := rowDispositions(context.Background(), graph, row, eval.Derivations{})
+	queries, dispositions, found, err := rowDispositions(context.Background(), graph, row, eval.Derivations{})
 	if err != nil {
 		t.Fatalf("rowDispositions: %v", err)
 	}
@@ -147,6 +147,9 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 
 	if !reflect.DeepEqual(dispositions, record.Candidates) {
 		t.Fatalf("the sweep produced dispositions a real run would not:\nsweep  = %+v\nrecord = %+v", dispositions, record.Candidates)
+	}
+	if !slices.Equal(queries, record.Queries) {
+		t.Fatalf("the sweep issued %q and the turn issued %q: the query set is composed inside the retrieval step so that neither caller composes its own, and a sweep ranking a different set from the product measures something the product never does", queries, record.Queries)
 	}
 	if len(record.Candidates) != 3 {
 		t.Fatalf("the fixture produced %d dispositions, want 3 so the comparison has something to disagree about", len(record.Candidates))
@@ -191,10 +194,10 @@ func TestSweepRanksTheRawInputASecondTimeInsideTheSubjectsScopeSoTheReserveHasAL
 	row := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"})
 	mustSweep(t, graph, corpusOf(row))
 
-	if len(graph.recallCalls) != 2 {
-		t.Fatalf("the sweep ran %d recalls for one row carrying no derivations, want exactly 2: one whole-graph ranking of the input and one ranked inside the subject's scope", len(graph.recallCalls))
+	if len(graph.recallCalls) != 3 {
+		t.Fatalf("the sweep ran %d recalls for one row carrying no derivations, want exactly 3: a whole-graph ranking of the input, one of the input grounded in the anchor, and one ranked inside the subject's scope", len(graph.recallCalls))
 	}
-	scoped := graph.recallCalls[1]
+	scoped := graph.recallCalls[len(graph.recallCalls)-1]
 	if scoped.Query != row.Input {
 		t.Fatalf("the scoped recall queried %q, want the row input verbatim %q", scoped.Query, row.Input)
 	}
@@ -224,9 +227,9 @@ func TestSweepIssuesOneWholeGraphRecallPerPinnedDerivationBesideTheRawInput(t *t
 			unscoped = append(unscoped, call.Query)
 		}
 	}
-	want := []string{row.Input, "why would a mutation leave the suite green", "what does a non-zero exit code mean"}
+	want := []string{row.Input, "why would a mutation leave the suite green", "what does a non-zero exit code mean", "Subject\n" + row.Input}
 	if !slices.Equal(unscoped, want) {
-		t.Fatalf("the sweep issued unscoped recalls %q, want %q: a pinned derivation that never reaches the graph leaves the derived arm ranking exactly what the raw arm ranked while reporting a derivation hash beside it", unscoped, want)
+		t.Fatalf("the sweep issued unscoped recalls %q, want %q: a pinned derivation that never reaches the graph leaves the derived arm ranking exactly what the raw arm ranked while reporting a derivation hash beside it, and a grounded query the sweep never issues is a product behaviour the instrument cannot see", unscoped, want)
 	}
 }
 
@@ -379,8 +382,8 @@ func TestSweepReadsTheGraphAndNeverWritesToIt(t *testing.T) {
 	if !reflect.DeepEqual(graph.nodeCalls, wantNodeCalls) {
 		t.Fatalf("node calls = %v, want %v: one per subject, plus one per required node that was not retrieved", graph.nodeCalls, wantNodeCalls)
 	}
-	if len(graph.recallCalls) != 4 {
-		t.Fatalf("recall calls = %d, want two per row: the raw input unscoped and the same input ranked inside the subject's scope", len(graph.recallCalls))
+	if len(graph.recallCalls) != 6 {
+		t.Fatalf("recall calls = %d, want three per row: the raw input unscoped, the anchor-grounded input unscoped, and the raw input ranked inside the subject's scope", len(graph.recallCalls))
 	}
 }
 

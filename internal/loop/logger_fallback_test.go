@@ -18,7 +18,7 @@ func (g *probeGraph) Recall(ctx context.Context, q string, limit int, scope []in
 		return nil, nil
 	}
 	g.recallN++
-	if g.recallN == 1 {
+	if g.recallN <= 2 {
 		return []loop.Candidate{{ID: 1, Type: "task", Name: "c", Similarity: 0.9, Content: "body"}}, nil
 	}
 	return nil, errors.New("literal: transport blew up")

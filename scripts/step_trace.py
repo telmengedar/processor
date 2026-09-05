@@ -17,10 +17,9 @@ If a run does something useless, this script's job is to show that clearly, not 
 
 What "one turn" actually is (internal/loop/turn.go, DiVoid #10850 / #10846), verified against this
 tree rather than assumed: fetch the anchor by id -> retrieve candidates (Retrieve, DiVoid #11259 --
-one unscoped recall plus one recall scoped to the anchor's two-hop neighbourhood, combined by
-reciprocal-rank fusion IN PRINCIPLE, but turn.go always calls Retrieve with exactly one query
-(`[]string{input}`), and RRF over a single list is order-preserving -- see the RECALL RANKING note
-below for what that actually means for the order you see) -> assemble a byte-budgeted block -> call
+two unscoped recalls -- the input, and the input with the anchor's own name composed onto the front --
+plus one recall scoped to the anchor's two-hop neighbourhood, the two unscoped lists combined by
+reciprocal-rank fusion -- see the RECALL RANKING note below for what that means for the order you see) -> assemble a byte-budgeted block -> call
 the model, looping while it asks for supplementary recall, bounded by MaxModelCalls=3 -> write a run
 record. The model's only tool is that supplementary "recall"; there is no file, shell, network or
 repo tool, and no notion of a task spanning more than one HTTP call. A task like "generate a webpage
@@ -57,13 +56,15 @@ every trace and asserted the opposite of what retrieve.go does): `retrieve.go`'s
 the scoped list in. `fuseByReciprocalRank(lists)` runs over the UNSCOPED lists only; the scoped list
 gets a reserved quota (`RecallScopeReserve`, mirrored below as RECALL_SCOPE_RESERVE = 3) taken after
 the first `limit - reserve` fused entries, backfilled from the fused list only if the scope doesn't
-fill its reserve. Since a turn always passes exactly one query, RRF over that single list changes
-nothing -- it is order-preserving. Net, for every trace this script prints: positions 1 through
-`limit - RECALL_SCOPE_RESERVE` are the one unscoped recall's own plain-similarity order, verbatim;
-the last `RECALL_SCOPE_RESERVE` positions are backfilled from the anchor's two-hop-scoped recall.
-Fusion of multiple ranked lists is real and does real work in `cmd/eval`, which passes more than one
-query -- it is simply inert inside a turn, which never does. The two-hop half of the mechanism
-(`RecallScope` = subject + its linked neighbours) is accurate as stated.
+fill its reserve. UPDATED 2026-09-05, and the previous text is now wrong rather than merely dated: a
+turn passes TWO unscoped queries -- the raw input, and the anchor's name joined to it -- so RRF is no
+longer order-preserving inside a turn and the order you see is a real fusion. Net, for every trace this
+script prints: positions 1 through `limit - RECALL_SCOPE_RESERVE` are the reciprocal-rank fusion of
+those two lists, in which a row both queries returned can outrank a row with a higher similarity that
+only one returned; the last `RECALL_SCOPE_RESERVE` positions are reserved for the anchor's
+two-hop-scoped recall and backfilled from the fused list when the scope does not fill them. The anchor's
+own id is excluded from all three paths. The two-hop half of the mechanism (`RecallScope` = subject +
+its linked neighbours) is accurate as stated.
 
 BUDGET ARITHMETIC, corrected after review (C2/C3): the anchor is not exempt from the assembly
 budget. `internal/loop/assemble.go`: `remaining := budget - len(anchor.Content)`, floored at zero --
@@ -315,16 +316,20 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     candidate_limit = limits.get("candidateLimit")
     admitted_count = sum(1 for c in candidates if c.get("included"))
     out.append(f"{head('recall')} input: query={record.get('query')!r} (the task input, verbatim -- no rewrite, no model in the path)")
+    for n, issued in enumerate(record.get("queries") or []):
+        out.append(f"          issued[{n}]: {issued!r}")
     if candidate_limit is not None:
         fused_slots = max(candidate_limit - RECALL_SCOPE_RESERVE, 0)
         rank_note = (
-            f"a turn always issues exactly one query, so the reciprocal-rank fusion step "
-            f"(internal/loop/retrieve.go's fuse/fuseByReciprocalRank) is a no-op over it -- rows 1-"
-            f"{fused_slots} below are that one UNSCOPED recall's own plain-similarity order, "
-            f"verbatim. The last {RECALL_SCOPE_RESERVE} slots ({fused_slots + 1}-{candidate_limit}) "
-            f"are reserved for and backfilled from a second recall scoped to the anchor's two-hop "
-            f"neighbourhood (subject + its linked nodes). Fusion across multiple queries only does "
-            f"real work in cmd/eval, which passes more than one -- it never touches the order here"
+            f"a turn issues two UNSCOPED queries -- the input, and the input with the anchor's name "
+            f"composed onto the front -- so the reciprocal-rank fusion step "
+            f"(internal/loop/retrieve.go's fuse/fuseByReciprocalRank) does real work here: rows 1-"
+            f"{fused_slots} below are those two lists fused, in which a row both queries returned can "
+            f"outrank a row with a higher similarity that only one did, so the order is NOT plain "
+            f"similarity. The last {RECALL_SCOPE_RESERVE} slots ({fused_slots + 1}-{candidate_limit}) "
+            f"are reserved for a third recall scoped to the anchor's two-hop neighbourhood (subject + "
+            f"its linked nodes), and backfilled from the fused list when the scope does not fill them. "
+            f"The anchor's own id is excluded from every one of those paths"
         )
     else:
         rank_note = (

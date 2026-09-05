@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -208,7 +209,7 @@ func mustRetrieve(t *testing.T, graph GraphPort, queries []string, limit, reserv
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
-	return candidateIDs(got)
+	return candidateIDs(got.Candidates)
 }
 
 func similarityGraph() *fusionGraph {
@@ -342,7 +343,7 @@ func TestRetrieveReportsTheNeighbourFailureRatherThanRankingTheWholeGraphTwice(t
 
 	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"the input"}, 6, 2)
 	if err == nil {
-		t.Fatalf("Retrieve returned %v and a nil error, want the failure: a scope the links route could not supply leaves the reserved slots holding a second copy of the whole-graph ranking, which reads on every rate exactly like a neighbourhood that had nothing to add", candidateIDs(got))
+		t.Fatalf("Retrieve returned %v and a nil error, want the failure: a scope the links route could not supply leaves the reserved slots holding a second copy of the whole-graph ranking, which reads on every rate exactly like a neighbourhood that had nothing to add", candidateIDs(got.Candidates))
 	}
 }
 
@@ -355,8 +356,8 @@ func TestRetrieveReadsTheGraphNotAtAllWhenThereIsNoQueryToIssue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
-	if len(got) != 0 {
-		t.Fatalf("Retrieve returned %v for an empty query set, want none", candidateIDs(got))
+	if len(got.Candidates) != 0 {
+		t.Fatalf("Retrieve returned %v for an empty query set, want none", candidateIDs(got.Candidates))
 	}
 	if len(graph.calls) != 0 {
 		t.Fatalf("Retrieve made %d graph reads for an empty query set, want none: the scoped recall has no query to carry, and issuing it with the empty string ranks the whole neighbourhood by nothing", len(graph.calls))
@@ -458,5 +459,164 @@ func TestFusionKeepsANodeOneQueryReturnedFirstAboveANodeTwoQueriesReturnedThirte
 	}
 	if once > twice {
 		t.Fatalf("fused order = %v, and node 400 stands above node 700: node 400 was returned thirteenth by both queries and node 700 first by one, and this is the far side of the same threshold its sibling guard bounds from below, so the two together fix how far the damping may travel in either direction", got)
+	}
+}
+
+func mustRetrieveAnchored(t *testing.T, graph GraphPort, anchor Anchor, queries []string, limit, reserve int) Retrieval {
+	t.Helper()
+
+	got, err := Retrieve(context.Background(), graph, anchor, queries, limit, reserve)
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	return got
+}
+
+func unscopedQueries(calls []recallCall) []string {
+	var queries []string
+	for _, call := range calls {
+		if len(call.Scope) == 0 {
+			queries = append(queries, call.Query)
+		}
+	}
+	return queries
+}
+
+func TestTheAnchorsIdentityIsRankedAgainstTheWholeGraphAsOneMoreQueryBesideTheCallersOwn(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{}}
+	anchor := Anchor{ID: 42, Type: "documentation", Name: "internal/server", Content: "the anchor body"}
+
+	got := mustRetrieveAnchored(t, graph, anchor, []string{"add an endpoint to this service"}, 6, 2)
+
+	want := []string{"add an endpoint to this service", "internal/server\nadd an endpoint to this service"}
+	if !slices.Equal(got.Queries, want) {
+		t.Fatalf("retrieval issued %q, want %q: an input whose reference to the anchor is unresolved ranks against every codebase that sentence could be about, and the anchor is the referent the caller already chose", got.Queries, want)
+	}
+	if !slices.Equal(unscopedQueries(graph.calls), want) {
+		t.Fatalf("the whole-graph rankings carried %q, want %q: a grounded query composed and never issued leaves the fused order exactly as it was", unscopedQueries(graph.calls), want)
+	}
+}
+
+func TestTheCallersOwnQueryIsStillRankedWhenTheAnchorGroundsASecondOne(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{
+		"the input":          ranked(810, 220),
+		"Subject\nthe input": ranked(640, 810),
+	}}
+	anchor := Anchor{ID: 42, Type: "documentation", Name: "Subject"}
+
+	got := mustRetrieveAnchored(t, graph, anchor, []string{"the input"}, 6, 0)
+
+	if got.Queries[0] != "the input" {
+		t.Fatalf("the first query issued was %q, want the caller's own %q: the grounded query is a vote added to the caller's ranking rather than a replacement for it, and substituting it would make a wrongly chosen anchor able to replace the list instead of merely losing fusion mass", got.Queries[0], "the input")
+	}
+	if !slices.Contains(candidateIDs(got.Candidates), int64(220)) {
+		t.Fatalf("retrieval returned %v, want node 220 among them: only the caller's own query returns it, so a result without it is one the grounded query replaced rather than joined", candidateIDs(got.Candidates))
+	}
+}
+
+func TestAnAnchorWithNoNameRanksTheCallersQueriesAloneRatherThanTheWholeGraphTwiceOverTheSameText(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{"the input": ranked(810, 220)}}
+
+	got := mustRetrieveAnchored(t, graph, Anchor{ID: 42, Content: "a body but no name"}, []string{"the input"}, 6, 2)
+
+	if !slices.Equal(got.Queries, []string{"the input"}) {
+		t.Fatalf("retrieval issued %q, want the caller's query alone: an anchor with no identity text grounds nothing, and issuing the raw query a second time spends a graph read to double one list's weight in the reciprocal-rank sum", got.Queries)
+	}
+	if len(graph.calls) != 2 {
+		t.Fatalf("Retrieve made %d graph reads, want 2: one whole-graph ranking and one scoped, exactly as before grounding existed", len(graph.calls))
+	}
+}
+
+func TestTheGroundedQueryIsBuiltFromTheAnchorsIdentityAndNeverFromItsBody(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{}}
+	body := strings.Repeat("the body of a very large anchor. ", 2_000)
+	anchor := Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: body}
+
+	got := mustRetrieveAnchored(t, graph, anchor, []string{"the input"}, 6, 2)
+
+	for _, query := range got.Queries {
+		if len(query) > len("Subject\nthe input") {
+			t.Fatalf("retrieval issued a query of %d bytes against an anchor of %d: composing the anchor's body rather than its identity makes the query's size a function of the node the caller happened to point at, and the largest anchors are exactly the ones a turn is most often run against", len(query), len(body))
+		}
+	}
+}
+
+func TestTheAnchorIsNotACandidateWhenTheWholeGraphRankingReturnsItFirst(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{"the input": ranked(42, 810, 220, 640)}}
+
+	got := mustRetrieveAnchored(t, graph, Anchor{ID: 42}, []string{"the input"}, 3, 0)
+
+	want := []int64{810, 220, 640}
+	if !slices.Equal(candidateIDs(got.Candidates), want) {
+		t.Fatalf("retrieval returned %v, want %v: assembly renders the anchor whole at the head of the block, so admitting it again spends the byte budget twice on one node and writes a candidate row for content the block already carries", candidateIDs(got.Candidates), want)
+	}
+}
+
+func TestTheAnchorDoesNotSpendAReservedSlotWhenTheScopedRankingReturnsIt(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists:  map[string][]Candidate{"input": ranked(810, 220, 640, 130, 970, 350)},
+		scoped: ranked(42, 590, 20),
+	}
+
+	got := mustRetrieveAnchored(t, graph, Anchor{ID: 42}, []string{"input"}, 6, 2)
+
+	want := []int64{810, 220, 640, 130, 590, 20}
+	if !slices.Equal(candidateIDs(got.Candidates), want) {
+		t.Fatalf("retrieval returned %v, want %v: the anchor is its own nearest neighbour and heads its own scoped ranking, so a reserve that charges it a slot spends one of two on the node the block already renders", candidateIDs(got.Candidates), want)
+	}
+}
+
+func TestTheAnchorIsNotBackfilledIntoASlotTheReserveLeftEmpty(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists:  map[string][]Candidate{"input": ranked(810, 220, 42, 640)},
+		scoped: nil,
+	}
+
+	got := mustRetrieveAnchored(t, graph, Anchor{ID: 42}, []string{"input"}, 4, 2)
+
+	if slices.Contains(candidateIDs(got.Candidates), int64(42)) {
+		t.Fatalf("retrieval returned %v: the fused order fills the cap, the reserve draws on an empty scoped list and the backfill runs over the fused order a second time, so an exclusion applied on the first pass alone lets the anchor back in on the third", candidateIDs(got.Candidates))
+	}
+}
+
+func TestACandidateCarriesEveryRecallThatReturnedItSoAScopeReserveArrivalIsNotReadAsAgreement(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists: map[string][]Candidate{
+			"first":  ranked(700, 300),
+			"second": ranked(300, 500),
+		},
+		scoped: ranked(990),
+	}
+
+	got := mustRetrieveAnchored(t, graph, Anchor{ID: 42}, []string{"first", "second"}, 6, 2)
+
+	sources := make(map[int64][]Source, len(got.Candidates))
+	for _, candidate := range got.Candidates {
+		sources[candidate.ID] = candidate.Sources
+	}
+
+	wantBoth := []Source{{Query: 0, Rank: 2}, {Query: 1, Rank: 1}}
+	if !slices.Equal(sources[300], wantBoth) {
+		t.Fatalf("node 300 carries %+v, want %+v: it heads the fused order because two rankings returned it, and a record that does not say so leaves the next reader unable to tell agreement from a single lucky hit", sources[300], wantBoth)
+	}
+	wantReserve := []Source{{Query: 0, Scoped: true, Rank: 1}}
+	if !slices.Equal(sources[990], wantReserve) {
+		t.Fatalf("node 990 carries %+v, want %+v: it reached the candidate set on a reserved slot and no whole-graph ranking returned it at all, which is the one distinction the reserve exists to make and the one a rank column alone cannot show", sources[990], wantReserve)
 	}
 }

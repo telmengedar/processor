@@ -147,7 +147,7 @@ this change and belongs in the same unit.**
 |---|---|---|
 | A1 | The graph is shared across every project and will remain so. | Given by the operator. |
 | A2 | The subject/anchor is chosen deliberately and is usually correct. | Stated in the brief. **This design increases the cost of a wrong anchor** — see R2. |
-| A3 | Anchor names are short and topical. Observed range across every anchor inspected: ~10–110 characters. | Measured on the anchors used here; **not** established across the whole graph. Open question Q1. |
+| A3 | ~~Anchor names are short and topical. Observed range across every anchor inspected: ~10–110 characters.~~ | **False as stated — measured 2026-09-05, §16.6.** Across the 25 corpus anchors the range is 11–256 characters with a median of 98. Nine exceed 110. Q1 is answered and the answer is not the one this row assumed. |
 | A4 | The retrieval path stays model-free. | M3 §4.3, deliberate. Honoured. |
 | A5 | The byte budget is the product, not a constraint to relax. | #11364. |
 | A6 | Recall is deterministic given a graph state. | Confirmed — every rank figure here is reproducible against one graph state, not against a later one. |
@@ -248,8 +248,9 @@ For one turn, in order:
 8. **It removes the anchor's own id wherever it appears.** *(new)*
 9. Assembly, judgement and write-back proceed untouched.
 
-**Cost:** exactly one additional graph read per turn. No model call. No new endpoint, no new field on any node,
-no schema change, no write.
+**Cost:** one additional graph read per turn, and none at all when the anchor has no name or the composition
+reproduces a query the caller already supplied. No model call. No new endpoint, no new field on any node, no
+schema change, no write.
 
 ---
 
@@ -257,7 +258,7 @@ no schema change, no write.
 
 | Contract | Statement |
 |---|---|
-| **Composition is total** | Every anchor yields a grounded query. An anchor with an empty name degrades to the raw query, which duplicates an existing list; fusion over duplicate lists is order-preserving, so the run reduces to today's behaviour rather than failing. |
+| **Composition is total** | Every anchor yields a grounded query. An anchor with an empty name degrades to the raw query. ~~which duplicates an existing list; fusion over duplicate lists is order-preserving, so the run reduces to today's behaviour rather than failing~~ — **corrected against the implementation, 2026-09-05:** a composed query that already appears in the caller's set is not issued at all. The outcome is the same reduction to today's behaviour, reached by not spending the graph read rather than by spending it on a duplicate list. |
 | **Composition is bounded** | The grounded query's length is a function of the anchor's *identity*, never its body. No anchor size can make the query large. |
 | **Composition is deterministic** | Same anchor, same input, same query — a precondition of the sweep remaining a reproducible instrument, and of pinned derivations remaining pinnable. |
 | **The raw arm is preserved** | The caller's queries are always issued. The grounded query is added, never substituted. This is what bounds regression to fusion mass rather than replacement. |
@@ -443,10 +444,10 @@ after this one:
 
 | # | Question | Why it matters | Blocking? |
 |---|---|---|---|
-| **Q1** | What is the distribution of node-name lengths across the graph? | A3 assumes anchor identity text is short. Measured on the anchors used here (~10–110 chars); not established generally. If a long tail exists, composition needs a stated bound. | No — a bound can be added without redesign. |
-| **Q2** | Should the anchor's **type** be composed in alongside its name? | Type may sharpen a generically-named anchor and may add noise to a well-named one. Untested. | No — decide by measurement in F1's run; both variants are one composition rule apart. |
+| **Q1** | ~~What is the distribution of node-name lengths across the graph?~~ | **Answered 2026-09-05, §16.6:** 11–256 characters across the 25 corpus anchors, median 98. The long tail exists. A bound was measured and is **not** shipped — §16.6 records why. | Answered. |
+| **Q2** | ~~Should the anchor's **type** be composed in alongside its name?~~ | **Answered by measurement, 2026-09-05, §16.7: no.** Composing the type loses t1 — the task this design was written for — from admitted to cut, while leaving the 23-row rates unchanged. The name alone is what shipped. | Answered. |
 | **Q3** | Should self-produced run records be excluded from the **ranking** rather than cut at **admission**? | They currently consume candidate slots before being cut (R4), and grounded queries may match them more strongly because run-record names embed the input. | No, but it should be a task. |
-| **Q4** | Is `docs/architecture/m3-derived-recall.md` (#11235) under the same P-40 parity rule as M1 (#10532)? | This change edits M3 §4.1, §4.2, §4.3. If parity applies, the operator handles the publish. | **Yes — needs an answer before the PR is opened.** |
+| **Q4** | ~~Is `docs/architecture/m3-derived-recall.md` (#11235) under the same P-40 parity rule as M1 (#10532)?~~ | **Answered by the operator, 2026-09-05: yes.** M3 §4.1, §4.2 and §4.3 are edited by this change and the operator publishes and verifies both sides. | Answered. |
 | **Q5** | Does the operator want the sweep's pinned derivation sidecar re-pinned after this lands? | The grounded query is composed inside the retrieval step, so it is *not* a sidecar entry — but the sweep's arm identity and reported hashes change. | No — but the new baseline must be recorded, per R5. |
 
 ---
@@ -506,3 +507,154 @@ context **#11364** · vision **#10424** · self-poisoning **#11141** · the loop
 · M1 design **#10532** · shared seam **#11259** · corpus growth **#11101** · corpus trap **#11360** · anchor
 budgeting **#11335** · nodes larger than the budget **#11308** · comparison protocol **#11092** / **#11319** /
 **#11349** · repo map root **#10454**.
+
+---
+
+## 16. Implementation and verification — 2026-09-05
+
+Implemented on `feat/anchor-grounded-recall`. Every figure below was swept through the product's own retrieval
+and admission path — `loop.Retrieve` followed by `loop.Assemble`, via `cmd/eval` — at **one graph state**. The
+raw-input arm was re-run at the end of the session and reproduced its first run row for row, so the arms are
+comparable to each other and the graph did not move underneath them.
+
+### 16.1 What was built
+
+- **The composition rule**, inside the retrieval step and unexported, so neither caller can compose its own: the
+  anchor's name, trimmed, joined to the caller's first query by a newline. The anchor's **body is never read**,
+  so a 70 KB anchor and a 200-byte one contribute the same handful of characters. An anchor with no name, or a
+  composition that reproduces a query the caller already supplied, issues no additional recall.
+- **The anchor exclusion**, applied once at the source, which covers the fused, reserved and backfilled paths
+  together rather than three times over.
+- **Record fidelity:** `Retrieve` returns the queries it issued beside the candidates; `Record.Queries` carries
+  them in issue order and each `Disposition` carries, per candidate, which issued query returned it, at what
+  rank, and whether that recall was scoped.
+- **Seam parity** is a test rather than a convention: the sweep's issued query set is compared against a real
+  turn's, so a second composition anywhere reddens `cmd/eval`.
+
+### 16.2 F1 — the effect. **Passes.**
+
+The three #11414 tasks, required nodes pre-registered from that node's own text:
+
+| Task | Required | Raw-input arm | Anchor-grounded arm |
+|---|---|---|---|
+| **t1** *"Add an HTTP endpoint to this service…"* | #10466 | rank **18**, admitted — on the reserve | rank **8**, **admitted** |
+| **t2** *"Set up continuous integration for this repository."* | #10435 | rank **18**, **cut on budget** | rank **2**, **admitted** |
+| **t3** *"…where should a function… live in this codebase"* | #10466 | rank **13**, **cut on budget** | rank **4**, **admitted** |
+
+F1's falsifier is *"if either remains cut"*. Neither does; all three are admitted, t3 included — which §3.3
+reported as a partial and explicitly did not claim. **The specific ranks §3.3 predicted are not reproduced:**
+t1 lands at 8 rather than 2, t2 at 2 rather than 5. The direction and every admission verdict hold. The rank
+figures in §3.3 were taken against a graph state and a composition this document never pinned, and should be
+read as the observation that motivated the design rather than as a prediction the implementation met.
+
+### 16.3 F2 — the harm guard. **The hard falsifier does not fire. The secondary falsifier does.**
+
+Both arms, 23 labelled rows plus 2 control, one graph state.
+
+| | raw-input arm | anchor-grounded arm |
+|---|---|---|
+| labelled retrieved | **9/23** | **12/23** |
+| labelled admitted | **6/23** | **7/23** |
+| control | 2/2 retrieved, 2/2 admitted | 2/2 retrieved, 2/2 admitted |
+| anchor also a candidate | **8/23 rows, admitted as a candidate in 6** | **0/23** |
+
+**These are not the 11/23 and 9/23 this document and #11365 quote.** Those figures were taken against an
+earlier graph state; the raw-input arm *today* reads 9/23 and 6/23. A before/after that spans this change is
+therefore not a like-for-like comparison of anything else, and the pair above is the only comparison this
+session supports.
+
+**The hard falsifier — r10 loses #10943 — does not fire.** #10943 holds **rank 1, admitted**, in both arms;
+the 1 → 4 demotion §3.4 measured is not reproduced. What *did* move on r10 is worth naming, because the rank
+number hides it: the grounded query's own top hit (#10965, a Processor session-log, raw rank 17 → grounded
+rank 1) is admitted at rank 4 and displaces #11253, a mutation-testing document that the raw arm admitted.
+r10 keeps its answer and loses a relevant neighbour to a node that is about the anchor rather than about the
+question.
+
+**The secondary falsifier fires on r02.** #10879 is **admitted at rank 4** on the raw arm and **cut at rank 6**
+on the grounded arm. The rule is *"if any row currently admitted at fused rank ≤ 4 loses its required node, the
+change is rejected regardless of what it gains elsewhere"*, and this is that row.
+
+The cause is byte displacement rather than a retrieval loss — #10879 is still retrieved, two ranks lower:
+
+- r02's anchor is #10521, whose **name is 99 characters** of prose. The grounded query is therefore three
+  quarters anchor and one quarter question.
+- It returns #10532 (the M1 design, **186,766 B**) at grounded rank 1. That node is three times the whole
+  assembly budget and can never be admitted, but it takes a candidate slot.
+- It also returns #10965 (5,939 B) at grounded rank 1 on the fused order's rank 5, which **is** admitted and
+  consumes the bytes #10879 then cannot have.
+
+Gains on the same arm, for completeness rather than as an offset: r08 cut@18 → admitted@3, r22 notRetrieved →
+admitted@4, r12 and r23 notRetrieved → retrieved-and-cut, c02 admitted@7 → admitted@4. Net +3 retrieved, +1
+admitted. **The secondary falsifier is written to be unmoved by exactly that arithmetic**, and it is honoured
+here: the change is reported as rejected on its own pre-registered terms and is not tuned around.
+
+### 16.4 F3 — the explanation. **Not confirmed, and contradicted on the corpus.**
+
+The partition rule applied is this document's own: a row is *deictic* when its input carries a demonstrative or
+possessive determiner attached to the system under discussion (*"this machine"*, *"our harness"*, *"my sweep"*),
+and *self-contained* otherwise. That yields 7 deictic rows (r04, r07, r14, r15, r16, r18, r21) and 16
+self-contained. The labelling rule was fixed before scoring; the labels were applied after the runs, which is
+weaker than F3 asked for and is stated rather than glossed.
+
+- **Deictic partition: no gain at all.** Six of the seven are `notRetrieved` on both arms; the seventh (r04)
+  moves from rank 3 to rank 5 and stays admitted.
+- **Self-contained partition: every gain and every loss.** r08, r12, r22 and r23 improve; r02 is the row that
+  fires the falsifier.
+
+F3's falsifier is *"if improvement is uniform across both partitions, the deixis explanation is wrong"*. What
+was measured is not uniformity — it is the **inverse** of the prediction, which the falsifier does not name and
+which is worse for the account than the case it does.
+
+The reading that survives both this and F1 is narrower than deixis: **the grounded query pulls material that is
+topically about the anchor into the candidate set.** Where the answer is project material, that helps, whether
+or not the input contains a demonstrative — which is why the self-contained rows moved. Where it is not, the
+same pull is pure displacement, which is r02 and the internal cost on r10. The six deictic rows that did not
+move are thin rather than crowded (#11365 §8): their required node is nowhere near the top 20 on any query, so
+no change to the query could have reached them, and they cannot test the account either way.
+
+**Consequence for §12, which must be corrected rather than left standing.** §12 states that the 23-row corpus
+*"cannot provide positive evidence"* because its rows are self-contained questions and that is the partition on
+which F3 predicts approximately zero. Measured, the corpus moved four rows into retrieval and one out of
+admission, and **all of that movement is on the self-contained partition**. The corpus was not flat, it was not
+silent, and it is not the population §12 assumed. Its use as a harm guard is unaffected and correct; its stated
+*reason* for being unable to give positive evidence is not.
+
+### 16.5 F4 — the standing claims. **Both hold.**
+
+- *No candidate list contains the anchor's own id.* The raw arm has the anchor among its candidates on 8 of 23
+  rows and **admits it into the block on 6**; the grounded arm has it on 0. This is the latent double-anchor
+  defect closed, measured on the corpus rather than argued.
+- *Reciprocal-rank fusion is no longer inert in a turn.* A turn now issues two unscoped rankings, and the fused
+  order is demonstrably not either input order: on r10 the grounded arm ranks #275 (similarity 0.7608) **above**
+  #10877 (0.7641), an inversion no single similarity-ordered list can produce and which the raw arm does not
+  contain.
+
+### 16.6 Q1 answered — and A3 is false as stated
+
+Across the 25 corpus anchors, name length is **11 to 256 characters, median 98**; nine exceed the 110 A3 gave
+as its upper bound. The longest is a whole QA verdict sentence carrying a PR number and a commit sha. R3's
+*"a very long one could swamp the input's signal"* is therefore not a hypothetical, and r02 — a 99-character
+anchor name — is the measured instance of it.
+
+**A bound was measured and is not shipped.** Truncating the identity text rescues r02 at 60 characters
+(admitted@2) and at 80 (admitted@1), and fails to rescue it at 40 (cut@7) and at 120 (cut@6). At 40 it also
+loses t1 and t3 back to cut, destroying F1. A remedy that works in a 60–80 window out of a distribution
+spanning 11–256 is a fitted constant, which is the failure #11365 §5 named on this corpus and which §14 forbids
+this unit from introducing. It is recorded as a measurement for whoever rules on r02, not as a proposal.
+
+### 16.7 Q2 answered — the type is not composed
+
+Composing `anchor.Type` ahead of the name was measured on both corpora at the same graph state. On the 23 rows
+it changes nothing on the headline (12 retrieved, 7 admitted) and rescues r02 — but on F1 it **loses t1 from
+admitted@8 to cut@15**, the task this design exists for. Two further variants were measured and rejected: a
+space instead of a newline (t1 cut@14), and the identity text alone with the input dropped (t1 cut@11, t3
+cut@18, and the 23-row rates back to the raw arm's). The last of these is the direct measurement behind §5's
+*"the grounded query is a vote, not a substitution"*.
+
+### 16.8 What this leaves for the next decision
+
+The change is implemented, green on every gate, and **rejected by its own secondary falsifier**. Three things
+are now known that were not when §11 was written: r10 is not the row at risk, r02 is; the risk is byte
+displacement by the grounded arm's own good hits rather than rank displacement; and the anchor-name
+distribution that R3 depends on is four times wider than A3 assumed. Which of those the next revision acts on
+is a design decision and is deliberately not taken here.

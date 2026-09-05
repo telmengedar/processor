@@ -54,7 +54,7 @@ type recallCall struct {
 	Scope []int64
 }
 
-const primaryRecallCalls = 2
+const primaryRecallCalls = 3
 
 type recallResponse struct {
 	Candidates []Candidate
@@ -386,6 +386,7 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{{ID: 99, Type: "task", Name: "Found", Similarity: 0.8, Content: "tool result body"}}},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -405,7 +406,7 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 		t.Fatalf("record.Answer = %q, want %q", record.Answer, "final answer")
 	}
 	if len(graph.recallCalls) != primaryRecallCalls+1 {
-		t.Fatalf("Recall was called %d times, want %d (the primary pair + one supplementary)", len(graph.recallCalls), primaryRecallCalls+1)
+		t.Fatalf("Recall was called %d times, want %d (the primary three + one supplementary)", len(graph.recallCalls), primaryRecallCalls+1)
 	}
 	if graph.recallCalls[primaryRecallCalls].Query != "the missing thing" {
 		t.Fatalf("supplementary recall query = %q, want %q", graph.recallCalls[primaryRecallCalls].Query, "the missing thing")
@@ -451,7 +452,7 @@ func TestTurnRunRecordsAMalformedToolRequestAsAnErrorFlaggedRoundAndContinues(t 
 		t.Fatalf("record.Answer = %q, want the turn to reach the second call's answer", record.Answer)
 	}
 	if len(graph.recallCalls) != primaryRecallCalls {
-		t.Fatalf("Recall was called %d times, want %d (only the primary pair — the malformed round must not reach Recall)", len(graph.recallCalls), primaryRecallCalls)
+		t.Fatalf("Recall was called %d times, want %d (only the primary three — the malformed round must not reach Recall)", len(graph.recallCalls), primaryRecallCalls)
 	}
 	if len(record.ToolCalls) != 1 {
 		t.Fatalf("record.ToolCalls has %d entries, want 1 (counted, not dropped)", len(record.ToolCalls))
@@ -472,6 +473,7 @@ func TestTurnRunRecordsASupplementaryRecallTransportFailureAsAnErrorFlaggedRound
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
+		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Err: errors.New("literal: 500 from graph")},
 	}
@@ -570,7 +572,7 @@ func TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch(t *test
 		t.Fatalf("record.ToolCalls[2].Results = %+v, want empty — the round was never dispatched", last.Results)
 	}
 	if len(graph.recallCalls) != primaryRecallCalls+2 {
-		t.Fatalf("Recall was called %d times, want %d (the primary pair + 2 dispatched) — the final round must still not be dispatched", len(graph.recallCalls), primaryRecallCalls+2)
+		t.Fatalf("Recall was called %d times, want %d (the primary three + 2 dispatched) — the final round must still not be dispatched", len(graph.recallCalls), primaryRecallCalls+2)
 	}
 }
 
@@ -579,6 +581,7 @@ func TestTurnRunDoesNotLeakTheGraphErrorDetailIntoTheSupplementaryRecallRound(t 
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
+		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Err: errors.New("literal: dial tcp 10.0.0.55:443: connect: connection refused")},
 	}
@@ -611,6 +614,7 @@ func TestTurnRunLogsTheDetailedRecallErrorWhileTheRecordStaysGeneric(t *testing.
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
+		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Err: errors.New("literal: dial tcp 10.0.0.55:443: connect: connection refused")},
 	}
@@ -693,6 +697,7 @@ func TestTurnRunUsageArrayLengthAlwaysEqualsModelCalls(t *testing.T) {
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
+		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{{ID: 2, Content: "tool result"}}},
 	}
@@ -871,6 +876,7 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{
 			{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", 9_000)},
 			{ID: 92, Similarity: 0.8, Content: strings.Repeat("b", 9_000)},
@@ -927,6 +933,7 @@ func TestTurnRunSupplementaryAdmissionStaysInRankOrderEvenWhenIDsDescend(t *test
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{
 			{ID: 300, Similarity: 0.9, Content: "third-ranked-by-id-descending"},
 			{ID: 200, Similarity: 0.8, Content: "second"},
@@ -969,6 +976,7 @@ func TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRo
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{
 			{ID: 91, Content: strings.Repeat("a", 25_000)},
 		}},
@@ -1008,6 +1016,7 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
+		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{{ID: 91, Content: strings.Repeat("a", SupplementaryByteBudget)}}},
 	}
@@ -1331,7 +1340,7 @@ func TestTheSupplementaryRecallSendsTheModelsOwnQueryUnscopedAsExactlyOneCall(t 
 	}
 
 	if len(graph.recallCalls) != primaryRecallCalls+1 {
-		t.Fatalf("Recall was called %d times, want %d (the primary pair and one supplementary): the model asked for one lookup, so a supplementary path that fans one ask into several is spending reads the model did not request", len(graph.recallCalls), primaryRecallCalls+1)
+		t.Fatalf("Recall was called %d times, want %d (the primary three and one supplementary): the model asked for one lookup, so a supplementary path that fans one ask into several is spending reads the model did not request", len(graph.recallCalls), primaryRecallCalls+1)
 	}
 
 	supplementary := graph.recallCalls[primaryRecallCalls]
@@ -1371,5 +1380,71 @@ func TestTheTurnHoldsThreeOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *t
 	want := []int64{2001, 2002, 2003}
 	if !slices.Equal(neighbourhood, want) {
 		t.Fatalf("the run admitted neighbourhood candidates %v of the five on offer, want %v: the whole-graph ranking already fills the cap on its own, so the number of neighbourhood rows that reach the block is the number of slots withheld from it and nothing else", neighbourhood, want)
+	}
+}
+
+func TestTheRecordCarriesEveryQueryTheRetrievalStepIssuedAndNotTheInputAlone(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	turn := NewTurn(graph, &fakeModel{}, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	want := []string{"hello", "Subject\nhello"}
+	if !slices.Equal(record.Queries, want) {
+		t.Fatalf("record.Queries = %q, want %q: the retrieval step composes a query the caller never wrote, and a record that reports only the input describes a ranking the run did not perform", record.Queries, want)
+	}
+	if record.Query != "hello" {
+		t.Fatalf("record.Query = %q, want the raw input %q unchanged", record.Query, "hello")
+	}
+}
+
+func TestTheRecordSaysWhichRecallReturnedEachCandidateAndAtWhatRank(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "body"}}
+	turn := NewTurn(graph, &fakeModel{}, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(record.Candidates) != 1 {
+		t.Fatalf("record.Candidates has %d entries, want 1", len(record.Candidates))
+	}
+	want := []Source{{Query: 0, Rank: 1}, {Query: 1, Rank: 1}}
+	if !slices.Equal(record.Candidates[0].Sources, want) {
+		t.Fatalf("the candidate carries %+v, want %+v: both whole-graph rankings returned this row, and evidence of that agreement not written into the record is unrecoverable, because the next read queries a graph that has moved", record.Candidates[0].Sources, want)
+	}
+}
+
+func TestTheAnchorIsNeverAdmittedAsACandidateAgainstTheBlockThatAlreadyRendersIt(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{
+		{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"},
+	}
+	turn := NewTurn(graph, &fakeModel{}, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, d := range record.Candidates {
+		if d.ID == record.Subject {
+			t.Fatalf("record.Candidates carries the subject itself at rank %d: the block renders the anchor whole at its head, so a disposition row for it reports the block holding a node twice and the byte budget pays for it twice", d.Rank)
+		}
+	}
+	if strings.Count(record.Block, "anchor body") != 1 {
+		t.Fatalf("the block carries the anchor's body %d times, want once", strings.Count(record.Block, "anchor body"))
 	}
 }

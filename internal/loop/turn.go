@@ -96,17 +96,18 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		return Record{}, WriteReceipt{}, ErrSubjectNotFound
 	}
 
-	candidates, err := Retrieve(ctx, t.Graph, anchor, []string{input}, CandidateLimit, RecallScopeReserve)
+	retrieval, err := Retrieve(ctx, t.Graph, anchor, []string{input}, CandidateLimit, RecallScopeReserve)
 	if err != nil {
 		return Record{}, WriteReceipt{}, fmt.Errorf("%w: %v", ErrGraphUnavailable, err)
 	}
 
-	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget)
+	block, dispositions := Assemble(anchor, retrieval.Candidates, AssemblyByteBudget)
 
 	record := Record{
 		Input:      input,
 		Subject:    subject,
 		Query:      input,
+		Queries:    retrieval.Queries,
 		Anchor:     summarizeAnchor(anchor),
 		Candidates: dispositions,
 		Block:      block,

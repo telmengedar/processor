@@ -572,7 +572,7 @@ func TestTheMachineResultKeepsARowThatSweptNothingDistinctFromARowThatNeverSwept
 	t.Parallel()
 
 	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget)
-	swept := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), dispositions)
+	swept := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 	neverSwept := RowResult{Row: "r99", Stratum: StratumLabelled, Subject: 999, Error: "subject not found"}
 
 	machine, _ := render(t, resultWith(swept, neverSwept, intactControlRow()))

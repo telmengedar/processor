@@ -24,8 +24,9 @@ meaningful**. Writing that answer key is the work currently in front of the proj
 
 - **Better context assembly**, which is the next real capability and the one the project is actually
   about. What is here now is deliberately the simplest thing that is honestly mechanical: a fan-out of
-  whole-graph recalls fused by reciprocal rank, three of the twenty candidate slots reserved for the
-  subject's own two-hop neighbourhood, a byte budget, and no memory of previous turns.
+  whole-graph recalls — the input, and the input grounded in the subject's own name — fused by reciprocal
+  rank, three of the twenty candidate slots reserved for the subject's own two-hop neighbourhood, a byte
+  budget, and no memory of previous turns.
 - **Gates a model cannot talk its way past** — work described in the graph as obligations to meet, and
   checked mechanically rather than asserted in prose.
 - **A background pass that keeps the memory from silting up** — grouping, re-homing and marking what has
@@ -192,12 +193,16 @@ Request:
 {"input": "free text", "subject": 12345}
 ```
 
-`input` must be non-empty; `subject` is the id of the node the run is about. The queries sent to the
-graph are `input`, verbatim — no rewriting, no expansion, no model. A turn issues it twice: once ranked
-against the whole graph, and once ranked inside the subject's own two-hop neighbourhood, which costs one
-extra read of the subject's edges. The whole-graph lists are fused by reciprocal rank; the last three of
-the twenty candidate slots are held for the neighbourhood list, so a node the whole graph ranks past the
-cap can still arrive while the nodes already at the top keep the ranks they had.
+`input` must be non-empty; `subject` is the id of the node the run is about. No model rewrites anything on
+this path. A turn issues three recalls: `input` ranked against the whole graph, verbatim; the subject's own
+name joined to `input` ranked against the whole graph, so that an input which says "this service" reaches
+the service it means rather than every service that sentence could be about; and `input` ranked inside the
+subject's own two-hop neighbourhood, which costs one extra read of the subject's edges. The two whole-graph
+lists are fused by reciprocal rank, so a node both of them return outranks a node only one of them does; the
+last three of the twenty candidate slots are held for the neighbourhood list, so a node the whole graph ranks
+past the cap can still arrive while the nodes already at the top keep the ranks they had. The subject itself
+is never a candidate — the block renders it whole at its head, and admitting it again would spend the byte
+budget on it twice.
 
 The turn: fetch the subject and recall candidates, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
@@ -205,16 +210,18 @@ model, dispatch the one supplementary-recall tool as the model asks for it (up t
 calls, so at most 2 tool dispatches per run — the capping call's recall is counted but never dispatched),
 then write the record back to the graph as one `session-log` node linked to the subject.
 
-Response (`200`) is the run record: the input, the query, the anchor summary, **every** candidate
-retrieval returned — not only the ones kept — each with its rank, similarity, size, content hash, and
-whether it was included or cut and why, the assembled block itself, the model's answer, the model id, every
-supplementary-recall round (query, and for every row the round returned — not only the admitted ones — the
-same rank/id/type/name/similarity/size/content-hash/included/cut-reason columns the candidates carry, or an
-error if the round was malformed or failed), how many model calls were made and whether the per-run call cap
-was reached (`capReached`), token usage as one entry per model call, in call order, named for the direction
-of travel (`inTokens`/`outTokens` — a `null` entry means that call's endpoint reported no usage object,
-absent, never zero-filled), the stop reason (both the loop's own neutral value and the endpoint's raw
-string), the five constants that governed the run (`limits`: candidate limit, assembly byte budget,
+Response (`200`) is the run record: the input, the query, every query the retrieval step actually issued
+(`queries`, in issue order — the input first, the anchor-grounded one after it), the anchor summary,
+**every** candidate retrieval returned — not only the ones kept — each with its rank, similarity, size,
+content hash, whether it was included or cut and why, and which of the issued queries returned it at what
+rank and whether that recall was scoped (`sources`), the assembled block itself, the model's answer, the
+model id, every supplementary-recall round (query, and for every row the round returned — not only the
+admitted ones — the same rank/id/type/name/similarity/size/content-hash/included/cut-reason columns the
+candidates carry, or an error if the round was malformed or failed), how many model calls were made and
+whether the per-run call cap was reached (`capReached`), token usage as one entry per model call, in call
+order, named for the direction of travel (`inTokens`/`outTokens` — a `null` entry means that call's
+endpoint reported no usage object, absent, never zero-filled), the stop reason (both the loop's own neutral
+value and the endpoint's raw string), the five constants that governed the run (`limits`: candidate limit, assembly byte budget,
 supplementary byte budget, max model calls, max output tokens), and the sampling the run was made with
 (`sampling`: `temperature` and `topP`, each key absent when nothing was sent for it).
 

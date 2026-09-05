@@ -452,6 +452,7 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 		recallSeq: []stubRecallResponse{
 			{candidates: []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}}},
 			{candidates: []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}}},
+			{candidates: []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}}},
 			{err: errors.New("literal: 500 from graph")},
 		},
 		recallIdx:    new(int),
