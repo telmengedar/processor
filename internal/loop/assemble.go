@@ -15,7 +15,12 @@ const (
 
 // Assemble is a pure function: no I/O, no clock, no randomness.
 func Assemble(anchor Anchor, candidates []Candidate, budget int) (block string, dispositions []Disposition) {
-	admitted, dispositions := admit(candidates, budget)
+	remaining := budget - len(anchor.Content)
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	admitted, dispositions := admit(candidates, remaining)
 
 	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
 

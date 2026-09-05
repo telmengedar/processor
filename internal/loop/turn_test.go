@@ -1219,6 +1219,35 @@ func TestTurnRunDoesNotWarnWhenRecallReturnedNothing(t *testing.T) {
 	}
 }
 
+func TestTurnRunWarnsWhenTheAnchorAloneConsumesTheWholeBudget(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.node.Content = strings.Repeat("a", AssemblyByteBudget+1)
+	graph.candidates = []Candidate{
+		{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
+		{ID: 8, Type: "task", Name: "AlsoSmall", Similarity: 0.8, Content: "also small body"},
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, "system", "test-model", logger)
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(record.Candidates) != 2 || cutCount(record.Candidates) != 2 {
+		t.Fatalf("test setup error: %d candidates of which %d were cut, want both cut although both are individually tiny", len(record.Candidates), cutCount(record.Candidates))
+	}
+
+	warning := shutoutLogLine(logBuf.String())
+	if warning == "" {
+		t.Fatalf("no shutout record for a run whose anchor alone exceeded the budget; log:\n%s", logBuf.String())
+	}
+}
+
 func shutoutLogLine(log string) string {
 	for _, line := range strings.Split(log, "\n") {
 		if strings.Contains(line, `msg="assembly admitted no candidate`) {

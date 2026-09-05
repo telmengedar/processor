@@ -371,22 +371,58 @@ func TestAssembleAdmitsACandidateThatExactlyFillsTheRemainingBudget(t *testing.T
 	}
 }
 
-// TestAssembleDoesNotChargeTheAnchorBodyAgainstTheBudget pins W-2 (design
-// R4): the anchor is exempt from the byte budget. A large anchor body must
-// not eat into the budget candidates are admitted against.
-func TestAssembleDoesNotChargeTheAnchorBodyAgainstTheBudget(t *testing.T) {
+func TestAssembleChargesTheAnchorBodyAgainstTheBudgetBeforeAnyCandidate(t *testing.T) {
 	t.Parallel()
 
 	anchor := Anchor{ID: 1, Content: strings.Repeat("a", 1_000)}
 	candidates := []Candidate{
 		{ID: 10, Content: strings.Repeat("x", 50)},
 	}
-	const budget = 50 // fits the candidate alone; would already be blown if the anchor counted
+	const budget = 1_000
+
+	_, dispositions := Assemble(anchor, candidates, budget)
+
+	if dispositions[0].Included {
+		t.Fatal("candidate was admitted although the anchor alone already consumed the whole budget")
+	}
+	if dispositions[0].CutReason != cutReasonByteBudget {
+		t.Fatalf("CutReason = %q, want %q", dispositions[0].CutReason, cutReasonByteBudget)
+	}
+}
+
+func TestAssembleAdmitsACandidateIntoTheRoomLeftAfterTheAnchor(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1, Content: strings.Repeat("a", 40)}
+	candidates := []Candidate{
+		{ID: 10, Content: strings.Repeat("x", 60)},
+	}
+	const budget = 100
 
 	_, dispositions := Assemble(anchor, candidates, budget)
 
 	if !dispositions[0].Included {
-		t.Fatal("candidate was cut even though it alone fits the budget — the anchor body must be exempt from the budget (design R4)")
+		t.Fatal("candidate sized to exactly the room left after the anchor was cut, want it admitted")
+	}
+}
+
+func TestAssembleFloorsTheCandidateBudgetAtZeroWhenTheAnchorAloneExceedsIt(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1, Type: "t", Name: "big", Content: strings.Repeat("a", 100)}
+	candidates := []Candidate{{ID: 10, Content: "x"}}
+	const budget = 50
+
+	block, dispositions := Assemble(anchor, candidates, budget)
+
+	if dispositions[0].Included {
+		t.Fatal("a one-byte candidate was cut for a run where the anchor alone already exceeds the budget, want it cut, not a negative-budget panic or a stray admission")
+	}
+	if dispositions[0].CutReason != cutReasonByteBudget {
+		t.Fatalf("CutReason = %q, want %q", dispositions[0].CutReason, cutReasonByteBudget)
+	}
+	if strings.Contains(block, "CANDIDATE") {
+		t.Fatalf("block contains a candidate section although nothing was admitted:\n%s", block)
 	}
 }
 
