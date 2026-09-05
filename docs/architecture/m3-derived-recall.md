@@ -580,14 +580,15 @@ so the two readings differ in exactly the twelve rows that were added, and nothi
 |---|---|---|---|
 | raw-input (no `-derivations`) | 9/23 = 0.39 | 7/23 = 0.30 | 2/2 = 1.00 |
 | pinned at **13/25** — the state §9.1 records, `derivationHash 23b50552` | 10/23 = 0.43 | 8/23 = 0.35 | 2/2 = 1.00 |
-| **pinned at 25/25** — `derivationHash` **`PENDING-LF-NORMALISATION`** | **11/23 = 0.48** | **9/23 = 0.39** | 2/2 = 1.00 |
+| **pinned at 25/25** — `derivationHash` **`38349b3c`** | **11/23 = 0.48** | **9/23 = 0.39** | 2/2 = 1.00 |
 
-> **The 25/25 sidecar's hash is deliberately not transcribed, and the placeholder is the honest form.** The
-> generator wrote CRLF, so the hash the sweep printed is a hash of **the working tree** rather than of what a
-> fresh checkout produces; the line-ending fix and the correct LF hash are in flight separately. Under **P-51**
-> a hash written into this document is a hash this document asserts, and this one is currently ambiguous —
-> so **`PENDING-LF-NORMALISATION` must be replaced with the measured LF hash before this section is read as a
-> record.** No rate above is affected: the sweep loads the file it loads, whatever a hash says about it.
+> **The 25/25 sidecar's hash was written after the line endings were fixed, not before.** The generator
+> originally wrote CRLF, so the hash the first sweeps printed was a hash of **the working tree** rather than
+> of what a fresh checkout produces — `38349b3c` is the LF hash, and it is what the loader reports on a
+> normalised file. It was measured through `LoadDerivations` on the corrected file rather than transcribed
+> from a report, because under **P-51** a hash written into this document is a hash this document asserts.
+> No rate above was ever affected: the sweep loads the file it loads, whatever a hash says about it — only
+> the identity a later reader would use to decide whether their re-run is comparable.
 
 **Per-row, raw-input → 25/25: exactly four verdict changes and no others.**
 
