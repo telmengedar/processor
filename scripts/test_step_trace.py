@@ -35,6 +35,21 @@ shipped implementation from its most likely wrong neighbour. Every sampling valu
 `f"{value:g}"` from an honest formatter; every sampling object was once None or truthy, so nothing
 could separate `is not None` from truthiness. Both suites were green and both were one fixture choice
 away. Where a class pins such a decision, its docstring names the neighbour the fixture rules out.
+
+The third thing this suite now exists to catch, learned when Disposition.Sources landed: a sentence
+can be TRUE when written, reviewed as true, and made false later by a change that never opens this
+directory. STEP 2's rank note declined to say whether a reserved-tail row was a neighbourhood hit,
+on the stated ground that no candidate records which recall returned it -- and two commits later
+every candidate did. No review could have caught it from either side.
+
+Be exact about what this suite can and cannot do about that, because the comfortable version of the
+lesson is itself a false claim. These tests run over hand-written dicts, not over the binary: adding
+a field to internal/loop cannot turn any of them red, and no test below would have failed on the
+commit that falsified the prose. What SourceColumnTests, SourceQueryIndexTests, AttributionNoteTests
+and SupplementaryRoundSourcesTests do buy is the other half -- the printed claim is now pinned
+sentence by sentence against fixtures shaped to the Go type, so it cannot be quietly reworded, and a
+fixture that stops matching the type is a visible, greppable lie rather than an absence. Keeping the
+two in step across languages stays a review obligation, not something this file can automate.
 """
 
 import contextlib
@@ -65,6 +80,7 @@ LIMITS = {
 def record(
     input_text="does not matter",
     subject=999,
+    queries=None,
     anchor=None,
     candidates=None,
     tool_calls=None,
@@ -85,6 +101,10 @@ def record(
         "input": input_text,
         "subject": subject,
         "query": input_text,
+        # turn.go writes Queries as []string{input} -- exactly one entry, always. The fixture carries
+        # it because the src column's query index is printed only when a record has more than one,
+        # and a fixture that omitted the key could not tell "one query" from "field absent".
+        "queries": queries if queries is not None else [input_text],
         "anchor": anchor if anchor is not None else {"id": 1, "type": "documentation", "name": "anchor node", "size": 10, "contentHash": "abc123"},
         "candidates": candidates if candidates is not None else [],
         "block": block,
@@ -117,6 +137,46 @@ def capture(fn, *args, **kwargs):
     with contextlib.redirect_stdout(buf):
         fn(*args, **kwargs)
     return buf.getvalue()
+
+
+def candidate(rank, node_id, sources=ABSENT, name=None, size=100, included=True):
+    """One Disposition. `sources=ABSENT` omits the key entirely -- the shape of a record written
+    before Disposition.Sources existed, which must render as silence and never as "no recall
+    returned this row"."""
+    row = {
+        "rank": rank,
+        "id": node_id,
+        "type": "documentation",
+        "name": name if name is not None else f"row {rank}",
+        "similarity": 0.5,
+        "size": size,
+        "contentHash": "hash",
+        "included": included,
+    }
+    if sources is not ABSENT:
+        row["sources"] = sources
+    return row
+
+
+def unscoped(rank, query=0):
+    """One entry of Disposition.sources for an unscoped recall: retrieve.go's sourcesOf stamps the
+    index of the query whose list carried the row, and the 1-based rank it came back at."""
+    return {"query": query, "rank": rank}
+
+
+def scoped(rank):
+    """One entry for the two-hop-scoped recall. `query` is 0 by construction -- sourcesOf hardcodes
+    it, because retrieve.go issues the scoped recall with queries[0] however many queries there are.
+    A fixture that varied it would be describing a record the loop cannot write."""
+    return {"query": 0, "scoped": True, "rank": rank}
+
+
+def row_for(out, node_id):
+    """The one rendered table line for a node id, so a per-row assertion cannot be satisfied by some
+    other row's text elsewhere in the trace."""
+    matches = [line for line in out.splitlines() if f"#{node_id}" in line]
+    assert len(matches) == 1, f"expected exactly one line for #{node_id}, got {len(matches)}"
+    return matches[0]
 
 
 class ClassifyRoundTests(unittest.TestCase):
@@ -356,11 +416,15 @@ class ScopeReserveLineTests(unittest.TestCase):
 
     retrieve.go's `fuse` runs three passes, not two -- fill to `limit - reserve` from the fused list,
     take up to `reserve` unseen rows from the scoped list, then fill whatever the scope left over
-    from the fused list AGAIN. A tail row is therefore a neighbourhood hit or a plain-similarity
-    continuation, and the record cannot say which: Disposition has no provenance member, the Candidate
-    behind it records only whether the row is self-produced -- never which recall returned it -- and
-    the scoped list is not recorded. These tests pin both halves -- the corrected mechanism, and the
-    refusal to attribute a row the record cannot attribute."""
+    from the fused list AGAIN. These tests pin the corrected mechanism.
+
+    It then went false a SECOND way, and this is the round that fixed it. The line used to close by
+    refusing to say whether a tail row was a neighbourhood hit, on the stated ground that no
+    candidate records which recall returned it. Two commits after that sentence shipped,
+    Disposition.Sources landed and recorded exactly that -- so the refusal became the false claim,
+    and nothing could have caught it: the review that passed this file predated the field, and the
+    change that added the field never opened scripts/. SourceColumnTests and AttributionNoteTests
+    below pin what replaced it; the surviving test here pins that the decline itself is gone."""
 
     def test_reserved_slots_are_not_claimed_to_come_from_the_scoped_recall(self):
         out = render(record())
@@ -369,12 +433,21 @@ class ScopeReserveLineTests(unittest.TestCase):
         self.assertIn("from the unscoped list AGAIN", out)
         self.assertNotIn("reserved for and backfilled from", out)
 
-    def test_line_refuses_to_attribute_a_tail_row_the_record_cannot_attribute(self):
+    def test_the_decline_the_record_no_longer_justifies_is_gone(self):
+        """Every phrase asserted absent here was printed on every trace this script produced, and
+        every one of them is now contradicted by Disposition.Sources."""
         out = render(record())
-        self.assertIn("is not in the record", out)
-        self.assertIn("no candidate records which recall returned it", out)
-        self.assertIn("may be a neighbourhood hit or a similarity continuation", out)
-        self.assertIn("this trace will not guess which", out)
+        self.assertNotIn("no candidate records which recall returned it", out)
+        self.assertNotIn("may be a neighbourhood hit or a similarity continuation", out)
+        self.assertNotIn("this trace will not guess which", out)
+
+    def test_the_fused_order_is_the_unscoped_order_minus_the_anchor(self):
+        """The other thing that changed under this file: fuse seeds its seen-set with the anchor id,
+        so the head rows are the unscoped recall's order with the subject removed. "verbatim" was
+        accurate before the anchor was excluded from its own candidate set and overclaims after."""
+        out = render(record())
+        self.assertIn("minus the anchor, which fuse excludes from its own candidate set", out)
+        self.assertNotIn("plain-similarity order, verbatim", out)
 
     def test_split_point_is_computed_from_the_record_not_hardcoded(self):
         """The reserve is 3 whatever the limit is, so the boundary moves with limits.candidateLimit.
@@ -391,6 +464,162 @@ class ScopeReserveLineTests(unittest.TestCase):
         self.assertIn("the fused/scoped split point cannot be computed", out)
         self.assertNotIn("RESERVED FOR", out)
         self.assertNotIn("neighbourhood", out)
+
+
+class SourceColumnTests(unittest.TestCase):
+    """The src column: which recall returned each row, and at what rank, off Disposition.sources.
+
+    Fixtures chosen to discriminate, not merely to exercise (the rule this suite's docstring states).
+    The four rows are the four cases that a wrong-but-plausible renderer would collapse: a head row
+    with one unscoped source, a head row returned by BOTH recalls, a reserved-slot row the scoped
+    recall did return, and a reserved-slot row it did not. A renderer that printed only sources[0]
+    passes on three of them and fails on the second; one that ignored `scoped` fails on the third;
+    one that fired the reserved-slot callout on rank alone fails on the first; one that fired it on
+    an unscoped source alone fails on the first as well; one that fired it on any reserved row fails
+    on the third. The two ranks inside one row's pair differ (unscoped r4, scoped r2) so that a
+    renderer reusing one source's rank for the other cannot pass either."""
+
+    def rows(self):
+        return [
+            candidate(1, 101, [unscoped(1)], name="head, unscoped only"),
+            candidate(4, 104, [unscoped(4), scoped(2)], name="head, returned by both recalls"),
+            candidate(18, 118, [scoped(1)], name="reserved slot, neighbourhood hit"),
+            candidate(19, 119, [unscoped(9)], name="reserved slot, scope did not return it"),
+        ]
+
+    def render_rows(self, **kwargs):
+        return render(record(candidates=self.rows(), block="x" * 900, **kwargs))
+
+    def test_every_source_prints_with_its_recall_and_its_own_rank(self):
+        out = self.render_rows()
+        self.assertIn("src unscoped r1", row_for(out, 101))
+        self.assertIn("src scoped r1", row_for(out, 118))
+        self.assertIn("src unscoped r9", row_for(out, 119))
+
+    def test_a_row_returned_by_both_recalls_names_both(self):
+        out = self.render_rows()
+        self.assertIn("src unscoped r4, scoped r2", row_for(out, 104))
+
+    def test_only_a_reserved_row_the_scoped_recall_missed_is_called_out(self):
+        out = self.render_rows()
+        self.assertEqual(out.count("RESERVED SLOT, NOT A NEIGHBOURHOOD HIT"), 1)
+        self.assertIn("rank 19 is inside the range held for the scoped recall", out)
+
+    def test_a_scoped_source_above_the_reserve_is_not_read_as_the_reserve_placing_it(self):
+        """Sources is per-recall, not per-pass: rank 4 carries a scoped source because the scoped
+        recall returned that node, and the unscoped order reached it first regardless."""
+        out = self.render_rows()
+        self.assertNotIn("rank 4 is inside", out)
+        self.assertNotIn("rank 1 is inside", out)
+        self.assertNotIn("rank 18 is inside", out)
+
+    def test_the_callout_boundary_moves_with_the_records_own_candidate_limit(self):
+        """Same two rows, two limits. At limit 20 the reserve starts at 18 and neither row is in it;
+        at limit 10 it starts at 8 and the second row is. A hardcoded boundary cannot do both."""
+        rows = [candidate(7, 107, [unscoped(7)]), candidate(8, 108, [unscoped(8)])]
+        wide = render(record(candidates=rows, block="x" * 900))
+        self.assertNotIn("RESERVED SLOT", wide)
+        narrow = render(record(candidates=rows, block="x" * 900, limits=dict(LIMITS, candidateLimit=10)))
+        self.assertEqual(narrow.count("RESERVED SLOT"), 1)
+        self.assertIn("rank 8 is inside the range held for the scoped recall", narrow)
+
+    def test_a_row_with_no_sources_is_silence_not_an_unscoped_row(self):
+        """The sharp one: a reserved-slot row whose sources key is absent must NOT be called out as
+        a row the scoped recall missed. Treating absence as "unscoped only" is the exact way this
+        file would invent an attribution again, and rank 19 here is where it would surface."""
+        out = render(record(candidates=[candidate(19, 119)], block="x" * 900))
+        self.assertIn("src not recorded", row_for(out, 119))
+        self.assertNotIn("RESERVED SLOT", out)
+
+
+class SourceQueryIndexTests(unittest.TestCase):
+    """The query index is printed only where it separates rows. sourcesOf stamps the scoped source
+    with Query 0 always, and a turn issues exactly one query, so on every record the loop can write
+    the index is the same constant on every source -- printed, it would read as a distinction."""
+
+    def test_a_single_query_record_does_not_print_the_constant(self):
+        out = render(record(candidates=[candidate(1, 101, [unscoped(1), scoped(2)])], block="x" * 900))
+        self.assertIn("src unscoped r1, scoped r2", out)
+        self.assertNotIn("unscoped q", out)
+
+    def test_several_queries_index_the_unscoped_sources_but_not_the_scoped_one(self):
+        """A shape turn.go cannot produce and the record could still carry. Here the index does
+        separate the two rows, so it is printed -- for the unscoped sources only, since the scoped
+        source's 0 is retrieve.go's constant rather than a query this row came back under."""
+        out = render(record(
+            queries=["first", "second"],
+            candidates=[
+                candidate(1, 101, [unscoped(1, query=0)]),
+                candidate(2, 102, [unscoped(3, query=1), scoped(4)]),
+            ],
+            block="x" * 900,
+        ))
+        self.assertIn("src unscoped q0 r1", row_for(out, 101))
+        self.assertIn("src unscoped q1 r3, scoped r4", row_for(out, 102))
+        # Spelled against this row's own scoped rank: "scoped q0" alone is a substring of the
+        # perfectly correct "unscoped q0 r1" one row up, so it cannot be asserted absent globally.
+        self.assertNotIn("scoped q0 r4", row_for(out, 102))
+
+
+class AttributionNoteTests(unittest.TestCase):
+    """STEP 2's sentence introducing the src column, which is prose this script PRINTS about a field
+    in another language -- so it is tested by reading the printed output, like the sampling lines.
+
+    Three record states, and the fixtures separate all three: every row attributed, no row
+    attributed (a record older than the field), and some rows attributed (a shape the loop cannot
+    write, but the record is an external boundary). A note computed with any() prints the first
+    sentence for the mixed record; one computed with all() prints the second; only counting both
+    ends passes all three."""
+
+    def test_every_row_attributed_says_so_and_still_declines_the_pass_question(self):
+        out = render(record(candidates=[candidate(1, 101, [unscoped(1)])], block="x" * 900))
+        self.assertIn("Which recall returned each row IS recorded", out)
+        self.assertIn("does not say is which of fuse's three passes PLACED a row", out)
+
+    def test_a_record_older_than_the_field_reports_silence_not_absence_of_recall(self):
+        out = render(record(candidates=[candidate(1, 101), candidate(2, 102)], block="x" * 900))
+        self.assertIn("No row below carries Disposition.sources", out)
+        self.assertIn("predates the field", out)
+        self.assertIn("not about the rows", out)
+        self.assertNotIn("Which recall returned each row IS recorded", out)
+
+    def test_a_partially_attributed_record_is_reported_as_neither_of_the_other_two(self):
+        out = render(record(
+            candidates=[candidate(1, 101, [unscoped(1)]), candidate(2, 102)],
+            block="x" * 900,
+        ))
+        self.assertIn("1 of 2 rows below carry Disposition.sources", out)
+        self.assertNotIn("Which recall returned each row IS recorded", out)
+        self.assertNotIn("No row below carries Disposition.sources", out)
+
+    def test_an_empty_candidate_set_introduces_no_column(self):
+        """There are no rows to read, so a sentence about how to read them is noise -- and a note
+        that fired here would describe an empty table as unattributed."""
+        out = render(record())
+        self.assertNotIn("Disposition.sources", out)
+        self.assertNotIn("src column", out)
+
+
+class SupplementaryRoundSourcesTests(unittest.TestCase):
+    """A supplementary round carries no sources at all: dispatchRecall hands one unscoped
+    Graph.Recall straight to admit, and only Retrieve attributes. The absence is the round's
+    construction, so these rows get no src field and the trace says why -- rendering them as
+    "not recorded" would report the loop's design as a gap in the record."""
+
+    def dispatched(self, results):
+        return record(model_calls=2, candidates=[], block="x" * 900,
+                      tool_calls=[{"query": "second provider", "results": results}])
+
+    def test_supplementary_rows_carry_no_src_field_and_the_absence_is_explained(self):
+        out = render(self.dispatched([candidate(1, 42, name="hit")]))
+        self.assertNotIn("src ", out)
+        self.assertIn("no recall sources and none is shown for them", out)
+        self.assertIn("That is the round's construction, not a gap in this record.", out)
+
+    def test_an_empty_supplementary_round_explains_nothing_because_there_is_nothing_to_explain(self):
+        out = render(self.dispatched([]))
+        self.assertIn("0 candidate(s) returned", out)
+        self.assertNotIn("no recall sources", out)
 
 
 class SamplingLineTests(unittest.TestCase):

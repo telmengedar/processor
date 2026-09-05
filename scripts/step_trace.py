@@ -52,27 +52,48 @@ RecallExchange construction on this path never sets Query at all). Printing a fa
 step here was the exact defect a reviewer caught: it read as "the model asked the graph and the
 graph had nothing" when the truth was "the model's tool call never reached the graph".
 
-RECALL RANKING, corrected after review (W-N2 -- a prose defect, not a logic one, but it printed on
-every trace and asserted the opposite of what retrieve.go does): `retrieve.go`'s `fuse` does NOT fuse
-the scoped list in. `fuseByReciprocalRank(lists)` runs over the UNSCOPED lists only; the scoped list
-gets a reserved quota (`RecallScopeReserve`, mirrored below as RECALL_SCOPE_RESERVE = 3) taken after
-the first `limit - reserve` fused entries, backfilled from the fused list only if the scope doesn't
-fill its reserve. Since a turn always passes exactly one query, RRF over that single list changes
-nothing -- it is order-preserving. Net, for every trace this script prints: positions 1 through
-`limit - RECALL_SCOPE_RESERVE` are the one unscoped recall's own plain-similarity order, verbatim.
-The last `RECALL_SCOPE_RESERVE` positions are RESERVED FOR the scoped recall, which is not the same
-as filled from it. `fuse` runs THREE passes, not two: fill to `limit - reserve` from the fused list;
-take up to `reserve` UNSEEN rows from the scoped list; then fill any slot the scope left over FROM
-THE FUSED LIST AGAIN, continuing its plain-similarity order past where the first pass stopped. So a
-run whose scoped recall returned fewer than `RECALL_SCOPE_RESERVE` unseen rows ends with tail rows
-that are not neighbourhood hits at all, and which pass placed any given tail row is NOT recoverable
-from the record: `Disposition` carries rank, id, type, name, similarity, size, content hash and the
-admit decision, the `Candidate` it is built from records only whether the row is self-produced --
-never WHICH RECALL RETURNED IT -- and the scoped list is not in the record to compare against. The
-trace therefore reports the reservation and declines to label the rows -- inventing a per-row
-distinction the record cannot support would be the same defect one level up. Fusion of multiple
-ranked lists is real and does real work in `cmd/eval`, which passes more than one query -- it is
-simply inert inside a turn, which never does. The two-hop
+RECALL RANKING, corrected twice -- once after review found it asserting the opposite of what
+retrieve.go does (a prose defect, not a logic one, but it printed on every trace), and once after
+`Disposition.Sources` landed and turned that correction's own closing claim false. `retrieve.go`'s
+`fuse` does NOT fuse the scoped list in. `fuseByReciprocalRank(lists)` runs over the UNSCOPED lists
+only; the scoped list gets a reserved quota (`RecallScopeReserve`, mirrored below as
+RECALL_SCOPE_RESERVE = 3) taken after the first `limit - reserve` fused entries, backfilled from the
+fused list only if the scope doesn't fill its reserve. Since a turn always passes exactly one query,
+RRF over that single list changes nothing -- it is order-preserving. Net, for every trace this
+script prints: positions 1 through `limit - RECALL_SCOPE_RESERVE` are the one unscoped recall's own
+plain-similarity order, MINUS THE ANCHOR -- `fuse` seeds its seen-set with the anchor id, so the
+subject never appears in its own candidate set, and an unscoped recall that returned it leaves a gap
+the rest of the order closes up rather than a row you can see. The last `RECALL_SCOPE_RESERVE`
+positions are RESERVED FOR the scoped recall, which is not the same as filled from it. `fuse` runs
+THREE passes, not two: fill to `limit - reserve` from the fused list; take up to `reserve` UNSEEN
+rows from the scoped list; then fill any slot the scope left over FROM THE FUSED LIST AGAIN,
+continuing its plain-similarity order past where the first pass stopped. So a run whose scoped
+recall returned fewer than `RECALL_SCOPE_RESERVE` unseen rows ends with tail rows that are not
+neighbourhood hits at all -- and the record now says which rows those are.
+
+WHICH RECALL RETURNED A ROW IS RECORDED. `Disposition.Sources` carries, per row, every recall that
+returned it, as `{query, scoped, rank}` (`retrieve.go`'s `sourcesOf` and `attribute`), so this trace
+prints it in a `src` column and stops declining the question. An earlier version of this file said
+the opposite -- that no candidate records which recall returned it and the trace therefore would not
+label the rows. That was true when it was written and false two commits later, which makes the
+decline itself the false claim now. What this trace still does NOT print is which of `fuse`'s three
+passes PLACED a row. `Sources` is per-recall, not per-pass, and the two do not coincide in general:
+a row returned by both recalls carries a scoped source wherever it sits, including the slots above
+the reserve, which the unscoped order fills first -- so a scoped source is never read here as "the
+reserve put it there". Any pass attribution would rest on an invariant of `fuse`'s control flow
+rather than on the record, which is the same class of defect one level up. The one place this trace
+does combine rank with source is exactly the question the reserved tail was written to raise: a row
+inside the reserved range carrying no scoped source is a row the neighbourhood recall did not
+return, and that is two facts the record states, not an inference about passes. A row may carry MORE
+THAN ONE source -- the same node returned by more than one recall -- and every source it carries is
+printed. The query index is deliberately not printed for a single-query run: `sourcesOf` stamps the
+scoped source with `Query: 0` by construction, and a turn issues exactly one query, so the index is
+the same constant on every row and would read as information it is not; where a record carries more
+than one query, the unscoped sources ARE printed with their index, because there it separates rows.
+A supplementary round carries no sources at all and none is claimed for it -- `turn.go`'s
+`dispatchRecall` hands one unscoped `Graph.Recall` straight to `admit`, and only `Retrieve`
+attributes. Fusion of multiple ranked lists is real and does real work in `cmd/eval`, which passes
+more than one query -- it is simply inert inside a turn, which never does. The two-hop
 half of the mechanism (`RecallScope` = subject + its linked neighbours) is accurate as stated.
 
 BUDGET ARITHMETIC, corrected after review (C2/C3): the anchor is not exempt from the assembly
@@ -98,8 +119,9 @@ file changes):
   - No per-step wall-clock or timestamp. turn.go computes one elapsed duration for the whole run and
     logs it to stderr; the record itself carries no timing at all, so this trace cannot show how long
     retrieval took versus how long the model took.
-  - No raw content for the anchor or for any candidate, admitted or cut. AnchorSummary and
-    Disposition carry only {id, type, name, size, contentHash} -- a hash, not the bytes. The ONLY
+  - No raw content for the anchor or for any candidate, admitted or cut. AnchorSummary carries
+    {id, type, name, size, contentHash}, and Disposition adds rank, similarity, the admit decision
+    and its recall sources -- identity, provenance and size, and a hash where the bytes would be. The ONLY
     place actual node content survives in the record is the assembled Block string (for whatever was
     admitted) and the final Answer. A cut candidate's content is gone from the record forever, which
     means a reader can never audit what was cut, only that it was and why.
@@ -172,7 +194,8 @@ CUT_BYTE_BUDGET = "byte budget exceeded"
 
 # internal/loop/turn.go's RecallScopeReserve -- not carried in the record's `limits` object (Limits
 # only has the five members turn.go stamps into it), so it is mirrored here the same way the two
-# error-string literals above are, purely for narrating STEP 2's actual rank order (W-N2).
+# error-string literals above are: to narrate STEP 2's actual rank order and to locate the
+# reserved tail, which is where a row's recorded sources become worth reading against its rank.
 RECALL_SCOPE_RESERVE = 3
 
 # internal/boot's own variable name. The binary has no flag surface at all -- boot/config.go reads
@@ -221,7 +244,33 @@ def classify_round(tool_call):
     return ROUND_MALFORMED
 
 
-def render_candidate_table(dispositions, budget):
+def format_sources(sources, name_query):
+    """One row's `Disposition.sources` spelled as "which recall returned this, and at what rank".
+
+    Every source the row carries is printed, in the order the record lists it (`sourcesOf` appends
+    the unscoped recalls first, then the scoped one): a node returned by BOTH recalls is one row with
+    two sources, and dropping either would misreport it as exclusive to the survivor.
+
+    `name_query` gates the query index, which is printed only when the record carries more than one
+    query. A turn issues exactly one, and `sourcesOf` stamps the scoped source with `Query: 0`
+    regardless of how many there are -- so on every trace a turn can produce, the index is a constant
+    on every row and would read as a distinction it is not. It is per-recall data either way: none of
+    this says which of `fuse`'s passes placed the row, and nothing here should be phrased as if it
+    did (module docstring, RECALL RANKING).
+    """
+    parts = []
+    for source in sources:
+        rank = source.get("rank")
+        if source.get("scoped"):
+            parts.append(f"scoped r{rank}")
+        elif name_query:
+            parts.append(f"unscoped q{source.get('query')} r{rank}")
+        else:
+            parts.append(f"unscoped r{rank}")
+    return ", ".join(parts)
+
+
+def render_candidate_table(dispositions, budget, attributed=False, name_query=False, reserve_from=None):
     """`budget` is the cumulative admission ceiling this specific round of candidates was actually
     measured against -- for the initial round that is `assemblyByteBudget - anchor.size` (floored at
     zero), NOT the raw constant (C2/C3: the anchor is charged, not exempt); for a supplementary round
@@ -229,16 +278,49 @@ def render_candidate_table(dispositions, budget):
     scope to subtract -- NOT because the anchor is omitted from that call's prompt (it isn't: the
     whole block, anchor included, is resent on every model call; see the module docstring's BUDGET
     ARITHMETIC section for the corrected reasoning).
+
+    `attributed` says whether recall sources are recorded for THIS round at all, which is a property
+    of the round and not of the rows: `Retrieve` attributes every candidate it returns, and
+    `dispatchRecall` attributes none of them (it hands one unscoped `Graph.Recall` straight to
+    `admit`). So a supplementary round prints no `src` column -- absence there is by construction and
+    means nothing about the row -- while a missing `sources` key on an ATTRIBUTED round is a record
+    older than the field and prints as "not recorded", never as "no recall returned it".
+
+    `reserve_from` is the first rank inside the slots reserved for the scoped recall, or None when
+    the record carries no candidateLimit to compute it from. It is used for one statement only: a row
+    sitting in a reserved slot that the scoped recall did not return. That is the question the
+    reservation raises, and both halves of it are recorded -- the rank and the sources. Which of
+    `fuse`'s three passes put the row there is NOT recorded and is not claimed here.
     """
     lines = []
     for d in dispositions:
         mark = "IN " if d.get("included") else "cut"
         reason = f"  ({d.get('cutReason')})" if not d.get("included") and d.get("cutReason") else ""
+        sources = d.get("sources") or []
+        if not attributed:
+            src = ""
+        elif sources:
+            src = f"  src {format_sources(sources, name_query)}"
+        else:
+            src = "  src not recorded"
         lines.append(
             f"      {mark} rank {d.get('rank'):>2}  #{d.get('id'):<7} "
             f"{one_line(d.get('type'), 12):<12} sim {d.get('similarity', 0):.4f}  "
-            f"size {d.get('size', 0):>7}  {one_line(d.get('name'), 46):<46}{reason}"
+            f"size {d.get('size', 0):>7}  {one_line(d.get('name'), 46):<46}{src}{reason}"
         )
+        if (
+            attributed
+            and sources
+            and reserve_from is not None
+            and isinstance(d.get("rank"), int)
+            and d["rank"] >= reserve_from
+            and not any(s.get("scoped") for s in sources)
+        ):
+            lines.append(
+                f"           RESERVED SLOT, NOT A NEIGHBOURHOOD HIT: rank {d['rank']} is inside the "
+                f"range held for the scoped recall, and the scoped recall did not return this row -- "
+                f"only the unscoped one did"
+            )
         if not d.get("included") and d.get("cutReason") == CUT_SELF_PRODUCED:
             lines.append(
                 f"           self-produced: a run record this system wrote earlier -- cut before "
@@ -252,6 +334,48 @@ def render_candidate_table(dispositions, budget):
                     f"this row regardless of rank"
                 )
     return lines
+
+
+def attribution_note(dispositions):
+    """How STEP 2 introduces the `src` column, decided by what this particular record carries.
+
+    Three shapes, kept apart on purpose, for the same reason `sampling_lines` keeps its three apart:
+    a record with sources on every row, a record with them on none (written before the field
+    existed), and a record with them on some are three different states of knowledge, and rendering
+    any of them as another is the failure this file keeps being corrected for. In particular, a
+    missing `sources` key is the record saying nothing about that row -- never the record saying no
+    recall returned it.
+
+    Empty string for an empty candidate set: there is no column to introduce, and a sentence about
+    how to read rows that do not exist is noise.
+    """
+    if not dispositions:
+        return ""
+
+    attributed = sum(1 for d in dispositions if d.get("sources"))
+
+    if attributed == len(dispositions):
+        return (
+            "Which recall returned each row IS recorded: the src column below is that row's "
+            "Disposition.sources -- every recall that returned it, and at what rank -- so a row in "
+            "the reserved range that the scoped recall never returned is called out as such. What "
+            "sources does not say is which of fuse's three passes PLACED a row, and this trace does "
+            "not claim it: a row returned by both recalls carries a scoped source wherever it sits, "
+            "the slots above the reserve included."
+        )
+    if attributed == 0:
+        return (
+            "No row below carries Disposition.sources, so which recall returned each row cannot be "
+            "read off this record -- it predates the field. That silence is a fact about the "
+            "record's age and not about the rows: nothing here says any of them is or is not a "
+            "neighbourhood hit."
+        )
+    return (
+        f"{attributed} of {len(dispositions)} rows below carry Disposition.sources and the rest do "
+        f"not -- a shape the loop does not produce, since Retrieve attributes every row it returns. "
+        f"The src column reports each row exactly as the record has it, and 'not recorded' is the "
+        f"record's silence about that row, never a claim that no recall returned it."
+    )
 
 
 def admitted_bytes(dispositions):
@@ -413,33 +537,46 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     candidates = record.get("candidates") or []
     candidate_limit = limits.get("candidateLimit")
     admitted_count = sum(1 for c in candidates if c.get("included"))
+    # More than one query is a shape a turn cannot produce (turn.go passes []string{input}), but the
+    # record is an external boundary; where it does carry several, the query index on an unscoped
+    # source separates rows and is printed. On a one-query record it is a constant and is not.
+    name_query = len(record.get("queries") or []) > 1
     out.append(f"{head('recall')} input: query={record.get('query')!r} (the task input, verbatim -- no rewrite, no model in the path)")
+    sources_note = attribution_note(candidates)
     if candidate_limit is not None:
         fused_slots = max(candidate_limit - RECALL_SCOPE_RESERVE, 0)
+        reserve_from = fused_slots + 1
         rank_note = (
             f"a turn always issues exactly one query, so the reciprocal-rank fusion step "
             f"(internal/loop/retrieve.go's fuse/fuseByReciprocalRank) is a no-op over it -- rows 1-"
-            f"{fused_slots} below are that one UNSCOPED recall's own plain-similarity order, "
-            f"verbatim. The last {RECALL_SCOPE_RESERVE} slots ({fused_slots + 1}-{candidate_limit}) "
+            f"{fused_slots} below are that one UNSCOPED recall's own plain-similarity order, minus "
+            f"the anchor, which fuse excludes from its own candidate set. The last "
+            f"{RECALL_SCOPE_RESERVE} slots ({reserve_from}-{candidate_limit}) "
             f"are RESERVED FOR a second recall scoped to the anchor's two-hop neighbourhood (subject "
             f"+ its linked nodes) -- which is not the same as filled from it: fuse takes unseen "
             f"scoped rows up to the reserve and then fills whatever the scope left over from the "
-            f"unscoped list AGAIN, continuing its plain-similarity order. Which pass placed any one "
-            f"of those {RECALL_SCOPE_RESERVE} rows is not in the record -- no candidate records "
-            f"which recall returned it, and the scoped list is not recorded -- so each of them may be a "
-            f"neighbourhood hit or a similarity continuation, and this trace will not guess which. "
-            f"Fusion across multiple queries only does real work in cmd/eval, which passes more than "
-            f"one -- it never touches the order here"
+            f"unscoped list AGAIN, continuing its plain-similarity order."
+            # Joined, not interpolated: an empty sources_note (no candidates to attribute) must not
+            # leave a double space in a line whose every other word is asserted by a test.
+            + (f" {sources_note}" if sources_note else "")
+            + f" Fusion across multiple queries only does real work in cmd/eval, which passes more "
+            f"than one -- it never touches the order here"
         )
     else:
+        reserve_from = None
         rank_note = (
             f"the record carries no limits.candidateLimit, so the fused/scoped split point cannot be "
-            f"computed; see the module docstring's RECALL RANKING section for the mechanism"
+            f"computed; see the module docstring's RECALL RANKING section for the mechanism."
+            + (f" {sources_note}" if sources_note else "")
         )
     out.append(
         f"{'':<24} output: {len(candidates)} candidate(s) returned (limit {candidate_limit}); {rank_note}"
     )
-    out.extend(render_candidate_table(candidates, remaining_budget))
+    out.extend(
+        render_candidate_table(
+            candidates, remaining_budget, attributed=True, name_query=name_query, reserve_from=reserve_from
+        )
+    )
     out.append("")
 
     # ---- STEP: assemble ---------------------------------------------------------------------
@@ -562,6 +699,13 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
                 f"the supplementary budget ({fmt_bytes(supplementary_budget or 0)}), "
                 f"{fmt_bytes(kept_bytes)} kept"
             )
+            if results:
+                out.append(
+                    f"{'':<24} note: a supplementary round is ONE unscoped Graph.Recall handed "
+                    f"straight to admit (turn.go's dispatchRecall) -- no second query, no scope, no "
+                    f"reserve and no fusion -- so these rows carry no recall sources and none is "
+                    f"shown for them. That is the round's construction, not a gap in this record."
+                )
             out.extend(render_candidate_table(results, supplementary_budget))
             out.append("")
 
