@@ -11,7 +11,7 @@ import (
 const (
 	CandidateLimit     = 20
 	RecallScopeReserve = 3
-	// AssemblyByteBudget bounds the whole initial block: the anchor plus admitted candidates.
+	// AssemblyByteBudget bounds the block's content bytes: the anchor plus admitted candidates.
 	AssemblyByteBudget      = 60_000
 	MaxModelCalls           = 3
 	SupplementaryByteBudget = 20_000
