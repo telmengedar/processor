@@ -637,7 +637,7 @@ func TestTheSummaryNamesTheFractionOfTheCorpusTheSidecarPinsSoAPartialSidecarDoe
 	// thirteen rows are twelve short of the twenty-five actually swept.
 	result := resultWith(intactControlRow())
 	result.Arm = "internal/eval/derivations.json"
-	result.DerivationHash = "23b505521234567890abcdef1234567890abcdef1234567890abcdef123456"
+	result.DerivationHash = "23b505521234567890abcdef1234567890abcdef1234567890abcdef12345678"
 	result.DerivedRows = 13
 	result.RowCount = 25
 

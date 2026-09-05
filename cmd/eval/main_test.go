@@ -298,7 +298,7 @@ func TestRunIssuesEveryPinnedDerivationAndNamesTheArmItSweptOnBothStreams(t *tes
 }
 
 func TestRunWarnsOnTheOperatorStreamAloneWhenTheSidecarLeavesCorpusRowsUnpinned(t *testing.T) {
-	server := recordingGraphServer(t, &[]string{})
+	server := graphServer(t)
 	graphEnv(t, server.URL)
 
 	// runCorpus carries two rows, r01 and c01; this sidecar pins only r01,

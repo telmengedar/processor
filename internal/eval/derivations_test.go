@@ -191,19 +191,64 @@ func TestUnpinnedNamesTheCorpusRowsTheSidecarDoesNotPin(t *testing.T) {
 	}
 }
 
-func TestUnpinnedIsEmptyWhenTheSidecarCoversEveryCorpusRow(t *testing.T) {
+func TestUnpinnedPreservesCorpusOrderWhenMultipleRowsAreUnpinned(t *testing.T) {
 	t.Parallel()
 
-	body := `[
-	  {"row": "r01", "queries": ["a question about the first row"]},
-	  {"row": "r02", "queries": ["a question about the second row"]}
-	]`
-	derivations, err := LoadDerivations(writeDerivations(t, body), derivationCorpus())
+	// Four rows, only r02 pinned, so three survive unpinned -- enough that
+	// corpus order and its reverse are distinguishable. The warning line
+	// prints this slice verbatim (cmd/eval's "rows=" attribute), so an
+	// implementation that walked corpus.Rows backwards would still pass
+	// every other Unpinned test here (each has at most one unpinned row)
+	// while making that line reorder on every run without any input
+	// changing -- silently breaking the ability to diff two sweeps.
+	corpus := Corpus{Hash: "a-corpus-hash", Rows: []Row{
+		{ID: "r01", Input: "the first input", Subject: 100, Stratum: StratumLabelled},
+		{ID: "r02", Input: "the second input", Subject: 101, Stratum: StratumLabelled},
+		{ID: "r03", Input: "the third input", Subject: 102, Stratum: StratumLabelled},
+		{ID: "r04", Input: "the fourth input", Subject: 103, Stratum: StratumLabelled},
+	}}
+	body := `[{"row": "r02", "queries": ["a question about the second row"]}]`
+	derivations, err := LoadDerivations(writeDerivations(t, body), corpus)
 	if err != nil {
 		t.Fatalf("LoadDerivations: %v", err)
 	}
 
-	if got := derivations.Unpinned(derivationCorpus()); len(got) != 0 {
+	got := derivations.Unpinned(corpus)
+
+	want := []string{"r01", "r03", "r04"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Unpinned = %q, want %q in corpus order", got, want)
+	}
+}
+
+func TestUnpinnedIsEmptyWhenTheSidecarCoversEveryCorpusRow(t *testing.T) {
+	t.Parallel()
+
+	// Three rows so this fixture is not simply the two-row shape every
+	// other test here happens to share. Nil is not the promise being pinned
+	// (unlike the zero-sidecar case below, whose doc comment specifically
+	// promises nil) -- what matters is that a complete sidecar reports no
+	// gap at all, which is what keeps the coverage warning silent on every
+	// sweep once every row is pinned.
+	corpus := Corpus{Hash: "a-corpus-hash", Rows: []Row{
+		{ID: "r01", Input: "the first input", Subject: 100, Stratum: StratumLabelled},
+		{ID: "r02", Input: "the second input", Subject: 101, Stratum: StratumLabelled},
+		{ID: "r03", Input: "the third input", Subject: 102, Stratum: StratumLabelled},
+	}}
+	body := `[
+	  {"row": "r01", "queries": ["a question about the first row"]},
+	  {"row": "r02", "queries": ["a question about the second row"]},
+	  {"row": "r03", "queries": ["a question about the third row"]}
+	]`
+	derivations, err := LoadDerivations(writeDerivations(t, body), corpus)
+	if err != nil {
+		t.Fatalf("LoadDerivations: %v", err)
+	}
+	if got := derivations.Rows(); got != len(corpus.Rows) {
+		t.Fatalf("the fixture pins %d of %d rows, want all of them: this test's assertion only means something if the sidecar genuinely covers the whole corpus", got, len(corpus.Rows))
+	}
+
+	if got := derivations.Unpinned(corpus); !slices.Equal(got, []string{}) {
 		t.Fatalf("Unpinned = %q, want none: every corpus row carries a pinned query set", got)
 	}
 }
