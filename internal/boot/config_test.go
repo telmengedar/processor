@@ -6,16 +6,6 @@ import (
 	"testing"
 )
 
-// quoted renders s the way %q would render it inside the boot package's own
-// error text. A bare strings.Contains(err, s) is not discriminating here: the
-// rejectAPIBase error deliberately renders three URL-shaped values that are
-// each other's prefixes by construction (the corrected origin is a prefix of
-// the supplied value with its bad suffix trimmed; the "would request" value
-// is the supplied value with more appended) — so an assertion against the
-// unquoted text can pass even when the argument that was supposed to fill
-// that slot has been swapped out. Requiring the closing quote immediately
-// after the value pins it to one specific %q slot instead of any substring
-// occurrence.
 func quoted(s string) string {
 	return fmt.Sprintf("%q", s)
 }
@@ -29,8 +19,6 @@ func fixedLookup(values map[string]string) lookupFunc {
 
 func validEnv(overrides map[string]string) map[string]string {
 	env := map[string]string{
-		// Origin only: the graph client appends "/api/nodes" itself (#11328).
-		// A "/api" suffix here is the credentials-file trap, not a valid base.
 		"PROCESSOR_DIVOID_URL": "https://graph.example",
 		"PROCESSOR_DIVOID_KEY": "test-key-12345",
 		"PROCESSOR_MODEL_URL":  "https://model.example/v1",
@@ -131,10 +119,6 @@ func TestLoadGraphUsesDivoidURLVerbatimWhenPresent(t *testing.T) {
 func TestLoadGraphRejectsDivoidURLWhosePathEndsInAPI(t *testing.T) {
 	t.Parallel()
 
-	// This is the credentials-file trap (#11328): ~/.claude/secrets/.divoid-online's
-	// Url= line is the correct base for direct REST calls, but the graph client
-	// appends "/api/nodes" itself, so pasting that value here would silently
-	// double the path.
 	const bad = "https://graph.example/api"
 	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": bad})
 
@@ -145,10 +129,6 @@ func TestLoadGraphRejectsDivoidURLWhosePathEndsInAPI(t *testing.T) {
 	if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
 		t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
 	}
-	// quoted, not a bare Contains(err, bad): the "requests would go to" clause
-	// always renders bad as a literal prefix of its own text (it is bad with
-	// "/api/nodes" appended), so an unquoted assertion here would still pass
-	// even if the code stopped naming the supplied value in its own slot.
 	if !strings.Contains(err.Error(), quoted(bad)) {
 		t.Fatalf("error = %q, want it to name the supplied value %s", err.Error(), quoted(bad))
 	}
@@ -157,10 +137,6 @@ func TestLoadGraphRejectsDivoidURLWhosePathEndsInAPI(t *testing.T) {
 func TestLoadGraphRejectAPIBaseErrorNamesTheDoubledPathThatWouldActuallyBeRequested(t *testing.T) {
 	t.Parallel()
 
-	// The third of the three URL-shaped values in the error, and the one
-	// naming the actual failure this whole check exists to prevent. Nothing
-	// else pinned it: mutating wouldRequest.Path from "path + nodesPathSuffix"
-	// down to just "path" left the rest of the suite green.
 	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": "https://graph.example/api"})
 
 	_, err := loadGraph(fixedLookup(env))
@@ -201,8 +177,6 @@ func TestLoadGraphRejectsDivoidURLThatAlreadyContainsAPINodes(t *testing.T) {
 	if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
 		t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
 	}
-	// Pins what this branch actually computes, not just that it rejected:
-	// nothing previously checked the /api/nodes branch's own suggestion.
 	const suggestion = "https://graph.example"
 	if !strings.Contains(err.Error(), quoted(suggestion)) {
 		t.Fatalf("error = %q, want it to suggest the corrected value %s", err.Error(), quoted(suggestion))
@@ -212,14 +186,6 @@ func TestLoadGraphRejectsDivoidURLThatAlreadyContainsAPINodes(t *testing.T) {
 func TestLoadGraphRejectAPIBaseTrimsTheFullAPINodesTailNotJustTheConstantSuffix(t *testing.T) {
 	t.Parallel()
 
-	// A path that contains "/api/nodes" without ending on it exactly (a node
-	// id appended after it, e.g. a pasted single-node REST URL) still names
-	// the full offending tail. A mutant that hard-codes badSuffix to the
-	// "/api/nodes" constant instead of computing it from the match index
-	// would call strings.TrimSuffix with a suffix that is not actually at
-	// the end of this path, leave it untouched, and suggest back the very
-	// value that was just rejected — the divergence the two branches
-	// (Contains vs. HasSuffix) only produce on a fixture shaped like this.
 	const bad = "https://graph.example/api/nodes/123"
 	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": bad})
 
@@ -242,15 +208,6 @@ func TestLoadGraphRejectAPIBaseErrorSuggestsTheOriginWithTheSuffixStripped(t *te
 	if err == nil {
 		t.Fatal("loadGraph returned nil error, want an error suggesting the corrected value")
 	}
-	// quoted, not a bare Contains: the corrected origin is a prefix of both
-	// the supplied value and the "would request" value by construction (it
-	// is the supplied value with the bad suffix trimmed off), so an unquoted
-	// assertion is satisfied by either of those and never actually checks
-	// that the corrected value's own slot was filled correctly — proved by
-	// mutation: swapping corrected.Redacted() for a constant leaves an
-	// unquoted Contains(err, "https://graph.example") passing, because that
-	// text still appears (as a prefix) inside the supplied and would-request
-	// renderings.
 	const suggestion = "https://graph.example"
 	if !strings.Contains(err.Error(), quoted(suggestion)) {
 		t.Fatalf("error = %q, want it to suggest the corrected value %s", err.Error(), quoted(suggestion))
@@ -260,9 +217,6 @@ func TestLoadGraphRejectAPIBaseErrorSuggestsTheOriginWithTheSuffixStripped(t *te
 func TestLoadGraphRejectAPIBaseErrorSuggestsTheOriginWithAMountedPathPreserved(t *testing.T) {
 	t.Parallel()
 
-	// The bad suffix ("/api") sits at the end of a longer, legitimate path
-	// prefix here, so the correction must trim only the suffix and keep the
-	// mount point — the code handles this correctly, but nothing pinned it.
 	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": "https://graph.example/divoid/api"})
 
 	_, err := loadGraph(fixedLookup(env))
@@ -278,10 +232,6 @@ func TestLoadGraphRejectAPIBaseErrorSuggestsTheOriginWithAMountedPathPreserved(t
 func TestLoadGraphRejectAPIBaseDoesNotRejectAHostThatMerelyContainsAPI(t *testing.T) {
 	t.Parallel()
 
-	// "api" appearing somewhere in the URL is not the trap; only the path
-	// segment "/api" (or "/api/nodes") is. A host like api.example.com, or a
-	// path like "/graph-api" that merely ends with the substring "api"
-	// without the segment boundary, must stay accepted.
 	for _, want := range []string{
 		"https://api.example.com",
 		"https://graph.example/graph-api",
@@ -332,12 +282,6 @@ func TestLoadGraphAcceptsLegitimateDivoidURLShapes(t *testing.T) {
 func TestLoadGraphRejectAPIBaseCatchesTheTrapEvenWithSurroundingWhitespace(t *testing.T) {
 	t.Parallel()
 
-	// The trap's source is a credentials file, so a pasted value realistically
-	// carries a stray leading space, a trailing space, a trailing "\t", or a
-	// trailing "\r" (a CRLF-saved file read on a line-oriented parser). Left
-	// unstripped, a trailing space in particular would reach the HTTP client,
-	// get percent-escaped to "%20", and reproduce this exact failure under a
-	// value that superficially looks like it was rejected already.
 	for _, tc := range []struct {
 		name string
 		url  string
@@ -366,13 +310,6 @@ func TestLoadGraphRejectAPIBaseCatchesTheTrapEvenWithSurroundingWhitespace(t *te
 func TestLoadGraphAcceptsADivoidURLWithNoSchemeEvenThoughItsPathEndsInAPI(t *testing.T) {
 	t.Parallel()
 
-	// A bare host-and-path with no scheme — exactly the credentials file's
-	// Url= value pasted without its "https://" — parses via net/url as a
-	// relative reference with an empty Host, so rejectAPIBase's guard clause
-	// lets it through untouched: this is the documented, deliberate limit of
-	// the check (see the comment on the parse-failure branch in config.go),
-	// not an oversight. Pinning it here means a future change to that branch
-	// is a visible, deliberate decision instead of a silent regression.
 	const want = "divoid.mamgo.io/api"
 	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": want})
 
@@ -388,12 +325,6 @@ func TestLoadGraphAcceptsADivoidURLWithNoSchemeEvenThoughItsPathEndsInAPI(t *tes
 func TestLoadGraphRejectAPIBaseErrorOmitsAUserinfoPasswordFromEveryRendering(t *testing.T) {
 	t.Parallel()
 
-	// config.go builds all three URL-shaped values in the error (the supplied
-	// value, the doubled path, the corrected suggestion) as *url.URL copies
-	// rendered via Redacted() specifically so a userinfo password never
-	// reaches the error text — a sibling guarantee to the one already pinned
-	// for PROCESSOR_DIVOID_KEY (TestBootConfigErrorsNameTheVariableAndNeverItsValue),
-	// but previously nothing held it for this path.
 	const password = "hunter2"
 	env := validEnv(map[string]string{
 		"PROCESSOR_DIVOID_URL": "https://user:" + password + "@graph.example/api",
