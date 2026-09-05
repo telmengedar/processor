@@ -1,9 +1,14 @@
 package boot
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
+
+func quoted(s string) string {
+	return fmt.Sprintf("%q", s)
+}
 
 func fixedLookup(values map[string]string) lookupFunc {
 	return func(key string) (string, bool) {
@@ -14,7 +19,7 @@ func fixedLookup(values map[string]string) lookupFunc {
 
 func validEnv(overrides map[string]string) map[string]string {
 	env := map[string]string{
-		"PROCESSOR_DIVOID_URL": "https://graph.example/api",
+		"PROCESSOR_DIVOID_URL": "https://graph.example",
 		"PROCESSOR_DIVOID_KEY": "test-key-12345",
 		"PROCESSOR_MODEL_URL":  "https://model.example/v1",
 		"PROCESSOR_MODEL_ID":   "test-model-id",
@@ -99,7 +104,7 @@ func TestLoadGraphErrorsWhenDivoidURLPresentButEmpty(t *testing.T) {
 func TestLoadGraphUsesDivoidURLVerbatimWhenPresent(t *testing.T) {
 	t.Parallel()
 
-	const want = "https://custom.graph.internal/api"
+	const want = "https://custom.graph.internal"
 	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": want})
 
 	cfg, err := loadGraph(fixedLookup(env))
@@ -108,6 +113,229 @@ func TestLoadGraphUsesDivoidURLVerbatimWhenPresent(t *testing.T) {
 	}
 	if cfg.URL != want {
 		t.Fatalf("divoidURL = %q, want %q", cfg.URL, want)
+	}
+}
+
+func TestLoadGraphRejectsDivoidURLWhosePathEndsInAPI(t *testing.T) {
+	t.Parallel()
+
+	const bad = "https://graph.example/api"
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": bad})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatalf("loadGraph returned nil error for %q, want an error naming the /api trap", bad)
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
+	}
+	if !strings.Contains(err.Error(), quoted(bad)) {
+		t.Fatalf("error = %q, want it to name the supplied value %s", err.Error(), quoted(bad))
+	}
+}
+
+func TestLoadGraphRejectAPIBaseErrorNamesTheDoubledPathThatWouldActuallyBeRequested(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": "https://graph.example/api"})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadGraph returned nil error, want an error naming the doubled path")
+	}
+	const doubled = "https://graph.example/api/api/nodes"
+	if !strings.Contains(err.Error(), quoted(doubled)) {
+		t.Fatalf("error = %q, want it to name the doubled path %s that would actually be requested", err.Error(), quoted(doubled))
+	}
+}
+
+func TestLoadGraphRejectsDivoidURLWhosePathEndsInAPIWithTrailingSlash(t *testing.T) {
+	t.Parallel()
+
+	const bad = "https://graph.example/api/"
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": bad})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatalf("loadGraph returned nil error for %q, want an error naming the /api trap", bad)
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
+	}
+}
+
+func TestLoadGraphRejectsDivoidURLThatAlreadyContainsAPINodes(t *testing.T) {
+	t.Parallel()
+
+	const bad = "https://graph.example/api/nodes"
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": bad})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatalf("loadGraph returned nil error for %q, want an error naming the /api/nodes trap", bad)
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
+	}
+	const suggestion = "https://graph.example"
+	if !strings.Contains(err.Error(), quoted(suggestion)) {
+		t.Fatalf("error = %q, want it to suggest the corrected value %s", err.Error(), quoted(suggestion))
+	}
+}
+
+func TestLoadGraphRejectAPIBaseTrimsTheFullAPINodesTailNotJustTheConstantSuffix(t *testing.T) {
+	t.Parallel()
+
+	const bad = "https://graph.example/api/nodes/123"
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": bad})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatalf("loadGraph returned nil error for %q, want an error naming the /api/nodes trap", bad)
+	}
+	const suggestion = "https://graph.example"
+	if !strings.Contains(err.Error(), quoted(suggestion)) {
+		t.Fatalf("error = %q, want it to suggest the corrected value %s, not the rejected value unchanged", err.Error(), quoted(suggestion))
+	}
+}
+
+func TestLoadGraphRejectAPIBaseErrorSuggestsTheOriginWithTheSuffixStripped(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": "https://graph.example/api"})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadGraph returned nil error, want an error suggesting the corrected value")
+	}
+	const suggestion = "https://graph.example"
+	if !strings.Contains(err.Error(), quoted(suggestion)) {
+		t.Fatalf("error = %q, want it to suggest the corrected value %s", err.Error(), quoted(suggestion))
+	}
+}
+
+func TestLoadGraphRejectAPIBaseErrorSuggestsTheOriginWithAMountedPathPreserved(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": "https://graph.example/divoid/api"})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadGraph returned nil error, want an error suggesting the corrected value")
+	}
+	const suggestion = "https://graph.example/divoid"
+	if !strings.Contains(err.Error(), quoted(suggestion)) {
+		t.Fatalf("error = %q, want it to suggest the corrected value %s, preserving the /divoid mount", err.Error(), quoted(suggestion))
+	}
+}
+
+func TestLoadGraphRejectAPIBaseDoesNotRejectAHostThatMerelyContainsAPI(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range []string{
+		"https://api.example.com",
+		"https://graph.example/graph-api",
+		"https://graph.example/apis",
+	} {
+		env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": want})
+
+		cfg, err := loadGraph(fixedLookup(env))
+		if err != nil {
+			t.Fatalf("loadGraph(%q): %v, want no error — it does not literally end in the /api segment", want, err)
+		}
+		if cfg.URL != want {
+			t.Fatalf("divoidURL = %q, want %q", cfg.URL, want)
+		}
+	}
+}
+
+func TestLoadGraphAcceptsLegitimateDivoidURLShapes(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{"bare origin", "https://graph.example"},
+		{"trailing slash", "https://graph.example/"},
+		{"explicit port", "https://graph.example:8443"},
+		{"http scheme", "http://graph.internal"},
+		{"non-api path prefix", "https://graph.example/graph"},
+		{"localhost with port and path prefix", "http://localhost:9000/graph"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": tc.url})
+
+			cfg, err := loadGraph(fixedLookup(env))
+			if err != nil {
+				t.Fatalf("loadGraph(%q): %v, want a legitimate origin to be accepted", tc.url, err)
+			}
+			if cfg.URL != tc.url {
+				t.Fatalf("divoidURL = %q, want %q (used verbatim)", cfg.URL, tc.url)
+			}
+		})
+	}
+}
+
+func TestLoadGraphRejectAPIBaseCatchesTheTrapEvenWithSurroundingWhitespace(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{"trailing space", "https://graph.example/api "},
+		{"leading space", " https://graph.example/api"},
+		{"trailing carriage return", "https://graph.example/api\r"},
+		{"trailing tab", "https://graph.example/api\t"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": tc.url})
+
+			_, err := loadGraph(fixedLookup(env))
+			if err == nil {
+				t.Fatalf("loadGraph(%q) returned nil error, want the /api trap caught despite the whitespace", tc.url)
+			}
+			if !strings.Contains(err.Error(), "PROCESSOR_DIVOID_URL") {
+				t.Fatalf("error = %q, want it to name PROCESSOR_DIVOID_URL", err.Error())
+			}
+		})
+	}
+}
+
+func TestLoadGraphAcceptsADivoidURLWithNoSchemeEvenThoughItsPathEndsInAPI(t *testing.T) {
+	t.Parallel()
+
+	const want = "divoid.mamgo.io/api"
+	env := validEnv(map[string]string{"PROCESSOR_DIVOID_URL": want})
+
+	cfg, err := loadGraph(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadGraph(%q): %v, want no error — a scheme-less value is accepted by design, not validated", want, err)
+	}
+	if cfg.URL != want {
+		t.Fatalf("divoidURL = %q, want %q (used verbatim)", cfg.URL, want)
+	}
+}
+
+func TestLoadGraphRejectAPIBaseErrorOmitsAUserinfoPasswordFromEveryRendering(t *testing.T) {
+	t.Parallel()
+
+	const password = "hunter2"
+	env := validEnv(map[string]string{
+		"PROCESSOR_DIVOID_URL": "https://user:" + password + "@graph.example/api",
+	})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadGraph returned nil error, want an error rejecting the /api trap")
+	}
+	if strings.Contains(err.Error(), password) {
+		t.Fatalf("error = %q, must not contain the userinfo password %q", err.Error(), password)
 	}
 }
 
@@ -159,7 +387,7 @@ func TestGraphBootConfigLoadsWhenNoModelVariableIsSet(t *testing.T) {
 	t.Parallel()
 
 	env := map[string]string{
-		"PROCESSOR_DIVOID_URL": "https://graph.example/api",
+		"PROCESSOR_DIVOID_URL": "https://graph.example",
 		"PROCESSOR_DIVOID_KEY": "test-key-12345",
 	}
 
@@ -347,7 +575,7 @@ func TestLoadModelUsesModelKeyVerbatimWhenPresent(t *testing.T) {
 
 func TestExportedLoadersReadTheProcessEnvironment(t *testing.T) {
 	t.Setenv("PROCESSOR_HTTP_ADDR", "0.0.0.0:7070")
-	t.Setenv("PROCESSOR_DIVOID_URL", "https://env.graph.example/api")
+	t.Setenv("PROCESSOR_DIVOID_URL", "https://env.graph.example")
 	t.Setenv("PROCESSOR_DIVOID_KEY", "env-graph-key")
 	t.Setenv("PROCESSOR_MODEL_URL", "https://env.model.example/v1")
 	t.Setenv("PROCESSOR_MODEL_ID", "env-model-id")
@@ -365,7 +593,7 @@ func TestExportedLoadersReadTheProcessEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadGraph: %v", err)
 	}
-	if graph.URL != "https://env.graph.example/api" || graph.Key != "env-graph-key" {
+	if graph.URL != "https://env.graph.example" || graph.Key != "env-graph-key" {
 		t.Fatalf("graph = %+v, want the PROCESSOR_DIVOID_ variables", graph)
 	}
 

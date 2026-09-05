@@ -3,7 +3,9 @@ package boot
 
 import (
 	"fmt"
+	neturl "net/url"
 	"os"
+	"strings"
 )
 
 const (
@@ -17,6 +19,9 @@ const (
 	envModelID  = "PROCESSOR_MODEL_ID"
 
 	envModelKey = "PROCESSOR_MODEL_KEY"
+
+	apiPathSuffix   = "/api"
+	nodesPathSuffix = "/api/nodes"
 )
 
 // GraphConfig is what a graph client needs to reach the graph.
@@ -69,6 +74,9 @@ func loadGraph(lookup lookupFunc) (GraphConfig, error) {
 	if err != nil {
 		return GraphConfig{}, err
 	}
+	if err := rejectAPIBase(url); err != nil {
+		return GraphConfig{}, err
+	}
 
 	key, err := requireEnv(lookup, envDivoidKey)
 	if err != nil {
@@ -76,6 +84,38 @@ func loadGraph(lookup lookupFunc) (GraphConfig, error) {
 	}
 
 	return GraphConfig{URL: url, Key: key}, nil
+}
+
+func rejectAPIBase(divoidURL string) error {
+	trimmed := strings.TrimRight(strings.TrimSpace(divoidURL), "/")
+
+	parsed, err := neturl.Parse(trimmed)
+	if err != nil || parsed.Host == "" {
+		return nil
+	}
+
+	path := strings.TrimRight(parsed.Path, "/")
+
+	var badSuffix string
+	switch {
+	case strings.Contains(path, nodesPathSuffix):
+		badSuffix = path[strings.Index(path, nodesPathSuffix):]
+	case strings.HasSuffix(path, apiPathSuffix):
+		badSuffix = apiPathSuffix
+	default:
+		return nil
+	}
+
+	wouldRequest := *parsed
+	wouldRequest.Path = path + nodesPathSuffix
+
+	corrected := *parsed
+	corrected.Path = strings.TrimSuffix(path, badSuffix)
+
+	return fmt.Errorf(
+		"%s is %q, which already includes the graph API path (%q); the client appends %q itself, so requests would go to %q — set it to the origin only, e.g. %q",
+		envDivoidURL, parsed.Redacted(), badSuffix, nodesPathSuffix, wouldRequest.Redacted(), corrected.Redacted(),
+	)
 }
 
 func loadModel(lookup lookupFunc) (ModelConfig, error) {

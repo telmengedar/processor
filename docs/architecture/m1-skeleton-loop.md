@@ -816,7 +816,7 @@ them** — each in the unit that reads it (§2.3).
 | Member | Variable | Absent | Present, empty | Present | Unit |
 |---|---|---|---|---|---|
 | HTTP listen address | `PROCESSOR_HTTP_ADDR` | default `127.0.0.1:8080` | **error** | verbatim | (exists) |
-| DiVoid base URL | `PROCESSOR_DIVOID_URL` | **error** | **error** | verbatim | A |
+| DiVoid base URL | `PROCESSOR_DIVOID_URL` | **error** | **error** | ~~verbatim~~ **CORRECTED 2026-09-05 (#11328): verbatim, except a path ending in `/api` (or already containing `/api/nodes`) is also an error — the client appends `/api/nodes` itself, and that shape is exactly what the operator's credentials file holds for direct REST calls** | A |
 | DiVoid API key | `PROCESSOR_DIVOID_KEY` | **error** | **error** | verbatim | A |
 | Model endpoint base URL | `PROCESSOR_MODEL_URL` | **error** | **error** | verbatim | B |
 | Model id | `PROCESSOR_MODEL_ID` | **error** | **error** | verbatim | B |
