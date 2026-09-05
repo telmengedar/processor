@@ -141,20 +141,46 @@ def load_tasks(path, only):
         )
 
     if only is None:
-        return rows
+        selected = rows
+    else:
+        # dict.fromkeys dedupes while keeping first-occurrence order: "--only t1,t1" must run t1
+        # once, not twice, or both the in-file duplicate-task check above and the graph check
+        # below are defeated by a repeated id rather than a repeated file row (DiVoid #11141).
+        wanted = list(dict.fromkeys(name.strip() for name in only.split(",") if name.strip()))
+        by_id = {row["id"]: row for row in rows}
+        missing = [name for name in wanted if name not in by_id]
+        if missing:
+            raise CompareFailure(
+                f"--only names {', '.join(missing)}, which {path} does not define. It defines "
+                f"{', '.join(by_id)}"
+            )
+        selected = [by_id[name] for name in wanted]
 
-    # dict.fromkeys dedupes while keeping first-occurrence order: "--only t1,t1" must run t1 once,
-    # not twice, or both the in-file duplicate-task check above and the graph check below are
-    # defeated by a repeated id rather than a repeated file row (DiVoid #11141).
-    wanted = list(dict.fromkeys(name.strip() for name in only.split(",") if name.strip()))
-    by_id = {row["id"]: row for row in rows}
-    missing = [name for name in wanted if name not in by_id]
-    if missing:
-        raise CompareFailure(
-            f"--only names {', '.join(missing)}, which {path} does not define. It defines "
-            f"{', '.join(by_id)}"
+    warn_self_referential(selected)
+    return selected
+
+
+def warn_self_referential(tasks):
+    """DiVoid #11333 S4: a task whose own subject appears in its answerNodes has bought part of
+    its answer for free. That node is this run's anchor -- it reaches the model unconditionally,
+    before any candidate and with no budget check -- so route() (above) excludes it from the
+    task's retrieval-eligible population; for that node the task tests nothing about retrieval.
+
+    A warning, not a refusal: the run this produces is still an honest arm comparison (arm
+    TRANSCRIPT is unaffected either way, and the anchor is real product behaviour, not an
+    instrument artefact), and refusing outright would break continuity with the runs DiVoid
+    #11319 already records. Revising the task set so no task's subject is among its own answer
+    nodes is separate, future work -- not this script's job.
+    """
+    offenders = [t["id"] for t in tasks if t["subject"] in (t.get("answerNodes") or [])]
+    if offenders:
+        print(
+            f"WARN: task(s) {', '.join(offenders)} name their own subject as an answer node. "
+            f"That node is this run's anchor: it reaches the model unconditionally, so it is "
+            f"excluded from that task's retrieval-eligible population (route anchor, not a "
+            f"retrieval stage -- see route() in this file, DiVoid #11333). This is a warning, "
+            f"not a refusal; the comparison still runs."
         )
-    return [by_id[name] for name in wanted]
 
 
 def duplicates(values):
@@ -495,6 +521,14 @@ class Stage(str):
         self.indictment = indictment
         return self
 
+    def __getnewargs__(self):
+        # str's default pickle/copy protocol reconstructs an instance via __new__(cls, str(self))
+        # alone -- one positional argument -- and Stage.__new__ requires two. Without this, both
+        # copy.copy/deepcopy and pickle.loads raise TypeError on any Stage value. Not reachable
+        # through the CLI today (nothing here copies or pickles a Stage), but it is the latent
+        # edge: the moment something serializes a run's stage tally, this is what fires.
+        return (str(self), self.indictment)
+
 
 NOT_RETRIEVED = Stage(
     "not retrieved",
@@ -548,20 +582,36 @@ ADMITTED_SUPPLEMENTARY_RECOVERED = Stage(
     "assembly's admission at the initial round, not the recall query: the recall query worked",
 )
 
-ANCHOR = Stage(
-    "anchor, not retrieval",
-    "this answer node is the run's own anchor. internal/loop/assemble.go's renderBlock writes "
-    "the anchor and its full content into the block unconditionally, before any candidate and "
-    "with no budget check, so it reached the model regardless of what recall returned or what "
-    "assembly admitted or cut. This is not a retrieval finding: it says nothing about the "
-    "recall query, the candidate limit, or the byte budget, and must not be scored as any of "
-    "the three succeeding -- a task that names its own subject as an answer node is not a fair "
-    "test of retrieval for that node, whatever candidates(record) or the supplementary rounds "
-    "separately say about the same id",
-)
-
 UNLABELLED = Stage(
     "no answer nodes named", "the task set names no answering node, so nothing mechanical can be attributed"
+)
+
+ANCHOR_ONLY = Stage(
+    "anchor only",
+    "every answer node this task names is its own subject, so the run sent them all "
+    "unconditionally and this task measures nothing about retrieval. This is constant by "
+    "construction -- it reports a property of the task set, not of this run -- which is why it "
+    "is a distinct task-level value rather than a seventh retrieval stage (DiVoid #11333 S1)",
+)
+
+# Route, not stage (DiVoid #11333): the instrument has one axis -- how far did this node get? --
+# and a node that never entered the race does not belong on it. Every named answer node is on
+# exactly one of these two routes; route() below is the one comparison that decides which, and
+# nothing about it can fail. A node on ROUTE_ANCHOR is not ranked against the six Stage values
+# above -- it is removed from the population they describe. found() already applied that rule;
+# task_stage's precedence and print_table's nodes ratio did not, and both were wrong the same way.
+ROUTE_ANCHOR = "anchor"
+ROUTE_RETRIEVAL = "retrieval"
+
+ANCHOR_ROUTE_NOTE = (
+    "the anchor route: internal/loop/assemble.go's renderBlock writes the run's anchor and its "
+    "full content into the block unconditionally, before any candidate and with no budget check, "
+    "so an answer node on this route reached the model regardless of what recall returned or "
+    "what assembly admitted or cut. This is not a retrieval finding -- it says nothing about the "
+    "recall query, the candidate limit, or the byte budget -- and it is removed from the "
+    "population the stage above describes rather than ranked within it: a task naming its own "
+    "subject as an answer node is not a fair test of retrieval for that node, whatever "
+    "candidates(record) or the supplementary rounds separately say about the same id"
 )
 
 
@@ -581,22 +631,37 @@ def _supplementary_by_id(record):
     return by_id
 
 
+def route(node, record):
+    """`ROUTE_ANCHOR` if `node` is this run's own anchor id, else `ROUTE_RETRIEVAL`.
+
+    One comparison, `node == record.anchor.id`; nothing about it can fail. This is the entire
+    axis split DiVoid #11333 turns on: arrival route (did this node enter the race at all?) and
+    retrieval stage (how far did it get, given that it did?) are two different questions, and a
+    node on the anchor route is not a candidate answer to the second one.
+    """
+    anchor_id = (record.get("anchor") or {}).get("id")
+    return ROUTE_ANCHOR if anchor_id is not None and node == anchor_id else ROUTE_RETRIEVAL
+
+
 def answer_node_report(task, record):
-    """One (node, stage, rank, detail) row per answer node the task set names.
+    """One (node, route, stage, rank, detail) row per answer node the task set names.
 
-    The anchor check comes first and short-circuits everything else: internal/loop/assemble.go's
-    renderBlock writes record["anchor"] into the block unconditionally, before any candidate and
-    with no budget check, so an answer node that IS the anchor reached the model regardless of
-    what candidates(record) or a supplementary round separately say about that same id. Checking
-    candidates/supplementary first for such a node would report it as NOT_RETRIEVED, RETRIEVED_CUT,
-    or even admitted-by-luck depending on whether scoped recall also happened to return it (F1) --
-    every one of those readings is a retrieval verdict about a node that never went through
-    retrieval to reach the model.
+    `route` comes from route() and is checked first, short-circuiting everything else: an answer
+    node on ROUTE_ANCHOR reached the model regardless of what candidates(record) or a
+    supplementary round separately say about that same id, so `stage` is None for it -- it is not
+    a retrieval outcome of any kind, admitted or otherwise. Checking candidates/supplementary
+    first for such a node would report it as NOT_RETRIEVED, RETRIEVED_CUT, or even admitted-by-luck
+    depending on whether scoped recall also happened to return it (F1) -- every one of those
+    readings is a retrieval verdict about a node that never went through retrieval to reach the
+    model. This is deliberately re-checked even when the node is ALSO an admitted candidate, a cut
+    candidate, or a supplementary hit: route wins regardless, because arrival and stage are
+    different axes and a node's presence on one says nothing about its place on the other
+    (DiVoid #11333).
 
-    Past the anchor check, `rank` is the rank at the round the stage is reported from (the initial
-    round for ADMITTED_PRIMARY and a cut reported as RETRIEVED_CUT, the supplementary round for a
-    supplementary stage or RETRIEVED_CUT_SUPPLEMENTARY). `detail` carries the fact the top-line
-    stage can't: which round's candidates a cut happened in and why, or -- for
+    For a ROUTE_RETRIEVAL row, `rank` is the rank at the round the stage is reported from (the
+    initial round for ADMITTED_PRIMARY and a cut reported as RETRIEVED_CUT, the supplementary
+    round for a supplementary stage or RETRIEVED_CUT_SUPPLEMENTARY). `detail` carries the fact the
+    top-line stage can't: which round's candidates a cut happened in and why, or -- for
     ADMITTED_SUPPLEMENTARY_RECOVERED -- the initial round's own rank and cutReason, the fact that
     makes the initial query's success and the subsequent cut both real.
 
@@ -618,14 +683,13 @@ def answer_node_report(task, record):
     wanted = task.get("answerNodes") or []
     if not wanted:
         return []
-    anchor_id = (record.get("anchor") or {}).get("id")
     primary_by_id = {c.get("id"): c for c in candidates(record)}
     supplementary_by_id = _supplementary_by_id(record)
 
     rows = []
     for node in wanted:
-        if anchor_id is not None and node == anchor_id:
-            rows.append((node, ANCHOR, None, None))
+        if route(node, record) == ROUTE_ANCHOR:
+            rows.append((node, ROUTE_ANCHOR, None, None, None))
             continue
 
         primary = primary_by_id.get(node)
@@ -634,42 +698,81 @@ def answer_node_report(task, record):
         supplementary_included = bool(supplementary is not None and supplementary.get("included"))
 
         if primary_included:
-            rows.append((node, ADMITTED_PRIMARY, primary.get("rank"), None))
+            rows.append((node, ROUTE_RETRIEVAL, ADMITTED_PRIMARY, primary.get("rank"), None))
         elif supplementary_included and primary is not None:
             reason = primary.get("cutReason") or "no reason given"
             detail = f"initial recall ranked it #{primary.get('rank')} but assembly cut it ({reason})"
-            rows.append((node, ADMITTED_SUPPLEMENTARY_RECOVERED, supplementary.get("rank"), detail))
+            rows.append(
+                (node, ROUTE_RETRIEVAL, ADMITTED_SUPPLEMENTARY_RECOVERED, supplementary.get("rank"), detail)
+            )
         elif supplementary_included:
-            rows.append((node, ADMITTED_SUPPLEMENTARY, supplementary.get("rank"), None))
+            rows.append((node, ROUTE_RETRIEVAL, ADMITTED_SUPPLEMENTARY, supplementary.get("rank"), None))
         elif primary is not None:
             reason = primary.get("cutReason") or "no reason given"
-            rows.append((node, RETRIEVED_CUT, primary.get("rank"), f"cut at the initial round: {reason}"))
+            rows.append(
+                (node, ROUTE_RETRIEVAL, RETRIEVED_CUT, primary.get("rank"), f"cut at the initial round: {reason}")
+            )
         elif supplementary is not None:
             reason = supplementary.get("cutReason") or "no reason given"
             rows.append(
                 (
                     node,
+                    ROUTE_RETRIEVAL,
                     RETRIEVED_CUT_SUPPLEMENTARY,
                     supplementary.get("rank"),
                     f"cut at a supplementary round: {reason}",
                 )
             )
         else:
-            rows.append((node, NOT_RETRIEVED, None, None))
+            rows.append((node, ROUTE_RETRIEVAL, NOT_RETRIEVED, None, None))
     return rows
 
 
-# Best-first precedence for task_stage: the earliest entry found among a task's answer-node
-# dispositions wins. ANCHOR leads because a node the run sent unconditionally is, as a plain
-# matter of what reached the model, the furthest any node can get -- the indictment text is what
-# stops that from being misread as a retrieval success. ADMITTED_SUPPLEMENTARY_RECOVERED outranks
-# the genuine-miss ADMITTED_SUPPLEMENTARY: a node the initial query found and the budget cut, later
-# recovered, is a working query plus a tight budget; a node the initial query never found at all is
-# a query miss papered over by a second, unscoped round -- the first is the milder finding. The
-# same reasoning orders RETRIEVED_CUT (initial query found it) ahead of RETRIEVED_CUT_SUPPLEMENTARY
-# (initial query never found it; only a supplementary round did, and that too was cut).
+ADMITTED_STAGES = (ADMITTED_PRIMARY, ADMITTED_SUPPLEMENTARY, ADMITTED_SUPPLEMENTARY_RECOVERED)
+
+
+def arrived(row):
+    """True if this answer-node row reached the model at all -- by the anchor route, or by any of
+    the three admitted retrieval stages. Gates the two-line split in DiVoid #11333 S2: `any(...)`
+    over a task's rows for the arrival line ("at least one named node reached the model, worth
+    reading the answers for"), `all(...)` for the completion line ("nothing mechanical is left
+    unreported"). A row on RETRIEVED_CUT, RETRIEVED_CUT_SUPPLEMENTARY, or NOT_RETRIEVED did not
+    arrive -- those are exactly the stages that mean the node never reached the model."""
+    _, node_route, stage, _, _ = row
+    return node_route == ROUTE_ANCHOR or stage in ADMITTED_STAGES
+
+
+def node_ratio(rows):
+    """(found, eligible) over the retrieval-eligible rows only, or None if that population is
+    empty. `eligible` counts every row on ROUTE_RETRIEVAL, admitted or not; `found` counts those
+    with an admitted stage. Anchor rows leave both halves -- DiVoid #11333 S3: an anchor was never
+    in a position for retrieval to succeed or fail on it, so it is not a numerator any more than a
+    denominator. An empty retrieval-eligible population (a task naming only its own anchor(s), or
+    naming no answer nodes at all) has no ratio to report; callers must print that as a dash, never
+    as 0/0 or 0/1."""
+    eligible = [r for r in rows if r[1] == ROUTE_RETRIEVAL]
+    if not eligible:
+        return None
+    found = sum(1 for r in eligible if r[2] in ADMITTED_STAGES)
+    return found, len(eligible)
+
+
+def anchor_arrivals(rows):
+    """Count of named answer nodes that are the run's own anchor -- DiVoid #11333 S3's narrow
+    column, printed beside the nodes ratio rather than folded into either half of it."""
+    return sum(1 for r in rows if r[1] == ROUTE_ANCHOR)
+
+
+# Best-first precedence for task_stage: the earliest entry found among a task's *retrieval-eligible*
+# answer-node dispositions wins -- an anchor row carries no stage at all (route() removed it from
+# this population entirely, DiVoid #11333) and so cannot appear here or win anything.
+# ADMITTED_SUPPLEMENTARY_RECOVERED outranks the genuine-miss ADMITTED_SUPPLEMENTARY: a node the
+# initial query found and the budget cut, later recovered, is a working query plus a tight budget;
+# a node the initial query never found at all is a query miss papered over by a second, unscoped
+# round -- the first is the milder finding. The same reasoning orders RETRIEVED_CUT (initial query
+# found it) ahead of RETRIEVED_CUT_SUPPLEMENTARY (initial query never found it; only a
+# supplementary round did, and that too was cut).
 STAGE_PRECEDENCE = (
-    ANCHOR,
     ADMITTED_PRIMARY,
     ADMITTED_SUPPLEMENTARY_RECOVERED,
     ADMITTED_SUPPLEMENTARY,
@@ -680,11 +783,18 @@ STAGE_PRECEDENCE = (
 
 
 def task_stage(task, record):
-    """The furthest point any of the task's answer nodes reached; see STAGE_PRECEDENCE for order."""
+    """The furthest point any of the task's retrieval-eligible answer nodes reached; see
+    STAGE_PRECEDENCE for order. Anchor rows are excluded from the population this precedence runs
+    over (route(), not stage) -- a task whose answer nodes are ALL anchors therefore has no
+    retrieval-eligible row at all and reports ANCHOR_ONLY instead, a task-set property rather than
+    a run outcome (DiVoid #11333 S1)."""
     rows = answer_node_report(task, record)
     if not rows:
         return UNLABELLED
-    dispositions = {disposition for _, disposition, _, _ in rows}
+    eligible = [row for row in rows if row[1] == ROUTE_RETRIEVAL]
+    if not eligible:
+        return ANCHOR_ONLY
+    dispositions = {stage for _, _, stage, _, _ in eligible}
     for stage in STAGE_PRECEDENCE:
         if stage in dispositions:
             return stage
@@ -793,16 +903,34 @@ def print_task(task, record, transcript):
     for index, call in enumerate(record.get("toolCalls") or [], 1):
         print_displacement(call.get("results") or [], f"supplementary round {index}", limit)
 
+    rows = answer_node_report(task, record)
     stage = task_stage(task, record)
     print()
     print(f"STAGE: {stage} -- {stage.indictment}")
-    for node, disposition, rank, detail in answer_node_report(task, record):
+    for node, node_route, node_stage, rank, detail in rows:
+        if node_route == ROUTE_ANCHOR:
+            print(f"       answer node #{node}: anchor route -- matches anchor #{anchor.get('id')} above")
+            continue
         at = f" at rank {rank}" if rank is not None else ""
-        line = f"       answer node #{node}: {disposition}{at}"
+        line = f"       answer node #{node}: {node_stage}{at}"
         if detail:
             line += f" -- {detail}"
         print(line)
-    if stage in (ADMITTED_PRIMARY, ADMITTED_SUPPLEMENTARY, ADMITTED_SUPPLEMENTARY_RECOVERED, ANCHOR):
+    if any(node_route == ROUTE_ANCHOR for _, node_route, _, _, _ in rows):
+        print(f"       {ANCHOR_ROUTE_NOTE}")
+
+    # DiVoid #11333 S2: the old single "attribution stops here" sentence asserted two different
+    # things gated on neither -- that SOMETHING arrived (worth reading the answers for) and that
+    # NOTHING mechanical is left unreported (no answer node still sitting at not-retrieved). Those
+    # are an any() and an all() over the same rows, and a task can satisfy one without the other
+    # (the t4 shape: one node is the anchor, the other was never retrieved -- arrival fires,
+    # completion does not).
+    if rows and any(arrived(row) for row in rows):
+        print(
+            "       At least one named answer node reached the model (see above for which, and "
+            "by which route), so the answer pair below is worth reading."
+        )
+    if rows and all(arrived(row) for row in rows):
         print(
             "       The mechanical attribution stops here. Whether the substrate answer actually "
             "draws on the node, and whether it beats the transcript answer anyway, is the reader's "
@@ -851,20 +979,20 @@ def print_table(rows):
     print("ACROSS TASKS -- facts only; nothing here ranks the two arms")
     print(RULE)
     print(
-        f"  {'task':<27} {'admit':>7} {'block B':>8} {'calls':>5} {'nodes':>6} "
+        f"  {'task':<27} {'admit':>7} {'block B':>8} {'calls':>5} {'nodes':>6} {'anchor':>6} "
         f"{'subst B':>8} {'trans B':>8}  stage"
     )
     for task, record, transcript in rows:
         hits = answer_node_report(task, record)
-        found = sum(
-            1 for _, disposition, _, _ in hits
-            if disposition in (ADMITTED_PRIMARY, ADMITTED_SUPPLEMENTARY, ADMITTED_SUPPLEMENTARY_RECOVERED)
-        )
+        ratio = node_ratio(hits)
+        nodes_cell = f"{ratio[0]}/{ratio[1]}" if ratio is not None else "-"
+        anchor_count = anchor_arrivals(hits)
+        anchor_cell = str(anchor_count) if anchor_count else "-"
         print(
             f"  {one_line(task['id'], 27):<27} "
             f"{admitted(record):>3}/{len(candidates(record)):<3} "
             f"{block_bytes(record):>8} {record.get('modelCalls'):>5} "
-            f"{f'{found}/{len(hits)}' if hits else '-':>6} "
+            f"{nodes_cell:>6} {anchor_cell:>6} "
             f"{answer_bytes(record.get('answer')):>8} {answer_bytes(transcript['answer']):>8}  "
             f"{task_stage(task, record)}"
         )
@@ -878,12 +1006,15 @@ def print_table(rows):
         print(f"  {count} task(s) reached stage {stage!r}: {stage.indictment}")
     print()
     print(
-        "  admit = candidates admitted of candidates returned; nodes = answer nodes the task set "
-        "names that arm SUBSTRATE admitted through retrieval -- an answer node that is the task's own "
-        "anchor (stage ANCHOR) reached the model too but is deliberately not counted here, since it "
-        "was never admitted by anything this column measures; subst B / trans B = answer sizes in "
+        "  admit = candidates admitted of candidates returned; nodes = admitted / retrieval-eligible "
+        "answer nodes named by the task set -- an answer node that is the task's own anchor leaves "
+        "BOTH halves of this ratio, since it was never in a position for retrieval to succeed or "
+        "fail on it (route, not stage: DiVoid #11333); '-' means no retrieval-eligible answer node "
+        "was named at all (never printed as 0/0 or 0/1); anchor = how many of the task's named "
+        "answer nodes are its own anchor ('-' means none); subst B / trans B = answer sizes in "
         "bytes. Answer size is a length, not a quality, and the stage says where the answer got to, "
-        "never whether it is right. Read the two answers above."
+        "never whether it is right (except ANCHOR_ONLY and UNLABELLED, which report a property of "
+        "the task set rather than a run outcome). Read the two answers above."
     )
 
 
@@ -1004,7 +1135,9 @@ def main():
             print(
                 "DONE: every task ran both arms. No verdict is printed and none is available from "
                 "this instrument -- read the answer pairs, and read each one against the stage above "
-                "it, which says how far the answer to that task got before the model saw anything."
+                "it, which says how far the answer to that task got before the model saw anything "
+                "-- except ANCHOR_ONLY and UNLABELLED, which report a property of the task set "
+                "rather than of this run."
             )
             return 0
 
