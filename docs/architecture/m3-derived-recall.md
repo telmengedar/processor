@@ -643,11 +643,13 @@ move together because they are the same event seen from different sides:
 
 - **Difficulty.** 0.82 versus 0.00 on the raw arm — a gap far larger than the effect being measured.
 - **Vintage.** r12–r23 all arrived together in **PR #27**, authored later than r01–r11 and against a different
-  graph state. The nodes they require are newer as a block (**#11049–#11278** against **#10440–#10982**), so
-  *harder* and *written later* are one fact counted twice. **This one is not obviously harmless**: a newer
+  graph state. The nodes they require are newer as a **fully disjoint block** — **#11049–#11278** against
+  **#10440–#10982**, with **no interleaving whatever** — so *harder* and *written later* are one fact
+  counted twice. **This one is not obviously harmless**: a newer
   node has had less time to accumulate the links and neighbours a graph search reaches it through, so vintage
   plausibly *causes* part of the difficulty rather than merely accompanying it.
-- **Input shape.** The twelve inputs are **60% longer** than the eleven — 15.0 against 9.4 content tokens —
+- **Input shape.** The twelve inputs are **60–69% longer** than the eleven depending on the stopword list —
+  15.0 against 9.4 content tokens on this section's tokenization, 18.0 against 10.6 on an independent one —
   and are scenario-shaped rather than single-question. This is the axis the lexical-overlap measurement below
   runs aground on, and it was invisible until that measurement was actually taken.
 
@@ -677,7 +679,7 @@ rows outside the selection set by **more than one row**, on a corpus large enoug
 whole margin.* This is not answerable at twelve out-of-sample rows and does not become answerable by
 re-measuring them; it needs the next corpus growth (#11101), and that is the honest cost of the finding.
 
-#### Why eleven of the twelve still miss — one named cause, one retracted, and seven rows unaccounted for
+#### Why eleven of the twelve still miss — two named causes, one retracted claim, and six rows unaccounted for
 
 **Ranking depth is the one cause this section can name.** On **r13, r14, r16 and r17** the required node **is in the candidate pool**,
 scoring **0.73–0.80**, and is edged out of the top 20 by near-identical neighbours. **r16 is the clean case,
@@ -691,20 +693,24 @@ at 0.8041 and is displaced by the row's own subject, recorded as 0.80.**
 > same-session re-run of both arms would produce it, and the graph has moved since — which is §9.1 item 2's
 > own lesson arriving on this document's own evidence. **If the inversion matters, it is one same-session
 > sweep away**: re-run and record the displacing candidate's score at the precision the required node's is
-> recorded at. Until then this row claims a tie, not an inversion.
+> recorded at. **Until then this row claims indeterminacy, not equality.** A tie would itself be a positive
+> claim, and the support here is only that the record cannot decide: `0.80` is a two-decimal figure, and at
+> `0.7951` the true gap would be 0.009 — comparable to the `0.73–0.80` spread this same paragraph cites.
 
 **What the recorded figures do establish is the point the paragraph needs, and arguably needs more sharply:**
 the required node and the node that takes its slot are **within the resolution of the recorded score** — the
-cap is imposing an order between two candidates whose scores do not separate them. That is not losing on
+cap is imposing an order between two candidates **whose recorded scores do not separate them**. That is not losing on
 relevance; it is losing to the fusion's rank arithmetic and the cap, which is **G-1's premise working exactly
 as designed and showing its cost for the first time**. **No rewriting of the question reaches these rows.**
 They are a `candidateLimit` and ranking-resolution problem, adjacent to §2.4's mode C and to F1.
 
 **They are four of the twelve — a third, not "the majority", which is what an earlier draft of this sentence
-claimed.** With the second cause below withdrawn, the arithmetic is worth stating plainly: of the twelve rows
-PR #32 added, **one moved (r12), four miss with a named cause (r13, r14, r16, r17), and seven miss with no
-cause this document has identified.** That is not a gap worth papering over with a second explanation — it is
-the honest state of the reading, and it is where a future triage pass should start.
+claimed.** The full arithmetic can only be stated once the retraction below has run its course, because that
+retraction **removes** one cause and **adds** a different one. Of the twelve rows PR #32 added: **one moved
+(r12); four miss on ranking depth (r13, r14, r16, r17); one misses on the frame inheritance diagnosed below
+(r15); and six miss with no cause this document has identified.** That six is not a gap worth papering over
+with a third explanation — it is the honest state of the reading, and it is where a future triage pass
+should start.
 
 **A second cause was asserted here, was never measured, and does not survive being measured.**
 
@@ -731,36 +737,56 @@ variants — stopwording on/off crossed with naive plural stripping on/off.
 | union coverage | the input | 0.440 | 0.330 | model **lower** |
 | query-side reuse | **the query** | 0.263 | **0.347** | model **higher** |
 
-*(Stopworded, unstemmed variant shown. All four variants agree on all four directions with a single
-exception: Jaccard reverses in the stopworded-and-stemmed variant, and by 0.004 (0.134 against 0.138). The
-stopword list is an ordinary English function-word set; **the decimals depend on it and the directions do
-not**, which is the whole reason the unstopworded variants were run at all. **Provenance, because it is not the same for both halves:** the eleven hand rows were
-read from `internal/eval/derivations.json` in the tree; the twelve model rows were read from the generation
-record **#11348**, because the 25/25 sidecar lives on PR #32's branch and this correction was written against
-`main`. #11348 is the file's own source and not the file — if the two ever disagree, this table is wrong and
-so is the record.)*
+*(Stopworded, unstemmed variant shown. **Jaccard is the weakest of the four and should be weighted least:**
+its margin is the narrowest, and whether it holds its direction across all four variants is itself
+tokenizer-dependent — it reverses in one variant by under 0.005 on this section's tokenization and holds in
+all four on the independent reimplementation. The other three hold their direction in every variant on both. **Provenance:** the eleven
+hand rows were read from `internal/eval/derivations.json` in the tree; the twelve model rows were read from
+the generation record **#11348**, because this correction was written against `main` while the 25/25 sidecar
+lives on PR #32's branch. **That gap has since been closed** — an independent reimplementation computed the
+model half from the sidecar itself on PR #32's branch, and file and record agree on everything load-bearing,
+so #11348 is verified against the file rather than standing in for it.)*
+
+> **Independently reproduced, and this sets how the numbers here should be read** *(2026-09-05)*. A second
+> reviewer reimplemented the specification above from scratch — her own tokenizer, her own stopword list,
+> reading the model half from the tree rather than from #11348. **All four directions reproduce under all
+> four variants**, the length confound reproduces with the same signs and comparable magnitudes, and the
+> robust row-level orderings below reproduce. **The decimals do not, and are not meant to:** two reasonable
+> stopword lists give 9.4/15.0 and 10.6/18.0 content tokens for the very same two populations. **So read
+> every decimal and every rank position in this subsection as tokenizer-dependent, and every *direction* and
+> every ordering stated as robust-across-variants as not.** An earlier draft of this subsection stated that
+> principle in one parenthesis and then quoted band decimals and absolute rank quantifiers that depend on
+> exactly what the principle says is unstable — **the same fault this section exists to correct, one level
+> down.** The figures below have been reduced to the forms that survive re-implementation.
 
 **Three of the four say the model rows recycle their inputs *less*; one says more; and neither direction
 survives its confound.** The three pointing one way all divide by the size of the **input**. The one pointing
 the other divides by the size of the **query**. And — as the confound list above now records — **the twelve
-later inputs are 60% longer than the eleven**, which moves every one of these metrics on its own: across all
-23 rows and on this same stopworded tokenization, input length correlates **−0.23** with input recall and
-**+0.52** with query-side reuse. Restrict to
-the length band where the two populations actually overlap and the gaps collapse or invert depending on where
-the band is cut — at `|I|` in [9,16] query-side reuse reads **0.328 against 0.328**; at [10,15] it reads
-**0.369 against 0.328**, the model now *lower*. **At eleven rows against twelve, with inputs that differ
+later inputs are 60–69% longer than the eleven**, which moves every one of these metrics on its own: across
+all 23 rows, input length correlates roughly **−0.25** with input recall and roughly **+0.55** with
+query-side reuse (**−0.23 / +0.52** on this section's tokenization, **−0.29 / +0.56** on the independent
+reimplementation — the signs and rough magnitudes are the stable part, the second decimal is not). **So a
+mechanical explanation is available for each direction, and the two explanations point opposite ways.**
+
+**Crude length control does not rescue either direction — it destabilises both.** Restricting to the band
+where the two populations' input lengths overlap leaves **two to nine rows per cell**, and the result then
+moves with both the band cut and the tokenizer: on this section's tokenization the gaps collapse and one
+inverts; on the independent reimplementation neither the collapse nor the inversion appears and the model
+reads higher in both bands. **No decimal from that exercise is quoted here, because at those cell counts none
+of them carries anything.** What it establishes is only that the length control is itself unstable — which is
+the same verdict by another route. **At eleven rows against twelve, with inputs that differ
 systematically in length, these two populations are not separable on lexical overlap by this family of
 measurements.** The original sentence was not merely unmeasured — it named a direction this instrument cannot
 resolve, and so does its reverse.
 
 **What *is* robust sits at row level, and it is one row rather than three.** Across all eight
 metric-by-variant combinations, **r13's derived set is the first or second most input-recycling of the
-twelve** — that holds however the tokens are counted, and r13 missed. **r14 does not hold**: it ranks
-anywhere from 1st to 11th of twelve depending on the variant, so *"r13 and r14 recycle the input's nouns"*
-was half right, and the surviving half is r13's. **And r15 is not a lexical observation at all** — it ranks
-4th to 12th of the twelve across the eight combinations, never among the three most-recycling on any of them,
-and on unstopworded query-side reuse it is the lowest of the twelve. What r15 does is inherit its input's
-**framing**:
+twelve** — that holds however the tokens are counted, it reproduced exactly under the independent
+reimplementation, and r13 missed. **r14 does not hold**: its rank swings across most of the field with the
+variant, in both directions, so *"r13 and r14 recycle the input's nouns"* was half right and the surviving
+half is r13's. **And r15 is not a lexical observation at all** — it is **never the most-recycling row on any
+combination and sits mid-pack on most of them**, reaching the bottom of the twelve on at least one. What r15
+does is inherit its input's **framing**:
 all five of its queries ask about ranking, which is precisely the false premise its corpus row exists to catch
 (`why`: *"An answer lacking this would retune the ranking, when the truth is that an item larger than the
 whole budget can never be admitted at any rank"*). **Filing r15 under lexical overlap concealed a second and
@@ -783,14 +809,15 @@ name — a contaminated author bridges the vocabulary gap *because* they have re
 have made **R2a's contamination and derivation quality one axis rather than two concerns.**
 
 **Its prediction has fired against it.** The prediction on record was *r12's overlap is the lowest of the
-twelve, r13's and r14's among the highest.* Measured: **r12 ranks between 3rd and 10th of twelve across the
-eight variants and is never the lowest** — on stopworded, unstemmed input recall it is the **third most**
-recycling row of the twelve. Only r13's half survives. **The half that failed is the half carrying the
+twelve, r13's and r14's among the highest.* Measured: **r12 is never the lowest of the twelve on any of the
+eight combinations**, sitting in the middle of the field throughout — and it is never the lowest under the
+independent reimplementation either, so **the stop condition genuinely fires.** Only r13's half survives. **The half that failed is the half carrying the
 mechanism**: the one row that moved is not distinguished from the eleven that did not by the property the
 hypothesis names.
 
 **Withdrawn as a reading of this data.** With r12 unremarkable, the hypothesis has no positive instance left.
-It retains one negative instance — r13 recycles most and missed — and with eleven of twelve missing, any
+It retains one negative instance — r13 recycles at or near the top of the twelve and missed — and with
+eleven of twelve missing, any
 property of any missing row is consistent with anything. **n=1 has become n=0.**
 
 **What it always was, and this is the correction worth more than the retraction.** Vocabulary bridging is
