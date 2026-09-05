@@ -573,6 +573,120 @@ func TestLoadModelUsesModelKeyVerbatimWhenPresent(t *testing.T) {
 	}
 }
 
+func TestLoadModelDefaultsTemperatureToZeroWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(nil)
+	delete(env, "PROCESSOR_MODEL_TEMPERATURE")
+
+	cfg, err := loadModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadModel: %v", err)
+	}
+	if cfg.Temperature == nil || *cfg.Temperature != 0 {
+		t.Fatalf("modelTemperature = %v, want a pointer to 0 (the deterministic default) when PROCESSOR_MODEL_TEMPERATURE is absent", cfg.Temperature)
+	}
+}
+
+func TestLoadModelErrorsWhenTemperaturePresentButEmpty(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_TEMPERATURE": ""})
+
+	_, err := loadModel(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadModel returned nil error for an empty PROCESSOR_MODEL_TEMPERATURE, want an error")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_MODEL_TEMPERATURE") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_MODEL_TEMPERATURE", err.Error())
+	}
+}
+
+func TestLoadModelErrorsWhenTemperatureIsNotANumber(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_TEMPERATURE": "warm"})
+
+	_, err := loadModel(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadModel returned nil error for a non-numeric PROCESSOR_MODEL_TEMPERATURE, want an error")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_MODEL_TEMPERATURE") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_MODEL_TEMPERATURE", err.Error())
+	}
+}
+
+func TestLoadModelUsesTemperatureVerbatimWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_TEMPERATURE": "0.65"})
+
+	cfg, err := loadModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadModel: %v", err)
+	}
+	if cfg.Temperature == nil || *cfg.Temperature != 0.65 {
+		t.Fatalf("modelTemperature = %v, want a pointer to 0.65", cfg.Temperature)
+	}
+}
+
+func TestLoadModelLeavesTopPNilWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(nil)
+	delete(env, "PROCESSOR_MODEL_TOP_P")
+
+	cfg, err := loadModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadModel: %v", err)
+	}
+	if cfg.TopP != nil {
+		t.Fatalf("modelTopP = %v, want nil when PROCESSOR_MODEL_TOP_P is absent — there is no default and none is silently sent", cfg.TopP)
+	}
+}
+
+func TestLoadModelErrorsWhenTopPPresentButEmpty(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_TOP_P": ""})
+
+	_, err := loadModel(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadModel returned nil error for an empty PROCESSOR_MODEL_TOP_P, want an error")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_MODEL_TOP_P") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_MODEL_TOP_P", err.Error())
+	}
+}
+
+func TestLoadModelErrorsWhenTopPIsNotANumber(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_TOP_P": "wide"})
+
+	_, err := loadModel(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadModel returned nil error for a non-numeric PROCESSOR_MODEL_TOP_P, want an error")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_MODEL_TOP_P") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_MODEL_TOP_P", err.Error())
+	}
+}
+
+func TestLoadModelUsesTopPVerbatimWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_TOP_P": "0.9"})
+
+	cfg, err := loadModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadModel: %v", err)
+	}
+	if cfg.TopP == nil || *cfg.TopP != 0.9 {
+		t.Fatalf("modelTopP = %v, want a pointer to 0.9", cfg.TopP)
+	}
+}
+
 func TestExportedLoadersReadTheProcessEnvironment(t *testing.T) {
 	t.Setenv("PROCESSOR_HTTP_ADDR", "0.0.0.0:7070")
 	t.Setenv("PROCESSOR_DIVOID_URL", "https://env.graph.example")
@@ -580,6 +694,8 @@ func TestExportedLoadersReadTheProcessEnvironment(t *testing.T) {
 	t.Setenv("PROCESSOR_MODEL_URL", "https://env.model.example/v1")
 	t.Setenv("PROCESSOR_MODEL_ID", "env-model-id")
 	t.Setenv("PROCESSOR_MODEL_KEY", "env-model-key")
+	t.Setenv("PROCESSOR_MODEL_TEMPERATURE", "0.55")
+	t.Setenv("PROCESSOR_MODEL_TOP_P", "0.8")
 
 	addr, err := LoadHTTPAddr()
 	if err != nil {
@@ -603,5 +719,11 @@ func TestExportedLoadersReadTheProcessEnvironment(t *testing.T) {
 	}
 	if model.URL != "https://env.model.example/v1" || model.ID != "env-model-id" || model.Key != "env-model-key" {
 		t.Fatalf("model = %+v, want the PROCESSOR_MODEL_ variables", model)
+	}
+	if model.Temperature == nil || *model.Temperature != 0.55 {
+		t.Fatalf("model.Temperature = %v, want a pointer to 0.55", model.Temperature)
+	}
+	if model.TopP == nil || *model.TopP != 0.8 {
+		t.Fatalf("model.TopP = %v, want a pointer to 0.8", model.TopP)
 	}
 }

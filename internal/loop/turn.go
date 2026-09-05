@@ -119,7 +119,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		},
 	}
 
-	answer, stop, toolCalls, modelCalls, capReached, usages, err := t.judge(ctx, block, input)
+	answer, stop, toolCalls, modelCalls, capReached, usages, sampling, err := t.judge(ctx, block, input)
 	if err != nil {
 		return Record{}, WriteReceipt{}, err
 	}
@@ -131,6 +131,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 	record.CapReached = capReached
 	record.Usage = usages
 	record.StopReason = stop
+	record.Sampling = sampling
 
 	receipt := t.Graph.WriteRun(context.WithoutCancel(ctx), record)
 
@@ -188,7 +189,7 @@ func summarizeUsage(usages []*Usage) (reports, inTokens, outTokens int) {
 	return reports, inTokens, outTokens
 }
 
-func (t *Turn) judge(ctx context.Context, block, input string) (answer string, stop StopReason, toolCalls []ToolCallRecord, modelCalls int, capReached bool, usages []*Usage, err error) {
+func (t *Turn) judge(ctx context.Context, block, input string) (answer string, stop StopReason, toolCalls []ToolCallRecord, modelCalls int, capReached bool, usages []*Usage, sampling Sampling, err error) {
 	var recalls []RecallExchange
 
 	for {
@@ -201,12 +202,13 @@ func (t *Turn) judge(ctx context.Context, block, input string) (answer string, s
 			PriorRecalls: recalls,
 		})
 		if jerr != nil {
-			return "", StopReason{}, nil, 0, false, nil, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
+			return "", StopReason{}, nil, 0, false, nil, Sampling{}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
 		}
 
 		answer = result.Answer
 		stop = StopReason{Reason: result.Reason, Raw: result.RawReason}
 		usages = append(usages, result.Usage)
+		sampling = result.Sampling
 
 		if result.Reason != WantsRecall {
 			break
@@ -224,7 +226,7 @@ func (t *Turn) judge(ctx context.Context, block, input string) (answer string, s
 		recalls = append(recalls, t.dispatchRecall(ctx, result))
 	}
 
-	return answer, stop, toolCallRecords(recalls), modelCalls, capReached, usages, nil
+	return answer, stop, toolCallRecords(recalls), modelCalls, capReached, usages, sampling, nil
 }
 
 func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult) RecallExchange {

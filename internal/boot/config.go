@@ -5,6 +5,7 @@ import (
 	"fmt"
 	neturl "net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -20,6 +21,11 @@ const (
 
 	envModelKey = "PROCESSOR_MODEL_KEY"
 
+	envModelTemperature     = "PROCESSOR_MODEL_TEMPERATURE"
+	defaultModelTemperature = 0.0
+
+	envModelTopP = "PROCESSOR_MODEL_TOP_P"
+
 	apiPathSuffix   = "/api"
 	nodesPathSuffix = "/api/nodes"
 )
@@ -32,9 +38,11 @@ type GraphConfig struct {
 
 // ModelConfig is what a model client needs to reach a chat-completions endpoint.
 type ModelConfig struct {
-	URL string
-	ID  string
-	Key string
+	URL         string
+	ID          string
+	Key         string
+	Temperature *float64
+	TopP        *float64
 }
 
 type lookupFunc func(key string) (string, bool)
@@ -134,7 +142,48 @@ func loadModel(lookup lookupFunc) (ModelConfig, error) {
 		return ModelConfig{}, err
 	}
 
-	return ModelConfig{URL: url, ID: id, Key: key}, nil
+	temperature, err := loadModelTemperature(lookup)
+	if err != nil {
+		return ModelConfig{}, err
+	}
+
+	topP, err := loadModelTopP(lookup)
+	if err != nil {
+		return ModelConfig{}, err
+	}
+
+	return ModelConfig{URL: url, ID: id, Key: key, Temperature: temperature, TopP: topP}, nil
+}
+
+func loadModelTemperature(lookup lookupFunc) (*float64, error) {
+	val, err := optionalFloatEnv(lookup, envModelTemperature)
+	if err != nil {
+		return nil, err
+	}
+	if val == nil {
+		d := defaultModelTemperature
+		return &d, nil
+	}
+	return val, nil
+}
+
+func loadModelTopP(lookup lookupFunc) (*float64, error) {
+	return optionalFloatEnv(lookup, envModelTopP)
+}
+
+func optionalFloatEnv(lookup lookupFunc, key string) (*float64, error) {
+	val, present := lookup(key)
+	if !present {
+		return nil, nil
+	}
+	if val == "" {
+		return nil, fmt.Errorf("%s is set but empty", key)
+	}
+	f, err := strconv.ParseFloat(val, 64)
+	if err != nil {
+		return nil, fmt.Errorf("%s is %q, which is not a valid number: %w", key, val, err)
+	}
+	return &f, nil
 }
 
 func requireEnv(lookup lookupFunc, key string) (string, error) {

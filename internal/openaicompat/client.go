@@ -26,11 +26,12 @@ type Client struct {
 	baseURL    string
 	modelID    string
 	apiKey     string
+	sampling   loop.Sampling
 	httpClient *http.Client
 }
 
-// NewClient builds a Client against baseURL, requesting modelID on every call.
-func NewClient(baseURL, modelID, apiKey string, httpClient *http.Client) *Client {
+// NewClient builds a Client against baseURL, requesting modelID and sampling on every call.
+func NewClient(baseURL, modelID, apiKey string, sampling loop.Sampling, httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = defaultHTTPClient()
 	}
@@ -38,6 +39,7 @@ func NewClient(baseURL, modelID, apiKey string, httpClient *http.Client) *Client
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		modelID:    modelID,
 		apiKey:     apiKey,
+		sampling:   sampling,
 		httpClient: httpClient,
 	}
 }
@@ -56,10 +58,12 @@ func (c *Client) client() *http.Client {
 // Judge runs one judgement step against the endpoint.
 func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
 	reqBody := chatRequest{
-		Model:     c.modelID,
-		Messages:  buildMessages(in),
-		MaxTokens: loop.MaxOutputTokens,
-		Tools:     []wireTool{recallTool()},
+		Model:       c.modelID,
+		Messages:    buildMessages(in),
+		MaxTokens:   loop.MaxOutputTokens,
+		Tools:       []wireTool{recallTool()},
+		Temperature: c.sampling.Temperature,
+		TopP:        c.sampling.TopP,
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -92,7 +96,12 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 		return loop.JudgeResult{}, fmt.Errorf("openaicompat: decode response: %w", err)
 	}
 
-	return translate(wire)
+	result, err := translate(wire)
+	if err != nil {
+		return loop.JudgeResult{}, err
+	}
+	result.Sampling = c.sampling
+	return result, nil
 }
 
 func readUpstreamMessage(r io.Reader) string {

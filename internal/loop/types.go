@@ -112,6 +112,12 @@ type Limits struct {
 	MaxOutputTokens         int `json:"maxOutputTokens"`
 }
 
+// Sampling records one run's model-call sampling parameters, nil where left to the endpoint's default.
+type Sampling struct {
+	Temperature *float64 `json:"temperature,omitempty"`
+	TopP        *float64 `json:"topP,omitempty"`
+}
+
 // Record is the outcome of one run.
 type Record struct {
 	Input      string        `json:"input"`
@@ -131,6 +137,7 @@ type Record struct {
 	Usage      []*Usage   `json:"usage"`
 	StopReason StopReason `json:"stopReason"`
 	Limits     Limits     `json:"limits"`
+	Sampling   Sampling   `json:"sampling"`
 }
 
 // RecallExchange is one supplementary-recall round already completed in this turn.
@@ -157,4 +164,5 @@ type JudgeResult struct {
 	RecallQuery string
 	RecallError string
 	Usage       *Usage
+	Sampling    Sampling
 }
