@@ -3,8 +3,12 @@
 turn actually did -- not a summary, a reconstruction, in order, of every step the record lets us
 see, each with its own input and its own output.
 
-    python scripts/trace.py --input "Generate a new barebones webpage and a repo for it." --subject 10422
-    python scripts/trace.py --input "..." --subject 10850 --model-url http://gangolf:12434/engines/v1 --model-id ai/qwen3-coder
+    python scripts/step_trace.py --input "Generate a new barebones webpage and a repo for it." --subject 10422
+    python scripts/step_trace.py --input "..." --subject 10850 --model-url http://gangolf:12434/engines/v1 --model-id ai/qwen3-coder
+
+(Named step_trace.py, not trace.py: this file's directory is prepended to sys.path so it can import
+compare.py, and a sibling module literally named trace.py would shadow the standard library's own
+trace module process-wide for anything imported afterward -- W3 on this file's own review.)
 
 Why this exists, verbatim from the operator (DiVoid task, 2026-09-05): this project has spent a
 long day measuring components -- retrieval rates, admission budgets, compression ratios -- and has
@@ -26,9 +30,37 @@ One POST /runs is one turn and returns one JSON record (internal/loop/types.go's
 { ...Record fields, "written": {state, nodeId} } by internal/server/routes.go). Every "step" below is
 reconstructed from that one record after the fact -- there is no intermediate progress feed -- so the
 ordering is inferred from the record's own structure (usage is one entry per model call, in call
-order; toolCalls is one entry per call that asked for recall, in call order, including a call the
-cap stopped before it could dispatch) rather than observed live. Anywhere that inference could be
-wrong, the trace says so rather than guessing quietly.
+order; toolCalls is one entry per call that asked for recall, in call order, including a call that
+never reached the graph at all -- see the tool-round classification note below) rather than observed
+live. Anywhere that inference could be wrong, the trace says so rather than guessing quietly.
+
+TOOL-ROUND CLASSIFICATION, corrected after review (C1): a toolCalls[i] entry with a non-empty
+`error` is not one thing. `internal/loop/turn.go`'s dispatchRecall returns *before ever calling
+`Graph.Recall`* when the model's own tool call was malformed (wire.go's RecallError -- unparseable
+arguments or an empty query, itself ordinary local-model misbehaviour, not rare) -- so that round
+never touched the graph. This script distinguishes three shapes by the exact `error` string:
+`""` is a real dispatch with real results (a tool-call step follows); the literal "call cap reached"
+is a round the call cap stopped before dispatch could happen; the literal "supplementary recall
+failed" is a dispatch that reached the graph and the graph call itself errored (turn.go's own
+scrubbing rule keeps the real reason out of this surface, DiVoid #10850). Any OTHER non-empty error
+string -- including one this script does not otherwise recognise -- means the request was malformed
+and, per dispatchRecall's own control flow, GUARANTEED never dispatched: no tool-call step is
+printed for it, the record's error string is shown verbatim, and no query is available (turn.go's
+RecallExchange construction on this path never sets Query at all). Printing a fabricated tool-call
+step here was the exact defect a reviewer caught: it read as "the model asked the graph and the
+graph had nothing" when the truth was "the model's tool call never reached the graph".
+
+BUDGET ARITHMETIC, corrected after review (C2/C3): the anchor is not exempt from the assembly
+budget. `internal/loop/assemble.go`: `remaining := budget - len(anchor.Content)`, floored at zero --
+the anchor's bytes are charged against the budget, in full, before any candidate is even considered.
+What the anchor IS exempt from is being CUT: its full content always reaches the model regardless of
+size (design correction pinned in this tree at `m1-skeleton-loop.md:765`: "the anchor is exempt from
+being cut, not from being charged"). This script computes and prints the actual per-run candidate
+budget (`assemblyByteBudget - anchor.size`, floored at zero) and tests admissibility against THAT
+number, not the raw constant -- a candidate that fits the constant but not the anchor-adjusted
+remainder is unadmittable for this run and previously got no marker at all (C3). The supplementary
+round is unaffected by this: `dispatchRecall` passes `SupplementaryByteBudget` to `admit` as-is, with
+no anchor subtraction, because the anchor is not re-sent on that path.
 
 WHAT THE RECORD CANNOT TELL A READER -- found while building this, not fixed (constraint: no Go
 file changes):
@@ -44,11 +76,12 @@ file changes):
     calls after the first (which also replay prior tool rounds as synthetic assistant/tool messages,
     internal/openaicompat/wire.go's buildMessages) are not reconstructable from the record alone --
     only the token counts (Usage) are. This script does not reach past the record for it.
-  - No distinction, on a capped round, between "the model wanted recall and the cap silently ate the
-    query" and "the model wanted recall and something else was wrong" beyond the fixed reason string
-    "call cap reached" -- and if the model's own JudgeResult carried a RecallError at the same time,
-    turn.go's dispatchRecall construction means the query is DROPPED from the record entirely (the
-    capped-round RecallExchange is overwritten, not merged) even though the model presumably sent one.
+  - On a malformed tool round that also happens to be the final call, the record cannot say whether
+    the model-call cap would ALSO have stopped it: turn.go's construction on that shared branch lets
+    the malformed-request reason win outright rather than recording both, so `capReached` can be true
+    on a run whose last round shows a plain malformed-tool-call error instead of the cap's own
+    literal. This script flags that ambiguity inline when it can detect the shape (see below) rather
+    than guessing which one actually fired.
   - Temperature is not configurable. internal/openaicompat's chatRequest wire type
     (internal/openaicompat/wire.go) has no temperature field and boot/config.go exposes no such
     setting, so --temperature below is accepted and reported but is NOT sent to the endpoint. The
@@ -67,17 +100,17 @@ Every run writes one run record to the graph and this script never deletes it (D
 repeated identical task text reads back the first run's own record rather than measuring anything
 new, so this script checks for a prior run of the exact input via the same semantic-recall probe
 compare.py uses (find_prior_run) and says so loudly rather than silently reusing or refusing it --
-visibility, not gatekeeping, is this tool's job.
+visibility, not gatekeeping, is this tool's job. Whatever node id a run writes is printed immediately
+after the run completes, before the trace is rendered, so a crash in rendering can never hide what
+was written (the script's whole contract is "name it, never delete it").
 
 Exit 0 the run produced a record (whatever it says); 1 the run could not be made at all.
 """
 
 import argparse
-import json
 import os
 import sys
 import tempfile
-import textwrap
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -90,13 +123,21 @@ DEFAULT_SUBJECT = 10422  # DiVoid #10422, "Processor -- memory-substrate agent h
 
 # Mirrors internal/loop/turn.go's unexported string constants -- duplicated here because the loop
 # package exports no vocabulary for its tool-round error strings (deliberately: DiVoid #10850's
-# scrubbing rule keeps them out of any surface an untrusted reader reaches). Pinned as literals so a
-# rename over there silently breaks this classification instead of silently misreporting it; if this
-# ever throws recognisably, that mismatch is itself worth reporting.
+# scrubbing rule keeps them out of any surface an untrusted reader reaches). These two are matched
+# by exact string; anything else -- including a renamed one of these two, should turn.go's literals
+# ever change -- falls through to the "malformed / never dispatched" branch (see classify_round
+# below), which is the safe direction to fail in: it under-claims a dispatch rather than fabricating
+# one. That is what actually fixes W1's complaint, not a hard throw on an unrecognised string.
 ERR_CALL_CAP_REACHED = "call cap reached"
 ERR_SUPPLEMENTARY_RECALL_FAILED = "supplementary recall failed"
 CUT_SELF_PRODUCED = "self-produced"
 CUT_BYTE_BUDGET = "byte budget exceeded"
+
+# classify_round's return values.
+ROUND_DISPATCHED = "dispatched"          # error == "": real Graph.Recall call, real results.
+ROUND_CAPPED = "capped"                  # error == ERR_CALL_CAP_REACHED: recorded, never dispatched.
+ROUND_DISPATCH_FAILED = "dispatch-failed"  # error == ERR_SUPPLEMENTARY_RECALL_FAILED: dispatched, Graph.Recall itself errored.
+ROUND_MALFORMED = "malformed"            # any other non-empty error: RecallError path, never dispatched.
 
 RULE = "=" * 92
 THIN = "-" * 92
@@ -115,7 +156,29 @@ def one_line(value, width):
     return text if len(text) <= width else text[: width - 1] + "…"
 
 
+def classify_round(tool_call):
+    """One of the ROUND_* constants for a single toolCalls[i] entry (C1).
+
+    The record cannot distinguish "dispatched and got zero results" from "never dispatched" by
+    result-count alone -- only the `error` string does, and only three of its shapes are known. See
+    the module docstring's TOOL-ROUND CLASSIFICATION section for why each one means what it means.
+    """
+    error = tool_call.get("error") or ""
+    if error == "":
+        return ROUND_DISPATCHED
+    if error == ERR_CALL_CAP_REACHED:
+        return ROUND_CAPPED
+    if error == ERR_SUPPLEMENTARY_RECALL_FAILED:
+        return ROUND_DISPATCH_FAILED
+    return ROUND_MALFORMED
+
+
 def render_candidate_table(dispositions, budget):
+    """`budget` is the cumulative admission ceiling this specific round of candidates was actually
+    measured against -- for the initial round that is `assemblyByteBudget - anchor.size` (floored at
+    zero), NOT the raw constant (C2/C3: the anchor is charged, not exempt); for a supplementary round
+    it is the raw `supplementaryByteBudget`, unadjusted, since the anchor is not re-sent on that path.
+    """
     lines = []
     for d in dispositions:
         mark = "IN " if d.get("included") else "cut"
@@ -125,11 +188,17 @@ def render_candidate_table(dispositions, budget):
             f"{one_line(d.get('type'), 12):<12} sim {d.get('similarity', 0):.4f}  "
             f"size {d.get('size', 0):>7}  {one_line(d.get('name'), 46):<46}{reason}"
         )
+        if not d.get("included") and d.get("cutReason") == CUT_SELF_PRODUCED:
+            lines.append(
+                f"           self-produced: a run record this system wrote earlier -- cut before "
+                f"the byte budget is even consulted (internal/loop/assemble.go)"
+            )
         if not d.get("included") and d.get("cutReason") == CUT_BYTE_BUDGET and budget is not None:
             if d.get("size", 0) > budget:
                 lines.append(
                     f"           UNADMITTABLE: {d.get('size')} bytes alone exceeds the "
-                    f"{budget}-byte assembly budget; no run can ever admit this row regardless of rank"
+                    f"{budget}-byte budget this round was measured against; no run can ever admit "
+                    f"this row regardless of rank"
                 )
     return lines
 
@@ -138,7 +207,15 @@ def admitted_bytes(dispositions):
     return sum(d.get("size", 0) for d in dispositions if d.get("included"))
 
 
-def render_trace(task_text, subject, record, model_url, model_id, temperature_requested, prior_note):
+def render_trace(record, model_url, model_id, temperature_requested, prior_note):
+    """Pure function: every value comes from `record` (W4 -- the record is the source of truth,
+    not the argv that produced the request that produced it) plus display-only context the record
+    itself has no way to carry (the endpoint address, the un-sent --temperature, the duplicate-run
+    warning computed against the graph before the run started).
+    """
+    task_text = record.get("input", "")
+    subject = record.get("subject")
+
     step = [0]
 
     def head(label):
@@ -149,7 +226,7 @@ def render_trace(task_text, subject, record, model_url, model_id, temperature_re
     out.append(RULE)
     out.append(f"TRACE  subject #{subject}  model {model_id} @ {model_url}")
     out.append(RULE)
-    out.append("TASK (verbatim, this is exactly what was sent as the run's input):")
+    out.append("TASK (verbatim, this is exactly what the record's own Input field carries):")
     out.append(THIN)
     out.append(task_text)
     out.append(THIN)
@@ -166,27 +243,32 @@ def render_trace(task_text, subject, record, model_url, model_id, temperature_re
 
     # ---- STEP: anchor ----------------------------------------------------------------------
     anchor = record.get("anchor") or {}
-    out.append(
-        f"{head('anchor')} input: subject id #{subject}"
-    )
+    anchor_size = anchor.get("size", 0)
+    limits = record.get("limits") or {}
+    assembly_budget = limits.get("assemblyByteBudget")
+    remaining_budget = None if assembly_budget is None else max(assembly_budget - anchor_size, 0)
+
+    out.append(f"{head('anchor')} input: subject id #{subject}")
     out.append(
         f"{'':<24} output: #{anchor.get('id')} {anchor.get('type')} "
-        f"{anchor.get('name')!r}  {fmt_bytes(anchor.get('size', 0))}  "
+        f"{anchor.get('name')!r}  {fmt_bytes(anchor_size)}  "
         f"hash {one_line(anchor.get('contentHash'), 16)}"
     )
     out.append(
-        f"{'':<24} note: the anchor is exempt from the assembly budget and its full content always "
-        f"reaches the model (internal/loop/assemble.go's renderBlock writes it first, unconditionally). "
-        f"Its raw text is not itself in the record -- only this summary and, indirectly, whatever of "
-        f"it survives inside the block below."
+        f"{'':<24} note: the anchor is never CUT -- its full content always reaches the model "
+        f"(internal/loop/assemble.go's renderBlock writes it first, unconditionally, regardless of "
+        f"size) -- but it IS CHARGED against the assembly budget before any candidate is considered "
+        f"(remaining := budget - len(anchor.Content), floored at zero). This anchor consumes "
+        f"{fmt_bytes(anchor_size)} of the {fmt_bytes(assembly_budget or 0)} budget, leaving "
+        f"{fmt_bytes(remaining_budget or 0)} for every candidate below -- see STEP 3. Its raw text "
+        f"is not itself in the record -- only this summary and, indirectly, whatever of it survives "
+        f"inside the block below."
     )
     out.append("")
 
     # ---- STEP: recall (initial) ------------------------------------------------------------
     candidates = record.get("candidates") or []
-    limits = record.get("limits") or {}
     candidate_limit = limits.get("candidateLimit")
-    assembly_budget = limits.get("assemblyByteBudget")
     admitted_count = sum(1 for c in candidates if c.get("included"))
     out.append(f"{head('recall')} input: query={record.get('query')!r} (the task input, verbatim -- no rewrite, no model in the path)")
     out.append(
@@ -195,13 +277,12 @@ def render_trace(task_text, subject, record, model_url, model_id, temperature_re
         f"two-hop neighbourhood (internal/loop/retrieve.go's Retrieve/fuse) -- 'rank' below is fused "
         f"rank, not a plain similarity sort"
     )
-    out.extend(render_candidate_table(candidates, assembly_budget))
+    out.extend(render_candidate_table(candidates, remaining_budget))
     out.append("")
 
     # ---- STEP: assemble ---------------------------------------------------------------------
     block = record.get("block", "")
     block_size = len(block.encode("utf-8"))
-    anchor_size = anchor.get("size", 0)
     cand_bytes = admitted_bytes(candidates)
     framing = block_size - anchor_size - cand_bytes
     cut_tally = {}
@@ -209,7 +290,11 @@ def render_trace(task_text, subject, record, model_url, model_id, temperature_re
         if not c.get("included"):
             reason = c.get("cutReason") or "(no reason given)"
             cut_tally[reason] = cut_tally.get(reason, 0) + 1
-    out.append(f"{head('assemble')} input: anchor + {len(candidates)} candidate(s), byte budget {fmt_bytes(assembly_budget or 0)} (anchor exempt)")
+    out.append(
+        f"{head('assemble')} input: anchor ({fmt_bytes(anchor_size)}, charged in full) + "
+        f"{len(candidates)} candidate(s); assembly budget {fmt_bytes(assembly_budget or 0)} total, "
+        f"{fmt_bytes(remaining_budget or 0)} remaining for candidates after the anchor charge"
+    )
     out.append(
         f"{'':<24} output: {admitted_count} of {len(candidates)} admitted, block {fmt_bytes(block_size)} "
         f"(anchor {fmt_bytes(anchor_size)} + candidates {fmt_bytes(cand_bytes)} + framing {fmt_bytes(framing)})"
@@ -244,7 +329,8 @@ def render_trace(task_text, subject, record, model_url, model_id, temperature_re
         prompt_desc = f"{u['inTokens']} tok in" if u else "usage not reported"
         wanted_recall = i < len(tool_calls)
         tc = tool_calls[i] if wanted_recall else None
-        is_capped = wanted_recall and tc.get("error") == ERR_CALL_CAP_REACHED
+        category = classify_round(tc) if wanted_recall else None
+        out_tok = f"{u['outTokens']} tok" if u else "? tok"
 
         prior_rounds = i  # how many completed recall exchanges are already replayed into this call's prompt
         out.append(
@@ -253,33 +339,45 @@ def render_trace(task_text, subject, record, model_url, model_id, temperature_re
             f"[{prompt_desc}]"
         )
 
-        if wanted_recall:
-            query = tc.get("query")
-            if is_capped:
-                out.append(
-                    f"{'':<24} output: wants recall (query={query!r}), but the model-call cap "
-                    f"(MaxModelCalls={limits.get('maxModelCalls')}) was reached -- NOT dispatched, "
-                    f"counted only. out={u['outTokens'] if u else '?'} tok"
-                )
-            elif tc.get("error") == ERR_SUPPLEMENTARY_RECALL_FAILED:
-                out.append(
-                    f"{'':<24} output: wants recall (query={query!r}), dispatched, but the "
-                    f"supplementary recall call itself FAILED (scrubbed reason on this surface by "
-                    f"design -- internal/loop/turn.go's error-scrubbing rule, DiVoid #10850). "
-                    f"out={u['outTokens'] if u else '?'} tok"
-                )
-            else:
-                out.append(
-                    f"{'':<24} output: wants recall (query={query!r}). out={u['outTokens'] if u else '?'} tok"
-                )
-        else:
+        if not wanted_recall:
             out.append(
                 f"{'':<24} output: {stop_reason.get('reason')!r} (endpoint raw={stop_reason.get('raw')!r}). "
-                f"out={u['outTokens'] if u else '?'} tok"
+                f"out={out_tok}"
+            )
+        elif category == ROUND_CAPPED:
+            out.append(
+                f"{'':<24} output: wants recall (query={tc.get('query')!r}), but the model-call cap "
+                f"(MaxModelCalls={limits.get('maxModelCalls')}) was reached -- NOT dispatched, "
+                f"counted only. out={out_tok}"
+            )
+        elif category == ROUND_DISPATCH_FAILED:
+            out.append(
+                f"{'':<24} output: wants recall (query={tc.get('query')!r}), dispatched, but the "
+                f"supplementary recall call itself FAILED (scrubbed reason on this surface by "
+                f"design -- internal/loop/turn.go's error-scrubbing rule, DiVoid #10850). "
+                f"out={out_tok}"
+            )
+        elif category == ROUND_MALFORMED:
+            ambiguous_cap = cap_reached and i == model_calls - 1
+            out.append(
+                f"{'':<24} output: wants recall, but the tool call itself was malformed and NEVER "
+                f"reached the graph -- error: {tc.get('error')!r}. query not recorded (turn.go's "
+                f"RecallExchange on this path never carries one). out={out_tok}"
+            )
+            if ambiguous_cap:
+                out.append(
+                    f"{'':<24} note: this is also the final model call and capReached=true, but "
+                    f"turn.go's malformed-request reason wins over the cap reason when both apply to "
+                    f"the same round -- whether the cap would separately have stopped this round "
+                    f"cannot be told from the record."
+                )
+        else:  # ROUND_DISPATCHED
+            out.append(
+                f"{'':<24} output: wants recall (query={tc.get('query')!r}). out={out_tok}"
             )
         out.append("")
 
-        if wanted_recall and not is_capped and tc.get("error") != ERR_SUPPLEMENTARY_RECALL_FAILED:
+        if category == ROUND_DISPATCHED:
             results = tc.get("results") or []
             kept = sum(1 for r in results if r.get("included"))
             kept_bytes = admitted_bytes(results)
@@ -331,6 +429,21 @@ def check_prior_run(divoid_url, divoid_key, task_text):
     )
 
 
+def announce_written(record):
+    """Print what this run wrote to the graph immediately -- before rendering the trace, and
+    unconditionally -- so that a crash in render_trace (a bug, a record shape this script does not
+    yet handle) can never suppress the one thing this script promises never to lose track of (W5:
+    "name what it wrote and never delete it" has to hold even when everything after it throws)."""
+    written = record.get("written") or {}
+    if written.get("nodeId"):
+        print(
+            f"GRAPH: wrote run record #{written['nodeId']} ({written.get('state')!r}) -- named here "
+            f"in case rendering below fails; this script never deletes it."
+        )
+    else:
+        print(f"GRAPH: no run record stored (state={written.get('state')!r})")
+
+
 def run_one(model_url, model_id, model_key, divoid_url, divoid_key, task_text, subject, temperature):
     env = harness.child_env(model_url, model_id, model_key, divoid_url, divoid_key)
 
@@ -356,7 +469,8 @@ def run_one(model_url, model_id, model_key, divoid_url, divoid_key, task_text, s
             record = harness.post_run(port, task_text, subject)
             in_flight = False
 
-            return render_trace(task_text, subject, record, model_url, model_id, temperature, prior_note)
+            announce_written(record)
+            return render_trace(record, model_url, model_id, temperature, prior_note)
         finally:
             if proc is not None:
                 harness.stop_server(proc, log_path, in_flight)
