@@ -1,6 +1,8 @@
 # Architectural Document: Anchor-Grounded Recall
 
-**Status:** proposal · **Author:** Sarah (architect) · **Date:** 2026-09-05
+**Status:** **ruled — §17.** The grounded query is **rejected**; the anchor exclusion and the provenance
+instrumentation are **split out and approved** as a standalone unit. · **Author:** Sarah (architect)
+**Written:** 2026-09-05 · **Measured:** §16, 2026-09-05 · **Ruled:** §17, 2026-09-05
 **Prompted by:** #11414 (three step traces, Finding 2) · **Constrained by:** #11398, #11365, #11364
 **Target unit:** the retrieval step of the turn (`internal/loop/retrieve.go`), one PR.
 
@@ -115,6 +117,13 @@ Pooshit/mamgo CI cluster is almost entirely displaced; one foreign node (#9399) 
 
 **t3 is reported as a partial result and is not claimed as a win.** The head became project material; the
 specific document did not surface in the first eight.
+
+> **Correction, §17.3 (2026-09-05).** These three rows share a second property this section did not notice
+> and therefore could not control for: **all three are anchored on nodes whose names denote a place** —
+> `internal/server/`, `internal/loop/`, and the project node. Deixis in the input and place-naming in the
+> anchor are perfectly confounded across the only three rows this section looked at, and §17.3 finds the
+> effect tracks the anchor, not the input. The observation above is sound; the generalisation drawn from it
+> is not.
 
 ### 3.4 The harm check, run before recommending
 
@@ -393,6 +402,13 @@ before running.
   effect may still be real — but the design's account of **when it applies** would be false, and the next unit
   would be built on a wrong model of the system. This must be looked for, not assumed away.
 
+> **Correction, §17.3 (2026-09-05).** F3 was run as written and returned the inverse of its prediction
+> (§16.4). The reason, found by re-partitioning the same runs, is that **F3 partitions on the wrong
+> variable.** It classifies the *input*; the mechanism is a function of the *anchor*. A falsifier aimed at
+> the wrong variable cannot confirm a true account or refute a false one — it can only return noise, which
+> is what it did. This is the most instructive failure in the document and it is a design error in §11,
+> not an execution error in §16.
+
 ### 11.4 F4 — the standing claim, free on every future run.
 
 *Reciprocal-rank fusion is no longer inert in a turn* (#11398), and *no candidate list contains the anchor's
@@ -414,10 +430,27 @@ model-dependent.
 
 **The 23-row sweep corpus cannot provide positive evidence for this change, and using it as though it could
 would be a measurement error.** #11365 §2 records that it has **two** admission failures in twenty-three rows;
-#11365 §6 records that the required node is a 1-hop neighbour on **2 of 14** miss rows. Its rows are
+#11365 §6 records that the required node is a 1-hop neighbour on **2 of 14** miss rows. ~~Its rows are
 *self-contained questions* — **exactly the partition on which F3 predicts approximately zero effect.** Running
 this change on that corpus and reporting a flat result would be measuring the mechanism on the population where
-it is predicted not to fire, and would falsify nothing.
+it is predicted not to fire, and would falsify nothing.~~
+
+> **The reason above is false and is withdrawn. The conclusion stands on a different reason. (§17.4,
+> 2026-09-05.)**
+>
+> Measured, the corpus was neither flat nor silent: it moved four rows into retrieval and one out of
+> admission, and **every one of those movements is on the self-contained partition** this paragraph
+> predicted would not fire. The stated reason is not merely unsupported, it is contradicted by the run.
+>
+> The correct reason is that **the corpus varies the input and holds the anchor population fixed at whatever
+> each row happened to be authored with.** Six of its twenty-five rows share a single anchor (#10422); the
+> place-titled / work-titled split across the two corpora is 11 / 17 and is an accident of authoring rather
+> than a stratum. §17.3 finds the mechanism is a function of the anchor. **A corpus that does not vary the
+> variable a mechanism runs on cannot give positive evidence about that mechanism**, whatever its inputs look
+> like. That is a stronger reason than the one withdrawn, and it does not depend on F3's outcome.
+>
+> Its use as a harm guard is unaffected and was correct. **The consequence for the corpus specified below is
+> not cosmetic** — see §17.6, which changes it.
 
 **It can provide evidence *against*.** That is F2, and that is the correct and only use of it here.
 
@@ -453,6 +486,11 @@ after this one:
 ---
 
 ## 14. Implementation Guidance for the Next Agent
+
+> **Superseded as an instruction by §17.5–§17.6 (2026-09-05). Retained verbatim as the record of what was
+> directed before the result was known.** §1–§15 are the pre-registration and are not edited after the fact;
+> where they carry a claim now known false, the correction is marked inline and the original left legible.
+> Unit 1 below was built, measured (§16) and **rejected**. Read §17 for what to build.
 
 **One feature, one PR. This is Unit 1 and it stands alone.**
 
@@ -658,3 +696,295 @@ are now known that were not when §11 was written: r10 is not the row at risk, r
 displacement by the grounded arm's own good hits rather than rank displacement; and the anchor-name
 distribution that R3 depends on is four times wider than A3 assumed. Which of those the next revision acts on
 is a design decision and is deliberately not taken here.
+---
+
+## 17. The ruling — 2026-09-05
+
+The change was implemented in full, measured against the falsifiers §11 registered before it existed, and
+reported as rejected by its own secondary falsifier without being tuned around. That discipline is the reason
+this section can say anything useful. What follows is the architect's ruling, written after re-reading the
+per-row sweep output for every arm rather than only the summaries.
+
+### 17.1 Ruling
+
+| Component | Ruling |
+|---|---|
+| **The anchor-grounded query** | **Rejected.** Not carried forward in this form. |
+| **The anchor exclusion** | **Approved**, split out, on a claim limited to correctness (§17.5). |
+| **The provenance instrumentation** | **Approved**, split out, in the same unit. |
+| **The length bound** | **Rejected** — and §17.2 gives a reason stronger than "fitted constant". |
+| **Composing the anchor's type** | **Rejected** — confirmed by §16.7; its r02 rescue is a vocabulary coincidence, and it loses t1. |
+| **A neighbour-based exclusion or boost on the grounded arm** | **Rejected on measurement.** §17.2(d). |
+
+**The secondary falsifier fired and it binds.** It was written to be unmoved by the arithmetic of net gains,
+that arithmetic is exactly what the run produced (+3 retrieved, +1 admitted, one row lost), and honouring it
+only when it is cheap would make every future pre-registration in this project worthless. That alone settles
+it.
+
+But rejecting only because the rule says so would waste the run. Re-reading the rows, **three things make
+rejection correct independent of the falsifier**, and one of them would have justified rejection even if r02
+had survived.
+
+### 17.2 Why rejection is right on the merits, not only on the rule
+
+**(a) The mechanism is not stable with respect to its own input, and that is disqualifying on its own.**
+
+Seven compositions of the same idea were measured at one graph state. They are semantically indistinguishable
+to a human reader. They are not indistinguishable to the product:
+
+| Composition | r02 (#10879) | 23-row admitted | F1 |
+|---|---|---|---|
+| name + newline + input — **shipped** | cut @ 6 | 7 | t1 ✓ t2 ✓ t3 ✓ |
+| name + **space** + input | admitted | 8 | **t1 cut @ 14** |
+| type + name + newline + input | admitted | 7 | **t1 cut @ 15** |
+| name only, input dropped | — | 6 | **t1 cut @ 11, t3 cut @ 18** |
+| name truncated to 120 (≡ untruncated here) | cut @ 6 | 7 | t1 ✓ t2 ✓ t3 ✓ |
+| name truncated to 80 | **admitted @ 1** | 8 | t1 ✓ t2 ✓ t3 ✓ |
+| name truncated to 60 | **admitted @ 2** | 8 | t1 ✓ t2 ✓ t3 ✓ |
+| name truncated to 40 | cut @ 7 | 6 | **t1 and t3 lost** |
+
+Two readings of this table matter more than the r02 column everyone will look at first.
+
+- **Four of the seven lose t1** — the task this design was written for. The shipped composition's F1 pass is
+  one point in a space where the majority of neighbouring points fail the thing the design exists for. That
+  does not retract §16.2: the composition was fixed and the result is real. It does mean F1 measured a point,
+  not an effect.
+- **Trimming nineteen characters off one anchor's name moves that row's required node from fused rank 6 to
+  fused rank 1**, and reorders its whole candidate head. This is not a parameter with a response curve; it is
+  a discontinuity.
+
+§8 asserted that composition is **deterministic** and treated that as sufficient — "a precondition of the
+sweep remaining a reproducible instrument". It is sufficient for that, and I stopped there. It is **not**
+sufficient for the product. Determinism says the same anchor gives the same block. **Stability** would say a
+*similar* anchor gives a *similar* block, and the table above says it does not. Anchor names in this graph are
+human-authored prose, edited freely, with no contract that they hold still — measured range 11–256 characters
+(§16.6). Under this design, an operator retitling a task node silently changes what every turn anchored there
+retrieves, with no signal that anything happened. **A design cannot make a title into a load-bearing interface
+without saying so, and this one did not notice it was doing that.**
+
+This is the finding I would reject on even if r02 had held.
+
+**(b) The harm is the mechanism's signature, not its tail.**
+
+The whole experiment produced exactly two regressions — r02 (admitted@4 → cut@6) and r04 (admitted@3 →
+admitted@5). They have one cause, and it is visible in the per-candidate attribution the instrumentation
+added:
+
+| Row | Anchor | What the grounded query returned that the raw arm did not | Size | Similarity vs the row's organic band |
+|---|---|---|---|---|
+| **r02** | #10521, a task | #10532 *"Design: Processor M1 — the skeleton loop…"* — **the anchor's own design document** | 186,766 B | **0.810** vs 0.676–0.711 |
+| | | #10821 *"QA Review — M1 Unit B: the turn closes (#10521, …)"* — the anchor's own QA review | 21,856 B | 0.752 |
+| | | #11372 *"m1-skeleton-loop.md corrected…"*, #10446, #10965 | 8,215 / 16,694 / 5,939 B | 0.740–0.752 |
+| **r04** | #10439, a task | #10493 *"QA Review — Processor PR (Unit A): process-boundary…"* — **the anchor's own QA review** | 19,796 B | **0.793** vs 0.624–0.649 |
+| | | #10488 *"Design: Processor process-boundary test harness"* — the anchor's own design document, promoted 6 → 2 by fusion agreement | 58,530 B | — |
+
+The signature is unmistakable once the attribution makes it readable. **A query built from a node's title
+preferentially retrieves the documents whose titles paraphrase that title** — and in this graph, by convention,
+every worked task acquires exactly such a family: a design document, one or more QA reviews, session logs.
+Those documents retrieve at a similarity band **far above the row's organic band**, because they are
+near-restatements of the query rather than answers to it. They are also systematically **large** — 186,766 /
+58,530 / 33,378 / 21,856 / 19,796 bytes — because design documents and QA reviews are long. And they are
+**never the answer**, because they are about the anchor rather than about anything asked.
+
+§3.5 found the exact-identity case of this — the anchor returning itself at rank 1 or 2 — called it a
+precondition, and closed it by excluding one id. **That was the same failure mode one hop out, and I did not
+see it.** Excluding one id closes the case where the graph holds the anchor. It does nothing where the graph
+holds five paraphrases of the anchor, which is the normal state of this graph for any task that has been
+worked. r02 is therefore not an unlucky row. **It is what this mechanism does on every work-titled anchor,
+and the corpus contains seventeen of those.**
+
+**(c) The "byte displacement" reading is right, and the obvious remedy it suggests does not work.**
+
+I checked the arithmetic rather than accepting the summary. On r02 the block's non-candidate overhead is
+bounded by the run itself — #8738 (1,884 B) is admitted at a running total of 45,891 and #10888 (1,502 B) is
+cut at 47,775 — putting candidate capacity between **47,775 and 49,277 bytes**. The required #10879 (5,224 B)
+would need the running total to reach 51,115.
+
+So: **removing #10532 — the 186,766-byte node that can never be admitted at any rank — would not rescue r02.**
+It costs a candidate slot, not bytes. The row is lost to #10965 (5,939 B), a legitimately retrieved and
+legitimately admissible node that the grounded query promoted from raw rank 17 to grounded rank 3. Anyone
+reading §16.3 will reach for the inadmissible-giant fix; it is correct on its own terms and belongs in the
+backlog beside #11308, but **it is not the fix for r02 and must not be filed as one.**
+
+**(d) A neighbour-based exclusion or boost cannot separate the answer from the paperwork. Measured, today.**
+
+The natural next thought is to treat the anchor's graph neighbourhood as the discriminator — exclude it from
+the grounded arm, or boost it. Checked on the live graph on the one row where it would have to work:
+
+> **#10879 — r02's required node — is itself a direct 1-hop neighbour of the anchor #10521.** So is #10532,
+> on an edge labelled `implements`. So is #10821.
+
+The answer and both displacers sit in the same one-hop set. **Graph adjacency does not separate them.** The
+symmetric check on the winning side agrees: t1's #10466 is reached at scoped rank 1, so an adjacency exclusion
+on the grounded arm would delete the design's own headline result. This family is closed, on measurement
+rather than on argument, and does not need re-proposing.
+
+### 17.3 The deixis account does not survive. What replaces it.
+
+**Stated plainly, because the operator asked for it plainly: the deixis account is wrong, and I am the one who
+got it wrong.** §3.3 asserted that these inputs carry an unresolved reference, that the embedding of such a
+sentence lands in the neighbourhood of every health-controller document in every codebase absent its referent,
+and that composing the anchor's identity "resolves the reference into the embedding". F3 was registered
+against exactly that claim and returned its inverse: the seven deictic rows produced no gain at all, and every
+gain and both losses are on the sixteen self-contained rows.
+
+**What replaces it.** The grounded query does not resolve a reference. It issues **a second retrieval whose
+subject is the anchor's title**, and reciprocal-rank fusion then blends "similar to the question" with "similar
+to the anchor's title" at a fixed, unconditional weight. What comes back is therefore governed by **what kind
+of thing the anchor's title names** — a property of the anchor, and of nothing in the input:
+
+- **A title that names a durable place or subject** — `internal/server/ — the HTTP surface and its lifecycle`,
+  `Processor — memory-substrate agent harness` — returns the project's descriptive material about that place.
+  On a task that is *work on that place*, that material contains the answer.
+- **A title that names a unit of work** — `Processor M1: the skeleton loop — input → …` — returns that work's
+  own paperwork, per (b). It answers nothing and it is large.
+
+Re-partitioning the same runs on the anchor instead of the input:
+
+| Anchor's title names… | Rows | Verdict gains | Rank-only gains | Unchanged | **Regressions** |
+|---|---|---|---|---|---|
+| **a place or subject** | 11 — c01, c02, r03, r07, r10, r12, r15, r21, t1, t2, t3 | 5 | 0 | 6 | **0** |
+| **a unit of work** | 17 — r01, r02, r04, r05, r06, r08, r09, r11, r13, r14, r16–r20, r22, r23 | 3 | 2 | 10 | **2 — r02 and r04, the only two in the experiment** |
+
+This also explains, as the deixis account never could, why **§3.3's three motivating tasks all won**: t1, t2
+and t3 are anchored on `internal/server/`, the project node, and `internal/loop/` — all three place-titled.
+Deixis in the input and place-titling in the anchor were perfectly confounded across the only three rows §3.3
+examined, and the design generalised from the wrong half of the confound.
+
+**On #11414 specifically.** Its measurement stands and is not in question: fourteen `HealthController.cs`
+documents at the head, the answer at 18, and A7 — that no re-ranking of the returned list reaches it — is
+untouched by everything here. What was misread is the *cause*, by #11414, by this document, and in what was
+reported onward from it. Both accounts predict t1 improves; they agree nowhere else, and the difference decides
+what to build next. That correction should travel back to #11414 rather than living only here.
+
+**This account was generated by the data and is not yet tested.** It came from reading r02, and r04 confirmed
+it — on the same runs. The table above is a hypothesis fitted to twenty-eight rows with two regressions in
+them, and I classified the anchors after seeing the outcomes. It is exactly the weakness §16.4 owned about
+F3's own after-the-fact labelling, and mine is worse. **It is offered as the account to test, never as a
+result.** §17.6 says how.
+
+### 17.4 §12, restated
+
+Withdrawn and replaced in place — see the marked correction in §12. In short: the conclusion (this corpus
+cannot give positive evidence; a new instrument is required) **stands**. The stated reason — that its rows are
+self-contained questions, the partition F3 predicted would not fire — is **contradicted by the run**, since
+every movement it produced was on that partition. The reason that survives is that the corpus varies the input
+while holding the anchor population fixed at whatever each row was authored with, and §17.3 finds the mechanism
+runs on the anchor. Its use as a harm guard was correct and is unaffected. **The consequence is not editorial:
+it changes the corpus specification, in §17.6.**
+
+### 17.5 What ships now — and the exact claim it may make
+
+**One unit, one PR: the anchor exclusion and the provenance instrumentation.** The grounded query is removed
+entirely.
+
+**This is a split, not a tuning.** The distinction is worth stating because the two look alike from outside.
+Tuning around the falsifier would mean adjusting the condemned mechanism until r02 survives — the length bound,
+the type composition, a threshold. What is shipping instead **removes the condemned mechanism**, and its
+evidence is a **separately measured arm** (`excludeonly`), not a re-reading of the failing arm's numbers with
+r02 subtracted. Had the case for the split rested on that subtraction, it would be precisely what §14 forbids.
+
+**Component 1 — the anchor exclusion.** §6.2 unchanged: the anchor's id does not appear among the candidates
+the retrieval step returns, on any path — fused, reserved or backfilled — and the anchor still renders whole at
+the head and is never cut (#11335).
+
+**Component 2 — the provenance instrumentation.** §8's record-fidelity contract: the issued query set in issue
+order, and per candidate which query returned it, at what rank, and whether that recall was scoped. Every
+finding in §17.2 and §17.3 — the paperwork signature, the grounded-only attribution on r02 and r04, the fused
+inversion on r10 — was readable **only** because of it. Without it the run would have produced two rate numbers
+and no diagnosis, this ruling would have been a coin flip, and #11066's rule (evidence not written into the
+result is unrecoverable, because the next read queries a different graph) applies with full force.
+
+**The claim this unit is allowed to make, and no more.** Measured as its own arm at the same graph state:
+
+| | raw arm | `excludeonly` |
+|---|---|---|
+| labelled retrieved | 9/23 | **9/23** |
+| labelled admitted | 6/23 | **6/23** |
+| miss set | 17 rows | **the same 17 rows** |
+| anchor also a candidate | 8/23, **admitted into the block on 6** | **0/23** |
+| F1 (t1/t2/t3) | 1/3 admitted | **identical, row for row** |
+
+**It fixes a correctness defect and buys no recall. It must ship on exactly that sentence.** Six of
+twenty-three blocks were rendering the anchor twice — once whole at the head, once again as a candidate
+spending budget — and on r05, whose anchor is 70,660 B, that defect consumed the block twice over. Any PR body,
+node or summary that presents this unit as a retrieval improvement is misreporting it.
+
+**What the remaining unit must prove — its own pre-registration, since it is now a unit in its own right:**
+
+1. No candidate list contains the anchor's own id, on any path. One counterexample retires the claim.
+2. **Both corpus rates are *unchanged* — not merely not-worse.** Retrieved and admitted each read exactly
+   9/23 and 6/23, and the miss set is identical row for row.
+3. The record carries the issued queries and per-candidate attribution such that a later reader can reconstruct
+   which query produced which candidate at what rank.
+
+**Falsifier: any movement in either rate, in either direction, rejects it.** A defect fix that moves a rate is
+not the defect fix it claims to be — it is an unmeasured retrieval change wearing a correctness argument, and
+this unit's whole warrant is that its effect on ranking is nil.
+
+**Parity.** §16.6/§16.7's measurements and this ruling supersede A3, Q1 and Q2 in place; the operator publishes
+and verifies this document against **#11753**. **Q4 needs re-answering and I am flagging it rather than acting
+on it:** it was answered "yes, M3 is under P-40 parity" on the assumption that this change edits M3 §4.1–§4.3.
+With the grounded query withdrawn, the only M3-visible change is the exclusion, which touches §4.1's shape
+diagram marginally and adds no combiner row to §4.2. Whether that clears the parity bar is the operator's call,
+not mine to assume in either direction.
+
+### 17.6 The work that follows, in order
+
+**Unit A — the split above.** Ships now. Claim limited per §17.5.
+
+**Unit B — the task-shaped corpus, respecified.** §14's Unit 2 stands as a deliverable and its specification is
+**changed by this ruling.** §12 asked for imperative work-on-this-codebase inputs across two or more projects,
+authored blind, required nodes pre-registered, honouring #11360's trap. **Every one of those rows would have
+been place-anchored** — the population where this mechanism has zero measured regressions in twenty-eight rows.
+Built to §12's spec, the corpus would have been a machine for confirming the account it was meant to test. That
+is a design error in §12 that only the measurement could expose, and it is corrected here:
+
+- **Stratify on the anchor, not only on the input.** The corpus must carry both place-titled and work-titled
+  anchors in deliberate proportion, and the classification must be recorded **before any run**, from the title
+  alone, by someone who has not seen a result.
+- Retain everything else §12 asked for: blind authoring, pre-registered required nodes, two or more projects,
+  #11101's growth rule, #11360's trap over r13 and r16–r23.
+- Retain §12's ordering argument in full: **the next retrieval decision after this one is not decidable on any
+  instrument the project owns.** The one-time affordance that let the rejected unit be measured at all — F1 at
+  the rank level on three tasks, F2 as a harm guard on the existing corpus — is spent.
+
+**Unit C — test the replacement account (§17.3), on Unit B, pre-registered.** Not before Unit B exists.
+
+- **Prediction:** verdict regressions occur only on work-titled anchors; and among work-titled anchors, gains
+  occur only where the anchor's title has no restatement family in the graph.
+- **Falsified if** a place-titled row regresses, **or** if gains and losses are distributed independently of the
+  anchor classification.
+- **A cheap structural pre-test that needs no corpus at all, and should be run first because it is nearly free:**
+  take a sample of work-titled nodes that have a design document or QA review in the graph, issue a
+  title-derived query for each, and read whether that document comes back in the top few at a similarity above
+  the query's organic band. §17.2(b) predicts it does, systematically. If it does not, the account is wrong
+  before any corpus work is commissioned.
+
+**Unit D — inadmissible candidates.** A candidate larger than the whole assembly budget cannot be admitted at
+any rank and should not spend a candidate slot. **This is not a tunable bound** — the comparison is against the
+budget, which already exists and which #11364 makes the product, so no constant is introduced. It is worth
+doing and it is **explicitly not the fix for r02** (§17.2(c)); filing it as one would put a false causal claim
+into the graph. Belongs with #11308.
+
+**Unresolved and carried forward:** Q3 (self-produced run records consume candidate slots before being cut at
+admission — R4, and unaffected by this ruling); §9.4's near-duplicate collapse, still deferred; §14's Unit 3,
+hub pruning in the anchor scope, whose measured motivation — t2's 362-node two-hop scope reaching every project
+through `person Toni` — is untouched by anything measured here and remains the best-evidenced retrieval unit
+the project has not yet built.
+
+### 17.7 What this exercise bought
+
+The change is not shipping. That is not the outcome to be defended here — this is:
+
+A mechanism was proposed with a stated causal account, falsifiers were registered against that account before
+the code existed, the account was **wrong**, and the falsifiers said so on a run whose headline numbers were
+*positive* — +3 retrieved, +1 admitted, all three motivating tasks rescued. A design judged on its headline
+would have shipped. Judged on its pre-registration, it did not, and in exchange the project now knows
+something it did not know this morning: **its retrieval is not limited by deixis in the input, and a
+title-derived query in a graph whose conventions produce title-paraphrasing documentation retrieves that
+documentation rather than answers.** That is a fact about the substrate, it applies to every future query
+source anyone proposes, and it was not obtainable any other way.
+
+The pre-registration is only worth something if it binds when it costs something. This is that round, and it
+binds.
