@@ -525,6 +525,14 @@ be judged. Author blind, pre-register required nodes, span two or more projects,
 
 ### Unit 3 — hub pruning in the anchor scope
 
+> **RETIRED 2026-09-06 — `docs/architecture/hub-pruning-in-the-anchor-scope.md` (#12969).** The paragraph
+> below is the original and is left legible per §14's preamble. Its motivation reproduced and was measured at
+> population scale (#12966 §6: median pool 168, max 1,237 = 11.7% of the graph, one edge causing every
+> thousand-node case). **The unit is retired anyway**, because its whole delivery surface is ≤3 candidate
+> slots at fused ranks 18–20 and #11365 §7's F4 says nothing is admitted above rank 16. **"Should be measured,
+> not assumed" was right; it was measured, and it did not pay.** Reopening condition and escrow design in the
+> ruling. **Not an instruction.**
+
 **Measured motivation, not speculation.** t2's two-hop scope is **362 nodes** and its scoped list still
 returned mamgo and Pooshit CI material at ranks 1–3 — because the project node links to `person Toni` (#10),
 and two hops through a person reaches every project that person runs. t1's scope, which passes through no
@@ -1323,6 +1331,16 @@ that round and is exactly why this rule is about **commissioning** rather than a
   **the only retrieval channel the anchor has at all**, and §18.4.2 says the strata differ in neighbourhood
   size. **Three independent lines have arrived at the same channel.** The anchor's influence on retrieval is
   `RecallScope` and nothing else, so that is where any anchor work belongs.
+
+  > **WITHDRAWN AS A COMMISSION, 2026-09-06** — see `docs/architecture/hub-pruning-in-the-anchor-scope.md`
+  > (**#12969**). The pre-test §18.4.3 registered was run (#12966) and **failed**: 57 scoped-only arrivals,
+  > **3 admitted**, **0 required nodes admitted via the scoped arm in twelve arms**. What the three converging
+  > lines establish is that the id-to-scope channel is the anchor's *only* channel — which is a fact about the
+  > anchor, not about the channel's yield. The channel is three candidate slots wide at fused ranks 18–20, and
+  > **#11365 §7's standing falsifier F4 (*no required node is admitted at fused rank > 16*) is still
+  > un-falsified.** Unit 3 is **retired with a stated reopening condition**, not deferred. The sentence above
+  > is left legible because it is the record of what was directed before the pre-test returned; **it is not an
+  > instruction and must not be read as one.**
 - **Carried forward unresolved:** Q3 (self-produced run records consuming candidate slots), §9.4's
   near-duplicate collapse, and Q4's M3 parity question — none touched by this ruling.
 
