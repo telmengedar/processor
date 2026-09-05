@@ -26,6 +26,15 @@ PROCESSOR_MODEL_TOP_P, which turned the script's printed paragraph about samplin
 false with no test failing anywhere -- because no test read the printed prose. The rule that follows
 from it, and that SamplingLineTests exists to keep: prose this script PRINTS is tested by reading the
 printed output, including the shape where the record predates the field and no value may be invented.
+
+The sharper half of that rule, learned the round after, when a suite obeying it still shipped a
+renderer that rounded the number it claimed to quote: A TEST THAT ONLY EXERCISES THE LINE PROVES
+NOTHING. When you pin a formatting or predicate decision, pick the fixture that DISCRIMINATES the
+shipped implementation from its most likely wrong neighbour. Every sampling value here was once 0,
+0.7, 0.91 or 0.5 -- all fixed points of six-significant-figure rounding, so nothing could separate
+`f"{value:g}"` from an honest formatter; every sampling object was once None or truthy, so nothing
+could separate `is not None` from truthiness. Both suites were green and both were one fixture choice
+away. Where a class pins such a decision, its docstring names the neighbour the fixture rules out.
 """
 
 import contextlib
@@ -348,9 +357,10 @@ class ScopeReserveLineTests(unittest.TestCase):
     retrieve.go's `fuse` runs three passes, not two -- fill to `limit - reserve` from the fused list,
     take up to `reserve` unseen rows from the scoped list, then fill whatever the scope left over
     from the fused list AGAIN. A tail row is therefore a neighbourhood hit or a plain-similarity
-    continuation, and the record cannot say which: Disposition has no provenance member, nor does the
-    Candidate behind it, and the scoped list is not recorded. These tests pin both halves -- the
-    corrected mechanism, and the refusal to attribute a row the record cannot attribute."""
+    continuation, and the record cannot say which: Disposition has no provenance member, the Candidate
+    behind it records only whether the row is self-produced -- never which recall returned it -- and
+    the scoped list is not recorded. These tests pin both halves -- the corrected mechanism, and the
+    refusal to attribute a row the record cannot attribute."""
 
     def test_reserved_slots_are_not_claimed_to_come_from_the_scoped_recall(self):
         out = render(record())
@@ -440,9 +450,14 @@ class SamplingNumberFormatTests(unittest.TestCase):
         self.assertNotIn("0.123457,", out)
 
     def test_a_large_value_is_not_reformatted_into_scientific_notation(self):
-        out = render(record(sampling={"temperature": 1234567.0}))
-        self.assertIn("temperature 1234567.0,", out)
+        """1234567, not 1234567.0: Go marshals float64(1234567) as the JSON number `1234567`, which
+        decodes to a Python int, so the float spelling is a record shape the binary cannot write. The
+        int discriminates just as sharply -- `:g` reformats it to 1.23457e+06 all the same, and
+        repr(float(value)) would print 1234567.0 -- while also being a record that can exist."""
+        out = render(record(sampling={"temperature": 1234567}))
+        self.assertIn("temperature 1234567,", out)
         self.assertNotIn("1.23457e+06", out)
+        self.assertNotIn("1234567.0", out)
 
     def test_an_integer_zero_keeps_the_spelling_the_record_carries(self):
         """The binary marshals a temperature of 0 as the JSON number `0`, which decodes to a Python
@@ -453,9 +468,13 @@ class SamplingNumberFormatTests(unittest.TestCase):
         self.assertNotIn("temperature 0.0", out)
 
     def test_a_non_numeric_value_is_not_presented_as_a_number(self):
-        """Unreachable from today's binary (the field is a *float64), but the record is an external
-        boundary. repr shows a string AS a string -- temperature '0.7' with quotes -- where every
-        str-based formatter would print temperature 0.7 and claim a number was sent that was not."""
+        """The discriminator between repr and str, and the only one there is: in Python 3
+        `str(x) == repr(x)` for every numeric value, so no number in this class can tell an f-string
+        cleanup (`f"{value}"`) apart from the shipped `repr(value)` -- and that cleanup is the single
+        most likely accidental regression here. A non-numeric value separates them: repr shows a
+        string AS a string, temperature '0.7' with quotes, where str prints temperature 0.7 and
+        claims a number was sent that was not. Unreachable from today's *float64 field; pinned
+        because it is the only assertion in this file that can see the difference."""
         out = render(record(sampling={"temperature": "0.7"}))
         self.assertIn("temperature '0.7',", out)
 
@@ -497,6 +516,16 @@ class SamplingFlagTests(unittest.TestCase):
         reports is that no temperature went on the wire -- so a flag that asked for one did not
         arrive. Guarding the whole comparison on the object's presence must not lose this."""
         out = render(record(sampling={"topP": 0.9}), temperature=0.7)
+        self.assertIn("MISMATCH", out)
+
+    def test_an_empty_sampling_object_with_a_flag_is_still_a_mismatch(self):
+        """The fixture that discriminates `is not None` from truthiness, and the only one that can:
+        `{}` is a sampling object that affirmatively reports nothing was sent, so a flag that asked
+        for a temperature did not arrive and MISMATCH must fire. Every other record here is either
+        None or truthy, so `if sampling and ...` renders identically for all of them and no other
+        assertion in this file could tell the shipped guard from that mutation."""
+        out = render(record(sampling={}), temperature=0.7)
+        self.assertIn("SAMPLING: nothing sent", out)
         self.assertIn("MISMATCH", out)
 
     def test_no_flag_prints_no_flag_line(self):
