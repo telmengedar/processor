@@ -67,11 +67,12 @@ THE FUSED LIST AGAIN, continuing its plain-similarity order past where the first
 run whose scoped recall returned fewer than `RECALL_SCOPE_RESERVE` unseen rows ends with tail rows
 that are not neighbourhood hits at all, and which pass placed any given tail row is NOT recoverable
 from the record: `Disposition` carries rank, id, type, name, similarity, size, content hash and the
-admit decision, the `Candidate` it is built from carries no provenance member either, and the scoped
-list is not in the record to compare against. The trace therefore reports the reservation and
-declines to label the rows -- inventing a per-row distinction the record cannot support would be the
-same defect one level up. Fusion of multiple ranked lists is real and does real work in `cmd/eval`,
-which passes more than one query -- it is simply inert inside a turn, which never does. The two-hop
+admit decision, the `Candidate` it is built from records only whether the row is self-produced --
+never WHICH RECALL RETURNED IT -- and the scoped list is not in the record to compare against. The
+trace therefore reports the reservation and declines to label the rows -- inventing a per-row
+distinction the record cannot support would be the same defect one level up. Fusion of multiple
+ranked lists is real and does real work in `cmd/eval`, which passes more than one query -- it is
+simply inert inside a turn, which never does. The two-hop
 half of the mechanism (`RecallScope` = subject + its linked neighbours) is accurate as stated.
 
 BUDGET ARITHMETIC, corrected after review (C2/C3): the anchor is not exempt from the assembly
@@ -274,9 +275,21 @@ def anchor_charge_phrase(anchor_size, assembly_budget, remaining_budget):
 
 
 def fmt_sampling(value):
-    """`0.0` prints as `0` and `0.70` as `0.7` -- the shortest spelling of the number the record
-    carries, so the line reads as the value the endpoint was asked for rather than as float noise."""
-    return f"{value:g}"
+    """The number the record carries, spelled with no conversion and no rounding.
+
+    `repr` and not a format spec, deliberately: `f"{value:g}"` rounds to six significant figures, so
+    a temperature of 0.123456789 -- really sent, really recorded -- would print as 0.123457, and
+    1234567.0 as 1.23457e+06. Numbers the endpoint was never asked for, printed by the one line in
+    this script whose whole claim is what was REQUESTED, AS SENT. `repr` of a float is its shortest
+    round-tripping decimal, so what prints here parses back to exactly what the record holds; 0.1+0.2
+    printing as 0.30000000000000004 is the honest outcome and stays.
+
+    Not `repr(float(value))` either: the binary marshals a temperature of 0 as the JSON number `0`,
+    which decodes to a Python int, and converting it would print `0.0` -- a spelling the record does
+    not contain. Quoting the decoded value is the whole job; every conversion on the way is a chance
+    to quote something else.
+    """
+    return repr(value)
 
 
 def sampling_lines(record, temperature_requested):
@@ -334,7 +347,7 @@ def sampling_lines(record, temperature_requested):
             f"{ENV_MODEL_TEMPERATURE} for this run; the SAMPLING line above is the record's own "
             f"account of what the client sent, read back rather than restated from the flag."
         )
-        if temperature != temperature_requested:
+        if sampling is not None and temperature != temperature_requested:
             lines.append(
                 f"          MISMATCH: the record reports {temperature!r}, not the "
                 f"{temperature_requested!r} this script asked for. The request did not reach the "
@@ -412,8 +425,8 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
             f"+ its linked nodes) -- which is not the same as filled from it: fuse takes unseen "
             f"scoped rows up to the reserve and then fills whatever the scope left over from the "
             f"unscoped list AGAIN, continuing its plain-similarity order. Which pass placed any one "
-            f"of those {RECALL_SCOPE_RESERVE} rows is not in the record -- no candidate carries its "
-            f"provenance and the scoped list is not recorded -- so each of them may be a "
+            f"of those {RECALL_SCOPE_RESERVE} rows is not in the record -- no candidate records "
+            f"which recall returned it, and the scoped list is not recorded -- so each of them may be a "
             f"neighbourhood hit or a similarity continuation, and this trace will not guess which. "
             f"Fusion across multiple queries only does real work in cmd/eval, which passes more than "
             f"one -- it never touches the order here"
@@ -584,7 +597,9 @@ def apply_temperature(env, temperature):
         return env
     # repr() of a float is its shortest round-tripping decimal, so the number Go parses back is
     # bit-for-bit the one argparse produced -- which is what lets sampling_lines compare the record's
-    # value against the request by equality without inventing a tolerance.
+    # value against the request by equality without inventing a tolerance. The float() is deliberate
+    # HERE and deliberately absent in fmt_sampling: this writes a value Go must parse as a float
+    # literal, that one quotes a value the record already holds. Do not unify them.
     env[ENV_MODEL_TEMPERATURE] = repr(float(temperature))
     return env
 

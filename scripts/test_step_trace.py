@@ -362,7 +362,7 @@ class ScopeReserveLineTests(unittest.TestCase):
     def test_line_refuses_to_attribute_a_tail_row_the_record_cannot_attribute(self):
         out = render(record())
         self.assertIn("is not in the record", out)
-        self.assertIn("no candidate carries its provenance", out)
+        self.assertIn("no candidate records which recall returned it", out)
         self.assertIn("may be a neighbourhood hit or a similarity continuation", out)
         self.assertIn("this trace will not guess which", out)
 
@@ -423,6 +423,49 @@ class SamplingLineTests(unittest.TestCase):
         self.assertIn("RESULT", out)
 
 
+class SamplingNumberFormatTests(unittest.TestCase):
+    """The SAMPLING line quotes numbers, so the quoting itself needs a test that reads the printed
+    output -- with values where a plausible formatter and an exact one disagree.
+
+    `f"{value:g}"` rounds to six significant figures. Every value in the other classes (0, 0.7, 0.91,
+    0.5) is unchanged by that rounding, so it renders identically under both and no assertion
+    anywhere in this file could tell them apart. These two values can: 0.123456789 rounds to
+    0.123457, and 1234567.0 becomes 1.23457e+06. Numbers that were never sent, printed by the line
+    whose claim is what was sent -- and the MISMATCH guard cannot catch it, because it compares
+    floats and the floats are equal."""
+
+    def test_a_long_decimal_is_quoted_whole_not_rounded_to_six_figures(self):
+        out = render(record(sampling={"temperature": 0.123456789}))
+        self.assertIn("temperature 0.123456789,", out)
+        self.assertNotIn("0.123457,", out)
+
+    def test_a_large_value_is_not_reformatted_into_scientific_notation(self):
+        out = render(record(sampling={"temperature": 1234567.0}))
+        self.assertIn("temperature 1234567.0,", out)
+        self.assertNotIn("1.23457e+06", out)
+
+    def test_an_integer_zero_keeps_the_spelling_the_record_carries(self):
+        """The binary marshals a temperature of 0 as the JSON number `0`, which decodes to a Python
+        int. Converting to float before rendering would print 0.0 -- a spelling the record does not
+        contain, in a line that exists to quote the record."""
+        out = render(record(sampling={"temperature": 0}))
+        self.assertIn("SAMPLING: temperature 0,", out)
+        self.assertNotIn("temperature 0.0", out)
+
+    def test_a_non_numeric_value_is_not_presented_as_a_number(self):
+        """Unreachable from today's binary (the field is a *float64), but the record is an external
+        boundary. repr shows a string AS a string -- temperature '0.7' with quotes -- where every
+        str-based formatter would print temperature 0.7 and claim a number was sent that was not."""
+        out = render(record(sampling={"temperature": "0.7"}))
+        self.assertIn("temperature '0.7',", out)
+
+    def test_a_float_that_cannot_be_written_exactly_is_printed_honestly(self):
+        """0.1 + 0.2 is 0.30000000000000004 and that is what was sent. The ugly spelling is the true
+        one; a renderer that tidied it to 0.3 would be reporting a request nobody made."""
+        out = render(record(sampling={"temperature": 0.1 + 0.2}))
+        self.assertIn("temperature 0.30000000000000004,", out)
+
+
 class SamplingFlagTests(unittest.TestCase):
     """--temperature is now sent, so the trace may report it -- but only beside the record's own
     account, never instead of it. A disagreement between the two is the interesting case: it means
@@ -440,10 +483,20 @@ class SamplingFlagTests(unittest.TestCase):
         self.assertIn("MISMATCH", out)
         self.assertIn("trust the record, not the flag", out)
 
-    def test_older_record_with_the_flag_reports_both(self):
+    def test_older_record_reports_the_flag_but_diagnoses_no_mismatch(self):
+        """A record that predates the field cannot disagree with the flag -- it can only fail to
+        say. MISMATCH diagnoses "the request did not reach the client", which here would be a wrong
+        diagnosis of a record that is merely silent, so the flag is reported and nothing is called."""
         out = render(record(sampling=None), temperature=0.7)
         self.assertIn("no sampling object at all", out)
         self.assertIn("--temperature 0.7 was passed to this script", out)
+        self.assertNotIn("MISMATCH", out)
+
+    def test_sampling_object_missing_the_temperature_key_is_a_real_mismatch(self):
+        """The narrower case that must still fire: the record DOES report what was sent, and what it
+        reports is that no temperature went on the wire -- so a flag that asked for one did not
+        arrive. Guarding the whole comparison on the object's presence must not lose this."""
+        out = render(record(sampling={"topP": 0.9}), temperature=0.7)
         self.assertIn("MISMATCH", out)
 
     def test_no_flag_prints_no_flag_line(self):
