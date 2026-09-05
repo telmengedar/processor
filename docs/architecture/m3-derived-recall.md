@@ -268,6 +268,7 @@ exactly the line between the two.
   │    fuse: reciprocal-rank over the unscoped lists,                    │
   │          then RecallScopeReserve slots from the scoped list,         │
   │          then backfill from the fused list, capped at CandidateLimit │
+  │          ── the anchor's own id is excluded on all three paths ──    │
   └──────────────────────────────────────────────────────────────────────┘
       │
       ▼

@@ -201,14 +201,20 @@ func ranked(ids ...int64) []Candidate {
 	return candidates
 }
 
-func mustRetrieve(t *testing.T, graph GraphPort, queries []string, limit, reserve int) []int64 {
+func mustRetrieveCandidates(t *testing.T, graph GraphPort, queries []string, limit, reserve int) []Candidate {
 	t.Helper()
 
 	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, limit, reserve)
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
-	return candidateIDs(got)
+	return got
+}
+
+func mustRetrieve(t *testing.T, graph GraphPort, queries []string, limit, reserve int) []int64 {
+	t.Helper()
+
+	return candidateIDs(mustRetrieveCandidates(t, graph, queries, limit, reserve))
 }
 
 func similarityGraph() *fusionGraph {
@@ -458,5 +464,74 @@ func TestFusionKeepsANodeOneQueryReturnedFirstAboveANodeTwoQueriesReturnedThirte
 	}
 	if once > twice {
 		t.Fatalf("fused order = %v, and node 400 stands above node 700: node 400 was returned thirteenth by both queries and node 700 first by one, and this is the far side of the same threshold its sibling guard bounds from below, so the two together fix how far the damping may travel in either direction", got)
+	}
+}
+
+func TestTheAnchorIsNotACandidateWhenTheWholeGraphRankingReturnsItFirst(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{"the input": ranked(42, 810, 220, 640)}}
+
+	got := mustRetrieve(t, graph, []string{"the input"}, 3, 0)
+
+	want := []int64{810, 220, 640}
+	if !slices.Equal(got, want) {
+		t.Fatalf("retrieval returned %v, want %v: assembly renders the anchor whole at the head of the block, so admitting it again spends the byte budget twice on one node and writes a candidate row for content the block already carries", got, want)
+	}
+}
+
+func TestTheAnchorDoesNotSpendAReservedSlotWhenTheScopedRankingReturnsIt(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists:  map[string][]Candidate{"input": ranked(810, 220, 640, 130, 970, 350)},
+		scoped: ranked(42, 590, 20),
+	}
+
+	got := mustRetrieve(t, graph, []string{"input"}, 6, 2)
+
+	want := []int64{810, 220, 640, 130, 590, 20}
+	if !slices.Equal(got, want) {
+		t.Fatalf("retrieval returned %v, want %v: the anchor is its own nearest neighbour and heads its own scoped ranking, so a reserve that charges it a slot spends one of two on the node the block already renders", got, want)
+	}
+}
+
+func TestTheAnchorIsNotBackfilledIntoASlotTheReserveLeftEmpty(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{"input": ranked(810, 220, 42, 640)}}
+
+	got := mustRetrieve(t, graph, []string{"input"}, 4, 2)
+
+	if slices.Contains(got, int64(42)) {
+		t.Fatalf("retrieval returned %v: the fused order fills the cap, the reserve draws on an empty scoped list and the backfill runs over the fused order a second time, so an exclusion applied on the first pass alone lets the anchor back in on the third", got)
+	}
+}
+
+func TestACandidateCarriesEveryRecallThatReturnedItSoAScopeReserveArrivalIsNotReadAsAgreement(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists: map[string][]Candidate{
+			"first":  ranked(700, 300),
+			"second": ranked(300, 500),
+		},
+		scoped: ranked(990),
+	}
+
+	got := mustRetrieveCandidates(t, graph, []string{"first", "second"}, 6, 2)
+
+	sources := make(map[int64][]Source, len(got))
+	for _, candidate := range got {
+		sources[candidate.ID] = candidate.Sources
+	}
+
+	wantBoth := []Source{{Query: 0, Rank: 2}, {Query: 1, Rank: 1}}
+	if !slices.Equal(sources[300], wantBoth) {
+		t.Fatalf("node 300 carries %+v, want %+v: it heads the fused order because two rankings returned it, and a record that does not say so leaves the next reader unable to tell agreement from a single lucky hit", sources[300], wantBoth)
+	}
+	wantReserve := []Source{{Query: 0, Scoped: true, Rank: 1}}
+	if !slices.Equal(sources[990], wantReserve) {
+		t.Fatalf("node 990 carries %+v, want %+v: it reached the candidate set on a reserved slot and no whole-graph ranking returned it at all, which is the one distinction the reserve exists to make and the one a rank column alone cannot show", sources[990], wantReserve)
 	}
 }
