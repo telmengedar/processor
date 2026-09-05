@@ -26,7 +26,7 @@ func sweep(ctx context.Context, graph loop.GraphPort, corpus eval.Corpus, deriva
 }
 
 func sweepRow(ctx context.Context, graph loop.GraphPort, row eval.Row, derivations eval.Derivations) (eval.RowResult, error) {
-	dispositions, found, err := rowDispositions(ctx, graph, row, derivations)
+	queries, dispositions, found, err := rowDispositions(ctx, graph, row, derivations)
 	if err != nil {
 		return eval.RowResult{}, err
 	}
@@ -34,7 +34,7 @@ func sweepRow(ctx context.Context, graph loop.GraphPort, row eval.Row, derivatio
 		return eval.RowResult{Row: row.ID, Stratum: row.Stratum, Subject: row.Subject, Error: rowErrorSubjectNotFound}, nil
 	}
 
-	result := eval.BuildRow(row, dispositions)
+	result := eval.BuildRow(row, queries, dispositions)
 
 	if err := resolveMisses(ctx, graph, result.Required); err != nil {
 		return eval.RowResult{}, err
@@ -43,19 +43,21 @@ func sweepRow(ctx context.Context, graph loop.GraphPort, row eval.Row, derivatio
 	return result, nil
 }
 
-func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row, derivations eval.Derivations) ([]loop.Disposition, bool, error) {
+func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row, derivations eval.Derivations) ([]string, []loop.Disposition, bool, error) {
 	anchor, found, err := graph.Node(ctx, row.Subject)
 	if err != nil || !found {
-		return nil, found, err
+		return nil, nil, found, err
 	}
 
-	candidates, err := loop.Retrieve(ctx, graph, anchor, derivations.QueriesFor(row), loop.CandidateLimit, loop.RecallScopeReserve)
+	queries := derivations.QueriesFor(row)
+
+	candidates, err := loop.Retrieve(ctx, graph, anchor, queries, loop.CandidateLimit, loop.RecallScopeReserve)
 	if err != nil {
-		return nil, true, err
+		return nil, nil, true, err
 	}
 
 	_, dispositions := loop.Assemble(anchor, candidates, loop.AssemblyByteBudget)
-	return dispositions, true, nil
+	return queries, dispositions, true, nil
 }
 
 func resolveMisses(ctx context.Context, graph loop.GraphPort, required []eval.NodeResult) error {

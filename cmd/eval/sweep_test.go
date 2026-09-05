@@ -137,7 +137,7 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 		t.Fatalf("Turn.Run: %v", err)
 	}
 
-	dispositions, found, err := rowDispositions(context.Background(), graph, row, eval.Derivations{})
+	queries, dispositions, found, err := rowDispositions(context.Background(), graph, row, eval.Derivations{})
 	if err != nil {
 		t.Fatalf("rowDispositions: %v", err)
 	}
@@ -147,6 +147,9 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 
 	if !reflect.DeepEqual(dispositions, record.Candidates) {
 		t.Fatalf("the sweep produced dispositions a real run would not:\nsweep  = %+v\nrecord = %+v", dispositions, record.Candidates)
+	}
+	if !slices.Equal(queries, record.Queries) {
+		t.Fatalf("the sweep issued %q and the turn issued %q: a sweep ranking a different query set from the product measures something the product never does, and the record is where a later reader resolves the query index each candidate's attribution carries", queries, record.Queries)
 	}
 	if len(record.Candidates) != 3 {
 		t.Fatalf("the fixture produced %d dispositions, want 3 so the comparison has something to disagree about", len(record.Candidates))
