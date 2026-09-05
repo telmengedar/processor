@@ -821,6 +821,15 @@ rather than on argument, and does not need re-proposing.
 
 ### 17.3 The deixis account does not survive. What replaces it.
 
+> **SUPERSEDED 2026-09-06 — read §18 before acting on this section.** The replacement account stated below was
+> tested by the pre-test §17.6 registered against it (#12957) and **rejected**: the effect reproduces on
+> work-titled anchors and reproduces at least as strongly on place-titled ones, so the differential claim — the
+> whole of this section's explanatory content — fails. Three specific statements below are **withdrawn**: the
+> effect sizes (§18.3(c), cross-population), the population claim that every worked task acquires the family
+> (§18.3(a), false for ~45%), and "it answers nothing" as a categorical (§18.3(b)). What survives is the
+> generic fact §17.7 already stated.
+
+
 **Stated plainly, because the operator asked for it plainly: the deixis account is wrong, and I am the one who
 got it wrong.** §3.3 asserted that these inputs carry an unresolved reference, that the embedding of such a
 sentence lands in the neighbourhood of every health-controller document in every codebase absent its referent,
@@ -933,6 +942,12 @@ not mine to assume in either direction.
 
 **Unit A — the split above.** Ships now. Claim limited per §17.5.
 
+> **SUPERSEDED 2026-09-06 — see §18.4 and §18.7.** Units B and C below were commissioned against the account
+> §17.3 states, three paragraphs earlier, as untested. That account is now rejected. **Unit C is cancelled.**
+> Unit B was built (#12941) and is **retained with its treatment variable retired** — the anchor's *title* is
+> not read by any query in the shipped system (§18.4.1), so the stratification below is on a variable the
+> product does not see. Do not author further work from this list without reading §18.7.
+
 **Unit B — the task-shaped corpus, respecified.** §14's Unit 2 stands as a deliverable and its specification is
 **changed by this ruling.** §12 asked for imperative work-on-this-codebase inputs across two or more projects,
 authored blind, required nodes pre-registered, honouring #11360's trap. **Every one of those rows would have
@@ -988,3 +1003,352 @@ source anyone proposes, and it was not obtainable any other way.
 
 The pre-registration is only worth something if it binds when it costs something. This is that round, and it
 binds.
+
+## 18. The ruling on the replacement account — 2026-09-06
+
+§17.6 registered a gate: a cheap structural pre-test, to be run before any corpus work was commissioned
+against the account §17.3 put in the deixis account's place. It was run (#12957, twelve queries against the
+live graph, no corpus row read or spent). **It fired.** This section rules on that result.
+
+Written after reading the pre-test in full, and after reading the shipped retrieval path in `internal/loop`
+and `cmd/eval` at `main` `1e42355`. §18.4 turns on what the code reads rather than on what a node says it
+reads, and I would not assert it from a node.
+
+### 18.1 Ruling
+
+| Component | Ruling |
+|---|---|
+| **§17.3's account — that retrieval is governed by what kind of thing the anchor's title names** | **Rejected.** Falsified by the pre-test §17.6 specified, on the criterion §17.6 registered. |
+| **Its non-differential residue** — that a title-derived query retrieves title-paraphrasing documents | **Retained, and it is not new.** §17.7 already had it, as a generic fact. §18.2. |
+| **§17.2(b)'s effect sizes (+0.099, +0.144)** | **Withdrawn.** Drawn across two populations. §18.3(c). |
+| **§17.3's population claim** — "in this graph every worked task acquires exactly that family" | **Withdrawn.** False on measurement: roughly 45% do not. §18.3(a). |
+| **§17.3's "it answers nothing"** | **Withdrawn as a categorical.** §18.3(b). |
+| **Unit C as specified in §17.6** | **Cancelled.** There is no longer an account for it to test. |
+| **The stratified corpus, #12941** | **Retained as an instrument; its treatment variable is retired.** §18.4. |
+| **§17.6's commissioning of Unit B** | **Was an error when it was written**, and not only in hindsight. §18.4.1 and §18.6(b). |
+
+### 18.2 The gate fired, and the half that fired is the half that carried the content
+
+The pre-test reproduced the phenomenon on work-titled anchors — 4 of 6 returned their own paperwork above
+the organic band — and reproduced it **at least as strongly on place-titled anchors**: 6 of 6, at a higher
+median excess (+0.0245 against +0.0152) and at 2.5× the excess normalised by band width (1.20 against 0.48
+band-widths). The falsifier was registered in #12824's step-1 gate and again in the pre-test's own §1 before
+the first query issued. It binds, for the same reason §17.1's secondary falsifier bound: a pre-registration
+honoured only when it is cheap is worth nothing on the round where it costs something.
+
+What survived and what died are worth separating precisely, because the survivor is easy to mistake for a
+result:
+
+- **Survived:** a query built from a node's title retrieves documents whose titles paraphrase it. True of
+  every title, at every stratum, and demonstrably *more* true of place titles.
+- **Died:** that this is a property of **work-titled** anchors specifically. That was the entire explanatory
+  content of §17.3 — the part that made it an account of *why* r02 and r04 regressed rather than a
+  restatement of what a semantic index does.
+
+Without the differential half the account reduces to §17.7's closing sentence, which was already written,
+already known, and already stated there as a substrate fact rather than a hypothesis. **An account whose
+surviving content is what you knew before you formed it has explained nothing.** I did not see that when I
+wrote §17.3, because the re-partition table — 11 place-anchored rows with zero regressions against 17
+work-anchored rows carrying both — looked like the finding. It was the part fitted to two points.
+
+### 18.3 Three corrections to §17, and the third is to my own evidence
+
+**(a) The population claim is false, and its failure compounds against the account.**
+
+§17.2(b) says: *"r02 is not an unlucky row; it is what the mechanism does on every work-titled anchor, and
+the corpus holds seventeen."* Of the eleven closed tasks the pre-test inspected in selection order, **five
+carry no design document and no QA review titled for their unit** — #10863, #10883, #10903, #11359, and
+#10442, which has only its deliverable. Roughly **45% of the work-titled population cannot exhibit the
+mechanism at all.**
+
+This compounds rather than merely trimming. The pre-test's work arm was drawn *after* filtering to anchors
+that have such a family, because §17.6's own specification told it to. So 4/6 is a rate **conditional on the
+family existing**; unconditionally the work arm fires on something nearer 37% of work-titled anchors, against
+a place arm at 6/6. The gap the account needed to run the other way is wider than the headline table shows.
+
+**(b) "Never the answer" is withdrawn as a categorical.**
+
+§17.3 asserted the retrieved paperwork "answers nothing". The pre-test read the nodes rather than inferring
+from their titles: #10982 is the **ruling that decides what the anchor's own instrument may claim**; #11329
+is the **implementation report for the anchor's own step**; #10452 is a **QA verdict carrying the finding
+list**. These are the primary written record of the work the anchor names, and they are plausible answers to
+a work-on-this-anchor task. Whether they answer a *specific* pre-registered required node is a different
+question and was never measured.
+
+This mattered more than it looks. "Never the answer" is what made the retrieval a **harm** rather than a
+**redundancy**, and the harm framing is what justified treating r02 as diagnostic of a mechanism rather than
+as one row losing a slot to a legitimate competitor — which §17.2(c) had already established was what
+actually happened to it (#10965, a legitimate admissible node, took the slot).
+
+**(c) The effect sizes were drawn across two populations. This is the correction a reader should worry about
+most, because it is the defect that generated the account.**
+
+§17.2(b) reported #10532 returning at 0.810 against an organic band of 0.676–0.711 (**+0.099**), and #10493
+at 0.793 against 0.624–0.649 (**+0.144**). Re-measured by the pre-test with the band drawn uniformly over the
+title arm's own top ten: **+0.055 and +0.010.**
+
+The *similarities* reproduce to within 0.002–0.014 — the instrument agrees with the ruling. **The bands do
+not.** The ruling's bands sit 0.06–0.18 low because they came from the **composed grounded query** — input
+joined to anchor title — while the similarities were being read as a property of **title-derived retrieval**.
+Two numbers from two populations, subtracted, and nothing flagged it because both came out of the same run
+record.
+
+On #10439 the effect all but vanishes under a uniform band (+0.010), and a *place*-titled node, #10455
+`cmd/processor/` at 0.8279, sits **above the anchor's own QA review** at 0.8071. Had the band been drawn
+uniformly when §17.2(b) was written, there would have been one motivating instance rather than two, and I do
+not believe §17.3 gets written on one.
+
+**Standing consequence: a claim that a quantity sits above a band is a claim about two populations, and both
+must be named where the claim is made.** Carried into §18.6's rule as clause 5.
+
+### 18.4 The corpus (#12941) — and the ruling is not one of the three options
+
+Three options were put to me: spend it exploratorily, hold it until a mechanism exists, or abandon the line
+and say what it is good for. **None of them is right, and the reason is a fact about the shipped code rather
+than a judgement about the corpus.**
+
+**18.4.1 The variable the corpus stratifies on is not read by the system it would be run on.**
+
+Verified at `main` `1e42355`:
+
+- `loop.Retrieve` (`internal/loop/retrieve.go`) takes the anchor and uses **`anchor.ID` only** — twice, for
+  `RecallScope` and for the self-exclusion in `fuse`. It never touches `anchor.Name`.
+- Its queries do not carry the title. `loop.Turn.Run` passes `[]string{input}`; `cmd/eval/sweep.go` passes
+  `derivations.QueriesFor(row)`. Neither composes an anchor title into anything.
+- `loop.Assemble` reads `len(anchor.Content)` for `remaining := budget - len(anchor.Content)`, and renders
+  `anchor.Name` into the block header — a string in the prompt, downstream of every retrieval decision a
+  sweep scores.
+
+So after Unit A shipped, **the anchor reaches an outcome by exactly two channels: its id, through two-hop
+scope expansion; and its content length, through the admission budget. Its title is on neither.**
+
+The title class was a live variable only while the grounded query existed. **The same ruling that removed the
+grounded query commissioned an instrument stratified on the title** — §17.5 removes it, §17.6 stratifies on
+it, four paragraphs apart. That is the error and it is mine: I specified the corpus against the mechanism I
+was deleting in the same document, and the specification read coherently because the title was still the
+thing I had spent the day thinking about.
+
+**18.4.2 And the class is not identifiable in this graph even as a proxy.**
+
+#12943 records three class-correlated covariates, all measured before any run — which is the only admissible
+time, and the corpus round is why they exist:
+
+| Covariate | Measurement | Direction |
+|---|---|---|
+| Anchor body size | place 8,676 B mean / 5,930 B median against work 4,862 / 3,150 — **1.78× and 1.88×**; #10454 alone consumes 51% of the 60,000 B budget | biases **place toward `Cut`** |
+| Neighbourhood size | rollups and repo maps are graph hubs, task nodes are leaves, so `RecallScope` hands the two strata structurally different candidate supplies | biases **place toward supply** |
+| Hop distance | every work anchor had to be an *adjacent* unit of work, because the obvious one states the answer (#12941 §9) | biases **work toward distance** |
+
+Notice what those three are. They are **the two real channels of §18.4.1, plus the reason the label correlates
+with them.** In this substrate "place-titled" *means* hub node with a large rollup body; "work-titled" *means*
+small leaf, one hop further out. The title is not a cause standing beside those properties — **it is a name
+for them.**
+
+That is what rules out spending the corpus exploratorily. "Run the pairs and see whether class predicts
+anything" would return a number with **four candidate causes and no arm that separates them**, two pushing
+each way. It would not be a weak result; it would be an uninterpretable one. And uninterpretable numbers are
+precisely what killed the last two accounts — §18.3(c) is one number compared against a band from another
+population, and this would be the same mistake with more ceremony around it.
+
+**18.4.3 What the corpus is once the label is retired — and why pairing survives.**
+
+The expensive, uncontaminated part of #12941 was never the `anchor` field. It is: sixteen imperative
+project-situated inputs; pre-registered required nodes with authoring-time content hashes and `why` reasons
+that each name a specific wrong conclusion; two projects; thirty-two distinct anchors; screened for answer
+leakage; authored by someone who never saw a row pass or fail. Every word of that is class-agnostic.
+
+And **the pairing survives the death of the label**, for a reason that is lucky rather than designed: a pair
+holds the input and the answer key identical and **varies the anchor node**. The two things the shipped system
+actually reads about an anchor — id-to-scope and content-length-to-budget — are exactly the two things that
+vary within a pair. The pair remains an exact within-pair contrast on the real channels. Only the name written
+on the contrast was wrong.
+
+**Ruling: retire the label, keep the instrument, re-register on the channel that exists.**
+
+1. **The `anchor` field is demoted from treatment to descriptive covariate.** It is **not edited** — §7 is
+   right that changing an `anchor` value is a change to the experiment, and that holds even now the experiment
+   is cancelled. It stays in the file verbatim; #12941 is amended to record that it is no longer a treatment
+   and that no result may be reported by it.
+2. **The variable to pre-register in its place is derived, not judged:** the anchor's two-hop scope
+   cardinality via `RecallScope`, and its content byte length. Both are computed from the graph by query, so
+   by **#12941 §8's own argument** — the one it made for the restatement family — they cannot be contaminated
+   by having seen results, and may therefore be derived *after* authoring without inheriting the defect §7
+   exists to prevent. This is the one place the instrument's separation of author from measurer buys something
+   it was not built to buy.
+3. **Nothing is swept until a cheap differential pre-test passes** (§18.6, clause 4, applied to my own
+   recommendation). **That pre-test needs no corpus row and no sweep, and the code makes it sharp:**
+
+   `fuse` fills `limit - reserve` = **17** slots from the unscoped fused list, then admits **at most
+   `reserve` = 3** further candidates from the scoped arm, then tops up from the unscoped list again. So the
+   anchor's entire id-to-scope channel is **structurally capped at 3 exclusive candidate slots out of 20** —
+   and only for candidates the unscoped recall did not already return.
+
+   Those slots are individually identifiable in every run record the project already owns: `Source.Scoped` is
+   recorded per candidate, so a candidate whose **only** source is scoped is one that is in the block *because
+   of the anchor*. **The pre-test is: over the existing 23-row run records, how many candidates are
+   scoped-only, and how many required-node verdicts turned on one of them or on the budget margin?** If the
+   answer is "almost none", the anchor channel is too thin to be worth a thirty-two-row sweep, and the corpus
+   should be retired rather than kept warm.
+
+   This is exactly what Unit A's provenance instrumentation was shipped to make possible. It was approved on a
+   claim limited to correctness — *"it buys no recall, and must ship on exactly that sentence"* — and that
+   claim stands unchanged. What it also turns out to buy is the ability to answer this question without
+   running anything, which is the ordinary way a correctness fix pays for itself twice.
+4. **If the pre-test passes, the sweep runs against a stated mechanism** — `RecallScope` expands `anchor.ID`;
+   `Assemble` charges `anchor.Content` against the budget — which is what an instrument is supposed to have
+   behind it, and what the title never had.
+
+**On decay, since it was raised as the cost of holding.** The pins decay whether the corpus is held or spent,
+and holding buys nothing that would make a later run better, because what was missing was never data. Decay is
+therefore an argument for running **the pre-test** now, not for running the sweep now.
+
+**And plainly, on whether a third data-generated account would be worth more: no.** A third account fitted to
+the residue of a sweep would arrive with the same n and the same prospects as the first two, and it would
+arrive *after* the sweep — when its cheap gate is already spent and the only remaining test is another
+instrument. That is the ordering that has now failed twice. **The next account here should be generated from
+the code path, as §18.4.1 was, and tested against the graph** — not generated from a run and tested by
+commissioning an instrument.
+
+### 18.5 Was #12941 worth building? Yes — through a channel nobody planned, and that is not a reason to plan on it
+
+The authoring round returned four things, and **none of them is the corpus**:
+
+- **#12943** — the anchor-leak question, together with the QA correction that established it is *inert*
+  against a retrieval-scored instrument (`sweep.go` calls no model; `Retrieve` never reads `anchor.Content`)
+  and **live for the first model-in-the-loop arm**. A pre-registered hazard for an evaluation that does not
+  exist yet, filed before it could contaminate one.
+- **The work-anchor scarcity asymmetry** (#12941 §9): for any topic a place node exists and is neutral, while
+  the work node on the same topic is usually the task that asks for the work or the review that already
+  solved it. Independently corroborated from the other direction by §18.3(a)'s 5-of-11: **the work population
+  is both scarce and thin.**
+- **The three class-correlated covariates, measured pre-run** — which is what let §18.4.2 rule the class
+  unidentifiable *without* running the sweep. That measurement bought a ruling.
+- **#12946** — a reachable, untested guard in `corpus.go`, found by QA of the corpus PR.
+
+So the round was net positive, and **every unit of that value came from the authoring, none from the
+artefact.** That shape is uncomfortable in a specific way: you cannot commission *"author an instrument in
+order to learn things while authoring it"*. The expected value of that is unknown and this is one sample.
+
+But look at what kind of thing all four yields are. **They are facts about the substrate that were forced into
+the open by having to make a binary decision thirty-two times.** Screening thirty-two anchors forced the leak
+question. Needing sixteen work anchors forced the scarcity fact. Needing a pair invariant forced the covariate
+measurement. **The value came from being made to operationalise a distinction — not from the file the
+operationalisation produced.**
+
+**What that changes about commissioning instruments ahead of mechanisms.** The two are separable purchases,
+and they should be separated:
+
+> **Commission the authoring pass; gate the artefact.** When an instrument is wanted ahead of a tested
+> mechanism, buy the classification-and-screening pass and stop there: classify the population, screen it,
+> write down the covariates and asymmetries the classification forces into the open, file it as
+> documentation. Then gate the file — the schema, the loader validation, the invariants, the tests, the PR —
+> on the mechanism's cheap differential test.
+
+Applied to this round: the authoring pass is perhaps a fifth of what was spent; the artefact is the rest, and
+the artefact is the part now stranded. Had #12941 been commissioned that way, **every yield above would have
+arrived on schedule, #12943 would exist unchanged, this ruling would be unchanged, and the corpus file would
+not have been written — because step 1 had not passed.** That is the whole of the saving, and it is available
+on every future instrument.
+
+### 18.6 What two falsified accounts imply about method — and the standing rule
+
+Two accounts, both generated from data, both falsified by the first test aimed at them. Deixis died on F3
+returning its inverse. The anchor-title account died on a differential pre-test. **That is a fact about
+method, and it is worth more than either account was.**
+
+**(a) It is not a failure of hypothesis formation, and reading it as one would draw the wrong lesson.** Both
+accounts were fitted to a handful of residual points — deixis to §3.3's three motivating tasks, the
+anchor-title account to two regressions in twenty-eight rows. A narrative fitted to two of twenty-eight points
+is barely constrained: many stories fit it, and the one you pick is the one you can tell. **A two-for-two
+falsification rate is the base rate for accounts formed that way, not evidence that the people forming them
+were careless.** Accounts will keep being generated from data; that is where accounts come from.
+
+**(b) The failure was in commissioning, not in generating.** §17.3 says, in bold, *"It is offered as the
+account to test, never as a result."* §17.6, four paragraphs later, respecifies an entire corpus around it and
+had it authored. **The caution and the commission sat in one document and contradicted each other, and nobody
+caught it — including me, and I wrote both.** That is the mechanism of the error, and it is general: **a hedge
+does not travel with a specification once the specification is read on its own.** A downstream author reads
+§17.6, not §17.3.
+
+**(c) In both cases the killing test was cheap and available before any building.** F3 was a partition of a
+run that already existed. Step 1 was twelve queries against the live graph, touching no corpus row. Neither
+needed an instrument. And for the anchor-title account the ordering was **written down explicitly** — §17.6
+says the pre-test *"should be run first because it is nearly free"* — and the corpus was authored anyway. The
+ordering rule already existed in prose and failed to bind. That is why the rule below is a standing rule with
+a numbered clause and not a sentence in a design document.
+
+**(d) The gate has to be differential, or it is not a gate.** Both accounts' non-differential halves
+reproduced perfectly well: deixis's premise (these inputs carry unresolved references) was true, and the
+anchor-title premise (title queries retrieve title-paraphrasing documents) fired on 4 of 6. **Both died on the
+half that made them explanations rather than restatements.** A gate that asks *"does the predicted effect
+appear"* will pass almost anything. Only a gate that can come back showing **the effect is real but not
+specific to the stated cause** can fail.
+
+**The standing rule.** Proposed for the process rule set (#11034), next free P-number. It is not a step in one
+task:
+
+> **No instrument is commissioned against an untested account.**
+>
+> 1. **Authoring an instrument is work.** A corpus, a fixture set, a labelled population, a harness —
+>    commissioning any of them is commissioning work, and this rule applies to them exactly as it applies to
+>    code.
+> 2. **An account not yet tested carries its own cheapest falsifier, named by its author in the same passage
+>    that states the account** — not in a later section, not in a follow-up task. If the two are separated,
+>    the specification will be read without the caution.
+> 3. **That falsifier must be differential.** It must be able to return "the effect is real, and it is not
+>    specific to the stated cause". A gate that only asks whether the predicted effect appears is not a gate.
+> 4. **It runs before anything is commissioned against the account, authoring included.** If no cheap
+>    differential test exists, that is itself the finding and is recorded; work may then be commissioned only
+>    on an explicit statement, by whoever is paying for it, that it is being bought without a gate.
+> 5. **A claim that a quantity sits above a band names both populations where the claim is made** — the one
+>    the quantity is drawn from, and the one the band is drawn from. §18.3(c) is what this clause is made of.
+
+**What it would have cost here.** Step 1 is twelve queries; #12941 is a full authoring round. The rule
+reorders them and changes nothing else. It would have saved that round. It would **not** have saved the deixis
+round — F3 was registered before the code existed and ran in the right order, which is the correct answer for
+that round and is exactly why this rule is about **commissioning** rather than about hypothesising.
+
+### 18.7 The work that follows, revised
+
+- **Unit A** — shipped. Claim unchanged, and §18.4.3(3) is a second use for it, not a second claim.
+- **Unit B (#12941)** — **retained, label retired** per §18.4.3. Amend the pre-registration; do not edit the
+  file.
+- **Unit C** — **cancelled.** There is no account left to test. Its replacement, if the §18.4.3 pre-test
+  passes, is a test of the **id-to-scope channel**, pre-registered fresh.
+- **Unit D** — inadmissible candidates. **Unchanged by this ruling**, still worth doing, still explicitly not
+  the fix for r02.
+- **§14's Unit 3, hub pruning in the anchor scope** — and this is where the ruling turns positive.
+  §17.6 already called it *the best-evidenced retrieval unit the project has not built*, on t2's 362-node
+  two-hop scope reaching every project through `person Toni`. §18.4.1 now says the id-to-scope channel is
+  **the only retrieval channel the anchor has at all**, and §18.4.2 says the strata differ in neighbourhood
+  size. **Three independent lines have arrived at the same channel.** The anchor's influence on retrieval is
+  `RecallScope` and nothing else, so that is where any anchor work belongs.
+- **Carried forward unresolved:** Q3 (self-produced run records consuming candidate slots), §9.4's
+  near-duplicate collapse, and Q4's M3 parity question — none touched by this ruling.
+
+### 18.8 What this round bought
+
+§17.7 claimed the exercise bought a fact about the substrate: that a title-derived query, in a graph whose
+conventions produce title-paraphrasing documentation, retrieves that documentation rather than answers.
+**That sentence survives — and this round shows it was the entire yield.** The differential story built on top
+of it was not a second fact; it was the same fact with a stratum attached that does not hold. The correction
+is that the fact is **generic**: it holds for place titles at a higher rate and 2.5× the normalised excess. It
+constrains every query source anyone proposes, which is what §17.7 claimed for it and is the only thing it was
+entitled to claim.
+
+What is new is smaller than an account and more useful than one:
+
+- **The title is not on any path from anchor to outcome in the shipped system.** Any future proposal to
+  condition on the anchor must name which of the two real channels it runs on (§18.4.1).
+- **The anchor's class in this graph is a name for hub-ness and body size, not a cause standing beside them**
+  (§18.4.2).
+- **The work population is thin** — roughly 45% of closed tasks carry no paperwork family at all — which
+  bounds any effect that family could ever have had (§18.3(a)).
+- **The anchor's whole retrieval channel is capped at three candidate slots in twenty**, and existing run
+  records already say how often those three matter (§18.4.3).
+- **A rule about ordering that would have saved the round it came from** (§18.6).
+
+The pre-test cost twelve queries. It cancelled a sweep, corrected two of the three figures that motivated the
+account it tested, and found the account's own population claim false. **That is what §17.6 said it was for.**
+It ran in the right order relative to the sweep and in the wrong order relative to the corpus, and §18.6
+exists so the second half does not happen again.
