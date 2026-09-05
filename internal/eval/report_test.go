@@ -629,12 +629,6 @@ func TestTheSummaryNamesTheDerivationSidecarAndItsHashSoTwoReadingsAreTellableAp
 func TestTheSummaryNamesTheFractionOfTheCorpusTheSidecarPinsSoAPartialSidecarDoesNotReadAsFull(t *testing.T) {
 	t.Parallel()
 
-	// A sidecar authored against a smaller corpus can still validate once
-	// rows are appended to that corpus later -- LoadDerivations only checks
-	// that every sidecar row resolves to a corpus row, not the reverse. Left
-	// as a bare row count, "13 rows derived" reads as sufficiency next to a
-	// derivationHash; only the fraction against the full corpus shows the
-	// thirteen rows are twelve short of the twenty-five actually swept.
 	result := resultWith(intactControlRow())
 	result.Arm = "internal/eval/derivations.json"
 	result.DerivationHash = "23b505521234567890abcdef1234567890abcdef1234567890abcdef12345678"

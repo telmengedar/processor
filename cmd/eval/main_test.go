@@ -301,9 +301,6 @@ func TestRunWarnsOnTheOperatorStreamAloneWhenTheSidecarLeavesCorpusRowsUnpinned(
 	server := graphServer(t)
 	graphEnv(t, server.URL)
 
-	// runCorpus carries two rows, r01 and c01; this sidecar pins only r01,
-	// so c01 sweeps on raw input on both arms without anything in the
-	// output saying so unless this warning fires.
 	sidecar := filepath.Join(t.TempDir(), "derivations.json")
 	body := `[{"row": "r01", "queries": ["why would a mutation leave the suite green"]}]`
 	if err := os.WriteFile(sidecar, []byte(body), 0o600); err != nil {

@@ -177,7 +177,6 @@ func TestLoadDerivationsRejectsASidecarHoldingNoRows(t *testing.T) {
 func TestUnpinnedNamesTheCorpusRowsTheSidecarDoesNotPin(t *testing.T) {
 	t.Parallel()
 
-	// validDerivations pins only r01; derivationCorpus also carries r02.
 	derivations, err := LoadDerivations(writeDerivations(t, validDerivations), derivationCorpus())
 	if err != nil {
 		t.Fatalf("LoadDerivations: %v", err)
@@ -194,13 +193,6 @@ func TestUnpinnedNamesTheCorpusRowsTheSidecarDoesNotPin(t *testing.T) {
 func TestUnpinnedPreservesCorpusOrderWhenMultipleRowsAreUnpinned(t *testing.T) {
 	t.Parallel()
 
-	// Four rows, only r02 pinned, so three survive unpinned -- enough that
-	// corpus order and its reverse are distinguishable. The warning line
-	// prints this slice verbatim (cmd/eval's "rows=" attribute), so an
-	// implementation that walked corpus.Rows backwards would still pass
-	// every other Unpinned test here (each has at most one unpinned row)
-	// while making that line reorder on every run without any input
-	// changing -- silently breaking the ability to diff two sweeps.
 	corpus := Corpus{Hash: "a-corpus-hash", Rows: []Row{
 		{ID: "r01", Input: "the first input", Subject: 100, Stratum: StratumLabelled},
 		{ID: "r02", Input: "the second input", Subject: 101, Stratum: StratumLabelled},
@@ -224,12 +216,6 @@ func TestUnpinnedPreservesCorpusOrderWhenMultipleRowsAreUnpinned(t *testing.T) {
 func TestUnpinnedIsEmptyWhenTheSidecarCoversEveryCorpusRow(t *testing.T) {
 	t.Parallel()
 
-	// Three rows so this fixture is not simply the two-row shape every
-	// other test here happens to share. Nil is not the promise being pinned
-	// (unlike the zero-sidecar case below, whose doc comment specifically
-	// promises nil) -- what matters is that a complete sidecar reports no
-	// gap at all, which is what keeps the coverage warning silent on every
-	// sweep once every row is pinned.
 	corpus := Corpus{Hash: "a-corpus-hash", Rows: []Row{
 		{ID: "r01", Input: "the first input", Subject: 100, Stratum: StratumLabelled},
 		{ID: "r02", Input: "the second input", Subject: 101, Stratum: StratumLabelled},
