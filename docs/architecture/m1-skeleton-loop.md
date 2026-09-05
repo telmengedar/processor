@@ -1253,7 +1253,7 @@ structure anything — that would reintroduce the failure §5.3 of the vision wa
 |---|---|---|
 | **1. Retrieval** | **Yes, given (graph state, query text)** — measured bit-stable to nine decimals over four calls (C22) | Not against the live graph, which is a shared substrate that drifts. Pinned at the **wire level** in the adapter (URL construction, decoding, the C30 empty-result trap) and **replayed** from fixed rows into the loop |
 | **2. Assembly** | **Fully.** A pure function with no I/O, no clock, no randomness — and, because the render order is by id (§6.3), a **total** order | **Byte-exact golden test.** Fixed candidate rows in, one exact string out. This is the milestone's central assertion |
-| **3a. The model *request*** | **Yes.** A deterministic function of (system text, block, input, tool definition, model id) — and it stays deterministic **because M1 sends one fixed request shape rather than adapting to the endpoint** (§6.6) | Byte-exact, at the wire level, against a local test server |
+| **3a. The model *request*** | **Yes.** ~~A deterministic function of (system text, block, input, tool definition, model id)~~ **CORRECTED 2026-09-05 (#11401): a deterministic function of (system text, block, input, tool definition, model id, the configured sampling)** — the request gained `temperature` and `top_p`, read once at boot from `PROCESSOR_MODEL_TEMPERATURE` and `PROCESSOR_MODEL_TOP_P`. **The verdict is untouched and the enumeration is what changed:** the two added terms are boot constants, fixed for the process's lifetime, so the request is still a pure function of its inputs — and it stays deterministic **because M1 sends one fixed request shape rather than adapting to the endpoint** (§6.6) | Byte-exact, at the wire level, against a local test server |
 | **3b. The model *response*** | **No. This is the only nondeterministic thing in M1** | Not pinned, by construction. Substituted at the port |
 | **3c. Translating that response into the loop's vocabulary** | **Yes, given the response** — the reason mapping, the recall request, usage-or-absent (§8.3) | Wire level, from fixtures. **New in revision 2**: the ruling adds a deterministic stage on the far side of the nondeterministic one, and it is fully pinnable |
 | **4. Tool dispatch** | **Yes, given the response** — which query is issued, where the result is placed, when the cap fires | Port-level, from canned responses |
@@ -1263,6 +1263,23 @@ structure anything — that would reintroduce the failure §5.3 of the vision wa
 everything after it is data. Nondeterminism does not permeate the milestone — it enters at exactly one
 line, and that line is where the seam goes. **Revision 2 did not move that line**; it added 3c behind it,
 which is deterministic, which is why provider-agnosticism costs the test strategy nothing.
+
+**Why sampling is two parameters under two different unset rules — added 2026-09-05 (#11401), the home for
+3a's correction.** `temperature` has a default and is always sent; `top_p` has no default and is **omitted
+from the request** when the operator configures nothing. The asymmetry is not an oversight. `temperature: 0`
+is the conventional spelling of greedy decoding, so a value exists that is both meaningful and
+maximally reproducible, and sending it is benign. `top_p: 0` has no such standing: its behaviour
+is *endpoint-dependent* — the OpenAI-compatible protocol does not specify what a runtime must do
+with it, and runtimes differ — and a configuration value whose meaning varies by runtime is
+precisely what a change made for reproducibility must not introduce. Asserting `1.0` instead
+would be worse than silence: it claims knowledge of an endpoint §6.6 deliberately refuses to
+model, and it newly sends a parameter whose handling the protocol leaves open.
+So the pointer's `nil` is the wire's *absence*, not a zero, and the default configuration carries exactly
+one determinism lever rather than two overlapping ones — at `temperature: 0` the distribution is already
+collapsed and `top_p` is a no-op at best. **What the record can therefore claim, and what it cannot:** it
+reports the sampling **as sent**, never what the endpoint applied. A clamping or ignoring runtime yields a
+record that is true about the request and false about the generation; the near side of the wire is the only
+side this design can pin, and §9.1 row 3a is the statement of why.
 
 ### 9.2 The two seams, and the measurement that justifies each
 

@@ -54,7 +54,7 @@ func TestJudgeSendsItsRequestThroughTheHTTPClientSuppliedToNewClient(t *testing.
 	t.Parallel()
 
 	rt := &recordingTransport{}
-	c := openaicompat.NewClient("http://model.invalid", "m", "supplied-key", &http.Client{Transport: rt})
+	c := openaicompat.NewClient("http://model.invalid", "m", "supplied-key", loop.Sampling{}, &http.Client{Transport: rt})
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
 	if err != nil {

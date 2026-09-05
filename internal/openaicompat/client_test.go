@@ -43,7 +43,7 @@ func TestJudgePostsToChatCompletions(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, stopResponse)
-	c := NewClient(srv.URL, "model-x", "", srv.Client())
+	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
 
 	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
 		t.Fatalf("Judge: %v", err)
@@ -57,7 +57,7 @@ func TestJudgeSendsNoAuthorizationHeaderWhenKeyIsEmpty(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, stopResponse)
-	c := NewClient(srv.URL, "model-x", "", srv.Client())
+	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
 
 	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
 		t.Fatalf("Judge: %v", err)
@@ -71,7 +71,7 @@ func TestJudgeSendsAuthorizationBearerWhenKeyIsSet(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, stopResponse)
-	c := NewClient(srv.URL, "model-x", "secret-key", srv.Client())
+	c := NewClient(srv.URL, "model-x", "secret-key", loop.Sampling{}, srv.Client())
 
 	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
 		t.Fatalf("Judge: %v", err)
@@ -86,7 +86,7 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndTool(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, stopResponse)
-	c := NewClient(srv.URL, "the-model-id", "", srv.Client())
+	c := NewClient(srv.URL, "the-model-id", "", loop.Sampling{}, srv.Client())
 
 	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "the system text", Block: "the block", Input: "the input"}); err != nil {
 		t.Fatalf("Judge: %v", err)
@@ -162,6 +162,99 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndTool(t *testing.T) {
 	}
 }
 
+func float64Ptr(v float64) *float64 { return &v }
+
+func TestJudgeRequestBodyOmitsTemperatureAndTopPWhenSamplingIsUnconfigured(t *testing.T) {
+	t.Parallel()
+
+	srv, captured := capturingServer(t, stopResponse)
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
+
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
+		t.Fatalf("Judge: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(captured.Body, &got); err != nil {
+		t.Fatalf("decode request body: %v; body=%s", err, captured.Body)
+	}
+	if _, present := got["temperature"]; present {
+		t.Fatalf("request body carries %q, want it absent when Sampling.Temperature is nil; body=%s", "temperature", captured.Body)
+	}
+	if _, present := got["top_p"]; present {
+		t.Fatalf("request body carries %q, want it absent when Sampling.TopP is nil; body=%s", "top_p", captured.Body)
+	}
+}
+
+func TestJudgeRequestBodyCarriesTemperatureAndTopPWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	srv, captured := capturingServer(t, stopResponse)
+	sampling := loop.Sampling{Temperature: float64Ptr(0.37), TopP: float64Ptr(0.91)}
+	c := NewClient(srv.URL, "m", "", sampling, srv.Client())
+
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
+		t.Fatalf("Judge: %v", err)
+	}
+
+	var got struct {
+		Temperature *float64 `json:"temperature"`
+		TopP        *float64 `json:"top_p"`
+	}
+	if err := json.Unmarshal(captured.Body, &got); err != nil {
+		t.Fatalf("decode request body: %v; body=%s", err, captured.Body)
+	}
+	if got.Temperature == nil || *got.Temperature != 0.37 {
+		t.Fatalf("temperature = %v, want 0.37", got.Temperature)
+	}
+	if got.TopP == nil || *got.TopP != 0.91 {
+		t.Fatalf("top_p = %v, want 0.91", got.TopP)
+	}
+}
+
+func TestJudgeRequestBodyCarriesAnExplicitZeroTemperatureRatherThanOmittingIt(t *testing.T) {
+	t.Parallel()
+
+	srv, captured := capturingServer(t, stopResponse)
+	sampling := loop.Sampling{Temperature: float64Ptr(0)}
+	c := NewClient(srv.URL, "m", "", sampling, srv.Client())
+
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
+		t.Fatalf("Judge: %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(captured.Body, &got); err != nil {
+		t.Fatalf("decode request body: %v; body=%s", err, captured.Body)
+	}
+	temperature, present := got["temperature"]
+	if !present {
+		t.Fatalf("request body omits temperature for an explicit zero value, want it sent as 0; body=%s", captured.Body)
+	}
+	if temperature != float64(0) {
+		t.Fatalf("temperature = %v, want 0", temperature)
+	}
+}
+
+func TestJudgeResultCarriesTheSamplingTheClientWasConfiguredWith(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := capturingServer(t, stopResponse)
+	sampling := loop.Sampling{Temperature: float64Ptr(0.42)}
+	c := NewClient(srv.URL, "m", "", sampling, srv.Client())
+
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	if err != nil {
+		t.Fatalf("Judge: %v", err)
+	}
+	if result.Sampling.Temperature == nil || *result.Sampling.Temperature != 0.42 {
+		t.Fatalf("result.Sampling.Temperature = %v, want 0.42", result.Sampling.Temperature)
+	}
+	if result.Sampling.TopP != nil {
+		t.Fatalf("result.Sampling.TopP = %v, want nil — TopP was never configured", result.Sampling.TopP)
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {
@@ -177,7 +270,7 @@ func TestJudgeReconstructsPriorRecallsAsAssistantAndToolMessages(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, stopResponse)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	in := loop.JudgeInput{
 		System: "sys", Block: "block", Input: "in",
@@ -246,7 +339,7 @@ func TestJudgeDecodesATextOnlyResponseAsAnswered(t *testing.T) {
 	t.Parallel()
 
 	srv, _ := capturingServer(t, `{"choices":[{"message":{"content":"hello there"},"finish_reason":"stop"}]}`)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -267,7 +360,7 @@ func TestJudgeDecodesATruncatedResponse(t *testing.T) {
 	t.Parallel()
 
 	srv, _ := capturingServer(t, `{"choices":[{"message":{"content":"cut off"},"finish_reason":"length"}]}`)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -282,7 +375,7 @@ func TestJudgeDecodesAContentFilterResponseAsRefused(t *testing.T) {
 	t.Parallel()
 
 	srv, _ := capturingServer(t, `{"choices":[{"message":{"content":null},"finish_reason":"content_filter"}]}`)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -300,7 +393,7 @@ func TestJudgeMapsAnUnknownFinishReasonToUnrecognisedAndPreservesTheRawValue(t *
 	t.Parallel()
 
 	srv, _ := capturingServer(t, `{"choices":[{"message":{"content":"?"},"finish_reason":"some-vendor-reason"}]}`)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -319,7 +412,7 @@ func TestJudgeDecodesAToolCallAsWantsRecallWithTheParsedQuery(t *testing.T) {
 
 	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"recall","arguments":"{\"query\":\"the missing thing\"}"}}]},"finish_reason":"tool_calls"}]}`
 	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -341,7 +434,7 @@ func TestJudgeFlagsUnparseableToolArgumentsAsAMalformedRecallRequest(t *testing.
 
 	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"recall","arguments":"not json"}}]},"finish_reason":"tool_calls"}]}`
 	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -363,7 +456,7 @@ func TestJudgeFlagsAnEmptyQueryArgumentAsAMalformedRecallRequest(t *testing.T) {
 
 	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"recall","arguments":"{\"query\":\"   \"}"}}]},"finish_reason":"tool_calls"}]}`
 	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -378,7 +471,7 @@ func TestJudgeLeavesUsageAbsentWhenTheResponseHasNoUsageObject(t *testing.T) {
 	t.Parallel()
 
 	srv, _ := capturingServer(t, stopResponse)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -394,7 +487,7 @@ func TestJudgeDecodesUsageWhenPresentEvenIfAllZero(t *testing.T) {
 
 	resp := `{"choices":[{"message":{"content":"a"},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}`
 	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -410,7 +503,7 @@ func TestJudgeDecodesNonZeroUsage(t *testing.T) {
 
 	resp := `{"choices":[{"message":{"content":"a"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}`
 	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -426,7 +519,7 @@ func TestJudgeTreatsAUsageObjectReportingOnlyOneCountAsAbsentInWhole(t *testing.
 
 	resp := `{"choices":[{"message":{"content":"a"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10}}`
 	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -442,7 +535,7 @@ func TestJudgeReadsOnlyTheFirstChoiceIgnoringAnyOthers(t *testing.T) {
 
 	resp := `{"choices":[{"message":{"content":"first choice answer"},"finish_reason":"stop"},{"message":{"content":"second choice answer"},"finish_reason":"length"}]}`
 	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -461,7 +554,7 @@ func TestJudgeDecodesAToolCallAsWantsRecallEvenWhenFinishReasonSaysStop(t *testi
 
 	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"recall","arguments":"{\"query\":\"the missing thing\"}"}}]},"finish_reason":"stop"}]}`
 	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	result, err := c.Judge(context.Background(), loop.JudgeInput{})
 	if err != nil {
@@ -483,7 +576,7 @@ func TestJudgeOnNon2xxReturnsAnError(t *testing.T) {
 		_, _ = w.Write([]byte(stopResponse))
 	}))
 	t.Cleanup(srv.Close)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	if _, err := c.Judge(context.Background(), loop.JudgeInput{}); err == nil {
 		t.Fatal("Judge returned nil error for a 500 response with a valid completion body, want an error from the status check")
@@ -493,7 +586,7 @@ func TestJudgeOnNon2xxReturnsAnError(t *testing.T) {
 func TestJudgeOnUnreachableHostReturnsAnError(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient("http://127.0.0.1:1", "m", "", nil)
+	c := NewClient("http://127.0.0.1:1", "m", "", loop.Sampling{}, nil)
 	if _, err := c.Judge(context.Background(), loop.JudgeInput{}); err == nil {
 		t.Fatal("Judge returned nil error against an unreachable host, want an error")
 	}
@@ -503,7 +596,7 @@ func TestJudgeOnEmptyChoicesReturnsAnError(t *testing.T) {
 	t.Parallel()
 
 	srv, _ := capturingServer(t, `{"choices":[]}`)
-	c := NewClient(srv.URL, "m", "", srv.Client())
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	if _, err := c.Judge(context.Background(), loop.JudgeInput{}); err == nil {
 		t.Fatal("Judge returned nil error for a response with no choices, want an error")
@@ -513,7 +606,7 @@ func TestJudgeOnEmptyChoicesReturnsAnError(t *testing.T) {
 func TestNewModelClientDefaultsToATimeoutBoundHTTPClientWhenNoneIsSupplied(t *testing.T) {
 	t.Parallel()
 
-	c := NewClient("http://example.invalid", "m", "k", nil)
+	c := NewClient("http://example.invalid", "m", "k", loop.Sampling{}, nil)
 	if c.httpClient == http.DefaultClient {
 		t.Fatal("NewClient(nil) used http.DefaultClient, which has no timeout")
 	}

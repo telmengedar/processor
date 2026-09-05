@@ -47,8 +47,10 @@ func run() int {
 		return 1
 	}
 
+	sampling := loop.Sampling{Temperature: modelCfg.Temperature, TopP: modelCfg.TopP}
+
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
-	model := openaicompat.NewClient(modelCfg.URL, modelCfg.ID, modelCfg.Key, nil)
+	model := openaicompat.NewClient(modelCfg.URL, modelCfg.ID, modelCfg.Key, sampling, nil)
 	turn := loop.NewTurn(graph, model, systemText, modelCfg.ID, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

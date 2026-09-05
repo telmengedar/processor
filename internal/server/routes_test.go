@@ -275,6 +275,10 @@ type runRecordWire struct {
 		MaxModelCalls           int `json:"maxModelCalls"`
 		MaxOutputTokens         int `json:"maxOutputTokens"`
 	} `json:"limits"`
+	Sampling struct {
+		Temperature *float64 `json:"temperature"`
+		TopP        *float64 `json:"topP"`
+	} `json:"sampling"`
 }
 
 func TestRunsReturns200WithTheAssembledRecordOnSuccess(t *testing.T) {
@@ -336,6 +340,8 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 		candidates:   []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}},
 		writeReceipt: loop.WriteReceipt{State: loop.Stored, NodeID: 4242},
 	}
+	temperature := 0.4
+	topP := 0.91
 	model := &stubModel{results: []loop.JudgeResult{
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing thing"},
 		{
@@ -343,6 +349,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 			Reason:    loop.Answered,
 			RawReason: "stop",
 			Usage:     &loop.Usage{InTokens: 11, OutTokens: 22},
+			Sampling:  loop.Sampling{Temperature: &temperature, TopP: &topP},
 		},
 	}}
 	turn := loop.NewTurn(graph, model, "system text", "test-model-id", testLogger())
@@ -427,6 +434,12 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 		got.Limits.MaxModelCalls != wantLimits.MaxModelCalls ||
 		got.Limits.MaxOutputTokens != wantLimits.MaxOutputTokens {
 		t.Fatalf("record.limits = %+v, want %+v", got.Limits, wantLimits)
+	}
+	if got.Sampling.Temperature == nil || *got.Sampling.Temperature != 0.4 {
+		t.Fatalf("record.sampling.temperature = %v, want a pointer to 0.4", got.Sampling.Temperature)
+	}
+	if got.Sampling.TopP == nil || *got.Sampling.TopP != 0.91 {
+		t.Fatalf("record.sampling.topP = %v, want a pointer to 0.91 under the literal JSON tag", got.Sampling.TopP)
 	}
 }
 

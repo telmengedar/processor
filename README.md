@@ -156,7 +156,7 @@ decides how much of it is honoured.
 
 ### Configuration
 
-Six environment variables, read once — still the module's one environment read site
+Eight environment variables, read once — still the module's one environment read site
 (`internal/boot/config.go`). `cmd/processor` calls all three loaders, in the order the table lists, so
 the first offending variable is the one named:
 
@@ -168,6 +168,8 @@ the first offending variable is the one named:
 | `PROCESSOR_MODEL_URL` | *(none — required)* | The model endpoint's base URL (an OpenAI-compatible chat-completions server), used verbatim. Absent or present-but-empty is a startup error: a local runtime and a hosted gateway serve different addresses, so there is no defensible default. |
 | `PROCESSOR_MODEL_ID` | *(none — required)* | The model id sent with every request, and the value recorded in the run record's `model` field. Absent or present-but-empty is a startup error. |
 | `PROCESSOR_MODEL_KEY` | *(none — optional)* | The model endpoint's bearer key. **Absent means no `Authorization` header is sent at all** — the point of the ruling, not an edge of it: a local runtime commonly needs none. **Present-but-empty is still a startup error**, exactly like every required member — an empty value is a mistake, never a way to spell "no auth", and treating it as absent would be a silent auth downgrade. Never logged, never echoed in an error, never written to the graph. |
+| `PROCESSOR_MODEL_TEMPERATURE` | `0` | The sampling temperature sent with **every** model call. Absent means `0` — greedy decoding — so the sampler stops being a source of run-to-run variation. **Present-but-empty is a startup error**, and so is a non-numeric value; both name the variable. **The default is a trade, not a free win:** greedy decoding is known to produce more repetitive, lower-quality prose on open-ended generation, and this service's product is prose for a human. Reproducibility is the right default while the service is a measurement harness, but answer quality is what it costs — set the variable to opt back into the endpoint's own sampling. |
+| `PROCESSOR_MODEL_TOP_P` | *(none — optional, nothing is sent)* | The nucleus-sampling mass sent with every model call. **Absent means the parameter is omitted from the request entirely**, not sent as `0`: `temperature: 0` is the conventional spelling of greedy decoding, but `top_p: 0` is *endpoint-dependent* — the OpenAI-compatible protocol does not specify what a runtime must do with it, and runtimes differ — so there is no value that spells "unset" and none is invented. Asserting `1.0` instead would claim knowledge of an endpoint this service deliberately does not have. Present-but-empty is a startup error, and so is a non-numeric value; both name the variable. |
 
 ```sh
 PROCESSOR_HTTP_ADDR=:9090 \
@@ -212,8 +214,13 @@ error if the round was malformed or failed), how many model calls were made and 
 was reached (`capReached`), token usage as one entry per model call, in call order, named for the direction
 of travel (`inTokens`/`outTokens` — a `null` entry means that call's endpoint reported no usage object,
 absent, never zero-filled), the stop reason (both the loop's own neutral value and the endpoint's raw
-string), and the five constants that governed the run (`limits`: candidate limit, assembly byte budget,
-supplementary byte budget, max model calls, max output tokens).
+string), the five constants that governed the run (`limits`: candidate limit, assembly byte budget,
+supplementary byte budget, max model calls, max output tokens), and the sampling the run was made with
+(`sampling`: `temperature` and `topP`, each key absent when nothing was sent for it).
+
+**`sampling` reports what was requested, as sent — not what the endpoint applied.** An endpoint that clamps
+a value, or ignores it, yields a record that is true about the request and false about the generation. The
+record can be honest about only the near side of the wire, and this is that side.
 
 The response carries **one key more than the record**: `written`, the write receipt, which says where the
 record was filed. It is not a member of the record and never reaches the stored copy — a stored record is

@@ -344,6 +344,42 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	}
 }
 
+func TestTurnRunRecordsTheSamplingTheModelReportedApplying(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	temperature := 0.4
+	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop", Sampling: Sampling{Temperature: &temperature}}}}
+	turn := NewTurn(graph, model, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if record.Sampling.Temperature == nil || *record.Sampling.Temperature != 0.4 {
+		t.Fatalf("record.Sampling.Temperature = %v, want a pointer to 0.4", record.Sampling.Temperature)
+	}
+	if record.Sampling.TopP != nil {
+		t.Fatalf("record.Sampling.TopP = %v, want nil — the model never reported one", record.Sampling.TopP)
+	}
+}
+
+func TestTurnRunRecordsNoSamplingWhenTheModelReportsNone(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if record.Sampling.Temperature != nil || record.Sampling.TopP != nil {
+		t.Fatalf("record.Sampling = %+v, want both members nil", record.Sampling)
+	}
+}
+
 func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 	t.Parallel()
 
