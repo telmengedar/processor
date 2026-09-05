@@ -17,9 +17,18 @@ DiVoid #11333 reframed the anchor: it is not a retrieval stage but a separate ar
 excluded from the population every Stage describes rather than ranked within it. The tests below
 that exercise this are grouped under RouteTests, AnchorAxisTests, TaskStageAnchorTests,
 NodeRatioTests and ArrivedTests.
+
+Round five's own QA sweep found the recurring defect class one layer up: prose that is only
+printed (S1's carrying of the anchor axis, S2's two-line split, S3's columns and footnote) had
+no test reading the printed output, so a test suite could stay fully green under the ruling's own
+*rejected* alternative (all -> any at the S2 completion gate). PrintTaskOutputTests and
+PrintTableOutputTests below capture stdout with redirect_stdout and assert on the actual printed
+sentences and table cells, not on the any()/all() logic re-derived in the test body.
 """
 
+import contextlib
 import copy
+import io
 import json
 import pickle
 import tempfile
@@ -39,7 +48,26 @@ def record(anchor_id=999, candidates=None, tool_calls=None, limits=None):
         "candidates": candidates or [],
         "toolCalls": tool_calls or [],
         "limits": limits or {},
+        # print_task/print_table read these too; pure-function tests above never look at them,
+        # but a record with holes here makes the print layer crash (e.g. f"{None:>5}") rather
+        # than print something wrong -- fine for those tests, useless as a print-output fixture.
+        "answer": "substrate answer",
+        "modelCalls": 1,
+        "block": "x" * 10,
+        "stopReason": {"reason": "stop", "raw": "stop"},
     }
+
+
+def capture(fn, *args, **kwargs):
+    """Run fn(*args, **kwargs), returning its stdout as a string. Used to test the print layer
+    the same way the rest of this file tests pure functions: call the real thing, assert on what
+    it actually produced -- not on logic re-derived in the test body (the mistake QA's round-five
+    sweep found in the pre-existing arrived() tests, which computed any()/all() themselves instead
+    of exercising print_task's gate)."""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        fn(*args, **kwargs)
+    return buf.getvalue()
 
 
 class RouteTests(unittest.TestCase):
@@ -537,6 +565,157 @@ class LoadTasksSelfReferentialWarningTests(unittest.TestCase):
         ]
         _, out = self._load(rows, only="t3")
         self.assertEqual(out, "")
+
+
+class AdmittedStagesCoverageTests(unittest.TestCase):
+    """ADMITTED_STAGES was unpinned for two of its three members: dropping either supplementary
+    stage from the tuple makes a node that genuinely reached the model via supplementary recall
+    silently report as not-arrived and fall out of found -- a real false-report class with zero
+    prior coverage. Pin all three members independently."""
+
+    def test_admitted_primary_is_arrived_and_found(self):
+        rec = record(candidates=[{"id": 10, "rank": 1, "included": True}])
+        rows = compare.answer_node_report(task([10]), rec)
+        self.assertTrue(compare.arrived(rows[0]))
+        self.assertEqual(compare.node_ratio(rows), (1, 1))
+
+    def test_admitted_supplementary_is_arrived_and_found(self):
+        """Absent from the initial candidate list entirely, admitted only by a supplementary
+        round -- ADMITTED_SUPPLEMENTARY. Dropping this member from ADMITTED_STAGES would make
+        this row report as not-arrived even though it plainly reached the model."""
+        rec = record(candidates=[], tool_calls=[{"query": "q", "results": [{"id": 400, "rank": 2, "included": True}]}])
+        rows = compare.answer_node_report(task([400]), rec)
+        self.assertTrue(compare.arrived(rows[0]))
+        self.assertEqual(compare.node_ratio(rows), (1, 1))
+
+    def test_admitted_supplementary_recovered_is_arrived_and_found(self):
+        """Found and cut at the initial round, then recovered by a supplementary round --
+        ADMITTED_SUPPLEMENTARY_RECOVERED. Dropping this member from ADMITTED_STAGES would make
+        this row report as not-arrived even though a supplementary round re-admitted it."""
+        rec = record(
+            candidates=[{"id": 300, "rank": 5, "included": False, "cutReason": "byte budget exceeded"}],
+            tool_calls=[{"query": "q", "results": [{"id": 300, "rank": 1, "included": True}]}],
+        )
+        rows = compare.answer_node_report(task([300]), rec)
+        self.assertTrue(compare.arrived(rows[0]))
+        self.assertEqual(compare.node_ratio(rows), (1, 1))
+
+
+class PrintTaskOutputTests(unittest.TestCase):
+    """S1-S2 land in the print layer, and nothing pinned it: a test suite computing any()/all()
+    over rows in the test body (the pre-existing ArrivedTests) stays green under the ruling's own
+    *rejected* S2 alternative (all -> any at the completion gate), because it never looks at what
+    print_task actually printed. These capture real stdout from print_task and assert on the two
+    sentences independently, plus the anchor route note's presence/absence.
+    """
+
+    ARRIVAL = "At least one named answer node reached the model"
+    COMPLETION = "The mechanical attribution stops here"
+    ANCHOR_NOTE = "the anchor route:"
+
+    def _run(self, t, rec):
+        transcript = {"answer": "transcript answer", "finishReason": "stop"}
+        return capture(compare.print_task, t, rec, transcript)
+
+    def test_t4_shape_arrival_present_completion_absent(self):
+        """t4: one named node is the anchor, the other (#7506) was never retrieved. The arrival
+        line must print (something reached the model, worth reading the answers), the completion
+        line must not (the mechanical attribution is not complete)."""
+        rec = record(anchor_id=10192, candidates=[], tool_calls=[])
+        out = self._run(task([10192, 7506], subject=10192), rec)
+        self.assertIn(self.ARRIVAL, out)
+        self.assertNotIn(self.COMPLETION, out)
+        self.assertIn("answer node #7506: not retrieved", out)
+        self.assertIn(self.ANCHOR_NOTE, out)
+
+    def test_t2_shape_both_present(self):
+        """t2: one named node is the anchor, the other genuinely admitted. Both lines must
+        print."""
+        rec = record(anchor_id=10937, candidates=[{"id": 10466, "rank": 1, "included": True}])
+        out = self._run(task([10937, 10466], subject=10937), rec)
+        self.assertIn(self.ARRIVAL, out)
+        self.assertIn(self.COMPLETION, out)
+        self.assertIn(self.ANCHOR_NOTE, out)
+
+    def test_neither_shape_neither_line_present(self):
+        """t5/t6 shape: no named node is the anchor and nothing was admitted -- one cut, one
+        never retrieved. Neither line should print, and the anchor route note must not appear
+        since no row is on that route."""
+        rec = record(
+            anchor_id=999,
+            candidates=[{"id": 10, "rank": 1, "included": False, "cutReason": "byte budget exceeded"}],
+        )
+        out = self._run(task([10, 20]), rec)
+        self.assertNotIn(self.ARRIVAL, out)
+        self.assertNotIn(self.COMPLETION, out)
+        self.assertNotIn(self.ANCHOR_NOTE, out)
+
+    def test_anchor_only_completion_is_hedged(self):
+        """A task naming only its own anchor: the completion line must fire (every named node did
+        reach the model) but must not use the 'admitted node' framing, since nothing here was
+        admitted by retrieval -- it must say so explicitly rather than implying retrieval was
+        tested."""
+        rec = record(anchor_id=50)
+        out = self._run(task([50], subject=50), rec)
+        self.assertIn(self.COMPLETION, out)
+        self.assertIn("none of them was admitted by retrieval", out)
+        self.assertNotIn("an admitted node that the answer ignores indicts the prompt", out)
+
+
+class PrintTableOutputTests(unittest.TestCase):
+    """S3's columns and footnote were untested at the print layer: node_ratio returning None was
+    pinned, but nothing asserted what print_table actually renders for it, and anchor_arrivals is
+    called only from print_table with nothing in the suite calling it -- so a mutation making it
+    always return 0 would silently suppress the anchor axis from the table (exactly the harm
+    DiVoid #11333 S1's "rejected: dropping anchor rows from the report" exists to prevent)."""
+
+    def _row_tokens(self, out, task_id):
+        line = next(l for l in out.splitlines() if l.strip().startswith(task_id))
+        return line.split()
+
+    def test_t1_shape_nodes_and_anchor_columns(self):
+        """t1: three named nodes, one the anchor, two retrieval-eligible and neither admitted.
+        nodes must read 0/2 (never 0/3, since the anchor leaves both halves); anchor must read 1
+        (not suppressed, not folded into nodes)."""
+        rec = record(
+            anchor_id=50,
+            candidates=[{"id": 10, "rank": 1, "included": False, "cutReason": "byte budget exceeded"}],
+        )
+        t = task([10, 20, 50], subject=50)
+        t["id"] = "t1-shape"
+        transcript = {"answer": "x", "finishReason": "stop"}
+        out = capture(compare.print_table, [(t, rec, transcript)])
+        tokens = self._row_tokens(out, "t1-shape")
+        # tokens: [id, admit/total, blockB, calls, nodesCell, anchorCell, substB, transB, stage...]
+        self.assertEqual(tokens[4], "0/2")
+        self.assertEqual(tokens[5], "1")
+
+    def test_anchor_column_dash_when_no_anchor_named(self):
+        rec = record(anchor_id=999, candidates=[{"id": 10, "rank": 1, "included": True}])
+        t = task([10], subject=1)
+        t["id"] = "no-anchor-shape"
+        transcript = {"answer": "x", "finishReason": "stop"}
+        out = capture(compare.print_table, [(t, rec, transcript)])
+        tokens = self._row_tokens(out, "no-anchor-shape")
+        self.assertEqual(tokens[5], "-")
+
+    def test_anchor_only_task_nodes_cell_is_dash_never_zero_ratio(self):
+        """DiVoid #11333 S3: a zero-denominator retrieval-eligible population prints '-', never
+        0/0 and never 0/1. An anchor-only task (one named node, itself the anchor) has exactly
+        this shape."""
+        rec = record(anchor_id=50)
+        t = task([50], subject=50)
+        t["id"] = "anchor-only-shape"
+        transcript = {"answer": "x", "finishReason": "stop"}
+        out = capture(compare.print_table, [(t, rec, transcript)])
+        tokens = self._row_tokens(out, "anchor-only-shape")
+        # tokens[4] is specifically the nodes-ratio cell -- the neighbouring admit cell (tokens[1])
+        # legitimately reads 0/0 (zero candidates returned at all), which is a different ratio
+        # over a different population and must not be confused with the one S3 governs.
+        self.assertEqual(tokens[4], "-")
+        self.assertEqual(tokens[5], "1")
+        self.assertNotEqual(tokens[4], "0/0")
+        self.assertNotEqual(tokens[4], "0/1")
 
 
 if __name__ == "__main__":

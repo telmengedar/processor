@@ -163,7 +163,7 @@ def load_tasks(path, only):
 def warn_self_referential(tasks):
     """DiVoid #11333 S4: a task whose own subject appears in its answerNodes has bought part of
     its answer for free. That node is this run's anchor -- it reaches the model unconditionally,
-    before any candidate and with no budget check -- so route() (above) excludes it from the
+    before any candidate and with no budget check -- so route() (below) excludes it from the
     task's retrieval-eligible population; for that node the task tests nothing about retrieval.
 
     A warning, not a refusal: the run this produces is still an honest arm comparison (arm
@@ -174,8 +174,12 @@ def warn_self_referential(tasks):
     """
     offenders = [t["id"] for t in tasks if t["subject"] in (t.get("answerNodes") or [])]
     if offenders:
+        singular = len(offenders) == 1
+        noun = "task" if singular else "tasks"
+        verb = "names" if singular else "name"
+        possessive = "its" if singular else "their"
         print(
-            f"WARN: task(s) {', '.join(offenders)} name their own subject as an answer node. "
+            f"WARN: {noun} {', '.join(offenders)} {verb} {possessive} own subject as an answer node. "
             f"That node is this run's anchor: it reaches the model unconditionally, so it is "
             f"excluded from that task's retrieval-eligible population (route anchor, not a "
             f"retrieval stage -- see route() in this file, DiVoid #11333). This is a warning, "
@@ -931,12 +935,26 @@ def print_task(task, record, transcript):
             "by which route), so the answer pair below is worth reading."
         )
     if rows and all(arrived(row) for row in rows):
-        print(
-            "       The mechanical attribution stops here. Whether the substrate answer actually "
-            "draws on the node, and whether it beats the transcript answer anyway, is the reader's "
-            "call on the two texts below -- an admitted node that the answer ignores indicts the "
-            "prompt, and one the answer uses and still loses on indicts the node's content."
-        )
+        if all(node_route == ROUTE_ANCHOR for _, node_route, _, _, _ in rows):
+            # ANCHOR_ONLY shape (no shipped task today, but latent): every named node arrived by
+            # the anchor route, none by retrieval, so there is no admitted node for the usual
+            # completion text to point at -- printing it unhedged would claim retrieval was
+            # tested here when it never was.
+            print(
+                "       The mechanical attribution stops here for every named node, but none of "
+                "them was admitted by retrieval -- each is this task's own anchor, so it reached "
+                "the model unconditionally rather than being admitted. Whether the substrate "
+                "answer draws on it, and whether it beats the transcript answer anyway, is still "
+                "the reader's call on the two texts below, but retrieval itself was never tested "
+                "by this task."
+            )
+        else:
+            print(
+                "       The mechanical attribution stops here. Whether the substrate answer actually "
+                "draws on the node, and whether it beats the transcript answer anyway, is the reader's "
+                "call on the two texts below -- an admitted node that the answer ignores indicts the "
+                "prompt, and one the answer uses and still loses on indicts the node's content."
+            )
 
     substrate_stop = record.get("stopReason") or {}
     print()
@@ -1013,8 +1031,9 @@ def print_table(rows):
         "was named at all (never printed as 0/0 or 0/1); anchor = how many of the task's named "
         "answer nodes are its own anchor ('-' means none); subst B / trans B = answer sizes in "
         "bytes. Answer size is a length, not a quality, and the stage says where the answer got to, "
-        "never whether it is right (except ANCHOR_ONLY and UNLABELLED, which report a property of "
-        "the task set rather than a run outcome). Read the two answers above."
+        f"never whether it is right (except stages {ANCHOR_ONLY!r} and {UNLABELLED!r}, which "
+        f"report a property of the task set rather than a run outcome). Read the two answers "
+        f"above."
     )
 
 
@@ -1133,11 +1152,11 @@ def main():
 
             print()
             print(
-                "DONE: every task ran both arms. No verdict is printed and none is available from "
-                "this instrument -- read the answer pairs, and read each one against the stage above "
-                "it, which says how far the answer to that task got before the model saw anything "
-                "-- except ANCHOR_ONLY and UNLABELLED, which report a property of the task set "
-                "rather than of this run."
+                f"DONE: every task ran both arms. No verdict is printed and none is available from "
+                f"this instrument -- read the answer pairs, and read each one against the stage above "
+                f"it, which says how far the answer to that task got before the model saw anything "
+                f"-- except stages {ANCHOR_ONLY!r} and {UNLABELLED!r}, which report a property of "
+                f"the task set rather than of this run."
             )
             return 0
 
