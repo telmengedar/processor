@@ -21,6 +21,8 @@ type RowResult struct {
 	Stratum string `json:"stratum"`
 	Subject int64  `json:"subject"`
 
+	Queries []string `json:"queries"`
+
 	CandidateCount int `json:"candidateCount"`
 	AdmittedCount  int `json:"admittedCount"`
 	AdmittedBytes  int `json:"admittedBytes"`
@@ -75,12 +77,13 @@ func NewResult(corpus Corpus, derivations Derivations, sweptAt time.Time) Result
 	}
 }
 
-// BuildRow turns the dispositions one row produced into that row's result entry.
-func BuildRow(row Row, dispositions []loop.Disposition) RowResult {
+// BuildRow turns the queries one row issued and the dispositions they produced into that row's result entry.
+func BuildRow(row Row, queries []string, dispositions []loop.Disposition) RowResult {
 	result := RowResult{
 		Row:            row.ID,
 		Stratum:        row.Stratum,
 		Subject:        row.Subject,
+		Queries:        queries,
 		CandidateCount: len(dispositions),
 		Candidates:     dispositions,
 		BudgetBytes:    loop.AssemblyByteBudget,

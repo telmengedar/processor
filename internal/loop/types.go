@@ -20,6 +20,16 @@ type Candidate struct {
 
 	// SelfProduced is true when this row is a record this system wrote; the graph adapter sets it.
 	SelfProduced bool
+
+	// Sources is every recall that returned this row, in the order the recalls were issued.
+	Sources []Source
+}
+
+// Source is one recall that returned a candidate: which of the queries Retrieve was given carried it, whether that recall was scoped, and at what rank it came back.
+type Source struct {
+	Query  int  `json:"query"`
+	Scoped bool `json:"scoped,omitempty"`
+	Rank   int  `json:"rank"`
 }
 
 // AnchorSummary is the anchor's entry in a run record: enough to identify
@@ -39,15 +49,16 @@ type AnchorSummary struct {
 // not only the ones admitted into the block — otherwise recall@k is
 // uncomputable for every run ever written, retroactively.
 type Disposition struct {
-	Rank        int     `json:"rank"`
-	ID          int64   `json:"id"`
-	Type        string  `json:"type"`
-	Name        string  `json:"name"`
-	Similarity  float64 `json:"similarity"`
-	Size        int     `json:"size"`
-	ContentHash string  `json:"contentHash"`
-	Included    bool    `json:"included"`
-	CutReason   string  `json:"cutReason,omitempty"`
+	Rank        int      `json:"rank"`
+	ID          int64    `json:"id"`
+	Type        string   `json:"type"`
+	Name        string   `json:"name"`
+	Similarity  float64  `json:"similarity"`
+	Size        int      `json:"size"`
+	ContentHash string   `json:"contentHash"`
+	Included    bool     `json:"included"`
+	CutReason   string   `json:"cutReason,omitempty"`
+	Sources     []Source `json:"sources,omitempty"`
 }
 
 // TerminalReason is the loop's own closed set of ways a judgement step can end.
@@ -123,6 +134,7 @@ type Record struct {
 	Input      string        `json:"input"`
 	Subject    int64         `json:"subject"`
 	Query      string        `json:"query"`
+	Queries    []string      `json:"queries"`
 	Anchor     AnchorSummary `json:"anchor"`
 	Candidates []Disposition `json:"candidates"`
 	Block      string        `json:"block"`

@@ -1373,3 +1373,69 @@ func TestTheTurnHoldsThreeOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *t
 		t.Fatalf("the run admitted neighbourhood candidates %v of the five on offer, want %v: the whole-graph ranking already fills the cap on its own, so the number of neighbourhood rows that reach the block is the number of slots withheld from it and nothing else", neighbourhood, want)
 	}
 }
+
+func TestTheRecordCarriesTheQuerySetEachCandidatesAttributionIndexesInto(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	turn := NewTurn(graph, &fakeModel{}, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	want := []string{"hello"}
+	if !slices.Equal(record.Queries, want) {
+		t.Fatalf("record.Queries = %q, want %q: every candidate names the recall that returned it by position in this set, so a record that omits the set leaves that position resolvable only against a graph that has since moved", record.Queries, want)
+	}
+	if record.Query != "hello" {
+		t.Fatalf("record.Query = %q, want the raw input %q unchanged", record.Query, "hello")
+	}
+}
+
+func TestTheRecordSaysWhichRecallReturnedEachCandidateAndAtWhatRank(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "body"}}
+	turn := NewTurn(graph, &fakeModel{}, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(record.Candidates) != 1 {
+		t.Fatalf("record.Candidates has %d entries, want 1", len(record.Candidates))
+	}
+	want := []Source{{Query: 0, Rank: 1}}
+	if !slices.Equal(record.Candidates[0].Sources, want) {
+		t.Fatalf("the candidate carries %+v, want %+v: the whole-graph ranking returned this row first and the scoped one not at all, and evidence of which arm reached it that is not written into the record is unrecoverable, because the next read queries a graph that has moved", record.Candidates[0].Sources, want)
+	}
+}
+
+func TestTheAnchorIsNeverAdmittedAsACandidateAgainstTheBlockThatAlreadyRendersIt(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{
+		{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"},
+	}
+	turn := NewTurn(graph, &fakeModel{}, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	for _, d := range record.Candidates {
+		if d.ID == record.Subject {
+			t.Fatalf("record.Candidates carries the subject itself at rank %d: the block renders the anchor whole at its head, so a disposition row for it reports the block holding a node twice and the byte budget pays for it twice", d.Rank)
+		}
+	}
+	if strings.Count(record.Block, "anchor body") != 1 {
+		t.Fatalf("the block carries the anchor's body %d times, want once", strings.Count(record.Block, "anchor body"))
+	}
+}

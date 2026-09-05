@@ -26,7 +26,7 @@ func TestSweepReportsAShutoutWhenEveryCandidateWasOversized(t *testing.T) {
 	}
 	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
 
-	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), dispositions)
+	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
 	if !got.Shutout {
 		t.Fatal("Shutout is false where two candidates were retrieved and none admitted, want true")
@@ -47,7 +47,7 @@ func TestSweepReportsNoShutoutWhenTheCandidateSetItselfWasEmpty(t *testing.T) {
 
 	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget)
 
-	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), dispositions)
+	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
 	if got.Shutout {
 		t.Fatal("Shutout is true where recall returned nothing at all, want false: that is a retrieval failure and not an admission one")
@@ -63,7 +63,7 @@ func TestSweepRecordsThatTheAnchorAlsoAppearedAmongTheCandidates(t *testing.T) {
 	}
 	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
 
-	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), dispositions)
+	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
 	if !got.AnchorWasCandidate {
 		t.Fatal("AnchorWasCandidate is false where the subject id was also candidate rank 1, want true")
@@ -82,7 +82,7 @@ func TestSweepRecordsAnAnchorCandidateTheBudgetCutAsPresentButNotAdmitted(t *tes
 	}
 	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
 
-	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), dispositions)
+	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
 	if !got.AnchorWasCandidate {
 		t.Fatal("AnchorWasCandidate is false where the subject id appeared at rank 2, want true")
@@ -98,7 +98,7 @@ func TestSweepRecordsNoAnchorDuplicationWhenTheSubjectIsNotAmongTheCandidates(t 
 	candidates := []loop.Candidate{{ID: 201, Content: "another body"}}
 	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
 
-	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), dispositions)
+	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
 	if got.AnchorWasCandidate || got.AnchorAdmittedAsCandidate {
 		t.Fatalf("anchor duplication reported as %v/%v where the subject was not a candidate, want false/false",
@@ -115,7 +115,7 @@ func TestSweepRecordsTheAdmittedByteTotalBesideTheBudget(t *testing.T) {
 	}
 	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
 
-	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), dispositions)
+	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), nil, dispositions)
 
 	if got.AdmittedBytes != 9 {
 		t.Fatalf("AdmittedBytes = %d, want 9 for a four-byte and a five-byte body", got.AdmittedBytes)
@@ -138,7 +138,7 @@ func TestSweepCountsOnlyRunRecordsAsSelfProducedAndNotOtherSessionLogs(t *testin
 	}
 	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
 
-	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), dispositions)
+	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), nil, dispositions)
 
 	if got.SelfProducedCandidates != 1 {
 		t.Fatalf("SelfProducedCandidates = %d, want 1: the node type and the name prefix must both match", got.SelfProducedCandidates)
@@ -154,7 +154,7 @@ func TestSweepRecordsTheTopSimilarityOfTheCandidateSet(t *testing.T) {
 	}
 	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
 
-	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), dispositions)
+	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), nil, dispositions)
 
 	if got.TopSimilarity != 0.6704 {
 		t.Fatalf("TopSimilarity = %v, want 0.6704", got.TopSimilarity)
@@ -337,7 +337,7 @@ func TestSweepRetainsEveryCandidateItSawInRankOrderIncludingTheOnesTheBudgetCut(
 	}
 	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
 
-	got := BuildRow(labelledRow(Required{Node: 403, Hash: "h", Why: "w"}), dispositions)
+	got := BuildRow(labelledRow(Required{Node: 403, Hash: "h", Why: "w"}), nil, dispositions)
 
 	if len(got.Candidates) != 4 {
 		t.Fatalf("len(Candidates) = %d, want 4: the row retained %d of the 4 candidates the sweep produced, and AdmittedCount is %d",

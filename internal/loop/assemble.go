@@ -43,6 +43,7 @@ func admit(candidates []Candidate, budget int) (admitted []Candidate, dispositio
 			Similarity:  c.Similarity,
 			Size:        size,
 			ContentHash: contentHash(c.Content),
+			Sources:     c.Sources,
 		}
 
 		switch {
