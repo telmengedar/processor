@@ -572,8 +572,11 @@ model-facing value is constructed — which is the only form of blindness that s
 **r01–r11 and both controls are byte-identical** to the sidecar §9.1 measured (120 insertions, 0 deletions),
 so the two readings differ in exactly the twelve rows that were added, and nothing else. Record: **#11348**.
 
-**Measured twice independently** — once after generation, once by QA re-running both arms from a fresh build —
-**identical both times**, on **one graph state** and with **zero model calls**. `corpusHash ffa291d5`, limits
+**Measured twice, by two parties** — once after generation, once by QA re-running both arms from a fresh
+build — **identical both times**, on **one graph state** and with **zero model calls**. *(An earlier draft
+called this "measured twice independently". It was not: same binary, same corpus, same sidecar, same graph
+state. What the second run rules out is a transcription error or a one-off fluke in the first — nothing about
+the instrument, which both runs share entirely.)* `corpusHash ffa291d5`, limits
 `candidateLimit=20 assemblyByteBudget=60000 recallScopeReserve=3`:
 
 | arm | labelled retrieved | labelled admitted | control |
@@ -628,18 +631,45 @@ figure the next reader should not have to re-derive.)*
 *margin* is no more a measurement of this design than a full-corpus *rate* was — §9.1's own lesson arriving
 one level up, and the reason this section rules on differences **per population** rather than on any rate.
 
-**And the six-fold gap cannot be attributed.** The two populations differ in raw difficulty by far more than
-the effect being measured — raw-input scores **0.82** on the eleven and **0.00** on the twelve — so
-*hand-written versus model-written* is completely confounded with *easy versus hard*. Nothing here licenses
-the reading that blind derivations are worse than contaminated ones, and nothing here rules it out. **What has
-changed is that R2's charge is measurable at all**, and the first measurement of it is one row.
+**And the six-fold gap cannot be attributed — not to authorship, which is the only axis anyone wants to read
+it on.** Begin with the part that is an observation rather than an inference: **the raw-input arm uses no
+derivations at all**, so its **0.82 on the eleven against 0.00 on the twelve** is a statement about the
+*rows*. No query written by anybody enters it. The twelve are simply harder for this retriever, measured
+directly, before derivation is in the picture at all — which is a stronger footing for the confound than
+calling it an inference, and an earlier draft undersold it.
 
-**One row is the size of this instrument's own documented overnight drift.** §9.1 item 2 records the
-**baseline itself** moving by one row between 2026-09-04 and 2026-09-05, because the graph is live and
-unversioned. The within-session protocol is what makes the +1 a real difference rather than drift — both arms
-were taken minutes apart on one graph state, twice, by two parties — so this is **not** a claim that the
-measurement is invalid. It is a bound on what a one-row margin can carry: **the design's entire demonstrated
-out-of-sample effect is the same size as the noise the document already had to control for.** Read r12 as an
+On top of that, *hand-written versus model-written* is confounded with **three** further axes, and all of them
+move together because they are the same event seen from different sides:
+
+- **Difficulty.** 0.82 versus 0.00 on the raw arm — a gap far larger than the effect being measured.
+- **Vintage.** r12–r23 all arrived together in **PR #27**, authored later than r01–r11 and against a different
+  graph state. The nodes they require are newer as a block (**#11049–#11278** against **#10440–#10982**), so
+  *harder* and *written later* are one fact counted twice. **This one is not obviously harmless**: a newer
+  node has had less time to accumulate the links and neighbours a graph search reaches it through, so vintage
+  plausibly *causes* part of the difficulty rather than merely accompanying it.
+- **Input shape.** The twelve inputs are **60% longer** than the eleven — 15.0 against 9.4 content tokens —
+  and are scenario-shaped rather than single-question. This is the axis the lexical-overlap measurement below
+  runs aground on, and it was invisible until that measurement was actually taken.
+
+**One axis a sceptical reader reaches for first does *not* explain any of it: both populations are uniformly
+`stratum: labelled`.** All 23 labelled rows carry that same value in `internal/eval/corpus.json` (read from
+the tree 2026-09-05); the only two `control` rows are c01/c02, which belong to neither population. Stratum is
+not the difference, and saying so costs one sentence and forecloses one wrong reading.
+
+**Nothing here licenses the reading that blind derivations are worse than contaminated ones, and nothing here
+rules it out. What has changed is that R2's charge is measurable at all**, and the first measurement of it is
+one row.
+
+**One row is real here and unreplicable anywhere else, and those are different statements.** The
+within-session protocol is what makes r12 a genuine difference: both arms were taken minutes apart on one
+graph state, twice, by two parties, and **§9.1 item 2's ±1 row is a *cross-day* drift figure, which does not
+govern a within-session paired comparison at all.** An earlier draft justified the threshold with that
+statistic anyway, which pointed a sound argument at the wrong target. **The sharp version concedes nothing
+about this reading and everything about what can be built on it:** §9.1 item 2 records the **baseline itself**
+moving by one row overnight because the graph is live and unversioned — and **every replication of this
+finding will be cross-day**, where ±1 row is exactly the noise floor. So the design's entire demonstrated
+out-of-sample effect is **the size of the smallest thing a second party on a second day could tell apart from
+nothing**. A one-row effect on a live unversioned graph is **unreplicable by construction**. Read r12 as an
 existence proof, never as a rate.
 
 **Restated falsifier for R2, replacing the one that has fired:** *derivation fails to beat a raw-input arm on
@@ -647,42 +677,142 @@ rows outside the selection set by **more than one row**, on a corpus large enoug
 whole margin.* This is not answerable at twelve out-of-sample rows and does not become answerable by
 re-measuring them; it needs the next corpus growth (#11101), and that is the honest cost of the finding.
 
-#### Why eleven of the twelve still miss — two causes, not one
+#### Why eleven of the twelve still miss — one named cause, one retracted, and seven rows unaccounted for
 
-**Ranking depth dominates.** On **r13, r14, r16 and r17** the required node **is in the candidate pool**,
-scoring **0.73–0.80**, and is edged out of the top 20 by near-identical neighbours. **r16 is the clean case:
-the required node sits at 0.8041 and is displaced by the row's own subject at 0.80.** A node that loses its
-slot to something scoring *below it* is not losing on relevance — it is losing to the fusion's rank arithmetic
-and the cap, which is **G-1's premise working exactly as designed and showing its cost for the first time**.
-**No rewriting of the question reaches these rows.** They are a `candidateLimit` and ranking-resolution
-problem, adjacent to §2.4's mode C and to F1 — and they are the majority of the twelve.
+**Ranking depth is the one cause this section can name.** On **r13, r14, r16 and r17** the required node **is in the candidate pool**,
+scoring **0.73–0.80**, and is edged out of the top 20 by near-identical neighbours. **r16 is the clean case,
+and the recorded figures support a narrower claim than an earlier draft made of them: the required node sits
+at 0.8041 and is displaced by the row's own subject, recorded as 0.80.**
 
-**But "ranking depth alone" would be overstated as the sole explanation, and the second cause is the more
-actionable one.** QA measured the twelve new rows' derived queries as carrying **higher lexical overlap with
-their own inputs** than the pinned eleven do: **r13 and r14 recycle the input's nouns**, and **r15 walks into
-the distractor its corpus row was built to catch**. The generation prompt forbade exactly this — it instructed
-the model to surface vocabulary likely to appear in the **documentation** rather than to reword the
-**request**, on the stated ground that rewording is what the raw-input arm already is. On at least three of
-twelve rows the model did not honour its own brief, and **that is a finding about the method, not about those
-rows.**
+> **Corrected 2026-09-05, later the same day.** The draft read this as the required node losing its slot to
+> something scoring **below** it, and made that inversion carry the paragraph. It cannot: **`0.80` covers
+> `[0.795, 0.805)`, which straddles `0.8041`**, so a two-decimal figure compared against a four-decimal one
+> does not establish an ordering either way. **Nor is the four-decimal figure recoverable.** Only a
+> same-session re-run of both arms would produce it, and the graph has moved since — which is §9.1 item 2's
+> own lesson arriving on this document's own evidence. **If the inversion matters, it is one same-session
+> sweep away**: re-run and record the displacing candidate's score at the precision the required node's is
+> recorded at. Until then this row claims a tie, not an inversion.
 
-**Which gives the one win a mechanism worth stating — as a hypothesis, not a finding.** r12's derived set
-introduces terms its input does not contain (*filter contract*, *boundary enforcement*, *scope enforcement*),
-and r12 is the row that moved; r13 and r14 restate their inputs, and did not. **The hypothesis: a derived
-query earns its keep exactly when it introduces vocabulary the input lacks, and a derivation that merely
-rewords is indistinguishable from the raw-input arm by construction.** It would explain the hand-written
-eleven doing well for the same reason under another name — a contaminated author bridges the vocabulary gap
-*because* they have read the target — which would make **R2a's contamination and derivation quality one axis
-rather than two concerns.**
+**What the recorded figures do establish is the point the paragraph needs, and arguably needs more sharply:**
+the required node and the node that takes its slot are **within the resolution of the recorded score** — the
+cap is imposing an order between two candidates whose scores do not separate them. That is not losing on
+relevance; it is losing to the fusion's rank arithmetic and the cap, which is **G-1's premise working exactly
+as designed and showing its cost for the first time**. **No rewriting of the question reaches these rows.**
+They are a `candidateLimit` and ranking-resolution problem, adjacent to §2.4's mode C and to F1.
 
-**It rests on n=1 and must not be read as established.** Its measuring half costs nothing: lexical overlap
-between each derived set and its own input is arithmetic over two files already in the tree, and the
-hypothesis makes a falsifiable prediction — r12's overlap is the lowest of the twelve, r13's and r14's among
-the highest. **Its regeneration half has a trap that must not be walked into.** Regenerating r13, r14 and r15
-*because they were seen to miss* is selection on the test set, and it would destroy the only uncontaminated
-rows the corpus has — the precise failure (a) was rejected for. **The admissible form is to change the
-prompt** (add the overlap constraint), **regenerate all twelve blind, and re-measure.** Blindness is a
-property of the procedure and not of the intention; it survives a prompt change only if no row is exempted.
+**They are four of the twelve — a third, not "the majority", which is what an earlier draft of this sentence
+claimed.** With the second cause below withdrawn, the arithmetic is worth stating plainly: of the twelve rows
+PR #32 added, **one moved (r12), four miss with a named cause (r13, r14, r16, r17), and seven miss with no
+cause this document has identified.** That is not a gap worth papering over with a second explanation — it is
+the honest state of the reading, and it is where a future triage pass should start.
+
+**A second cause was asserted here, was never measured, and does not survive being measured.**
+
+> **Retracted 2026-09-05, later the same day — and the retraction is the finding.** An earlier draft of this
+> paragraph stated that QA had **measured** the twelve new rows' derived queries as carrying *higher lexical
+> overlap with their own inputs* than the pinned eleven do. **No metric was ever attached to that sentence**
+> — and three paragraphs further down, that same draft proposed the very same measurement as one that had
+> **not** been taken, complete with a falsifiable prediction. Both could not be true, and the internal
+> contradiction was the visible symptom of the real fault. Under **P-51** a measurement this document transcribes is a measurement
+> this document asserts, so the sentence is its own and it is struck. What replaces it is the arithmetic.
+
+**Measured** *(2026-09-05, later the same day; arithmetic only — no graph, no model, no sweep, so nothing
+below depends on a graph state)*. Tokens are lower-cased `[a-z0-9]+` runs compared as sets; `I` is a corpus
+row's `input` and `Q` a single derived query; each metric is averaged over a row's five queries and then over
+the population. Four metrics: **input recall** (shared tokens as a fraction of the input's), **Jaccard**
+(shared over union), **union coverage** (the five queries' pooled tokens as a fraction of the input's), and
+**query-side reuse** (shared tokens as a fraction of *the query's*). Each was run under four tokenizer
+variants — stopwording on/off crossed with naive plural stripping on/off.
+
+| metric | normalised by | hand r01–r11 | model r12–r23 | direction |
+|---|---|---|---|---|
+| input recall | the input | 0.163 | 0.145 | model **lower** |
+| Jaccard | the union | 0.118 | 0.115 | model **lower** |
+| union coverage | the input | 0.440 | 0.330 | model **lower** |
+| query-side reuse | **the query** | 0.263 | **0.347** | model **higher** |
+
+*(Stopworded, unstemmed variant shown. All four variants agree on all four directions with a single
+exception: Jaccard reverses in the stopworded-and-stemmed variant, and by 0.004 (0.134 against 0.138). The
+stopword list is an ordinary English function-word set; **the decimals depend on it and the directions do
+not**, which is the whole reason the unstopworded variants were run at all. **Provenance, because it is not the same for both halves:** the eleven hand rows were
+read from `internal/eval/derivations.json` in the tree; the twelve model rows were read from the generation
+record **#11348**, because the 25/25 sidecar lives on PR #32's branch and this correction was written against
+`main`. #11348 is the file's own source and not the file — if the two ever disagree, this table is wrong and
+so is the record.)*
+
+**Three of the four say the model rows recycle their inputs *less*; one says more; and neither direction
+survives its confound.** The three pointing one way all divide by the size of the **input**. The one pointing
+the other divides by the size of the **query**. And — as the confound list above now records — **the twelve
+later inputs are 60% longer than the eleven**, which moves every one of these metrics on its own: across all
+23 rows and on this same stopworded tokenization, input length correlates **−0.23** with input recall and
+**+0.52** with query-side reuse. Restrict to
+the length band where the two populations actually overlap and the gaps collapse or invert depending on where
+the band is cut — at `|I|` in [9,16] query-side reuse reads **0.328 against 0.328**; at [10,15] it reads
+**0.369 against 0.328**, the model now *lower*. **At eleven rows against twelve, with inputs that differ
+systematically in length, these two populations are not separable on lexical overlap by this family of
+measurements.** The original sentence was not merely unmeasured — it named a direction this instrument cannot
+resolve, and so does its reverse.
+
+**What *is* robust sits at row level, and it is one row rather than three.** Across all eight
+metric-by-variant combinations, **r13's derived set is the first or second most input-recycling of the
+twelve** — that holds however the tokens are counted, and r13 missed. **r14 does not hold**: it ranks
+anywhere from 1st to 11th of twelve depending on the variant, so *"r13 and r14 recycle the input's nouns"*
+was half right, and the surviving half is r13's. **And r15 is not a lexical observation at all** — it ranks
+4th to 12th of the twelve across the eight combinations, never among the three most-recycling on any of them,
+and on unstopworded query-side reuse it is the lowest of the twelve. What r15 does is inherit its input's
+**framing**:
+all five of its queries ask about ranking, which is precisely the false premise its corpus row exists to catch
+(`why`: *"An answer lacking this would retune the ranking, when the truth is that an item larger than the
+whole budget can never be admitted at any rank"*). **Filing r15 under lexical overlap concealed a second and
+genuinely different failure mode** — a derivation can introduce entirely fresh vocabulary and still inherit
+the question's wrong frame — and that mode is worth more than the claim it was bundled into, because no
+overlap constraint in a prompt would catch it.
+
+**So *"on at least three of twelve rows the model did not honour its own brief"* is withdrawn**, and what
+stands in its place is narrower and better attested: **one row recycles measurably (r13), one row inherits its
+input's frame (r15), and the population as a whole differs from the hand-written eleven in no way this
+measurement can detect.**
+
+**Which leaves the one win without the mechanism this section gave it.** r12's derived set does introduce
+terms its input lacks (*filter contract*, *boundary enforcement*, *scope enforcement*) — that reading of the
+queries is correct and is not in dispute. The claim that failed is the **comparative** one, and it was the
+load-bearing half: **the hypothesis** was *a derived query earns its keep exactly when it introduces
+vocabulary the input lacks, and a derivation that merely rewords is indistinguishable from the raw-input arm
+by construction.* It would have explained the hand-written eleven doing well for the same reason under another
+name — a contaminated author bridges the vocabulary gap *because* they have read the target — which would
+have made **R2a's contamination and derivation quality one axis rather than two concerns.**
+
+**Its prediction has fired against it.** The prediction on record was *r12's overlap is the lowest of the
+twelve, r13's and r14's among the highest.* Measured: **r12 ranks between 3rd and 10th of twelve across the
+eight variants and is never the lowest** — on stopworded, unstemmed input recall it is the **third most**
+recycling row of the twelve. Only r13's half survives. **The half that failed is the half carrying the
+mechanism**: the one row that moved is not distinguished from the eleven that did not by the property the
+hypothesis names.
+
+**Withdrawn as a reading of this data.** With r12 unremarkable, the hypothesis has no positive instance left.
+It retains one negative instance — r13 recycles most and missed — and with eleven of twelve missing, any
+property of any missing row is consistent with anything. **n=1 has become n=0.**
+
+**What it always was, and this is the correction worth more than the retraction.** Vocabulary bridging is
+**the generation prompt's own stated rationale**, on the record in **#11348** before any sweep ran: *"A
+derived query earns its keep only if it bridges that vocabulary gap — restating the input in different words
+does not, since the raw-input arm (already the control) covers that."* Offering it here as a mechanism *the
+result suggested* was **reading the prompt's prior back out of the data that prompt generated** — a closed
+loop wearing the clothes of a finding. It stands where it stood before: a design assumption behind the
+prompt, unmeasured, and now known not to be visible in the single outcome that was supposed to reveal it.
+**Any future attempt to revive it must name its metric before it measures**, because this section is the
+demonstration that the metric family does not agree with itself, and a metric chosen after the results are in
+is a result chosen after the results are in — the same fault as regenerating a row because it was seen to
+miss, applied to the instrument instead of the sample.
+
+**Its regeneration half is untouched by all of this, and the trap still stands.** Regenerating r13, r14 and
+r15 *because they were seen to miss* is selection on the test set, and it would destroy the only
+uncontaminated rows the corpus has — the precise failure (a) was rejected for. **The admissible form is to
+change the prompt, regenerate all twelve blind, and re-measure.** Blindness is a property of the procedure and
+not of the intention; it survives a prompt change only if no row is exempted. **What has changed is the
+warrant, and whatever files that work must say so:** an overlap constraint in the prompt is now a change made
+on a **prior**, not on a finding — and on the evidence above, the constraint most worth adding may not be
+about overlap at all but about r15's frame inheritance, which no token-level constraint reaches.
 
 #### What this discharges elsewhere in the document
 
@@ -830,9 +960,12 @@ cost with nothing measured behind it (P-3).
    **What this implies for the framing if the corpus grows again.** **(b) is the default and the question is
    settled** — the generator exists, the run is minutes, and its blindness is structural rather than a matter
    of the author's care, which is the only form that survives a deadline. **(a) is not merely disfavoured but
-   positively ruled out by what (b) measured:** hand-authoring would have converted more of the twelve — an
-   author who has read the required node can write a query that reaches it, very nearly by definition — and
-   every conversion so bought would have been uninterpretable. **(c) is confirmed load-bearing and needs
+   positively ruled out by what (b) measured:** hand-authoring **would be expected to** convert more of the
+   twelve — an author who has read the required node can write a query that reaches it — and every conversion
+   so bought would have been uninterpretable. *(**Expected**, not established, and the difference is the one
+   §9.2 was corrected for: nobody hand-authored the twelve, so that comparison has never been run. The
+   mechanism is plausible and r03 is one instance of it; an earlier draft wrote "very nearly by definition",
+   which is a plausible mechanism asserted as near-certainty.)* **(c) is confirmed load-bearing and needs
    extending rather than repeating.** The coverage counter did its job; the next silent dilution will not be a
    coverage gap but the thing §9.1 walked into one level up — a full-corpus **margin** read as a measurement
    of the design when the corpus mixes selected-on and out-of-sample rows. The counter that catches it prints
