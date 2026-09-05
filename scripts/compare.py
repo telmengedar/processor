@@ -6,7 +6,7 @@ assembled context -- and print both answers verbatim, side by side.
     python scripts/compare.py --only t1-second-provider,t3-second-ask-worse
     python scripts/compare.py --model-url http://127.0.0.1:12434/engines/v1 --model-id qwen3-coder
 
-Requires Python 3.12+: TemporaryDirectory(ignore_cleanup_errors=...) below needs 3.12.
+Requires Python 3.10+: TemporaryDirectory(ignore_cleanup_errors=...) below needs 3.10.
 
 Arm SUBSTRATE is POST /runs against the built binary: retrieve, assemble, judge, write back.
 Arm TRANSCRIPT is the same model and the same task text posted straight to /chat/completions as a
@@ -121,6 +121,11 @@ def load_tasks(path, only):
                 f"one and this tool would silently report every one of that task's answer nodes as "
                 f"'not retrieved'"
             )
+        if answer_nodes:
+            # dict.fromkeys dedupes while keeping first-occurrence order -- the same fix --only
+            # already applies below. Left undeduped, a repeated id prints twice in answer_node_report
+            # and inflates both halves of the found/len(hits) ratio print_table shows (W3).
+            row["answerNodes"] = list(dict.fromkeys(answer_nodes))
 
     seen_ids = duplicates(row["id"] for row in rows)
     if seen_ids:
@@ -471,39 +476,93 @@ def one_line(value, width):
     return text if len(text) <= width else text[: width - 1] + "…"
 
 
-NOT_RETRIEVED = "not retrieved"
-RETRIEVED_CUT = "retrieved, cut"
-ADMITTED_PRIMARY = "admitted, primary"
-ADMITTED_SUPPLEMENTARY = "admitted, supplementary"
-ADMITTED_SUPPLEMENTARY_RECOVERED = "admitted, supplementary (recovered after cut)"
-UNLABELLED = "no answer nodes named"
+class Stage(str):
+    """A task/answer-node stage name that carries its own indictment text.
 
-INDICTMENT = {
-    NOT_RETRIEVED: (
-        "retrieval never returned the answer at all -- neither the initial recall query nor any "
-        "supplementary recall the model asked for. This indicts the recall query, not the budget"
-    ),
-    RETRIEVED_CUT: "recall found the answer and assembly dropped it -- the byte budget and admission",
-    ADMITTED_PRIMARY: (
-        "the answer reached the model in the initial context block. Anything wrong past here is the "
-        "prompt, the model, or the node's own content, and only reading both answers separates those "
-        "three"
-    ),
-    ADMITTED_SUPPLEMENTARY: (
-        "the initial recall query missed the answer entirely -- it never appears in the initial "
-        "candidate list at all. It reached the model only because the model asked for supplementary "
-        "recall and that second, unscoped query found it. This indicts the initial recall query "
-        "specifically, not the byte budget or the block"
-    ),
-    ADMITTED_SUPPLEMENTARY_RECOVERED: (
-        "the initial recall query DID return the answer -- it is in the initial candidate list, at "
-        "the rank printed on the answer-node line below -- and assembly's byte budget cut it before "
-        "the block was sent. The model then asked for supplementary recall and a second, unscoped "
-        "query re-admitted it. This indicts the byte budget or candidate limit at the initial round, "
-        "not the recall query: the recall query worked"
-    ),
-    UNLABELLED: "the task set names no answering node, so nothing mechanical can be attributed",
-}
+    Subclassing str keeps every existing use working unchanged: dict keys, f"{stage}",
+    f"{stage!r}" (str.__repr__ renders the string content, not the subclass name), equality
+    against a plain disposition value, and `stage in (...)` membership checks. What changes is
+    that the narration is now an attribute of the stage value itself (`stage.indictment`)
+    instead of a second table (formerly a module-level INDICTMENT dict) keyed by the same
+    string a few dozen lines away from the branch that picks it. Every defect raised across
+    this script's review rounds was exactly that: a branch condition and its narration edited
+    in different places until they disagreed. Collapsing the two into one object removes the
+    second place -- there is nothing left to edit apart.
+    """
+
+    def __new__(cls, label, indictment):
+        self = super().__new__(cls, label)
+        self.indictment = indictment
+        return self
+
+
+NOT_RETRIEVED = Stage(
+    "not retrieved",
+    "retrieval never returned the answer at all -- neither the initial recall query nor any "
+    "supplementary recall the model asked for. This indicts the recall query, not the budget",
+)
+
+RETRIEVED_CUT = Stage(
+    "retrieved, cut",
+    "the initial recall query found the answer and assembly cut it there before the block was "
+    "sent -- the byte budget or the self-produced check; the per-node detail below names which "
+    "-- and no supplementary round on this task recovered it afterward",
+)
+
+RETRIEVED_CUT_SUPPLEMENTARY = Stage(
+    "retrieved, cut (supplementary)",
+    "the initial recall query never returned the answer at all; a supplementary round did, and "
+    "assembly cut it there too -- the byte budget or the self-produced check; the per-node "
+    "detail below names which. This is not the same cut as RETRIEVED_CUT: the budget in play "
+    "here is the supplementary round's own SupplementaryByteBudget, a different number from the "
+    "initial round's assemblyByteBudget that describe_cut reports against, and the candidates "
+    "this was ranked among are the supplementary round's own results, not the initial round's",
+)
+
+ADMITTED_PRIMARY = Stage(
+    "admitted, primary",
+    "the answer reached the model in the initial context block. Anything wrong past here is the "
+    "prompt, the model, or the node's own content, and only reading both answers separates those "
+    "three",
+)
+
+ADMITTED_SUPPLEMENTARY = Stage(
+    "admitted, supplementary",
+    "the answer is not in the initial candidate list at all -- assembly was never given the "
+    "chance to admit or cut it, because it never got that far. That can mean the initial recall "
+    "query did not return it, or that it did and the fixed candidate limit truncated it before "
+    "assembly ever saw it; this record cannot tell those two apart. It reached the model only "
+    "because the model asked for supplementary recall and that second, unscoped query found it. "
+    "This indicts the initial recall query or the candidate limit, not the byte budget: "
+    "assembly was never in a position to cut it",
+)
+
+ADMITTED_SUPPLEMENTARY_RECOVERED = Stage(
+    "admitted, supplementary (recovered after cut)",
+    "the initial recall query DID return the answer -- it is in the initial candidate list, at "
+    "the rank printed on the answer-node line below -- and assembly cut it there before the "
+    "block was sent (the byte budget or the self-produced check; the per-node detail below "
+    "names which -- never the candidate limit, which is already reflected in that list by the "
+    "time assembly sees it, so a node present in it was not truncated). The model then asked "
+    "for supplementary recall and a second, unscoped query re-admitted it. This indicts "
+    "assembly's admission at the initial round, not the recall query: the recall query worked",
+)
+
+ANCHOR = Stage(
+    "anchor, not retrieval",
+    "this answer node is the run's own anchor. internal/loop/assemble.go's renderBlock writes "
+    "the anchor and its full content into the block unconditionally, before any candidate and "
+    "with no budget check, so it reached the model regardless of what recall returned or what "
+    "assembly admitted or cut. This is not a retrieval finding: it says nothing about the "
+    "recall query, the candidate limit, or the byte budget, and must not be scored as any of "
+    "the three succeeding -- a task that names its own subject as an answer node is not a fair "
+    "test of retrieval for that node, whatever candidates(record) or the supplementary rounds "
+    "separately say about the same id",
+)
+
+UNLABELLED = Stage(
+    "no answer nodes named", "the task set names no answering node, so nothing mechanical can be attributed"
+)
 
 
 def _supplementary_by_id(record):
@@ -525,26 +584,50 @@ def _supplementary_by_id(record):
 def answer_node_report(task, record):
     """One (node, stage, rank, detail) row per answer node the task set names.
 
-    `rank` is the rank at the round the stage is reported from (the initial round for
-    ADMITTED_PRIMARY and a cut, the supplementary round for either supplementary stage). `detail`
-    is None except for ADMITTED_SUPPLEMENTARY_RECOVERED, where it carries the initial round's own
-    rank and cutReason -- the fact that made the initial query's success, and the cut, both real.
+    The anchor check comes first and short-circuits everything else: internal/loop/assemble.go's
+    renderBlock writes record["anchor"] into the block unconditionally, before any candidate and
+    with no budget check, so an answer node that IS the anchor reached the model regardless of
+    what candidates(record) or a supplementary round separately say about that same id. Checking
+    candidates/supplementary first for such a node would report it as NOT_RETRIEVED, RETRIEVED_CUT,
+    or even admitted-by-luck depending on whether scoped recall also happened to return it (F1) --
+    every one of those readings is a retrieval verdict about a node that never went through
+    retrieval to reach the model.
 
-    The three-way split below exists because "supplementary is included" is not one outcome: a node
-    absent from the initial candidate list entirely (`primary is None`) means the initial recall
-    query never found it -- that indicts the query. A node present in the initial candidate list but
-    not included (`primary is not None`) means the initial query found it and assembly cut it under
-    the byte budget -- that indicts the budget, not the query. Collapsing these (N1, DiVoid #11141
-    follow-up) reads a working recall query as a failed one.
+    Past the anchor check, `rank` is the rank at the round the stage is reported from (the initial
+    round for ADMITTED_PRIMARY and a cut reported as RETRIEVED_CUT, the supplementary round for a
+    supplementary stage or RETRIEVED_CUT_SUPPLEMENTARY). `detail` carries the fact the top-line
+    stage can't: which round's candidates a cut happened in and why, or -- for
+    ADMITTED_SUPPLEMENTARY_RECOVERED -- the initial round's own rank and cutReason, the fact that
+    makes the initial query's success and the subsequent cut both real.
+
+    The three-way split on "supplementary is included" exists because that is not one outcome: a
+    node absent from the initial candidate list entirely (`primary is None`) means the initial
+    recall query never returned it in a form assembly ever saw -- that indicts the query or the
+    candidate limit, never the byte budget. A node present in the initial candidate list but not
+    included (`primary is not None`) means the initial query found it and assembly cut it -- that
+    indicts assembly's admission (byte budget or self-produced), never the candidate limit, since
+    survival into candidates(record) already proves the candidate limit did not cut it (N1, DiVoid
+    #11141 follow-up; the limit-vs-budget attribution corrected here is F2).
+
+    The same split applies to the two ways a node is retrieved-but-never-admitted: found and cut at
+    the initial round (RETRIEVED_CUT) is not the same finding as never found initially but found and
+    cut at a supplementary round (RETRIEVED_CUT_SUPPLEMENTARY) -- the latter went through a
+    different budget (SupplementaryByteBudget, not assemblyByteBudget) and a different candidate
+    list. Collapsing either pair reads one outcome as the other (W1, alongside the original N1).
     """
     wanted = task.get("answerNodes") or []
     if not wanted:
         return []
+    anchor_id = (record.get("anchor") or {}).get("id")
     primary_by_id = {c.get("id"): c for c in candidates(record)}
     supplementary_by_id = _supplementary_by_id(record)
 
     rows = []
     for node in wanted:
+        if anchor_id is not None and node == anchor_id:
+            rows.append((node, ANCHOR, None, None))
+            continue
+
         primary = primary_by_id.get(node)
         supplementary = supplementary_by_id.get(node)
         primary_included = bool(primary is not None and primary.get("included"))
@@ -560,39 +643,52 @@ def answer_node_report(task, record):
             rows.append((node, ADMITTED_SUPPLEMENTARY, supplementary.get("rank"), None))
         elif primary is not None:
             reason = primary.get("cutReason") or "no reason given"
-            rows.append((node, f"{RETRIEVED_CUT} ({reason})", primary.get("rank"), None))
+            rows.append((node, RETRIEVED_CUT, primary.get("rank"), f"cut at the initial round: {reason}"))
         elif supplementary is not None:
             reason = supplementary.get("cutReason") or "no reason given"
-            detail = None
             rows.append(
-                (node, f"{RETRIEVED_CUT} ({reason}, supplementary recall)", supplementary.get("rank"), detail)
+                (
+                    node,
+                    RETRIEVED_CUT_SUPPLEMENTARY,
+                    supplementary.get("rank"),
+                    f"cut at a supplementary round: {reason}",
+                )
             )
         else:
             rows.append((node, NOT_RETRIEVED, None, None))
     return rows
 
 
-def task_stage(task, record):
-    """The furthest point any of the task's answer nodes reached, best first.
+# Best-first precedence for task_stage: the earliest entry found among a task's answer-node
+# dispositions wins. ANCHOR leads because a node the run sent unconditionally is, as a plain
+# matter of what reached the model, the furthest any node can get -- the indictment text is what
+# stops that from being misread as a retrieval success. ADMITTED_SUPPLEMENTARY_RECOVERED outranks
+# the genuine-miss ADMITTED_SUPPLEMENTARY: a node the initial query found and the budget cut, later
+# recovered, is a working query plus a tight budget; a node the initial query never found at all is
+# a query miss papered over by a second, unscoped round -- the first is the milder finding. The
+# same reasoning orders RETRIEVED_CUT (initial query found it) ahead of RETRIEVED_CUT_SUPPLEMENTARY
+# (initial query never found it; only a supplementary round did, and that too was cut).
+STAGE_PRECEDENCE = (
+    ANCHOR,
+    ADMITTED_PRIMARY,
+    ADMITTED_SUPPLEMENTARY_RECOVERED,
+    ADMITTED_SUPPLEMENTARY,
+    RETRIEVED_CUT,
+    RETRIEVED_CUT_SUPPLEMENTARY,
+    NOT_RETRIEVED,
+)
 
-    ADMITTED_SUPPLEMENTARY_RECOVERED outranks the genuine-miss ADMITTED_SUPPLEMENTARY: a node the
-    initial query found and the budget cut, later recovered, is a working query plus a tight budget;
-    a node the initial query never found at all is a query miss papered over by a second, unscoped
-    round. The first is the milder finding.
-    """
+
+def task_stage(task, record):
+    """The furthest point any of the task's answer nodes reached; see STAGE_PRECEDENCE for order."""
     rows = answer_node_report(task, record)
     if not rows:
         return UNLABELLED
-    dispositions = [disposition for _, disposition, _, _ in rows]
-    if any(d == ADMITTED_PRIMARY for d in dispositions):
-        return ADMITTED_PRIMARY
-    if any(d == ADMITTED_SUPPLEMENTARY_RECOVERED for d in dispositions):
-        return ADMITTED_SUPPLEMENTARY_RECOVERED
-    if any(d == ADMITTED_SUPPLEMENTARY for d in dispositions):
-        return ADMITTED_SUPPLEMENTARY
-    if any(d.startswith(RETRIEVED_CUT) for d in dispositions):
-        return RETRIEVED_CUT
-    return NOT_RETRIEVED
+    dispositions = {disposition for _, disposition, _, _ in rows}
+    for stage in STAGE_PRECEDENCE:
+        if stage in dispositions:
+            return stage
+    return NOT_RETRIEVED  # unreachable: STAGE_PRECEDENCE ends in NOT_RETRIEVED, the report's only other value
 
 
 def describe_cut(row, budget):
@@ -699,14 +795,14 @@ def print_task(task, record, transcript):
 
     stage = task_stage(task, record)
     print()
-    print(f"STAGE: {stage} -- {INDICTMENT[stage]}")
+    print(f"STAGE: {stage} -- {stage.indictment}")
     for node, disposition, rank, detail in answer_node_report(task, record):
         at = f" at rank {rank}" if rank is not None else ""
         line = f"       answer node #{node}: {disposition}{at}"
         if detail:
             line += f" -- {detail}"
         print(line)
-    if stage in (ADMITTED_PRIMARY, ADMITTED_SUPPLEMENTARY, ADMITTED_SUPPLEMENTARY_RECOVERED):
+    if stage in (ADMITTED_PRIMARY, ADMITTED_SUPPLEMENTARY, ADMITTED_SUPPLEMENTARY_RECOVERED, ANCHOR):
         print(
             "       The mechanical attribution stops here. Whether the substrate answer actually "
             "draws on the node, and whether it beats the transcript answer anyway, is the reader's "
@@ -779,13 +875,15 @@ def print_table(rows):
         tally[stage] = tally.get(stage, 0) + 1
     print()
     for stage, count in sorted(tally.items(), key=lambda kv: -kv[1]):
-        print(f"  {count} task(s) reached stage {stage!r}: {INDICTMENT[stage]}")
+        print(f"  {count} task(s) reached stage {stage!r}: {stage.indictment}")
     print()
     print(
         "  admit = candidates admitted of candidates returned; nodes = answer nodes the task set "
-        "names that arm SUBSTRATE admitted; subst B / trans B = answer sizes in bytes. Answer size is "
-        "a length, not a quality, and the stage says where the answer got to, never whether it is "
-        "right. Read the two answers above."
+        "names that arm SUBSTRATE admitted through retrieval -- an answer node that is the task's own "
+        "anchor (stage ANCHOR) reached the model too but is deliberately not counted here, since it "
+        "was never admitted by anything this column measures; subst B / trans B = answer sizes in "
+        "bytes. Answer size is a length, not a quality, and the stage says where the answer got to, "
+        "never whether it is right. Read the two answers above."
     )
 
 
