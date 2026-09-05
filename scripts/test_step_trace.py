@@ -20,6 +20,12 @@ admissibility against the raw assemblyByteBudget constant. `internal/loop/assemb
 anchor's bytes against the budget before any candidate is considered (`remaining := budget -
 len(anchor.Content)`, floored at zero) -- it is exempt from being CUT, not from being CHARGED.
 ShutoutOversizedAnchorTests and UnadmittableUsesRemainingBudgetTests pin the corrected arithmetic.
+
+The sampling classes were added the round the harness gained PROCESSOR_MODEL_TEMPERATURE and
+PROCESSOR_MODEL_TOP_P, which turned the script's printed paragraph about sampling from true into
+false with no test failing anywhere -- because no test read the printed prose. The rule that follows
+from it, and that SamplingLineTests exists to keep: prose this script PRINTS is tested by reading the
+printed output, including the shape where the record predates the field and no value may be invented.
 """
 
 import contextlib
@@ -27,6 +33,13 @@ import io
 import unittest
 
 import step_trace
+
+
+# Fixture sentinel for `sampling`, which needs three states where a default argument gives two: the
+# usual object (this constant), some other object (passed explicitly), and NO KEY AT ALL (pass None).
+# A record written before the run record carried the field is a real shape this script must survive,
+# and `sampling=None` is how a test asks for it.
+ABSENT = object()
 
 
 def record(
@@ -43,11 +56,12 @@ def record(
     written=None,
     answer="the answer",
     block="x" * 10,
+    sampling=ABSENT,
 ):
     # `is not None` throughout, deliberately -- not `x or default`: an explicitly empty dict (e.g.
     # limits={} for MissingLimitsDoesNotFabricateNumbersTests) must stay empty, not silently fall
     # back to the default just because {} is falsy. This fixture had exactly that bug once.
-    return {
+    rec = {
         "input": input_text,
         "subject": subject,
         "query": input_text,
@@ -70,10 +84,18 @@ def record(
         },
         "written": written if written is not None else {"state": "stored", "nodeId": 12345},
     }
+    # The default is the shape the binary writes with no sampling variable set at all: the
+    # temperature variable defaults to 0 and is sent, the top_p one has no default and its key is
+    # omitted. Passing sampling=None omits the object itself -- an older record, not an empty one.
+    if sampling is ABSENT:
+        sampling = {"temperature": 0}
+    if sampling is not None:
+        rec["sampling"] = sampling
+    return rec
 
 
-def render(rec):
-    return step_trace.render_trace(rec, "http://model.example/v1", "test-model", None, None)
+def render(rec, temperature=None):
+    return step_trace.render_trace(rec, "http://model.example/v1", "test-model", temperature, None)
 
 
 def capture(fn, *args, **kwargs):
@@ -311,6 +333,97 @@ class AnnounceWrittenTests(unittest.TestCase):
         out = capture(step_trace.announce_written, rec)
         self.assertIn("no run record stored", out)
         self.assertIn("notStored", out)
+
+
+class SamplingLineTests(unittest.TestCase):
+    """The SAMPLING line is prose this script PRINTS, so it is tested by reading the printed output
+    -- the whole reason this round exists is that a printed paragraph about sampling went false while
+    nothing asserted a word of it. Each case pins one record shape and the claim it may make."""
+
+    def test_temperature_zero_prints_its_scope_and_claims_no_repeatability(self):
+        out = render(record())
+        self.assertIn("SAMPLING: temperature 0,", out)
+        self.assertIn("top_p not sent", out)
+        self.assertIn("REQUESTED, AS SENT -- not what the endpoint applied", out)
+        self.assertIn("stops being a source of run-to-run variation", out)
+        self.assertIn("not a claim that this run repeats", out)
+
+    def test_both_values_render_and_greedy_note_is_withheld(self):
+        out = render(record(sampling={"temperature": 0.7, "topP": 0.91}))
+        self.assertIn("SAMPLING: temperature 0.7, top_p 0.91.", out)
+        self.assertNotIn("greedy decoding", out)
+
+    def test_top_p_alone_says_temperature_was_not_sent(self):
+        out = render(record(sampling={"topP": 0.5}))
+        self.assertIn("SAMPLING: temperature not sent, top_p 0.5.", out)
+
+    def test_empty_sampling_object_says_nothing_was_sent_and_invents_no_value(self):
+        """`sampling: {}` is a run made with neither parameter on the wire. Rendering that as
+        "temperature 0" would report a number the endpoint was never asked for."""
+        out = render(record(sampling={}))
+        self.assertIn("SAMPLING: nothing sent", out)
+        self.assertNotIn("temperature 0", out)
+
+    def test_record_without_the_field_neither_crashes_nor_fabricates(self):
+        """A record written before the run record carried `sampling` at all. It must render (the
+        trace still completes to its RESULT line) and must say the value is unavailable rather than
+        printing the default the current binary would have used."""
+        out = render(record(sampling=None))
+        self.assertIn("no sampling object at all", out)
+        self.assertIn("does not invent it", out)
+        self.assertNotIn("temperature 0", out)
+        self.assertIn("RESULT", out)
+
+
+class SamplingFlagTests(unittest.TestCase):
+    """--temperature is now sent, so the trace may report it -- but only beside the record's own
+    account, never instead of it. A disagreement between the two is the interesting case: it means
+    the request did not arrive, which is exactly the failure this round was called in to end."""
+
+    def test_flag_is_reported_beside_a_record_that_agrees_with_it(self):
+        out = render(record(sampling={"temperature": 0.7}), temperature=0.7)
+        self.assertIn("--temperature 0.7 was passed to this script", out)
+        self.assertIn("PROCESSOR_MODEL_TEMPERATURE", out)
+        self.assertIn("read back rather than restated from the flag", out)
+        self.assertNotIn("MISMATCH", out)
+
+    def test_record_disagreeing_with_the_flag_is_flagged(self):
+        out = render(record(sampling={"temperature": 0}), temperature=0.7)
+        self.assertIn("MISMATCH", out)
+        self.assertIn("trust the record, not the flag", out)
+
+    def test_older_record_with_the_flag_reports_both(self):
+        out = render(record(sampling=None), temperature=0.7)
+        self.assertIn("no sampling object at all", out)
+        self.assertIn("--temperature 0.7 was passed to this script", out)
+        self.assertIn("MISMATCH", out)
+
+    def test_no_flag_prints_no_flag_line(self):
+        self.assertNotIn("--temperature", render(record()))
+
+
+class ApplyTemperatureTests(unittest.TestCase):
+    """The other half of the round: the flag has to actually reach the binary, which reads the
+    environment and nothing else. These run over a plain dict -- no child process, no server."""
+
+    def test_no_flag_leaves_the_environment_untouched(self):
+        self.assertEqual(step_trace.apply_temperature({"PROCESSOR_MODEL_ID": "m"}, None), {"PROCESSOR_MODEL_ID": "m"})
+
+    def test_no_flag_keeps_an_inherited_value(self):
+        """child_env starts from os.environ.copy(), so an exported value already reaches the child.
+        The flag's absence must not overwrite it with this script's own idea of a default."""
+        env = step_trace.apply_temperature({"PROCESSOR_MODEL_TEMPERATURE": "0.9"}, None)
+        self.assertEqual(env["PROCESSOR_MODEL_TEMPERATURE"], "0.9")
+
+    def test_flag_sets_the_variable_the_binary_actually_reads(self):
+        """The literal name is asserted here, not step_trace's constant: the constant matching itself
+        proves nothing, and this string is the entire contract with internal/boot."""
+        env = step_trace.apply_temperature({}, 0.7)
+        self.assertEqual(env["PROCESSOR_MODEL_TEMPERATURE"], "0.7")
+
+    def test_flag_overrides_an_inherited_value(self):
+        env = step_trace.apply_temperature({"PROCESSOR_MODEL_TEMPERATURE": "0.9"}, 0)
+        self.assertEqual(env["PROCESSOR_MODEL_TEMPERATURE"], "0.0")
 
 
 if __name__ == "__main__":
