@@ -17,7 +17,10 @@ import (
 // DefaultTimeout bounds the model call when the caller supplies no *http.Client.
 const DefaultTimeout = 5 * time.Minute
 
-const recallToolName = "recall"
+const (
+	recallToolName    = "recall"
+	writeFileToolName = "write_file"
+)
 
 var _ loop.ModelPort = (*Client)(nil)
 
@@ -61,7 +64,7 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 		Model:       c.modelID,
 		Messages:    buildMessages(in),
 		MaxTokens:   loop.MaxOutputTokens,
-		Tools:       []wireTool{recallTool()},
+		Tools:       []wireTool{recallTool(), writeFileTool()},
 		Temperature: c.sampling.Temperature,
 		TopP:        c.sampling.TopP,
 	}

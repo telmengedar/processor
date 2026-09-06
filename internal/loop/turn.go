@@ -21,6 +21,8 @@ const (
 const (
 	errSupplementaryRecallFailed = "supplementary recall failed"
 	errCallCapReached            = "call cap reached"
+	errFileWriteFailed           = "file write failed"
+	errNoWorkingDirectory        = "no working directory is configured"
 )
 
 // ErrSubjectNotFound is returned when the subject id resolves to nothing —
@@ -33,6 +35,9 @@ var ErrGraphUnavailable = errors.New("graph unavailable")
 
 // ErrModelUnavailable wraps any failure completing the model call itself.
 var ErrModelUnavailable = errors.New("model unavailable")
+
+// ErrWriteRejected marks a write the working directory refused; its message is shown to the model.
+var ErrWriteRejected = errors.New("write rejected")
 
 // GraphPort is the seam between the loop and the graph. Declared here,
 // implemented by internal/divoid, constructed in main (design §5.2, §8.3).
@@ -51,6 +56,15 @@ type GraphPort interface {
 	WriteRun(ctx context.Context, record Record) WriteReceipt
 }
 
+// FilePort is the seam between the loop and the run's working directory.
+type FilePort interface {
+	// OpenRun creates a working directory for one run and returns its absolute path.
+	OpenRun(ctx context.Context) (string, error)
+
+	// Write writes content at path inside dir and returns the bytes written; a refusal wraps ErrWriteRejected.
+	Write(ctx context.Context, dir, path, content string) (int, error)
+}
+
 // ModelPort is the seam between the loop and the model.
 type ModelPort interface {
 	// Judge runs one judgement step. One attempt; no retry.
@@ -62,6 +76,9 @@ type Turn struct {
 	Graph GraphPort
 	Model ModelPort
 
+	// Files is the working directory writes go to; nil refuses every write.
+	Files FilePort
+
 	// System is the system text sent with every judgement step.
 	System string
 
@@ -71,9 +88,9 @@ type Turn struct {
 	logger *slog.Logger
 }
 
-// NewTurn builds a Turn over graph and model, judging with system and modelID.
-func NewTurn(graph GraphPort, model ModelPort, system, modelID string, logger *slog.Logger) *Turn {
-	return &Turn{Graph: graph, Model: model, System: system, ModelID: modelID, logger: logger}
+// NewTurn builds a Turn over graph, model and files, judging with system and modelID.
+func NewTurn(graph GraphPort, model ModelPort, files FilePort, system, modelID string, logger *slog.Logger) *Turn {
+	return &Turn{Graph: graph, Model: model, Files: files, System: system, ModelID: modelID, logger: logger}
 }
 
 func (t *Turn) log() *slog.Logger {
@@ -122,19 +139,20 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		},
 	}
 
-	answer, stop, toolCalls, modelCalls, capReached, usages, sampling, err := t.judge(ctx, block, input)
+	judged, err := t.judge(ctx, block, input)
 	if err != nil {
 		return Record{}, WriteReceipt{}, err
 	}
 
-	record.Answer = answer
+	record.Answer = judged.answer
 	record.Model = t.ModelID
-	record.ToolCalls = toolCalls
-	record.ModelCalls = modelCalls
-	record.CapReached = capReached
-	record.Usage = usages
-	record.StopReason = stop
-	record.Sampling = sampling
+	record.ToolCalls = judged.toolCalls
+	record.Workspace = judged.workspace
+	record.ModelCalls = judged.modelCalls
+	record.CapReached = judged.capReached
+	record.Usage = judged.usages
+	record.StopReason = judged.stop
+	record.Sampling = judged.sampling
 
 	receipt := t.Graph.WriteRun(context.WithoutCancel(ctx), record)
 
@@ -192,69 +210,154 @@ func summarizeUsage(usages []*Usage) (reports, inTokens, outTokens int) {
 	return reports, inTokens, outTokens
 }
 
-func (t *Turn) judge(ctx context.Context, block, input string) (answer string, stop StopReason, toolCalls []ToolCallRecord, modelCalls int, capReached bool, usages []*Usage, sampling Sampling, err error) {
-	var recalls []RecallExchange
-
-	for {
-		modelCalls++
-
-		result, jerr := t.Model.Judge(ctx, JudgeInput{
-			System:       t.System,
-			Block:        block,
-			Input:        input,
-			PriorRecalls: recalls,
-		})
-		if jerr != nil {
-			return "", StopReason{}, nil, 0, false, nil, Sampling{}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
-		}
-
-		answer = result.Answer
-		stop = StopReason{Reason: result.Reason, Raw: result.RawReason}
-		usages = append(usages, result.Usage)
-		sampling = result.Sampling
-
-		if result.Reason != WantsRecall {
-			break
-		}
-		if modelCalls >= MaxModelCalls {
-			capReached = true
-			exchange := RecallExchange{Query: result.RecallQuery, Error: errCallCapReached}
-			if result.RecallError != "" {
-				exchange = RecallExchange{Error: result.RecallError}
-			}
-			recalls = append(recalls, exchange)
-			break
-		}
-
-		recalls = append(recalls, t.dispatchRecall(ctx, result))
-	}
-
-	return answer, stop, toolCallRecords(recalls), modelCalls, capReached, usages, sampling, nil
+type judgement struct {
+	answer     string
+	stop       StopReason
+	toolCalls  []ToolCallRecord
+	workspace  string
+	modelCalls int
+	capReached bool
+	usages     []*Usage
+	sampling   Sampling
 }
 
-func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult) RecallExchange {
-	if result.RecallError != "" {
-		return RecallExchange{Error: result.RecallError, Dispositions: []Disposition{}}
+func (t *Turn) judge(ctx context.Context, block, input string) (judgement, error) {
+	var judged judgement
+	var exchanges []ToolExchange
+
+	for {
+		judged.modelCalls++
+
+		result, jerr := t.Model.Judge(ctx, JudgeInput{
+			System:     t.System,
+			Block:      block,
+			Input:      input,
+			PriorTools: exchanges,
+		})
+		if jerr != nil {
+			return judgement{}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
+		}
+
+		judged.answer = result.Answer
+		judged.stop = StopReason{Reason: result.Reason, Raw: result.RawReason}
+		judged.usages = append(judged.usages, result.Usage)
+		judged.sampling = result.Sampling
+
+		if !wantsTool(result.Reason) {
+			break
+		}
+		if judged.modelCalls >= MaxModelCalls {
+			judged.capReached = true
+			exchanges = append(exchanges, cappedExchange(result))
+			break
+		}
+
+		exchanges = append(exchanges, t.dispatch(ctx, result, &judged.workspace))
+	}
+
+	judged.toolCalls = toolCallRecords(exchanges)
+	return judged, nil
+}
+
+func wantsTool(reason TerminalReason) bool {
+	return reason == WantsRecall || reason == WantsWrite
+}
+
+func toolFor(reason TerminalReason) string {
+	if reason == WantsWrite {
+		return ToolWriteFile
+	}
+	return ToolRecall
+}
+
+func cappedExchange(result JudgeResult) ToolExchange {
+	if result.ToolError != "" {
+		return ToolExchange{Tool: toolFor(result.Reason), Error: result.ToolError}
+	}
+	return ToolExchange{
+		Tool:    toolFor(result.Reason),
+		Query:   result.RecallQuery,
+		Path:    result.WritePath,
+		Content: result.WriteContent,
+		Bytes:   len(result.WriteContent),
+		Error:   errCallCapReached,
+	}
+}
+
+func (t *Turn) dispatch(ctx context.Context, result JudgeResult, workspace *string) ToolExchange {
+	if result.Reason == WantsWrite {
+		return t.dispatchWrite(ctx, result, workspace)
+	}
+	return t.dispatchRecall(ctx, result)
+}
+
+func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace *string) ToolExchange {
+	exchange := ToolExchange{
+		Tool:         ToolWriteFile,
+		Path:         result.WritePath,
+		Content:      result.WriteContent,
+		Bytes:        len(result.WriteContent),
+		Dispositions: []Disposition{},
+	}
+
+	if result.ToolError != "" {
+		exchange.Error = result.ToolError
+		return exchange
+	}
+	if t.Files == nil {
+		exchange.Error = errNoWorkingDirectory
+		return exchange
+	}
+
+	if *workspace == "" {
+		dir, err := t.Files.OpenRun(ctx)
+		if err != nil {
+			t.log().Error("opening the run working directory failed", "error", err)
+			exchange.Error = errFileWriteFailed
+			return exchange
+		}
+		*workspace = dir
+	}
+
+	written, err := t.Files.Write(ctx, *workspace, result.WritePath, result.WriteContent)
+	if err != nil {
+		if errors.Is(err, ErrWriteRejected) {
+			exchange.Error = err.Error()
+			return exchange
+		}
+		t.log().Error("file write failed", "path", result.WritePath, "error", err)
+		exchange.Error = errFileWriteFailed
+		return exchange
+	}
+
+	exchange.Bytes = written
+	t.log().Info("file written", "dir", *workspace, "path", result.WritePath, "bytes", written)
+	return exchange
+}
+
+func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult) ToolExchange {
+	if result.ToolError != "" {
+		return ToolExchange{Tool: ToolRecall, Error: result.ToolError, Dispositions: []Disposition{}}
 	}
 
 	candidates, err := t.Graph.Recall(ctx, result.RecallQuery, CandidateLimit, nil)
 	if err != nil {
 		t.log().Error("supplementary recall failed", "query", result.RecallQuery, "error", err)
-		return RecallExchange{Query: result.RecallQuery, Error: errSupplementaryRecallFailed, Dispositions: []Disposition{}}
+		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errSupplementaryRecallFailed, Dispositions: []Disposition{}}
 	}
 
 	admitted, dispositions := admit(candidates, SupplementaryByteBudget)
-	return RecallExchange{Query: result.RecallQuery, Results: admitted, Dispositions: dispositions}
+	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions}
 }
 
-func toolCallRecords(recalls []RecallExchange) []ToolCallRecord {
-	records := make([]ToolCallRecord, len(recalls))
-	for i, r := range recalls {
-		results := r.Dispositions
+func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {
+	records := make([]ToolCallRecord, len(exchanges))
+	for i, e := range exchanges {
+		results := e.Dispositions
 		if results == nil {
 			results = []Disposition{}
 		}
-		records[i] = ToolCallRecord{Query: r.Query, Error: r.Error, Results: results}
+		records[i] = ToolCallRecord{Tool: e.Tool, Query: e.Query, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results}
 	}
 	return records
 }

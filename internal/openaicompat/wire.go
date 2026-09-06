@@ -50,6 +50,11 @@ type recallToolArguments struct {
 	Query string `json:"query"`
 }
 
+type writeFileToolArguments struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
 func recallTool() wireTool {
 	return wireTool{
 		Type: "function",
@@ -60,6 +65,24 @@ func recallTool() wireTool {
 				"type": "object",
 				"properties": {"query": {"type": "string"}},
 				"required": ["query"]
+			}`),
+		},
+	}
+}
+
+func writeFileTool() wireTool {
+	return wireTool{
+		Type: "function",
+		Function: wireFunction{
+			Name:        writeFileToolName,
+			Description: "Write a file into the working directory set aside for this request. Takes two arguments: path, a relative path naming the file, and content, the file's full text.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"path": {"type": "string"},
+					"content": {"type": "string"}
+				},
+				"required": ["path", "content"]
 			}`),
 		},
 	}
@@ -97,11 +120,8 @@ func buildMessages(in loop.JudgeInput) []wireMessage {
 		{Role: "user", Content: buildUserContent(in.Block, in.Input)},
 	}
 
-	for i, r := range in.PriorRecalls {
-		callID := fmt.Sprintf("recall-%d", i+1)
-
-		args := recallToolArguments{Query: r.Query}
-		argsJSON, _ := json.Marshal(args)
+	for i, r := range in.PriorTools {
+		callID := fmt.Sprintf("call-%d", i+1)
 
 		messages = append(messages,
 			wireMessage{
@@ -110,15 +130,15 @@ func buildMessages(in loop.JudgeInput) []wireMessage {
 					ID:   callID,
 					Type: "function",
 					Function: wireFunctionCall{
-						Name:      recallToolName,
-						Arguments: string(argsJSON),
+						Name:      wireToolName(r.Tool),
+						Arguments: toolArguments(r),
 					},
 				}},
 			},
 			wireMessage{
 				Role:       "tool",
 				ToolCallID: callID,
-				Content:    renderRecallResult(r),
+				Content:    renderToolResult(r),
 			},
 		)
 	}
@@ -134,9 +154,28 @@ func buildUserContent(block, input string) string {
 	return b.String()
 }
 
-func renderRecallResult(r loop.RecallExchange) string {
+func wireToolName(tool string) string {
+	if tool == loop.ToolWriteFile {
+		return writeFileToolName
+	}
+	return recallToolName
+}
+
+func toolArguments(r loop.ToolExchange) string {
+	if r.Tool == loop.ToolWriteFile {
+		encoded, _ := json.Marshal(writeFileToolArguments{Path: r.Path, Content: r.Content})
+		return string(encoded)
+	}
+	encoded, _ := json.Marshal(recallToolArguments{Query: r.Query})
+	return string(encoded)
+}
+
+func renderToolResult(r loop.ToolExchange) string {
 	if r.Error != "" {
 		return "error: " + r.Error
+	}
+	if r.Tool == loop.ToolWriteFile {
+		return fmt.Sprintf("wrote %d bytes to %s", r.Bytes, r.Path)
 	}
 	if len(r.Results) == 0 {
 		return "no additional results found."
@@ -166,27 +205,56 @@ func translate(wire chatResponse) (loop.JudgeResult, error) {
 	}
 
 	if len(choice.Message.ToolCalls) > 0 {
-		result.Reason = loop.WantsRecall
 		result.RawReason = choice.FinishReason
+		call := choice.Message.ToolCalls[0]
 
-		var args recallToolArguments
-		raw := choice.Message.ToolCalls[0].Function.Arguments
-		if err := json.Unmarshal([]byte(raw), &args); err != nil {
-			result.RecallError = fmt.Sprintf("tool arguments could not be parsed: %v", err)
-			return result, nil
+		switch call.Function.Name {
+		case recallToolName:
+			return translateRecall(result, call.Function.Arguments), nil
+		case writeFileToolName:
+			return translateWrite(result, call.Function.Arguments), nil
 		}
-		query := strings.TrimSpace(args.Query)
-		if query == "" {
-			result.RecallError = "tool arguments had an empty query"
-			return result, nil
-		}
-		result.RecallQuery = query
+
+		result.Reason = loop.Unrecognised
 		return result, nil
 	}
 
 	result.RawReason = choice.FinishReason
 	result.Reason = mapFinishReason(choice.FinishReason)
 	return result, nil
+}
+
+func translateRecall(result loop.JudgeResult, arguments string) loop.JudgeResult {
+	result.Reason = loop.WantsRecall
+
+	var args recallToolArguments
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		result.ToolError = fmt.Sprintf("tool arguments could not be parsed: %v", err)
+		return result
+	}
+
+	query := strings.TrimSpace(args.Query)
+	if query == "" {
+		result.ToolError = "tool arguments had an empty query"
+		return result
+	}
+
+	result.RecallQuery = query
+	return result
+}
+
+func translateWrite(result loop.JudgeResult, arguments string) loop.JudgeResult {
+	result.Reason = loop.WantsWrite
+
+	var args writeFileToolArguments
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		result.ToolError = fmt.Sprintf("tool arguments could not be parsed: %v", err)
+		return result
+	}
+
+	result.WritePath = args.Path
+	result.WriteContent = args.Content
+	return result
 }
 
 func mapFinishReason(reason string) loop.TerminalReason {

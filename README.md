@@ -73,9 +73,19 @@ words; that document carries the argument.
 - `internal/server` — the HTTP route table and the serve/drain lifecycle
   (`docs/architecture/m0-service-skeleton.md`).
 - `internal/loop` — the turn: mechanical context assembly (`Assemble`, a pure function — no I/O, no
-  clock, no randomness) and its sequencing (`Turn.Run`): fetch, assemble, judge — dispatching the one
-  supplementary-recall tool as the model asks for it, up to a call cap — then write the record back. See
+  clock, no randomness) and its sequencing (`Turn.Run`): fetch, assemble, judge — dispatching the two
+  tools as the model asks for them, up to a call cap — then write the record back. The tools are
+  supplementary recall and one file write; both go through the same round, so a run record carries them
+  in one `toolCalls` list, each entry naming which tool it was. See
   `docs/architecture/m1-skeleton-loop.md` §9.
+- `internal/workspace` — the working directory a run writes into: one fresh directory per run
+  beneath a root the operator names (`PROCESSOR_WORKSPACE_DIR`), and the path rules that keep every
+  write inside it — no absolute path, no path containing a colon, no traversal that leaves the
+  directory, and no path leading through a symbolic link. A path that *contains* `..` but normalises
+  back inside is accepted; the rule is on where the write lands, not on how it is spelled. A refusal is
+  returned to the model as the tool's result so it can correct itself, and never fails the run; a
+  filesystem failure is scrubbed to a generic sentence on that surface and named in full in the
+  operator's log.
 - `internal/divoid` — the graph adapter: reads the subject node, the semantic recall query and the
   edges incident to a node, and writes the run record back as one node linked to its subject.
 - `internal/openaicompat` — the model adapter: one OpenAI-compatible chat-completions client. Named for
@@ -88,8 +98,8 @@ words; that document carries the argument.
   (`docs/architecture/m2-retrieval-eval.md`).
 - `GET /health` — returns `200` with `Content-Type: application/json` and body `{"status":"ok"}`.
 - `POST /runs` — assembles context for one input against one subject node, judges it against the
-  configured model (dispatching the recall tool as needed), writes the run record to the graph, and
-  returns the record (see "`POST /runs`" below).
+  configured model (dispatching the recall and file-write tools as needed), writes the run record to the
+  graph, and returns the record (see "`POST /runs`" below).
 
 No third-party dependencies. Standard library only.
 
@@ -156,8 +166,8 @@ decides how much of it is honoured.
 
 ### Configuration
 
-Eight environment variables, read once — still the module's one environment read site
-(`internal/boot/config.go`). `cmd/processor` calls all three loaders, in the order the table lists, so
+Nine environment variables, read once — still the module's one environment read site
+(`internal/boot/config.go`). `cmd/processor` calls all four loaders, in the order the table lists, so
 the first offending variable is the one named:
 
 | Variable | Default | Behaviour |
@@ -169,6 +179,7 @@ the first offending variable is the one named:
 | `PROCESSOR_MODEL_ID` | *(none — required)* | The model id sent with every request, and the value recorded in the run record's `model` field. Absent or present-but-empty is a startup error. |
 | `PROCESSOR_MODEL_KEY` | *(none — optional)* | The model endpoint's bearer key. **Absent means no `Authorization` header is sent at all** — the point of the ruling, not an edge of it: a local runtime commonly needs none. **Present-but-empty is still a startup error**, exactly like every required member — an empty value is a mistake, never a way to spell "no auth", and treating it as absent would be a silent auth downgrade. Never logged, never echoed in an error, never written to the graph. |
 | `PROCESSOR_MODEL_TEMPERATURE` | `0` | The sampling temperature sent with **every** model call. Absent means `0` — greedy decoding — so the sampler stops being a source of run-to-run variation. **Present-but-empty is a startup error**, and so is a non-numeric value; both name the variable. **The default is a trade, not a free win:** greedy decoding is known to produce more repetitive, lower-quality prose on open-ended generation, and this service's product is prose for a human. Reproducibility is the right default while the service is a measurement harness, but answer quality is what it costs — set the variable to opt back into the endpoint's own sampling. |
+| `PROCESSOR_WORKSPACE_DIR` | *(none — optional, every write is refused)* | The directory beneath which each run's own working directory is created. The service creates the root if it does not exist, and one fresh directory per run, lazily — a run that never asks to write a file leaves nothing behind. **Absent means the file tool is still offered and every call to it is refused**, with `no working directory is configured` recorded on the round and shown to the model: the tool list does not change shape with the environment, so a trace reads the same either way and names the operator condition rather than hiding it. Present-but-empty is a startup error naming the variable. Nothing constrains what a run writes inside its own directory, so point this at a directory whose contents are disposable. |
 | `PROCESSOR_MODEL_TOP_P` | *(none — optional, nothing is sent)* | The nucleus-sampling mass sent with every model call. **Absent means the parameter is omitted from the request entirely**, not sent as `0`: `temperature: 0` is the conventional spelling of greedy decoding, but `top_p: 0` is *endpoint-dependent* — the OpenAI-compatible protocol does not specify what a runtime must do with it, and runtimes differ — so there is no value that spells "unset" and none is invented. Asserting `1.0` instead would claim knowledge of an endpoint this service deliberately does not have. Present-but-empty is a startup error, and so is a non-numeric value; both name the variable. |
 
 ```sh
@@ -201,16 +212,24 @@ cap can still arrive while the nodes already at the top keep the ranks they had.
 
 The turn: fetch the subject and recall candidates, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
-model, dispatch the one supplementary-recall tool as the model asks for it (up to a call cap of 3 model
-calls, so at most 2 tool dispatches per run — the capping call's recall is counted but never dispatched),
-then write the record back to the graph as one `session-log` node linked to the subject.
+model, dispatch a tool each time the model asks for one (up to a call cap of 3 model calls, so at most 2
+tool dispatches per run — the capping call's request is counted but never dispatched), then write the
+record back to the graph as one `session-log` node linked to the subject.
+
+Two tools are offered on every call: `recall`, which searches the same graph, and `write_file`, which
+writes one file into the run's working directory. Neither is urged — the system text names each in one
+sentence and still asks for prose — so whether a run reaches for the file tool is a property of the model
+and the task, not of the prompt.
 
 Response (`200`) is the run record: the input, the query, the anchor summary, **every** candidate
 retrieval returned — not only the ones kept — each with its rank, similarity, size, content hash, and
 whether it was included or cut and why, the assembled block itself, the model's answer, the model id, every
-supplementary-recall round (query, and for every row the round returned — not only the admitted ones — the
-same rank/id/type/name/similarity/size/content-hash/included/cut-reason columns the candidates carry, or an
-error if the round was malformed or failed), how many model calls were made and whether the per-run call cap
+tool round in call order (`tool`, naming which tool it was — `recall` or `writeFile`; for a recall round the
+query and, for every row it returned — not only the admitted ones — the same
+rank/id/type/name/similarity/size/content-hash/included/cut-reason columns the candidates carry; for a write
+round the `path` the model asked for and the `bytes` it offered; and on either an `error` if the round was
+malformed, refused, capped or failed), the run's `workspace` directory when one was opened — absent when the
+run attempted no write, and never carrying what was written, which is only on disk — how many model calls were made and whether the per-run call cap
 was reached (`capReached`), token usage as one entry per model call, in call order, named for the direction
 of travel (`inTokens`/`outTokens` — a `null` entry means that call's endpoint reported no usage object,
 absent, never zero-filled), the stop reason (both the loop's own neutral value and the endpoint's raw
@@ -260,8 +279,9 @@ go test -count=1 -v ./...
 ```
 
 `-count=1` disables Go's test cache; without it a re-run can print `(cached)` and execute nothing.
-A passing run prints one `ok` line per package — **eight**: `cmd/eval`, `cmd/processor`, `internal/boot`,
-`internal/divoid`, `internal/eval`, `internal/loop`, `internal/openaicompat`, `internal/server` — and
+A passing run prints one `ok` line per package — **nine**: `cmd/eval`, `cmd/processor`, `internal/boot`,
+`internal/divoid`, `internal/eval`, `internal/loop`, `internal/openaicompat`, `internal/server`,
+`internal/workspace` — and
 every `--- PASS:` line for each test. A `?` line is the one to watch for: it means a package shipped with
 no test at all. The default suite is fully offline and hermetic: no network call, no credential, no live
 graph, no live model, no spend — every

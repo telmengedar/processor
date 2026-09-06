@@ -22,11 +22,19 @@ reciprocal-rank fusion IN PRINCIPLE, but turn.go always calls Retrieve with exac
 (`[]string{input}`), and RRF over a single list is order-preserving -- see the RECALL RANKING note
 below for what that actually means for the order you see) -> assemble a byte-budgeted block -> call
 the model, looping while it asks for supplementary recall, bounded by MaxModelCalls=3 -> write a run
-record. The model's only tool is that supplementary "recall"; there is no file, shell, network or
-repo tool, and no notion of a task spanning more than one HTTP call. A task like "generate a webpage
-and a repo" has no mechanism to succeed here by construction -- that is expected, and is not what
-this script exists to show. What it exists to show is HOW it fails: refuses, answers about the task,
-asks for recall, claims completion, or produces something confidently wrong.
+record. The model has TWO tools: the supplementary "recall", and "write_file", which writes one
+file into a working directory the run is given (internal/workspace). There is still no shell, no
+network and no repo tool, and no notion of a task spanning more than one HTTP call. So a task like
+"generate a webpage and a repo" can now get the webpage written and cannot get the repo -- and
+whether the model reaches for the file tool at all, unprompted, is the thing this trace exists to
+show. What it also shows is HOW it fails when it does: refuses, answers about the task, asks for
+recall, claims completion without writing anything, or produces something confidently wrong.
+
+The file tool is offered but not urged: cmd/processor/system_text.go names it in one neutral
+sentence, symmetric with the sentence that names recall, and still tells the model to write its
+answer as prose for a person. A run in which the model describes the work instead of doing it is
+therefore a result, not a misconfiguration -- and stopReason "answered" on a run that wrote nothing
+stays exactly as wrong as it was before, deliberately: nothing here was changed to make it right.
 
 One POST /runs is one turn and returns one JSON record (internal/loop/types.go's Record, wrapped in
 { ...Record fields, "written": {state, nodeId} } by internal/server/routes.go). Every "step" below is
@@ -116,6 +124,10 @@ system-prompt bullet), not a budget-arithmetic one.
 
 WHAT THE RECORD CANNOT TELL A READER -- found while building this, not fixed (constraint: no Go
 file changes):
+  - No content for a file the run wrote. A write round records the tool, the path, the byte
+    count and whether it was accepted or refused and why -- never the bytes. What the model wrote is
+    on disk, under the run's `workspace` directory, which this trace names; the record cannot be
+    read as a substitute for looking there.
   - No per-step wall-clock or timestamp. turn.go computes one elapsed duration for the whole run and
     logs it to stderr; the record itself carries no timing at all, so this trace cannot show how long
     retrieval took versus how long the model took.
@@ -189,6 +201,20 @@ DEFAULT_SUBJECT = 10422  # DiVoid #10422, "Processor -- memory-substrate agent h
 # one. That is what actually fixes W1's complaint, not a hard throw on an unrecognised string.
 ERR_CALL_CAP_REACHED = "call cap reached"
 ERR_SUPPLEMENTARY_RECALL_FAILED = "supplementary recall failed"
+ERR_FILE_WRITE_FAILED = "file write failed"
+ERR_NO_WORKING_DIRECTORY = "no working directory is configured"
+
+# internal/loop/types.go's ToolRecall / ToolWriteFile -- the record's own tool vocabulary, which is
+# deliberately NOT the wire spelling the adapter sends ("write_file"). A record older than the field
+# carries no `tool` at all; such a round is read as a recall, which is what every round was before
+# the field existed.
+TOOL_RECALL = "recall"
+TOOL_WRITE_FILE = "writeFile"
+
+# internal/workspace's rejection prefix: a refusal by the path rules, whose reason is safe to show
+# and is shown verbatim. Distinct from ERR_FILE_WRITE_FAILED, which is the scrubbed stand-in for a
+# filesystem failure the record deliberately does not describe.
+WRITE_REJECTED_PREFIX = "write rejected: "
 CUT_SELF_PRODUCED = "self-produced"
 CUT_BYTE_BUDGET = "byte budget exceeded"
 
@@ -204,11 +230,25 @@ RECALL_SCOPE_RESERVE = 3
 # the model url, id and key.
 ENV_MODEL_TEMPERATURE = "PROCESSOR_MODEL_TEMPERATURE"
 
+# internal/boot's variable for the root the run's working directory is created beneath. Optional to
+# the binary -- absent, every write is refused with ERR_NO_WORKING_DIRECTORY, which is a legible
+# trace and a useless run -- so this script always sets it, to a directory it creates and NEVER
+# deletes. The file the run wrote outliving the process is the entire point of tracing a task.
+ENV_WORKSPACE_DIR = "PROCESSOR_WORKSPACE_DIR"
+
 # classify_round's return values.
 ROUND_DISPATCHED = "dispatched"          # error == "": real Graph.Recall call, real results.
 ROUND_CAPPED = "capped"                  # error == ERR_CALL_CAP_REACHED: recorded, never dispatched.
 ROUND_DISPATCH_FAILED = "dispatch-failed"  # error == ERR_SUPPLEMENTARY_RECALL_FAILED: dispatched, Graph.Recall itself errored.
-ROUND_MALFORMED = "malformed"            # any other non-empty error: RecallError path, never dispatched.
+ROUND_MALFORMED = "malformed"            # any other non-empty error: malformed tool call, never dispatched.
+
+# classify_write_round's return values.
+WRITE_ACCEPTED = "write-accepted"          # error == "": the file was written.
+WRITE_CAPPED = "write-capped"              # error == ERR_CALL_CAP_REACHED: recorded, never dispatched.
+WRITE_REFUSED = "write-refused"            # error starts with WRITE_REJECTED_PREFIX: the path rules refused it.
+WRITE_FAILED = "write-failed"              # error == ERR_FILE_WRITE_FAILED: reached the filesystem and failed (scrubbed).
+WRITE_UNCONFIGURED = "write-unconfigured"  # error == ERR_NO_WORKING_DIRECTORY: the service has no directory to write into.
+WRITE_MALFORMED = "write-malformed"        # any other non-empty error: the tool call never parsed.
 
 RULE = "=" * 92
 THIN = "-" * 92
@@ -242,6 +282,40 @@ def classify_round(tool_call):
     if error == ERR_SUPPLEMENTARY_RECALL_FAILED:
         return ROUND_DISPATCH_FAILED
     return ROUND_MALFORMED
+
+
+def round_tool(tool_call):
+    """Which tool a toolCalls[i] entry is for.
+
+    A record written before the `tool` field existed carries none, and every round in such a record
+    is a recall -- which is why the default is recall rather than an "unknown" branch that would
+    print a shrug on every historical record this script is pointed at.
+    """
+    return tool_call.get("tool") or TOOL_RECALL
+
+
+def classify_write_round(tool_call):
+    """One of the WRITE_* constants for a single write round.
+
+    Six shapes, separated by the exact `error` string, because they mean six different things to a
+    reader asking "did a file appear?": accepted (yes), refused by the path rules (no, and the
+    reason is the model's own to fix), the filesystem failed (no, and the reason is scrubbed off
+    this surface), no working directory is configured (no, and no run can write until the operator
+    sets one), capped (no, the call cap stopped it before dispatch), malformed (no, the tool call
+    never parsed and the working directory was never touched).
+    """
+    error = tool_call.get("error") or ""
+    if error == "":
+        return WRITE_ACCEPTED
+    if error == ERR_CALL_CAP_REACHED:
+        return WRITE_CAPPED
+    if error == ERR_FILE_WRITE_FAILED:
+        return WRITE_FAILED
+    if error == ERR_NO_WORKING_DIRECTORY:
+        return WRITE_UNCONFIGURED
+    if error.startswith(WRITE_REJECTED_PREFIX):
+        return WRITE_REFUSED
+    return WRITE_MALFORMED
 
 
 def format_sources(sources, name_query):
@@ -641,12 +715,16 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
         category = classify_round(tc) if wanted_recall else None
         out_tok = f"{u['outTokens']} tok" if u else "? tok"
 
-        prior_rounds = i  # how many completed recall exchanges are already replayed into this call's prompt
+        prior_rounds = i  # how many completed tool exchanges are already replayed into this call's prompt
         out.append(
             f"{head('model call ' + str(call_no))} input: system + block ({fmt_bytes(block_size)}) + "
-            f"task input + {prior_rounds} prior recall round(s) replayed as tool messages "
+            f"task input + {prior_rounds} prior tool round(s) replayed as tool messages "
             f"[{prompt_desc}]"
         )
+
+        if wanted_recall and round_tool(tc) == TOOL_WRITE_FILE:
+            out.extend(write_round_lines(head, tc, out_tok, limits, cap_reached and i == model_calls - 1))
+            continue
 
         if not wanted_recall:
             out.append(
@@ -710,6 +788,7 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
             out.append("")
 
     # ---- RESULT -------------------------------------------------------------------------------
+    out.extend(workspace_lines(record))
     answer = record.get("answer", "")
     answer_bytes = len(answer.encode("utf-8"))
     written = record.get("written") or {}
@@ -727,6 +806,95 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     out.append(THIN)
 
     return "\n".join(out)
+
+
+def write_round_lines(head, tool_call, out_tok, limits, ambiguous_cap):
+    """The model-call output line and, where one happened, the tool-call step for a write round.
+
+    A write round is NOT rendered through the recall branch, and that is the whole point of the
+    `tool` field: without it a write round with an empty `error` classifies as ROUND_DISPATCHED and
+    prints as "wants recall (query=None)" followed by a fabricated recall step -- the same class of
+    defect C1 was, one tool along.
+    """
+    path = tool_call.get("path")
+    size = tool_call.get("bytes", 0)
+    category = classify_write_round(tool_call)
+    lines = []
+
+    if category == WRITE_CAPPED:
+        lines.append(
+            f"{'':<24} output: wants to write {path!r} ({fmt_bytes(size)}), but the model-call cap "
+            f"(MaxModelCalls={limits.get('maxModelCalls')}) was reached -- NOT dispatched, counted "
+            f"only. Nothing was written. out={out_tok}"
+        )
+        return lines
+
+    if category == WRITE_MALFORMED:
+        lines.append(
+            f"{'':<24} output: wants to write, but the tool call itself was malformed and NEVER "
+            f"reached the working directory -- error: {tool_call.get('error')!r}. out={out_tok}"
+        )
+        if ambiguous_cap:
+            lines.append(
+                f"{'':<24} note: this is also the final model call and capReached=true; turn.go's "
+                f"malformed-request reason wins over the cap reason when both apply to the same "
+                f"round, so which one would have stopped it cannot be told from the record."
+            )
+        return lines
+
+    lines.append(f"{'':<24} output: wants to write {path!r} ({fmt_bytes(size)}). out={out_tok}")
+    lines.append("")
+    lines.append(f"{head('tool call')} input: write_file(path={path!r}, {fmt_bytes(size)})")
+
+    if category == WRITE_ACCEPTED:
+        lines.append(
+            f"{'':<24} output: ACCEPTED -- {fmt_bytes(size)} written to {path!r} inside the run's "
+            f"working directory. A FILE NOW EXISTS ON DISK."
+        )
+    elif category == WRITE_REFUSED:
+        lines.append(
+            f"{'':<24} output: REFUSED by the path rules -- {tool_call.get('error')!r}. Nothing was "
+            f"written. The model is shown this sentence and may try again."
+        )
+    elif category == WRITE_UNCONFIGURED:
+        lines.append(
+            f"{'':<24} output: REFUSED -- {tool_call.get('error')!r}. The service was started "
+            f"without PROCESSOR_WORKSPACE_DIR, so no run can write anything; this is an operator "
+            f"condition, not the model's."
+        )
+    else:
+        lines.append(
+            f"{'':<24} output: the write reached the working directory and FAILED. The reason is "
+            f"scrubbed off this surface by design and is in the server's stderr log, not here. "
+            f"Nothing was written."
+        )
+
+    lines.append("")
+    return lines
+
+
+def workspace_lines(record):
+    """What the run did to disk, named once, where a reader looking for the file will find it."""
+    workspace = record.get("workspace")
+    writes = [tc for tc in (record.get("toolCalls") or []) if round_tool(tc) == TOOL_WRITE_FILE]
+    if not writes and not workspace:
+        return []
+
+    accepted = [tc for tc in writes if classify_write_round(tc) == WRITE_ACCEPTED]
+    lines = [RULE]
+    if workspace:
+        lines.append(f"WORKSPACE  {workspace}")
+    else:
+        lines.append("WORKSPACE  none -- no working directory was ever opened for this run")
+    lines.append(
+        f"           {len(writes)} write attempt(s), {len(accepted)} accepted. "
+        + (
+            "Files on disk: " + ", ".join(repr(tc.get("path")) for tc in accepted)
+            if accepted
+            else "NO FILE WAS WRITTEN."
+        )
+    )
+    return lines
 
 
 def apply_temperature(env, temperature):
@@ -779,10 +947,12 @@ def announce_written(record):
         print(f"GRAPH: no run record stored (state={written.get('state')!r})")
 
 
-def run_one(model_url, model_id, model_key, divoid_url, divoid_key, task_text, subject, temperature):
+def run_one(model_url, model_id, model_key, divoid_url, divoid_key, task_text, subject, temperature, workspace):
     env = apply_temperature(
         harness.child_env(model_url, model_id, model_key, divoid_url, divoid_key), temperature
     )
+    env[ENV_WORKSPACE_DIR] = workspace
+    print(f"workspace {workspace} (created here, never deleted -- look in it for what the run wrote)")
 
     prior_note = check_prior_run(divoid_url, divoid_key, task_text)
 
@@ -823,6 +993,12 @@ def parse_args():
     parser.add_argument("--model-id", default=os.environ.get("PROCESSOR_MODEL_ID", DEFAULT_MODEL_ID))
     parser.add_argument("--model-key", default=os.environ.get("PROCESSOR_MODEL_KEY", ""))
     parser.add_argument(
+        "--workspace", default=None,
+        help="root the run's working directory is created beneath; defaults to a fresh directory "
+             "this script creates and never deletes. Whatever the run writes lands under it and "
+             "survives the process, which is what makes 'did a file appear?' answerable",
+    )
+    parser.add_argument(
         "--temperature", type=float, default=None,
         help=f"sets {ENV_MODEL_TEMPERATURE} for this run; omit to leave the environment alone and "
              f"take the binary's own default (0). The trace reports the sampling the record says was "
@@ -842,9 +1018,10 @@ def main():
         return 1
 
     try:
+        workspace = args.workspace or tempfile.mkdtemp(prefix="processor-workspace-")
         trace = run_one(
             args.model_url, args.model_id, args.model_key,
-            divoid_url, divoid_key, args.input, args.subject, args.temperature,
+            divoid_url, divoid_key, args.input, args.subject, args.temperature, workspace,
         )
     except harness.CompareFailure as err:
         print(f"FAIL: {err}")

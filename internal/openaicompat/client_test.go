@@ -82,7 +82,7 @@ func TestJudgeSendsAuthorizationBearerWhenKeyIsSet(t *testing.T) {
 	}
 }
 
-func TestJudgeRequestBodyCarriesModelSystemBlockInputAndTool(t *testing.T) {
+func TestJudgeRequestBodyCarriesModelSystemBlockInputAndBothTools(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, stopResponse)
@@ -114,8 +114,10 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndTool(t *testing.T) {
 
 	const (
 		wantMaxTokens         = 4096
-		wantToolName          = "recall"
-		wantToolDescription   = "Search memory for something the assembled context did not include. Takes one argument: query, a short description of what is missing."
+		wantRecallName        = "recall"
+		wantRecallDescription = "Search memory for something the assembled context did not include. Takes one argument: query, a short description of what is missing."
+		wantWriteName         = "write_file"
+		wantWriteDescription  = "Write a file into the working directory set aside for this request. Takes two arguments: path, a relative path naming the file, and content, the file's full text."
 		wantBlockInputContent = "the block\n===== INPUT =====\nthe input"
 	)
 
@@ -137,28 +139,51 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndTool(t *testing.T) {
 	if got.Messages[1].Content != wantBlockInputContent {
 		t.Fatalf("messages[1].Content = %q, want %q byte-exact", got.Messages[1].Content, wantBlockInputContent)
 	}
-	if len(got.Tools) != 1 {
-		t.Fatalf("tools has %d entries, want exactly 1 (design §2.4: one tool)", len(got.Tools))
+	if len(got.Tools) != 2 {
+		t.Fatalf("tools has %d entries, want exactly 2 (recall and the file write)", len(got.Tools))
 	}
-	if got.Tools[0].Type != "function" || got.Tools[0].Function.Name != wantToolName {
-		t.Fatalf("tools[0] = %+v, want the recall function tool named %q", got.Tools[0], wantToolName)
+	if got.Tools[0].Type != "function" || got.Tools[0].Function.Name != wantRecallName {
+		t.Fatalf("tools[0] = %+v, want the recall function tool named %q", got.Tools[0], wantRecallName)
 	}
-	if got.Tools[0].Function.Description != wantToolDescription {
-		t.Fatalf("tools[0].function.description = %q, want %q", got.Tools[0].Function.Description, wantToolDescription)
+	if got.Tools[0].Function.Description != wantRecallDescription {
+		t.Fatalf("tools[0].function.description = %q, want %q", got.Tools[0].Function.Description, wantRecallDescription)
 	}
-	var gotParams map[string]any
-	if err := json.Unmarshal(got.Tools[0].Function.Parameters, &gotParams); err != nil {
+	if got.Tools[1].Type != "function" || got.Tools[1].Function.Name != wantWriteName {
+		t.Fatalf("tools[1] = %+v, want the file-write function tool named %q", got.Tools[1], wantWriteName)
+	}
+	if got.Tools[1].Function.Description != wantWriteDescription {
+		t.Fatalf("tools[1].function.description = %q, want %q", got.Tools[1].Function.Description, wantWriteDescription)
+	}
+
+	var gotRecallParams map[string]any
+	if err := json.Unmarshal(got.Tools[0].Function.Parameters, &gotRecallParams); err != nil {
 		t.Fatalf("decode tools[0].function.parameters: %v; raw=%s", err, got.Tools[0].Function.Parameters)
 	}
-	wantParams := map[string]any{
+	wantRecallParams := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"query": map[string]any{"type": "string"},
 		},
 		"required": []any{"query"},
 	}
-	if !reflect.DeepEqual(gotParams, wantParams) {
-		t.Fatalf("tools[0].function.parameters = %#v, want %#v", gotParams, wantParams)
+	if !reflect.DeepEqual(gotRecallParams, wantRecallParams) {
+		t.Fatalf("tools[0].function.parameters = %#v, want %#v", gotRecallParams, wantRecallParams)
+	}
+
+	var gotWriteParams map[string]any
+	if err := json.Unmarshal(got.Tools[1].Function.Parameters, &gotWriteParams); err != nil {
+		t.Fatalf("decode tools[1].function.parameters: %v; raw=%s", err, got.Tools[1].Function.Parameters)
+	}
+	wantWriteParams := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path":    map[string]any{"type": "string"},
+			"content": map[string]any{"type": "string"},
+		},
+		"required": []any{"path", "content"},
+	}
+	if !reflect.DeepEqual(gotWriteParams, wantWriteParams) {
+		t.Fatalf("tools[1].function.parameters = %#v, want %#v", gotWriteParams, wantWriteParams)
 	}
 }
 
@@ -266,7 +291,7 @@ func contains(haystack, needle string) bool {
 	})()
 }
 
-func TestJudgeReconstructsPriorRecallsAsAssistantAndToolMessages(t *testing.T) {
+func TestJudgeReconstructsPriorRecallRoundsAsAssistantAndToolMessages(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, stopResponse)
@@ -274,12 +299,12 @@ func TestJudgeReconstructsPriorRecallsAsAssistantAndToolMessages(t *testing.T) {
 
 	in := loop.JudgeInput{
 		System: "sys", Block: "block", Input: "in",
-		PriorRecalls: []loop.RecallExchange{
-			{Query: "first query", Results: []loop.Candidate{
+		PriorTools: []loop.ToolExchange{
+			{Tool: loop.ToolRecall, Query: "first query", Results: []loop.Candidate{
 				{ID: 5, Type: "task", Name: "Found", Content: "found body"},
 				{ID: 9, Type: "documentation", Name: "Also Found", Content: "second found body"},
 			}},
-			{Error: "tool arguments could not be parsed"},
+			{Tool: loop.ToolRecall, Error: "tool arguments could not be parsed"},
 		},
 	}
 	if _, err := c.Judge(context.Background(), in); err != nil {
@@ -424,8 +449,8 @@ func TestJudgeDecodesAToolCallAsWantsRecallWithTheParsedQuery(t *testing.T) {
 	if result.RecallQuery != "the missing thing" {
 		t.Fatalf("RecallQuery = %q, want %q", result.RecallQuery, "the missing thing")
 	}
-	if result.RecallError != "" {
-		t.Fatalf("RecallError = %q, want empty for a well-formed tool call", result.RecallError)
+	if result.ToolError != "" {
+		t.Fatalf("ToolError = %q, want empty for a well-formed tool call", result.ToolError)
 	}
 }
 
@@ -443,8 +468,8 @@ func TestJudgeFlagsUnparseableToolArgumentsAsAMalformedRecallRequest(t *testing.
 	if result.Reason != loop.WantsRecall {
 		t.Fatalf("Reason = %q, want WantsRecall", result.Reason)
 	}
-	if result.RecallError == "" {
-		t.Fatal("RecallError is empty, want the parse failure surfaced")
+	if result.ToolError == "" {
+		t.Fatal("ToolError is empty, want the parse failure surfaced")
 	}
 	if result.RecallQuery != "" {
 		t.Fatalf("RecallQuery = %q, want empty when the arguments did not parse", result.RecallQuery)
@@ -462,8 +487,8 @@ func TestJudgeFlagsAnEmptyQueryArgumentAsAMalformedRecallRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
-	if result.RecallError == "" {
-		t.Fatal("RecallError is empty, want an empty/whitespace-only query flagged")
+	if result.ToolError == "" {
+		t.Fatal("ToolError is empty, want an empty/whitespace-only query flagged")
 	}
 }
 

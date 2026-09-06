@@ -93,7 +93,7 @@ func (s *stubModel) Judge(context.Context, loop.JudgeInput) (loop.JudgeResult, e
 }
 
 func newTestTurn(graph loop.GraphPort) *loop.Turn {
-	return loop.NewTurn(graph, &stubModel{}, "system text", "test-model", testLogger())
+	return loop.NewTurn(graph, &stubModel{}, nil, "system text", "test-model", testLogger())
 }
 
 func TestHealth(t *testing.T) {
@@ -352,7 +352,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 			Sampling:  loop.Sampling{Temperature: &temperature, TopP: &topP},
 		},
 	}}
-	turn := loop.NewTurn(graph, model, "system text", "test-model-id", testLogger())
+	turn := loop.NewTurn(graph, model, nil, "system text", "test-model-id", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
@@ -459,10 +459,10 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	}
 	model := &stubModel{results: []loop.JudgeResult{
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing budget row"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallError: "tool arguments could not be parsed: unexpected token"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "final desperate query", RecallError: "tool arguments could not be parsed: second malformed request"},
+		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: unexpected token"},
+		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "final desperate query", ToolError: "tool arguments could not be parsed: second malformed request"},
 	}}
-	turn := loop.NewTurn(graph, model, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(graph, model, nil, "system text", "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
@@ -526,7 +526,7 @@ func TestRunsToolCallsResultsCutReasonIsPopulatedAtTheWireLevel(t *testing.T) {
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		{Answer: "final", Reason: loop.Answered, RawReason: "stop"},
 	}}
-	turn := loop.NewTurn(graph, model, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(graph, model, nil, "system text", "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
@@ -713,7 +713,7 @@ func TestRunsReturns502WithModelUnavailableWhenTheModelCallFails(t *testing.T) {
 	t.Parallel()
 
 	graph := stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}
-	turn := loop.NewTurn(graph, &stubModel{err: errors.New("literal: connection reset")}, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(graph, &stubModel{err: errors.New("literal: connection reset")}, nil, "system text", "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"hello","subject":42}`)
 

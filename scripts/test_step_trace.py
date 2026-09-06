@@ -93,6 +93,7 @@ def record(
     answer="the answer",
     block="x" * 10,
     sampling=ABSENT,
+    workspace=None,
 ):
     # `is not None` throughout, deliberately -- not `x or default`: an explicitly empty dict (e.g.
     # limits={} for MissingLimitsDoesNotFabricateNumbersTests) must stay empty, not silently fall
@@ -125,6 +126,11 @@ def record(
         sampling = {"temperature": 0}
     if sampling is not None:
         rec["sampling"] = sampling
+    # Omitted rather than empty when no write was attempted: `workspace` is omitempty on the record,
+    # so a run that wrote nothing has no key at all, and a fixture that always carried one could not
+    # tell that case from a run whose directory was opened.
+    if workspace is not None:
+        rec["workspace"] = workspace
     return rec
 
 
@@ -783,6 +789,177 @@ class ApplyTemperatureTests(unittest.TestCase):
     def test_flag_overrides_an_inherited_value(self):
         env = step_trace.apply_temperature({"PROCESSOR_MODEL_TEMPERATURE": "0.9"}, 0)
         self.assertEqual(env["PROCESSOR_MODEL_TEMPERATURE"], "0.0")
+
+
+class RoundToolTests(unittest.TestCase):
+    """`tool` is what separates a write round from a recall round; a record older than the field
+    carries none, and every round in such a record was a recall."""
+
+    def test_a_missing_tool_key_reads_as_recall(self):
+        self.assertEqual(step_trace.round_tool({"query": "q"}), step_trace.TOOL_RECALL)
+
+    def test_the_record_spelling_of_the_write_tool_is_not_the_wire_spelling(self):
+        self.assertEqual(step_trace.round_tool({"tool": "writeFile"}), step_trace.TOOL_WRITE_FILE)
+        self.assertNotEqual(step_trace.TOOL_WRITE_FILE, "write_file")
+
+
+class ClassifyWriteRoundTests(unittest.TestCase):
+    """Six shapes, separated by the exact `error` string, because they answer "did a file appear?"
+    differently and a reader cannot tell them apart from the result count."""
+
+    def test_empty_error_is_accepted(self):
+        self.assertEqual(step_trace.classify_write_round({"error": ""}), step_trace.WRITE_ACCEPTED)
+
+    def test_the_cap_literal_is_capped(self):
+        self.assertEqual(
+            step_trace.classify_write_round({"error": "call cap reached"}), step_trace.WRITE_CAPPED
+        )
+
+    def test_the_scrubbed_failure_literal_is_a_failed_write(self):
+        self.assertEqual(
+            step_trace.classify_write_round({"error": "file write failed"}), step_trace.WRITE_FAILED
+        )
+
+    def test_the_unconfigured_literal_is_its_own_shape(self):
+        self.assertEqual(
+            step_trace.classify_write_round({"error": "no working directory is configured"}),
+            step_trace.WRITE_UNCONFIGURED,
+        )
+
+    def test_a_path_rule_refusal_is_refused(self):
+        self.assertEqual(
+            step_trace.classify_write_round(
+                {"error": "write rejected: path must not leave the working directory"}
+            ),
+            step_trace.WRITE_REFUSED,
+        )
+
+    def test_anything_else_never_reached_the_working_directory(self):
+        self.assertEqual(
+            step_trace.classify_write_round({"error": "tool arguments could not be parsed"}),
+            step_trace.WRITE_MALFORMED,
+        )
+
+
+class WriteRoundRenderingTests(unittest.TestCase):
+    """The defect this replaces: without the `tool` branch, a write round with an empty `error`
+    classifies as ROUND_DISPATCHED and prints "wants recall (query=None)" plus a recall step that
+    never happened -- C1 one tool along."""
+
+    def accepted_record(self):
+        return record(
+            model_calls=2,
+            tool_calls=[{"tool": "writeFile", "path": "index.html", "bytes": 452, "results": []}],
+            workspace="/runs/run-1",
+        )
+
+    def test_an_accepted_write_is_not_narrated_as_a_recall(self):
+        out = render(self.accepted_record())
+        self.assertNotIn("wants recall", out)
+        self.assertNotIn("recall(query=", out)
+
+    def test_an_accepted_write_names_the_path_the_bytes_and_that_a_file_exists(self):
+        out = render(self.accepted_record())
+        self.assertIn("write_file(path='index.html'", out)
+        self.assertIn("452", out)
+        self.assertIn("A FILE NOW EXISTS ON DISK", out)
+
+    def test_a_refusal_is_shown_verbatim_and_says_nothing_was_written(self):
+        rec = record(
+            model_calls=2,
+            tool_calls=[{
+                "tool": "writeFile",
+                "path": "../escape.html",
+                "bytes": 3,
+                "error": "write rejected: path must not leave the working directory",
+                "results": [],
+            }],
+            workspace="/runs/run-1",
+        )
+        out = render(rec)
+        self.assertIn("REFUSED by the path rules", out)
+        self.assertIn("path must not leave the working directory", out)
+        self.assertIn("NO FILE WAS WRITTEN.", out)
+
+    def test_an_unconfigured_service_is_named_as_an_operator_condition(self):
+        rec = record(
+            model_calls=2,
+            tool_calls=[{
+                "tool": "writeFile",
+                "path": "index.html",
+                "bytes": 3,
+                "error": "no working directory is configured",
+                "results": [],
+            }],
+        )
+        out = render(rec)
+        self.assertIn("PROCESSOR_WORKSPACE_DIR", out)
+        self.assertIn("WORKSPACE  none", out)
+
+    def test_a_capped_write_round_gets_no_tool_call_step(self):
+        rec = record(
+            model_calls=3,
+            cap_reached=True,
+            tool_calls=[
+                {"tool": "writeFile", "path": "a.html", "bytes": 3, "results": []},
+                {"tool": "writeFile", "path": "b.html", "bytes": 3, "results": []},
+                {"tool": "writeFile", "path": "c.html", "bytes": 3, "error": "call cap reached", "results": []},
+            ],
+            workspace="/runs/run-1",
+        )
+        out = render(rec)
+        self.assertIn("NOT dispatched, counted only", out)
+        self.assertEqual(out.count("write_file(path="), 2)
+
+    def test_a_malformed_write_round_gets_no_tool_call_step(self):
+        rec = record(
+            model_calls=2,
+            tool_calls=[{
+                "tool": "writeFile",
+                "error": "tool arguments could not be parsed: unexpected EOF",
+                "results": [],
+            }],
+        )
+        out = render(rec)
+        self.assertIn("NEVER reached the working directory", out)
+        self.assertNotIn("write_file(path=", out)
+
+
+class WorkspaceLineTests(unittest.TestCase):
+    """Where the file is, named once, because the record carries no file content and a reader who
+    wants to check the claim has to go and look."""
+
+    def test_a_run_with_no_write_round_prints_no_workspace_section(self):
+        self.assertNotIn("WORKSPACE", render(record()))
+
+    def test_the_directory_and_the_accepted_paths_are_both_named(self):
+        rec = record(
+            model_calls=2,
+            tool_calls=[{"tool": "writeFile", "path": "index.html", "bytes": 452, "results": []}],
+            workspace="/runs/run-1",
+        )
+        out = render(rec)
+        self.assertIn("WORKSPACE  /runs/run-1", out)
+        self.assertIn("1 write attempt(s), 1 accepted", out)
+        self.assertIn("Files on disk: 'index.html'", out)
+
+
+class MixedRoundTests(unittest.TestCase):
+    """A recall round and a write round in one run must each be narrated as themselves; a renderer
+    that read the tool of the first round and applied it to both would pass every test above."""
+
+    def test_each_round_is_narrated_as_its_own_tool(self):
+        rec = record(
+            model_calls=3,
+            tool_calls=[
+                {"tool": "recall", "query": "the missing thing", "bytes": 0, "results": []},
+                {"tool": "writeFile", "path": "index.html", "bytes": 452, "results": []},
+            ],
+            workspace="/runs/run-1",
+        )
+        out = render(rec)
+        self.assertIn("recall(query='the missing thing'", out)
+        self.assertIn("write_file(path='index.html'", out)
 
 
 if __name__ == "__main__":

@@ -75,7 +75,7 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 		},
 	}
 	model := answeringModel{}
-	turn := loop.NewTurn(graph, model, "system", "test-model", nil)
+	turn := loop.NewTurn(graph, model, nil, "system", "test-model", nil)
 
 	first, _, err := turn.Run(context.Background(), input, 42)
 	if err != nil {

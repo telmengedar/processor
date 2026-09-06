@@ -73,8 +73,17 @@ const (
 	Truncated TerminalReason = "truncated"
 	// Refused means the endpoint declined to answer.
 	Refused TerminalReason = "refused"
+	// WantsWrite means the model asked for the file-write tool.
+	WantsWrite TerminalReason = "wantsWrite"
 	// Unrecognised means the endpoint reported a terminal state outside this set.
 	Unrecognised TerminalReason = "unrecognised"
+)
+
+const (
+	// ToolRecall is the supplementary-recall tool's name in a run record.
+	ToolRecall = "recall"
+	// ToolWriteFile is the file-write tool's name in a run record.
+	ToolWriteFile = "writeFile"
 )
 
 // Usage is the two token counts as the endpoint reported them.
@@ -83,9 +92,12 @@ type Usage struct {
 	OutTokens int `json:"outTokens"`
 }
 
-// ToolCallRecord is one supplementary-recall round as the run record carries it.
+// ToolCallRecord is one tool round as the run record carries it.
 type ToolCallRecord struct {
+	Tool    string        `json:"tool"`
 	Query   string        `json:"query,omitempty"`
+	Path    string        `json:"path,omitempty"`
+	Bytes   int           `json:"bytes"`
 	Error   string        `json:"error,omitempty"`
 	Results []Disposition `json:"results"`
 }
@@ -139,11 +151,13 @@ type Record struct {
 	Candidates []Disposition `json:"candidates"`
 	Block      string        `json:"block"`
 
-	Answer     string           `json:"answer"`
-	Model      string           `json:"model"`
-	ToolCalls  []ToolCallRecord `json:"toolCalls"`
-	ModelCalls int              `json:"modelCalls"`
-	// CapReached is true exactly when the call cap was hit while the model still wanted recall.
+	Answer    string           `json:"answer"`
+	Model     string           `json:"model"`
+	ToolCalls []ToolCallRecord `json:"toolCalls"`
+	// Workspace is the run's working directory, absent when the run attempted no file write.
+	Workspace  string `json:"workspace,omitempty"`
+	ModelCalls int    `json:"modelCalls"`
+	// CapReached is true exactly when the call cap was hit while the model still wanted a tool.
 	CapReached bool `json:"capReached"`
 	// Usage carries one entry per model call, in call order, nil where the endpoint reported none.
 	Usage      []*Usage   `json:"usage"`
@@ -152,9 +166,13 @@ type Record struct {
 	Sampling   Sampling   `json:"sampling"`
 }
 
-// RecallExchange is one supplementary-recall round already completed in this turn.
-type RecallExchange struct {
+// ToolExchange is one tool round already completed in this turn.
+type ToolExchange struct {
+	Tool         string
 	Query        string
+	Path         string
+	Content      string
+	Bytes        int
 	Error        string
 	Results      []Candidate
 	Dispositions []Disposition
@@ -162,19 +180,21 @@ type RecallExchange struct {
 
 // JudgeInput is everything one judgement step needs.
 type JudgeInput struct {
-	System       string
-	Block        string
-	Input        string
-	PriorRecalls []RecallExchange
+	System     string
+	Block      string
+	Input      string
+	PriorTools []ToolExchange
 }
 
 // JudgeResult is one judgement step's outcome.
 type JudgeResult struct {
-	Answer      string
-	Reason      TerminalReason
-	RawReason   string
-	RecallQuery string
-	RecallError string
-	Usage       *Usage
-	Sampling    Sampling
+	Answer       string
+	Reason       TerminalReason
+	RawReason    string
+	RecallQuery  string
+	WritePath    string
+	WriteContent string
+	ToolError    string
+	Usage        *Usage
+	Sampling     Sampling
 }
