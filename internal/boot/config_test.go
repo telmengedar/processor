@@ -727,3 +727,47 @@ func TestExportedLoadersReadTheProcessEnvironment(t *testing.T) {
 		t.Fatalf("model.TopP = %v, want a pointer to 0.8", model.TopP)
 	}
 }
+
+func TestLoadWorkspaceDirIsEmptyWhenAbsentRatherThanDefaultedToAPathOnDisk(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(nil)
+	delete(env, "PROCESSOR_WORKSPACE_DIR")
+
+	dir, err := loadWorkspaceDir(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadWorkspaceDir: %v", err)
+	}
+	if dir != "" {
+		t.Fatalf("workspace dir = %q, want empty when PROCESSOR_WORKSPACE_DIR is absent — no directory is invented for the service to write into", dir)
+	}
+}
+
+func TestLoadWorkspaceDirErrorsWhenPresentButEmpty(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_WORKSPACE_DIR": ""})
+
+	_, err := loadWorkspaceDir(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadWorkspaceDir succeeded on an explicitly emptied variable, want an error")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_WORKSPACE_DIR") {
+		t.Fatalf("error = %q, want it to name the variable", err)
+	}
+}
+
+func TestLoadWorkspaceDirUsesTheValueVerbatimWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	const want = "/var/lib/processor/runs"
+	env := validEnv(map[string]string{"PROCESSOR_WORKSPACE_DIR": want})
+
+	dir, err := loadWorkspaceDir(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadWorkspaceDir: %v", err)
+	}
+	if dir != want {
+		t.Fatalf("workspace dir = %q, want %q", dir, want)
+	}
+}

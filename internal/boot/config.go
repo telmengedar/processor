@@ -21,6 +21,8 @@ const (
 
 	envModelKey = "PROCESSOR_MODEL_KEY"
 
+	envWorkspaceDir = "PROCESSOR_WORKSPACE_DIR"
+
 	envModelTemperature     = "PROCESSOR_MODEL_TEMPERATURE"
 	defaultModelTemperature = 0.0
 
@@ -64,6 +66,15 @@ func LoadGraph() (GraphConfig, error) {
 // LoadModel returns the model half of the boot configuration.
 func LoadModel() (ModelConfig, error) {
 	return loadModel(lookupEnv)
+}
+
+// LoadWorkspaceDir returns the root for run working directories, empty when the variable is absent.
+func LoadWorkspaceDir() (string, error) {
+	return loadWorkspaceDir(lookupEnv)
+}
+
+func loadWorkspaceDir(lookup lookupFunc) (string, error) {
+	return optionalEnv(lookup, envWorkspaceDir)
 }
 
 func loadHTTPAddr(lookup lookupFunc) (string, error) {

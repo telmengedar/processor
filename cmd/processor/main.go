@@ -14,6 +14,7 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 	"github.com/telmengedar/processor/internal/openaicompat"
 	"github.com/telmengedar/processor/internal/server"
+	"github.com/telmengedar/processor/internal/workspace"
 )
 
 func main() {
@@ -41,6 +42,12 @@ func run() int {
 		return 1
 	}
 
+	workspaceDir, err := boot.LoadWorkspaceDir()
+	if err != nil {
+		logger.Error("boot configuration", "error", err)
+		return 1
+	}
+
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		logger.Error("listen", "addr", addr, "error", err)
@@ -49,9 +56,14 @@ func run() int {
 
 	sampling := loop.Sampling{Temperature: modelCfg.Temperature, TopP: modelCfg.TopP}
 
+	var files loop.FilePort
+	if workspaceDir != "" {
+		files = workspace.New(workspaceDir)
+	}
+
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 	model := openaicompat.NewClient(modelCfg.URL, modelCfg.ID, modelCfg.Key, sampling, nil)
-	turn := loop.NewTurn(graph, model, systemText, modelCfg.ID, logger)
+	turn := loop.NewTurn(graph, model, files, systemText, modelCfg.ID, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
