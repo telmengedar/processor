@@ -17,7 +17,7 @@ func TestWriteRejectsAPathLeadingThroughASymbolicLinkToADirectoryOutsideTheRun(t
 		t.Fatalf("Symlink: %v", err)
 	}
 
-	assertRejected(t, w, dir, "assets/style.css", "body{}")
+	assertRejected(t, w, dir, "assets/style.css", "body{}", "path resolves outside the working directory")
 
 	if _, err := os.Stat(filepath.Join(outside, "style.css")); !os.IsNotExist(err) {
 		t.Fatalf("Stat outside the run = %v, want the write never to have landed there", err)
@@ -38,7 +38,7 @@ func TestWriteRejectsWritingThroughASymbolicLinkStandingWhereTheFileWouldGo(t *t
 		t.Fatalf("Symlink: %v", err)
 	}
 
-	assertRejected(t, w, dir, "index.html", "overwritten")
+	assertRejected(t, w, dir, "index.html", "overwritten", "path resolves outside the working directory")
 
 	got, err := os.ReadFile(target)
 	if err != nil {

@@ -46,7 +46,7 @@ live. Anywhere that inference could be wrong, the trace says so rather than gues
 
 TOOL-ROUND CLASSIFICATION, corrected after review (C1): a toolCalls[i] entry with a non-empty
 `error` is not one thing. `internal/loop/turn.go`'s dispatchRecall returns *before ever calling
-`Graph.Recall`* when the model's own tool call was malformed (wire.go's RecallError -- unparseable
+`Graph.Recall`* when the model's own tool call was malformed (wire.go's ToolError -- unparseable
 arguments or an empty query, itself ordinary local-model misbehaviour, not rare) -- so that round
 never touched the graph. This script distinguishes three shapes by the exact `error` string:
 `""` is a real dispatch with real results (a tool-call step follows); the literal "call cap reached"
@@ -56,7 +56,7 @@ scrubbing rule keeps the real reason out of this surface, DiVoid #10850). Any OT
 string -- including one this script does not otherwise recognise -- means the request was malformed
 and, per dispatchRecall's own control flow, GUARANTEED never dispatched: no tool-call step is
 printed for it, the record's error string is shown verbatim, and no query is available (turn.go's
-RecallExchange construction on this path never sets Query at all). Printing a fabricated tool-call
+ToolExchange construction on this path never sets Query at all). Printing a fabricated tool-call
 step here was the exact defect a reviewer caught: it read as "the model asked the graph and the
 graph had nothing" when the truth was "the model's tool call never reached the graph".
 
@@ -749,7 +749,7 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
             out.append(
                 f"{'':<24} output: wants recall, but the tool call itself was malformed and NEVER "
                 f"reached the graph -- error: {tc.get('error')!r}. query not recorded (turn.go's "
-                f"RecallExchange on this path never carries one). out={out_tok}"
+                f"ToolExchange on this path never carries one). out={out_tok}"
             )
             if ambiguous_cap:
                 out.append(

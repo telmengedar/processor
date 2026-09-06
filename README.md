@@ -79,13 +79,28 @@ words; that document carries the argument.
   in one `toolCalls` list, each entry naming which tool it was. See
   `docs/architecture/m1-skeleton-loop.md` §9.
 - `internal/workspace` — the working directory a run writes into: one fresh directory per run
-  beneath a root the operator names (`PROCESSOR_WORKSPACE_DIR`), and the path rules that keep every
-  write inside it — no absolute path, no path containing a colon, no traversal that leaves the
-  directory, and no path leading through a symbolic link. A path that *contains* `..` but normalises
-  back inside is accepted; the rule is on where the write lands, not on how it is spelled. A refusal is
-  returned to the model as the tool's result so it can correct itself, and never fails the run; a
-  filesystem failure is scrubbed to a generic sentence on that surface and named in full in the
-  operator's log.
+  beneath a root the operator names (`PROCESSOR_WORKSPACE_DIR`). Two layers keep a write inside it.
+  First, **shape rules on the path the model asked for**, each refused with the rule that refused it:
+  no empty path, no null byte, no absolute or root-anchored path, no colon, no `..` that leaves the
+  directory. A path that *contains* `..` but normalises back inside is accepted — the rule is on where
+  the write lands, not on how it is spelled. The normalising step is load-bearing rather than cosmetic,
+  but not for safety: without it the traversal rule cannot see a `..` spelled with intermediate
+  components (`site/../../../x`) or with the other platform's separator, and such a path falls through
+  to the second layer — still refused, but with a generic reason in place of the one the model can act
+  on. Second, **the write itself goes through `os.Root`** (`openat`-style
+  confinement), so anything that resolves outside the run directory is refused by construction rather
+  than by a check that has to enumerate the ways out: symbolic links, **NTFS junctions** — which Go
+  reports as `ModeIrregular`, not `ModeSymlink`, and which need no administrator rights to create —
+  and, on Windows, reserved device names such as `NUL`, which would otherwise swallow the bytes and
+  report success. Because the resolution and the write are one confined operation, there is no
+  inspect-then-write window for the filesystem to change under: the code contains no separate
+  inspection step to race. A refusal is returned to the model as the tool's result so it can correct
+  itself, and never fails the run; a filesystem failure is scrubbed to a generic sentence on that
+  surface and named in full in the operator's log. The two are told apart structurally — a
+  confinement refusal is not a `syscall.Errno` and every real filesystem failure is — so the split
+  does not depend on matching an error message. The guard is exercised on **both** host platforms:
+  `link_windows_test.go` plants a junction, `symlink_linux_test.go` plants a symlink, and each
+  asserts the escape is refused *and* that nothing appeared outside.
 - `internal/divoid` — the graph adapter: reads the subject node, the semantic recall query and the
   edges incident to a node, and writes the run record back as one node linked to its subject.
 - `internal/openaicompat` — the model adapter: one OpenAI-compatible chat-completions client. Named for

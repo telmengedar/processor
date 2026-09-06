@@ -3,10 +3,13 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/telmengedar/processor/internal/loop"
 )
@@ -15,6 +18,17 @@ const (
 	runDirPrefix = "run-"
 	dirMode      = 0o755
 	fileMode     = 0o644
+)
+
+const (
+	reasonEmpty       = "path must not be empty"
+	reasonNullByte    = "path must not contain a null byte"
+	reasonColon       = "path must not contain a colon"
+	reasonNotRelative = "path must be relative to the working directory"
+	reasonNotAFile    = "path must name a file, not the working directory itself"
+	reasonLeaves      = "path must not leave the working directory"
+	reasonOutside     = "path resolves outside the working directory"
+	reasonRunDir      = "the working directory is not one this workspace opened"
 )
 
 var _ loop.FilePort = (*Workspace)(nil)
@@ -56,23 +70,36 @@ func (w *Workspace) Write(ctx context.Context, dir, path, content string) (int, 
 		return 0, err
 	}
 
-	parts, err := relativeParts(path)
+	clean, err := cleanRelative(path)
 	if err != nil {
 		return 0, err
 	}
-	if err := w.confirmRunDir(dir); err != nil {
+
+	root, err := w.absoluteRoot()
+	if err != nil {
 		return 0, err
 	}
-	if err := confirmNoSymlink(dir, parts); err != nil {
+	runName, err := runNameUnder(root, dir)
+	if err != nil {
 		return 0, err
 	}
 
-	target := filepath.Join(append([]string{dir}, parts...)...)
-	if err := os.MkdirAll(filepath.Dir(target), dirMode); err != nil {
-		return 0, fmt.Errorf("workspace: create parent directory: %w", err)
+	confined, err := os.OpenRoot(root)
+	if err != nil {
+		return 0, fmt.Errorf("workspace: open root: %w", err)
 	}
-	if err := os.WriteFile(target, []byte(content), fileMode); err != nil {
-		return 0, fmt.Errorf("workspace: write file: %w", err)
+	defer func() { _ = confined.Close() }()
+
+	target := filepath.Join(runName, clean)
+	err = confined.WriteFile(target, []byte(content), fileMode)
+	if errors.Is(err, fs.ErrNotExist) {
+		if mkErr := confined.MkdirAll(filepath.Dir(target), dirMode); mkErr != nil {
+			return 0, classify(mkErr)
+		}
+		err = confined.WriteFile(target, []byte(content), fileMode)
+	}
+	if err != nil {
+		return 0, classify(err)
 	}
 	return len(content), nil
 }
@@ -85,77 +112,50 @@ func (w *Workspace) absoluteRoot() (string, error) {
 	return root, nil
 }
 
-func (w *Workspace) confirmRunDir(dir string) error {
-	root, err := w.absoluteRoot()
+func runNameUnder(root, dir string) (string, error) {
+	absolute, err := filepath.Abs(dir)
 	if err != nil {
-		return err
+		return "", rejected(reasonRunDir)
 	}
 
-	resolvedRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return fmt.Errorf("workspace: resolve root: %w", err)
+	rel, err := filepath.Rel(root, absolute)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") || strings.ContainsRune(rel, filepath.Separator) {
+		return "", rejected(reasonRunDir)
 	}
-	resolvedDir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return fmt.Errorf("workspace: resolve run directory: %w", err)
-	}
-
-	if !contains(resolvedRoot, resolvedDir) {
-		return rejected("the working directory is outside the workspace root")
-	}
-	return nil
+	return rel, nil
 }
 
-func confirmNoSymlink(dir string, parts []string) error {
-	current := dir
-	for _, part := range parts {
-		current = filepath.Join(current, part)
-		info, err := os.Lstat(current)
-		if os.IsNotExist(err) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("workspace: inspect path: %w", err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return rejected("path passes through a symbolic link")
-		}
-	}
-	return nil
-}
-
-func relativeParts(path string) ([]string, error) {
+func cleanRelative(path string) (string, error) {
 	trimmed := strings.TrimSpace(path)
 	if trimmed == "" {
-		return nil, rejected("path must not be empty")
+		return "", rejected(reasonEmpty)
 	}
 	if strings.ContainsRune(trimmed, 0) {
-		return nil, rejected("path must not contain a null byte")
-	}
-	if strings.ContainsRune(trimmed, ':') {
-		return nil, rejected("path must not contain a colon")
+		return "", rejected(reasonNullByte)
 	}
 	if filepath.IsAbs(trimmed) || strings.HasPrefix(trimmed, "/") || strings.HasPrefix(trimmed, `\`) {
-		return nil, rejected("path must be relative to the working directory")
+		return "", rejected(reasonNotRelative)
+	}
+	if strings.ContainsRune(trimmed, ':') {
+		return "", rejected(reasonColon)
 	}
 
 	clean := filepath.Clean(trimmed)
 	if clean == "." {
-		return nil, rejected("path must name a file, not the working directory itself")
+		return "", rejected(reasonNotAFile)
 	}
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-		return nil, rejected("path must not leave the working directory")
+		return "", rejected(reasonLeaves)
 	}
-
-	return strings.Split(clean, string(filepath.Separator)), nil
+	return clean, nil
 }
 
-func contains(parent, child string) bool {
-	rel, err := filepath.Rel(parent, child)
-	if err != nil {
-		return false
+func classify(err error) error {
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		return fmt.Errorf("workspace: write file: %w", err)
 	}
-	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return rejected(reasonOutside)
 }
 
 func rejected(reason string) error {

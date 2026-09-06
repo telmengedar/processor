@@ -45,9 +45,7 @@ func TestOpenRunCreatesADistinctDirectoryPerCallBeneathTheRoot(t *testing.T) {
 		if err != nil || !info.IsDir() {
 			t.Fatalf("Stat(%q) = %v, %v, want an existing directory", dir, info, err)
 		}
-		if !contains(root, dir) {
-			t.Fatalf("run directory %q is not beneath the root %q", dir, root)
-		}
+		assertUnderRoot(t, root, dir)
 	}
 }
 
@@ -59,9 +57,7 @@ func TestOpenRunCreatesARootThatDoesNotExistYet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenRun: %v", err)
 	}
-	if !contains(root, dir) {
-		t.Fatalf("run directory %q is not beneath the root %q the call was asked to create", dir, root)
-	}
+	assertUnderRoot(t, root, dir)
 }
 
 func TestWriteCreatesTheFileWithTheContentGivenInsideTheRunDirectory(t *testing.T) {
@@ -141,7 +137,7 @@ func TestWriteRejectsATraversalThatLeavesTheRunDirectoryAndCreatesNothing(t *tes
 		t.Fatalf("OpenRun: %v", err)
 	}
 
-	assertRejected(t, w, dir, "../escaped.html", "should not exist")
+	assertRejected(t, w, dir, "../escaped.html", "should not exist", "path must not leave the working directory")
 
 	if _, err := os.Stat(filepath.Join(root, "escaped.html")); !os.IsNotExist(err) {
 		t.Fatalf("Stat the escape target = %v, want it never to have been created", err)
@@ -152,7 +148,7 @@ func TestWriteRejectsADeepTraversalThatLeavesTheRunDirectory(t *testing.T) {
 	t.Parallel()
 
 	w, dir := openRun(t)
-	assertRejected(t, w, dir, "site/../../../escaped.html", "x")
+	assertRejected(t, w, dir, "site/../../../escaped.html", "x", "path must not leave the working directory")
 }
 
 func TestWriteRejectsAnAbsolutePath(t *testing.T) {
@@ -161,7 +157,7 @@ func TestWriteRejectsAnAbsolutePath(t *testing.T) {
 	w, dir := openRun(t)
 
 	absolute := filepath.Join(t.TempDir(), "absolute.html")
-	assertRejected(t, w, dir, absolute, "x")
+	assertRejected(t, w, dir, absolute, "x", "path must be relative to the working directory")
 
 	if _, err := os.Stat(absolute); !os.IsNotExist(err) {
 		t.Fatalf("Stat the absolute target = %v, want it never to have been created", err)
@@ -172,35 +168,42 @@ func TestWriteRejectsASlashRootedPathOnEveryPlatform(t *testing.T) {
 	t.Parallel()
 
 	w, dir := openRun(t)
-	assertRejected(t, w, dir, "/etc/passwd", "x")
+	assertRejected(t, w, dir, "/etc/passwd", "x", "path must be relative to the working directory")
 }
 
 func TestWriteRejectsAPathContainingAColonOnEveryPlatform(t *testing.T) {
 	t.Parallel()
 
 	w, dir := openRun(t)
-	assertRejected(t, w, dir, `C:evil.html`, "x")
+	assertRejected(t, w, dir, `C:evil.html`, "x", "path must not contain a colon")
 }
 
 func TestWriteRejectsAnEmptyPath(t *testing.T) {
 	t.Parallel()
 
 	w, dir := openRun(t)
-	assertRejected(t, w, dir, "   ", "x")
+	assertRejected(t, w, dir, "   ", "x", "path must not be empty")
+}
+
+func TestWriteRejectsAPathContainingANullByteWithItsOwnReasonNotAScrubbedFailure(t *testing.T) {
+	t.Parallel()
+
+	w, dir := openRun(t)
+	assertRejected(t, w, dir, "page"+string(rune(0))+".html", "x", "path must not contain a null byte")
 }
 
 func TestWriteRejectsAPathNamingTheRunDirectoryItself(t *testing.T) {
 	t.Parallel()
 
 	w, dir := openRun(t)
-	assertRejected(t, w, dir, ".", "x")
+	assertRejected(t, w, dir, ".", "x", "path must name a file, not the working directory itself")
 }
 
 func TestWriteRejectsARunDirectoryThatIsNotBeneathTheWorkspaceRoot(t *testing.T) {
 	t.Parallel()
 
 	w := New(t.TempDir())
-	assertRejected(t, w, t.TempDir(), "index.html", "x")
+	assertRejected(t, w, t.TempDir(), "index.html", "x", "the working directory is not one this workspace opened")
 }
 
 func TestWriteReturnsAFailureThatIsNotARejectionWhenTheFilesystemRefuses(t *testing.T) {
@@ -271,10 +274,23 @@ func TestOpenRunDoesNothingOnAnAlreadyCancelledContext(t *testing.T) {
 	}
 }
 
-func assertRejected(t *testing.T, w *Workspace, dir, path, content string) {
+func assertRejected(t *testing.T, w *Workspace, dir, path, content, wantReason string) {
 	t.Helper()
 
-	if _, err := w.Write(context.Background(), dir, path, content); !errors.Is(err, loop.ErrWriteRejected) {
+	_, err := w.Write(context.Background(), dir, path, content)
+	if !errors.Is(err, loop.ErrWriteRejected) {
 		t.Fatalf("Write(%q) returned %v, want a rejection", path, err)
+	}
+	if !strings.Contains(err.Error(), wantReason) {
+		t.Fatalf("Write(%q) was refused with %q, want the reason %q — a rejection that does not name its rule lets a masked guard survive deletion", path, err, wantReason)
+	}
+}
+
+func assertUnderRoot(t *testing.T, root, dir string) {
+	t.Helper()
+
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+		t.Fatalf("run directory %q is not beneath the root %q (rel=%q, err=%v)", dir, root, rel, err)
 	}
 }

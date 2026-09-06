@@ -8,11 +8,11 @@ render_trace, announce_written -- run offline, over plain dicts, no build/server
 Written after review rejected the first version of this tool for two critical defects (DiVoid
 review, 2026-09-05):
 
-C1: a toolCalls[i] entry whose `error` is a RecallError message (the model's tool call was itself
+C1: a toolCalls[i] entry whose `error` is a ToolError message (the model's tool call was itself
 malformed -- bad JSON, an empty query) was rendered as a normal dispatched round with `query=None`
 and 0 results, discarding the record's own error string. A reader would conclude "the model asked
 the graph and the graph had nothing" when the truth is "the model's tool call never reached the
-graph". RecallErrorUncappedTests and RecallErrorCappedTests below are built directly on that shape
+graph". MalformedToolRequestUncappedTests and MalformedToolRequestCappedTests below are built directly on that shape
 -- the reviewer noted a test like this "would have caught C1 outright".
 
 C2/C3: the trace claimed "the anchor is exempt from the assembly budget" and tested a candidate's
@@ -208,7 +208,7 @@ class ClassifyRoundTests(unittest.TestCase):
         )
 
     def test_recall_error_message_is_malformed(self):
-        """The exact defect: a RecallError string (wire.go's own wording) is neither known literal
+        """The exact defect: a ToolError string (wire.go's own wording) is neither known literal
         and must resolve to ROUND_MALFORMED, not fall through to "must be a real dispatch"."""
         self.assertEqual(
             step_trace.classify_round({"error": "tool arguments could not be parsed: unexpected EOF"}),
@@ -231,7 +231,7 @@ class ClassifyRoundTests(unittest.TestCase):
         )
 
 
-class RecallErrorUncappedTests(unittest.TestCase):
+class MalformedToolRequestUncappedTests(unittest.TestCase):
     """C1, non-final round: the model's tool call was malformed on round 1 of 2. No graph call was
     ever made -- dispatchRecall returns before calling Graph.Recall on this path (turn.go:230-233)."""
 
@@ -258,7 +258,7 @@ class RecallErrorUncappedTests(unittest.TestCase):
         self.assertNotIn("malformed-request reason wins", out)
 
 
-class RecallErrorCappedTests(unittest.TestCase):
+class MalformedToolRequestCappedTests(unittest.TestCase):
     """C1's sharper case: the FINAL call both wanted recall and was malformed, and capReached is
     also true on the record. turn.go's construction lets the malformed reason win outright over the
     cap reason on the same round -- the trace must say that ambiguity exists, not silently print a
@@ -279,7 +279,7 @@ class RecallErrorCappedTests(unittest.TestCase):
 
 class CleanCapReachedTests(unittest.TestCase):
     """The one shape that legitimately IS a clean cap: error is exactly 'call cap reached' and the
-    query survives (RecallError was empty on this round, per turn.go's exchange construction)."""
+    query survives (ToolError was empty on this round, per turn.go's exchange construction)."""
 
     def test_cap_reached_with_real_query_and_no_tool_call_step(self):
         rec = record(
