@@ -104,6 +104,7 @@ type row struct {
 	ContentType string  `json:"contentType"`
 	Similarity  float64 `json:"similarity"`
 	Content     string  `json:"content"`
+	Substance   string  `json:"substance"`
 }
 
 // listingResponse is the shape of GET /api/nodes, regardless of query.

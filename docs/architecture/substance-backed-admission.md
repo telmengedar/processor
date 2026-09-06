@@ -688,6 +688,9 @@ frequent and often no-ops. So coverage is a **maintained** quantity:
 
 ## 14. Implementation Guidance for the Next Agent
 
+> **Superseded in part by §15.5 (amendment 2026-09-05): the unit *ordering* below is corrected there.**
+> The unit *definitions* stand.
+
 **Three units. One ships first, and it changes no harness behaviour at all.**
 
 ### Unit A — generation and the fidelity audit *(the first unit)*
@@ -735,3 +738,97 @@ before the discussion of them.
 - **Unit E — faithful condensation preferred over full content**, i.e. relaxing §7.2's invariant. Requires an
   answer grader, which is its real prerequisite.
 - **Cut-history targeting** (§6.5 resolver 2) and a coverage cadence (§12), both gated on Q6.
+
+---
+
+## 15. Amendment 2026-09-05 — unit ordering corrected, and this design's relation to #11365 §3
+
+Raised by the coordinator against the hub-pruning ruling (**#12969**) and tonight's census (**#12966**,
+**#12967**, **#12968**), after §1–§14 were filed. **§14's ordering is wrong and is corrected here.** Nothing
+else in the document is withdrawn.
+
+### 15.1 This design is *not* #11365 §3, and must not be reported as satisfying it
+
+Three mechanisms sit on one axis — *what a shortened form is allowed to displace*:
+
+| | Displaces | Reclaims bytes from | Safety |
+|---|---|---|---|
+| **#11365 §3 proper** (`min(size, C)`) | full content the model would have had | the **admitted head** (ranks 1–6, 78% of the budget) | none by construction |
+| **Unit B, this document** | **nothing** — only what pass 1 already cut | the **leftover**, 26–2,230 B | bounded by §7.2 |
+| **Unit D, the anchor** | full anchor content | the **anchor**, to 70,660 B and 54.2% of a block | bounded, if conditional (§15.3) |
+
+§3's measured 2-of-2 conversion comes from **shrinking the head**: compacting a rank-1 node from 32,105 B to
+6,000 B frees 26,105 B for ranks 7–20. Pass 2 never touches the head. **Unit B is deliberately weaker than
+§3. Shipping B does not satisfy §3's Build ruling, and closing §3 against B would quietly retire a measured
+lever.** §3 proper is this document's **Unit E** (§14), deferred for the reason §3 states about itself — its
+F1 is written on answers, not on admitted counts — and it cannot be made safe by a conditional, because its
+entire gain is bytes taken from candidates that currently fit.
+
+**Generation is built once.** #11367 was written as the answer to §3's unmeasured half; substance *is* the
+extraction §3 named and declined to specify. All three units read the same field from the same pass; only the
+resolver's target set differs (candidates / anchors / admitted head). That is a flag, not a component.
+
+**One caveat, and §3 supplies its own licence.** Substance is not parameterised: it implements
+`min(size, whatever the condenser produced)`, not `min(size, C)` for arbitrary `C`. **§3's plateau — flat
+across a 3.3× range of C — is what makes a non-parameterised extract an acceptable stand-in**, and should be
+cited as the reason rather than treated as a coincidence.
+
+### 15.2 The defect this surfaced in §11.2 — Unit B's falsifier cannot fire without Unit D
+
+§11.2 sweeps `assemblyByteBudget ∈ {60000, 30000, 15000, 8000, 4000}`. `remaining = budget −
+len(anchor.Content)`, floored at zero, and the mean anchor is **12,174 B** (#11365 §4).
+
+**At 8,000 and 4,000 — the two points carrying the entire claim — `remaining` clamps to zero on a large
+fraction of rows.** Both arms admit nothing, pass 2 has no leftover to spend, the curve goes flat for a
+reason unrelated to substance, and **F-A fires spuriously: the design is rejected on an artifact of the
+anchor rule.** The exact row count is computable from a baseline sweep and **must be computed before the dial
+is run rather than assumed** — but the direction does not depend on it. Even at half the rows, half the
+corpus carries zero information at the end of the dial that matters.
+
+**Unit D is therefore a prerequisite for Unit B's own falsifier, not a preference.**
+
+### 15.3 Unit D, restated as shippable — the conditional anchor
+
+§2 excluded anchor condensation because §7.2 does not protect it. That stands. **It gets its own invariant
+instead, and its own falsifier, exactly as §2 required:**
+
+> **The anchor is rendered as substance only in turns where, rendered whole, the block would carry the anchor
+> and nothing else.**
+
+The comparison is then *full subject + zero context* versus *condensed subject + N candidates*, taken only in
+a state that is already the known #11158 shutout. **It cannot fire on a row that currently works.**
+
+**Falsifier, needing no answer grader:** *no row whose block currently admits ≥1 candidate may change in any
+way.* Only degenerate rows move; any other movement rejects the implementation.
+
+**Two implementation invariants.** (1) The budget must be computed from **the representation actually
+rendered** — today both derive from `anchor.Content` and they must not diverge. (2) The trigger is "would
+admit zero candidates", not a byte constant. No new tunable, consistent with §6.4.
+
+**Two honest flags.**
+
+- **Do not justify Unit D on r05.** #12967 records that anchor as a 70,660-byte **run record** — #11141's
+  self-poisoning shape in the subject position, and plausibly a corpus defect rather than a mechanism gap.
+  Justify D on the anchor size distribution across the dial, where it is unarguable, and let r05 illustrate
+  rather than warrant. Building a mechanism to rescue a bad row is how a fitted constant is born.
+- **It makes K6 live.** §8.4 K6 asked for a non-prose content policy while noting the case was moot. A
+  run-record anchor is `application/json`; it is no longer moot, and Kim needs that answer for Unit D.
+
+### 15.4 #12968 — greedy rank-order spend
+
+Absorbed already: pass 2 walks in rank order, and prefer-smallest-first is Q3, to be settled behind a sweep
+flag rather than shipped as a default. **For Unit E the question is not the same one:** `min(size, C)` changes
+*which candidates are in the head at all*, so ordering and compaction interact there in a way they do not in
+a leftover fill. One more reason E is not a variant of B.
+
+### 15.5 The corrected order
+
+**§14's ordering is superseded by this list.**
+
+1. **Unit A** — generation + fidelity audit. In flight, unchanged, except: **extend the resolver to cover the
+   corpus's anchor (`subject`) nodes as well as its required nodes.** That is the only thing D needs from it.
+2. **Unit D — the conditional anchor.** Next. Prerequisite for B's falsifier; addresses #12967; largest
+   measured lever in the system.
+3. **Unit B — the leftover fill**, as specified in §1–§14. After D, when the dial can discriminate.
+4. **Unit E — #11365 §3 proper.** Gated on an answer-level instrument, per §3's own F1. **The §3 Build ruling
+   stays open until this ships.** Nothing before it satisfies that ruling.
