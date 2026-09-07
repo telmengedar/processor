@@ -1,5 +1,5 @@
-// Package openaicompat is the model adapter for the OpenAI-compatible chat-completions protocol.
-package openaicompat
+// Package ollama is the model adapter for ollama's native chat protocol.
+package ollama
 
 import (
 	"bytes"
@@ -17,16 +17,24 @@ import (
 // DefaultTimeout bounds the model call when the caller supplies no *http.Client.
 const DefaultTimeout = 5 * time.Minute
 
-const adapterName = "openai-compat"
+const adapterName = "ollama"
 
 const (
 	recallToolName    = "recall"
 	writeFileToolName = "write_file"
 )
 
+const (
+	functionOpenMarker   = "<function="
+	functionCloseMarker  = "</function>"
+	parameterOpenMarker  = "<parameter="
+	parameterCloseMarker = "</parameter>"
+	markerEndMarker      = ">"
+)
+
 var _ loop.ModelPort = (*Client)(nil)
 
-// Client is a client for the OpenAI-compatible chat-completions protocol.
+// Client is a client for ollama's native chat protocol.
 type Client struct {
 	baseURL    string
 	modelID    string
@@ -62,25 +70,28 @@ func (c *Client) client() *http.Client {
 
 // Judge runs one judgement step against the endpoint.
 func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
+	endpoint := c.baseURL + "/api/chat"
+
 	reqBody := chatRequest{
-		Model:       c.modelID,
-		Messages:    buildMessages(in),
-		MaxTokens:   loop.MaxOutputTokens,
-		Tools:       []wireTool{recallTool(), writeFileTool()},
-		Temperature: c.sampling.Temperature,
-		TopP:        c.sampling.TopP,
+		Model:    c.modelID,
+		Messages: buildMessages(in),
+		Stream:   false,
+		Tools:    []wireTool{recallTool(), writeFileTool()},
+		Options: wireOptions{
+			NumPredict:  loop.MaxOutputTokens,
+			Temperature: c.sampling.Temperature,
+			TopP:        c.sampling.TopP,
+		},
 	}
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: encode request: %w", err)
+		return loop.JudgeResult{}, fmt.Errorf("ollama: encode request: %w", err)
 	}
-
-	endpoint := c.baseURL + "/chat/completions"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: build request: %w", err)
+		return loop.JudgeResult{}, fmt.Errorf("ollama: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -90,23 +101,20 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: request failed: %w", err)
+		return loop.JudgeResult{}, fmt.Errorf("ollama: request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: unexpected status %d: %s", resp.StatusCode, readUpstreamMessage(resp.Body))
+		return loop.JudgeResult{}, fmt.Errorf("ollama: unexpected status %d: %s", resp.StatusCode, readUpstreamMessage(resp.Body))
 	}
 
 	var wire chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: decode response: %w", err)
+		return loop.JudgeResult{}, fmt.Errorf("ollama: decode response: %w", err)
 	}
 
-	result, err := translate(wire)
-	if err != nil {
-		return loop.JudgeResult{}, err
-	}
+	result := translate(wire)
 	result.Sampling = c.sampling
 	result.Provider = loop.Provider{Adapter: adapterName, Endpoint: endpoint}
 	return result, nil
@@ -115,8 +123,8 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 func readUpstreamMessage(r io.Reader) string {
 	body, _ := io.ReadAll(io.LimitReader(r, 4096))
 	var e wireError
-	if json.Unmarshal(body, &e) == nil && e.Error.Message != "" {
-		return e.Error.Message
+	if json.Unmarshal(body, &e) == nil && e.Error != "" {
+		return e.Error
 	}
 	return string(body)
 }

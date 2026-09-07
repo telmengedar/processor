@@ -86,6 +86,22 @@ const (
 	ToolWriteFile = "writeFile"
 )
 
+// ToolSource is the closed set of ways an adapter can have obtained a tool call from one response.
+type ToolSource string
+
+const (
+	// ToolSourceNative is a call the endpoint itself reported in its own tool-call field.
+	ToolSourceNative ToolSource = "native"
+	// ToolSourceContent is a call the adapter recovered from the response text because the endpoint reported none.
+	ToolSourceContent ToolSource = "content"
+)
+
+// Provider names the adapter and the endpoint that served a run's model calls.
+type Provider struct {
+	Adapter  string `json:"adapter"`
+	Endpoint string `json:"endpoint"`
+}
+
 // Usage is the two token counts as the endpoint reported them.
 type Usage struct {
 	InTokens  int `json:"inTokens"`
@@ -94,7 +110,9 @@ type Usage struct {
 
 // ToolCallRecord is one tool round as the run record carries it.
 type ToolCallRecord struct {
-	Tool    string        `json:"tool"`
+	Tool string `json:"tool"`
+	// Source is how the adapter obtained this call, absent on a round that reached no adapter.
+	Source  ToolSource    `json:"source,omitempty"`
 	Query   string        `json:"query,omitempty"`
 	Path    string        `json:"path,omitempty"`
 	Bytes   int           `json:"bytes"`
@@ -151,8 +169,10 @@ type Record struct {
 	Candidates []Disposition `json:"candidates"`
 	Block      string        `json:"block"`
 
-	Answer    string           `json:"answer"`
-	Model     string           `json:"model"`
+	Answer string `json:"answer"`
+	Model  string `json:"model"`
+	// Provider is the adapter and endpoint the model calls went through, as the adapter itself reported them.
+	Provider  Provider         `json:"provider"`
 	ToolCalls []ToolCallRecord `json:"toolCalls"`
 	// Workspace is the run's working directory, absent when the run attempted no file write.
 	Workspace  string `json:"workspace,omitempty"`
@@ -169,6 +189,7 @@ type Record struct {
 // ToolExchange is one tool round already completed in this turn.
 type ToolExchange struct {
 	Tool         string
+	ToolSource   ToolSource
 	Query        string
 	Path         string
 	Content      string
@@ -195,6 +216,8 @@ type JudgeResult struct {
 	WritePath    string
 	WriteContent string
 	ToolError    string
+	ToolSource   ToolSource
 	Usage        *Usage
 	Sampling     Sampling
+	Provider     Provider
 }

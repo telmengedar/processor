@@ -146,6 +146,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 
 	record.Answer = judged.answer
 	record.Model = t.ModelID
+	record.Provider = judged.provider
 	record.ToolCalls = judged.toolCalls
 	record.Workspace = judged.workspace
 	record.ModelCalls = judged.modelCalls
@@ -172,6 +173,8 @@ func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Dur
 		"cut", cut,
 		"modelCalls", record.ModelCalls,
 		"model", record.Model,
+		"adapter", record.Provider.Adapter,
+		"endpoint", record.Provider.Endpoint,
 		"usageReports", reports,
 		"inTokens", inTokens,
 		"outTokens", outTokens,
@@ -219,6 +222,7 @@ type judgement struct {
 	capReached bool
 	usages     []*Usage
 	sampling   Sampling
+	provider   Provider
 }
 
 func (t *Turn) judge(ctx context.Context, block, input string) (judgement, error) {
@@ -242,17 +246,22 @@ func (t *Turn) judge(ctx context.Context, block, input string) (judgement, error
 		judged.stop = StopReason{Reason: result.Reason, Raw: result.RawReason}
 		judged.usages = append(judged.usages, result.Usage)
 		judged.sampling = result.Sampling
+		judged.provider = result.Provider
 
 		if !wantsTool(result.Reason) {
 			break
 		}
 		if judged.modelCalls >= MaxModelCalls {
 			judged.capReached = true
-			exchanges = append(exchanges, cappedExchange(result))
+			capped := cappedExchange(result)
+			capped.ToolSource = result.ToolSource
+			exchanges = append(exchanges, capped)
 			break
 		}
 
-		exchanges = append(exchanges, t.dispatch(ctx, result, &judged.workspace))
+		exchange := t.dispatch(ctx, result, &judged.workspace)
+		exchange.ToolSource = result.ToolSource
+		exchanges = append(exchanges, exchange)
 	}
 
 	judged.toolCalls = toolCallRecords(exchanges)
@@ -357,7 +366,7 @@ func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {
 		if results == nil {
 			results = []Disposition{}
 		}
-		records[i] = ToolCallRecord{Tool: e.Tool, Query: e.Query, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results}
+		records[i] = ToolCallRecord{Tool: e.Tool, Source: e.ToolSource, Query: e.Query, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results}
 	}
 	return records
 }

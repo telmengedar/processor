@@ -206,6 +206,7 @@ func translate(wire chatResponse) (loop.JudgeResult, error) {
 
 	if len(choice.Message.ToolCalls) > 0 {
 		result.RawReason = choice.FinishReason
+		result.ToolSource = loop.ToolSourceNative
 		call := choice.Message.ToolCalls[0]
 
 		switch call.Function.Name {

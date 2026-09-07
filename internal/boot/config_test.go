@@ -771,3 +771,75 @@ func TestLoadWorkspaceDirUsesTheValueVerbatimWhenPresent(t *testing.T) {
 		t.Fatalf("workspace dir = %q, want %q", dir, want)
 	}
 }
+
+func TestLoadModelDefaultsTheProtocolToOpenAICompatWhenTheVariableIsAbsent(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := loadModel(fixedLookup(validEnv(nil)))
+	if err != nil {
+		t.Fatalf("loadModel: %v", err)
+	}
+	if cfg.Protocol != ProtocolOpenAICompat {
+		t.Fatalf("Protocol = %q, want %q — an absent variable must keep the adapter the service already had", cfg.Protocol, ProtocolOpenAICompat)
+	}
+}
+
+func TestLoadModelCarriesTheOllamaProtocolWhenTheVariableSelectsIt(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_PROTOCOL": "ollama"})
+
+	cfg, err := loadModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadModel: %v", err)
+	}
+	if cfg.Protocol != ProtocolOllama {
+		t.Fatalf("Protocol = %q, want %q", cfg.Protocol, ProtocolOllama)
+	}
+}
+
+func TestLoadModelErrorsWhenTheProtocolIsPresentButEmpty(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_PROTOCOL": ""})
+
+	_, err := loadModel(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadModel returned nil error for an empty PROCESSOR_MODEL_PROTOCOL, want an error")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_MODEL_PROTOCOL") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_MODEL_PROTOCOL", err.Error())
+	}
+}
+
+func TestLoadModelErrorsWhenTheProtocolNamesNoAdapterAndTellsTheOperatorTheAcceptedValues(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_PROTOCOL": "anthropic"})
+
+	_, err := loadModel(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadModel returned nil error for a protocol with no adapter, want an error")
+	}
+	if !strings.Contains(err.Error(), quoted("anthropic")) {
+		t.Fatalf("error = %q, want it to quote the supplied value", err.Error())
+	}
+	if !strings.Contains(err.Error(), quoted(ProtocolOpenAICompat)) || !strings.Contains(err.Error(), quoted(ProtocolOllama)) {
+		t.Fatalf("error = %q, want it to name both accepted values so the operator can correct it", err.Error())
+	}
+}
+
+func TestLoadModelKeyStaysOptionalUnderTheOllamaProtocolBecauseALocalHostNeedsNone(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_MODEL_PROTOCOL": "ollama"})
+	delete(env, "PROCESSOR_MODEL_KEY")
+
+	cfg, err := loadModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadModel: %v", err)
+	}
+	if cfg.Key != "" {
+		t.Fatalf("Key = %q, want empty", cfg.Key)
+	}
+}
