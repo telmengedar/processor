@@ -219,7 +219,7 @@ scoped rows where it previously delivered up to three rows of which some could b
 count of 57 scoped-only arrivals was taken under the old behaviour** and is a second reason its yield
 figures do not describe the shipped loop.
 
-**Where the weight belongs, and it is not §5.1** *(#13185 round 2)*. Every measurement under the
+**Where the weight belongs, and it is not §5.1** *(#13207, review round 2)*. Every measurement under the
 retirement is **rank-conditioned on the band the reserve has left**, so Unit 3's state moved from *measured
 not to pay* to **unmeasured**, and P-3 carries it from there. That makes §11's restated reopening condition
 the load-bearing repair rather than §5.1's withdrawn inference: without a condition that can fire,
@@ -284,18 +284,27 @@ transferred bytes linearly against a population that grows on its own.
 
 ## 9. Coverage — the guard, not the mechanism
 
-Every row names a test. The falsifier column names **only mutations whose observed output is quoted in
-#13185 §3**; no cell predicts a result nobody ran.
+Every row names a test. **A falsifier cell must name the mutation *and* carry the pointer to where its
+output is quoted** — no cell predicts a result nobody ran, and no cell asserts a result without saying
+where it can be read. Sources: **#13185 §3** (round 1, five tests) and **#13207** (round 2, re-run against
+all six).
+
+**The pointer is the enforcement, not decoration** *(#13207 round 3, CF-3)*. The previous revision stated
+the first half of that rule and nothing enforced it, because a cell could name a mutation without carrying
+a pointer — and one such cell, C7, claimed a **RED** that its own named source records as **green**. You
+cannot write `(#13185 §3)` beside a verdict without opening §3, and opening §3 *is* the check. Signal
+rather than law at n=4, but it is the signal available: the one row that carried provenance was correct,
+and of the three that did not, one was false.
 
 | # | Property | Guard | Falsifier — observed |
 |---|---|---|---|
-| C1 | A run record spends no candidate slot, and the rows behind it move up | `TestARecordThisSystemWroteSpendsNoCandidateSlotAndTheRowsBehindItMoveUp` | M1, revert the predicate: RED (#13185 §3) |
-| C2 | A skipped record spends no **reserved** slot — `reserved++` does not fire | `TestARecordThisSystemWroteSpendsNoReservedSlotEither` | M4, a skipped record still spends a reserved slot: RED, **and alone** |
-| C3 | A record is not backfilled into a slot the reserve left empty | `TestARecordThisSystemWroteIsNotBackfilledIntoASlotTheReserveLeftEmpty` | M3, exclusion on the first pass only: RED |
-| C4 | A surviving candidate keeps the rank the graph gave it, not the rank it inherits | `TestACandidateKeepsTheRankTheGraphGaveItRatherThanTheRankItInheritsWhenARecordAheadOfItIsDropped` | M5, move the filter into `Retrieve` so it filters the shared `lists`: RED, **and alone**. This is §4's placement argument, pinned — and what it pins is the *non-mutation* property, not an ordering (§8.3) |
-| C5 | The exclusion is by type **and** name prefix, never type alone | `TestARowCarryingTheRunNodeTypeWithoutTheRunNamePrefixIsStillAdmittedAsACandidate` | **No runnable falsifier established.** M6 (exclude by node type) reddened five tests, but four of them set no `Type` in their fixtures, so M6 degenerated to the revert for those four and their reds carry no information about the criterion. The one test written for the criterion is named here; no mutation against it has been run and quoted |
-| C6 | A record cannot be admitted even when it fits, and is refused before the byte test | `TestAssembleReportsSelfProducedRatherThanBudgetForAFittingRunRecord`, `TestAssembleCutsSelfProducedCandidatesWithoutChargingTheBudget` | **No runnable falsifier established.** These guards predate this change and `internal/loop/assemble.go` is not in its diff; every mutation quoted in #13185 §3 was applied to `internal/loop/retrieve.go` and none of them reaches these two |
-| C7 | End to end: a turn is not poisoned by its own previous record | `TestTurnRunIsNotPoisonedByItsOwnPreviousRecord` | M2, filter *after* the limit: RED |
+| C1 | A run record spends no candidate slot, and the rows behind it move up | `TestARecordThisSystemWroteSpendsNoCandidateSlotAndTheRowsBehindItMoveUp` | M1, revert the predicate: RED (#13185 §3; #13207). Also M2, filter *after* the limit: RED — and M2 reddens **only** C1 and C2, so it is the discriminating mutant for that pair (#13207) |
+| C2 | A skipped record spends no **reserved** slot — `reserved++` does not fire | `TestARecordThisSystemWroteSpendsNoReservedSlotEither` | M4, a skipped record still spends a reserved slot: RED, **and alone** (#13185 §3; #13207) |
+| C3 | A record is not backfilled into a slot the reserve left empty | `TestARecordThisSystemWroteIsNotBackfilledIntoASlotTheReserveLeftEmpty` | M3, exclusion on the first pass only: RED (#13185 §3; #13207) |
+| C4 | A surviving candidate keeps the rank the graph gave it, not the rank it inherits | `TestACandidateKeepsTheRankTheGraphGaveItRatherThanTheRankItInheritsWhenARecordAheadOfItIsDropped` | M5, move the filter into `Retrieve` so it filters the shared `lists`: RED, **and alone** (#13185 §3; #13207). This is §4's placement argument, pinned — and what it pins is the *non-mutation* property, not an ordering (§8.3) |
+| C5 | The exclusion is by type **and** name prefix, never type alone | `TestARowCarryingTheRunNodeTypeWithoutTheRunNamePrefixIsStillAdmittedAsACandidate` | M6, exclude by node type instead of the flag: **RED — and M6 is the only one of the six mutants that reddens this test**, which is what makes it a real addition rather than a duplicate of the revert: it is *green* under M1 (#13207). Note this is a different sense of "alone" from C2's and C4's, which mean *this mutant reddens only this test*. Quoted message: *"retrieval returned 0 candidates from a graph holding only #8 of type `session-log` named `a session log another agent wrote`, want that one row: it carries the type every record this system writes carries and differs only in the name, so losing it means the exclusion keys on the type."* ~~**No runnable falsifier established** … no mutation against it has been run and quoted~~ **— that cell was written when only #13185 §3 existed and went stale when #13207 ran M6 against this test and quoted the output. Corrected 2026-09-07.** The observation that made this row necessary still stands: under M6 the other four tests redden only because their fixtures set no `Type`, so M6 degenerates to the revert for them and their reds carry no information about the criterion |
+| C6 | A record cannot be admitted even when it fits, and is refused before the byte test | `TestAssembleReportsSelfProducedRatherThanBudgetForAFittingRunRecord`, `TestAssembleCutsSelfProducedCandidatesWithoutChargingTheBudget` | **No runnable falsifier established**, and it stays that way after round 2. These guards predate this change and `internal/loop/assemble.go` is not in its diff; every mutation in **#13185 §3** and in **#13207**'s re-run was applied to `internal/loop/retrieve.go`, and none reaches these two |
+| C7 | End to end: a turn is not poisoned by its own previous record | `TestTurnRunIsNotPoisonedByItsOwnPreviousRecord` | M3, exclusion on the first pass only: RED (#13185 §3; #13207) — a partial exclusion still poisons the turn, which is what makes this the end-to-end guard rather than a duplicate of C1. Also RED under M1 and M6. ~~M2, filter *after* the limit: RED~~ **— STRUCK 2026-09-07 (CF-3): false. Both #13185 §3 and #13207 record this test as *green* under M2, and the cell contradicted the source its own header named.** M2 reddens C1 and C2 only |
 
 **Falsifier for the table itself:** any row whose named guard would still pass against an implementation
 lacking the claimed property. C5 is reported as a gap rather than filled, which is what that question is
@@ -363,6 +372,26 @@ so its red sends a reader to the fixture, not to the criterion (#13185 W-3). C5 
    **correct**, citing the ruling as an evidential standard rather than as a file. Replacing the token
    everywhere would break six true statements to fix three false ones.
 
+**The class these layers belong to, stated after three rounds of finding it one sub-case at a time**
+*(#13207 round 3)*. Layers 5 and 6 resolve identifiers, and identifiers kept being the defects found — but
+that is a fact about **greppability**, not about risk. Three defects in this document's own history pass
+both layers cleanly: C7's *"M2: RED"* carries **no identifier at all**; `#13185 round 2` **resolves** — the
+node exists and is genuinely a QA review of this PR — and is still wrong, because round 2 is #13207; and
+*"placed after `sourcesOf`"* was never a reference but a claim about Go's evaluation semantics.
+
+> **The class is not *references*. It is cells whose truth is not decidable from the sentence containing
+> them.** Identifiers are the sub-case with a greppable syntax, which is exactly why they are the ones that
+> keep getting caught. **Measurements, statuses and semantic claims have no syntax, need the discipline
+> more, and get it less.** The practical form is §9's rule: make the cell carry the pointer to where its
+> truth can be read, so that writing the cell requires opening the source.
+
+**And re-open the round's own judgements before submitting it.** Three defects here were judgements taken
+early and never revisited when later evidence in the *same* round bore on them: `anchor-grounded-recall.md`
+§1 (decided before the §18.4.3 corrections existed that flipped the adjacency argument), C5's *"no mutation
+has been run"* (true when written, stale once #13207 ran M6), and the layer-5/6 framing above. **The pass is
+cheap and belongs at the end of every round:** list the judgement calls made, and check each against what
+the round learned after it was made.
+
 **What these layers structurally cannot reach.** (a) A claim carried only by a *number* — a table quoting
 "20 candidates" as a measured historical reading is indistinguishable from one asserting current behaviour,
 and only reading the surrounding prose separates them; several were left as dated records on that judgement
@@ -396,7 +425,7 @@ stand as dated record of what M1 shipped and are superseded in M3, per M1's own 
 `substance-backed-admission.md` §8.1's adapter contract; its §15.3 note on the run-record **anchor**
 (#12967), which this predicate does not touch; `anchor-grounded-recall.md` §16.3, §17.2(c) and §16.8's
 Unit D, which are about oversized candidates, not records. **On Unit D, the apparent disagreement is
-adjudicated and the mechanism is known** *(#13185 round 2)*: #13092 reported that after the exclusion a
+adjudicated and the mechanism is known** *(#13207, review round 2)*: #13092 reported that after the exclusion a
 node of 80,470 B (#10437) reached candidate rank 13 — a slot the records had been hiding — while #13185 §4,
 hours later, found it at scoped rank 6 and never a candidate. **Both readings are correct, and the
 difference is graph drift rather than error.** #10437 takes the third reserve slot only while at most
