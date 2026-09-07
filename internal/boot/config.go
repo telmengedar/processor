@@ -16,6 +16,8 @@ const (
 	envDivoidURL = "PROCESSOR_DIVOID_URL"
 	envDivoidKey = "PROCESSOR_DIVOID_KEY"
 
+	envModelProtocol = "PROCESSOR_MODEL_PROTOCOL"
+
 	envModelURL = "PROCESSOR_MODEL_URL"
 	envModelID  = "PROCESSOR_MODEL_ID"
 
@@ -32,14 +34,22 @@ const (
 	nodesPathSuffix = "/api/nodes"
 )
 
+const (
+	// ProtocolOpenAICompat selects the OpenAI-compatible chat-completions adapter.
+	ProtocolOpenAICompat = "openai-compat"
+	// ProtocolOllama selects the adapter speaking ollama's native chat protocol.
+	ProtocolOllama = "ollama"
+)
+
 // GraphConfig is what a graph client needs to reach the graph.
 type GraphConfig struct {
 	URL string
 	Key string
 }
 
-// ModelConfig is what a model client needs to reach a chat-completions endpoint.
+// ModelConfig is what a model client needs to reach a model endpoint.
 type ModelConfig struct {
+	Protocol    string
 	URL         string
 	ID          string
 	Key         string
@@ -138,6 +148,11 @@ func rejectAPIBase(divoidURL string) error {
 }
 
 func loadModel(lookup lookupFunc) (ModelConfig, error) {
+	protocol, err := loadModelProtocol(lookup)
+	if err != nil {
+		return ModelConfig{}, err
+	}
+
 	url, err := requireEnv(lookup, envModelURL)
 	if err != nil {
 		return ModelConfig{}, err
@@ -163,7 +178,22 @@ func loadModel(lookup lookupFunc) (ModelConfig, error) {
 		return ModelConfig{}, err
 	}
 
-	return ModelConfig{URL: url, ID: id, Key: key, Temperature: temperature, TopP: topP}, nil
+	return ModelConfig{Protocol: protocol, URL: url, ID: id, Key: key, Temperature: temperature, TopP: topP}, nil
+}
+
+func loadModelProtocol(lookup lookupFunc) (string, error) {
+	protocol, present := lookup(envModelProtocol)
+	if !present {
+		return ProtocolOpenAICompat, nil
+	}
+	if protocol == "" {
+		return "", fmt.Errorf("%s is set but empty", envModelProtocol)
+	}
+	if protocol != ProtocolOpenAICompat && protocol != ProtocolOllama {
+		return "", fmt.Errorf("%s is %q, which is not a protocol this service has an adapter for; set it to %q or %q, or leave it unset for %q",
+			envModelProtocol, protocol, ProtocolOpenAICompat, ProtocolOllama, ProtocolOpenAICompat)
+	}
+	return protocol, nil
 }
 
 func loadModelTemperature(lookup lookupFunc) (*float64, error) {

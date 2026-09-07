@@ -663,3 +663,57 @@ func TestDefaultTimeoutIsNotDivoidsTimeout(t *testing.T) {
 		t.Fatalf("DefaultTimeout = %v, want at least a minute — generous by intent for a slow local generation", DefaultTimeout)
 	}
 }
+
+func TestJudgeNamesTheOpenAICompatAdapterAndTheChatCompletionsRouteItPostedTo(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := capturingServer(t, stopResponse)
+	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
+
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	if err != nil {
+		t.Fatalf("Judge: %v", err)
+	}
+
+	if result.Provider.Adapter != "openai-compat" {
+		t.Fatalf("Provider.Adapter = %q, want %q — with two adapters live an unnamed one is unattributable", result.Provider.Adapter, "openai-compat")
+	}
+	want := srv.URL + "/chat/completions"
+	if result.Provider.Endpoint != want {
+		t.Fatalf("Provider.Endpoint = %q, want %q — the full route, not the base the operator configured", result.Provider.Endpoint, want)
+	}
+}
+
+func TestAToolCallThisAdapterReadFromTheEndpointIsMarkedNative(t *testing.T) {
+	t.Parallel()
+
+	const body = `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"recall","arguments":"{\"query\":\"a query\"}"}}]},"finish_reason":"tool_calls"}]}`
+
+	srv, _ := capturingServer(t, body)
+	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
+
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	if err != nil {
+		t.Fatalf("Judge: %v", err)
+	}
+
+	if result.ToolSource != loop.ToolSourceNative {
+		t.Fatalf("ToolSource = %q, want %q", result.ToolSource, loop.ToolSourceNative)
+	}
+}
+
+func TestAProseAnswerFromThisAdapterCarriesNoToolSource(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := capturingServer(t, stopResponse)
+	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
+
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	if err != nil {
+		t.Fatalf("Judge: %v", err)
+	}
+
+	if result.ToolSource != "" {
+		t.Fatalf("ToolSource = %q, want none on a response carrying no tool call", result.ToolSource)
+	}
+}

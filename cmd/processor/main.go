@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/telmengedar/processor/internal/boot"
 	"github.com/telmengedar/processor/internal/divoid"
 	"github.com/telmengedar/processor/internal/loop"
+	"github.com/telmengedar/processor/internal/ollama"
 	"github.com/telmengedar/processor/internal/openaicompat"
 	"github.com/telmengedar/processor/internal/server"
 	"github.com/telmengedar/processor/internal/workspace"
@@ -56,13 +58,18 @@ func run() int {
 
 	sampling := loop.Sampling{Temperature: modelCfg.Temperature, TopP: modelCfg.TopP}
 
+	model, err := newModel(modelCfg, sampling)
+	if err != nil {
+		logger.Error("boot configuration", "error", err)
+		return 1
+	}
+
 	var files loop.FilePort
 	if workspaceDir != "" {
 		files = workspace.New(workspaceDir)
 	}
 
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
-	model := openaicompat.NewClient(modelCfg.URL, modelCfg.ID, modelCfg.Key, sampling, nil)
 	turn := loop.NewTurn(graph, model, files, systemText, modelCfg.ID, logger)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -74,4 +81,14 @@ func run() int {
 	}
 
 	return 0
+}
+
+func newModel(cfg boot.ModelConfig, sampling loop.Sampling) (loop.ModelPort, error) {
+	switch cfg.Protocol {
+	case boot.ProtocolOpenAICompat:
+		return openaicompat.NewClient(cfg.URL, cfg.ID, cfg.Key, sampling, nil), nil
+	case boot.ProtocolOllama:
+		return ollama.NewClient(cfg.URL, cfg.ID, cfg.Key, sampling, nil), nil
+	}
+	return nil, fmt.Errorf("model protocol %q has no adapter in this binary", cfg.Protocol)
 }

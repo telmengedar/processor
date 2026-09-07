@@ -40,7 +40,8 @@ words; that document carries the argument.
 ## What's here
 
 - `cmd/processor` — the process entry point: loads the boot configuration, binds the listener, wires
-  OS signals, constructs the graph adapter, the model adapter and the loop, owns the exit code.
+  OS signals, constructs the graph adapter, the model adapter the configured protocol selects, and
+  the loop, owns the exit code.
 - `cmd/eval` — the retrieval sweep: loads a corpus file (`-corpus`) and, optionally, a sidecar of
   pinned per-row queries (`-derivations`), and per row does exactly what a real run's first six steps
   do — fetch the anchor, call the loop's own `Retrieve`, `Assemble` — then stops before the model, so a
@@ -103,9 +104,15 @@ words; that document carries the argument.
   asserts the escape is refused *and* that nothing appeared outside.
 - `internal/divoid` — the graph adapter: reads the subject node, the semantic recall query and the
   edges incident to a node, and writes the run record back as one node linked to its subject.
-- `internal/openaicompat` — the model adapter: one OpenAI-compatible chat-completions client. Named for
+- `internal/openaicompat` — a model adapter: one OpenAI-compatible chat-completions client. Named for
   the protocol, not a vendor — it will mostly point at things that are not OpenAI. Provider-agnostic by
   ruling (design **#10521**): a local runtime works with no credential and no per-token spend.
+- `internal/ollama` — a model adapter: one client for ollama's own `/api/chat`, selected by
+  `PROCESSOR_MODEL_PROTOCOL=ollama`. The native surface differs from the OpenAI-compatible one in three
+  ways that are the whole of the adapter's job: the response carries a single `message` rather than a
+  `choices` array; a tool call's arguments arrive as a **JSON object**, not as a string holding encoded
+  JSON; and sampling lives under `options`, where the output cap is spelled `num_predict`. Which adapter
+  and which endpoint served a run is recorded on the run record, so a trace can name its own transport.
 - `internal/eval` — the corpus and the scorer: the row type with its validating loader, the pure scoring
   of a row's required nodes against what assembly did with them, and the reporter. **Two** rates, not
   one — *retrieved* (did retrieval surface the node at all) and *admitted* (did it survive the
@@ -190,9 +197,10 @@ the first offending variable is the one named:
 | `PROCESSOR_HTTP_ADDR` | `127.0.0.1:8080` | Listen address, used verbatim when set and non-empty. Set but empty is a startup error (an explicitly-emptied variable is treated as an operator mistake, not a request for the default). |
 | `PROCESSOR_DIVOID_URL` | *(none — required)* | The DiVoid API **origin only** — the graph client (`internal/divoid`) appends `/api/nodes` itself. Absent or present-but-empty is a startup error: there is no defensible default for a base URL. A value whose path already ends in `/api` (or already contains `/api/nodes`) is also a startup error naming the supplied value and suggesting the corrected origin — that shape is what `~/.claude/secrets/.divoid-online`'s `Url=` line holds for direct REST calls, and pasting it here would double the path to `.../api/api/nodes`. Caught at boot because the value is wrong regardless of what the graph does with the doubled path, not because that downstream behaviour has been measured. |
 | `PROCESSOR_DIVOID_KEY` | *(none — required)* | The DiVoid API bearer key, used verbatim. Absent or present-but-empty is a startup error. Never logged, never echoed in an error, never written to the graph. |
-| `PROCESSOR_MODEL_URL` | *(none — required)* | The model endpoint's base URL (an OpenAI-compatible chat-completions server), used verbatim. Absent or present-but-empty is a startup error: a local runtime and a hosted gateway serve different addresses, so there is no defensible default. |
+| `PROCESSOR_MODEL_PROTOCOL` | `openai-compat` | Which model adapter to build. `openai-compat` is the OpenAI-compatible chat-completions client; `ollama` is the client for ollama's own `/api/chat`. **Absent means `openai-compat`** — the adapter the service had before there was a second one, so an existing deployment is unaffected by the variable existing. Present-but-empty is a startup error, and so is any other value: the error quotes what was supplied and names both accepted values, because a protocol this binary has no adapter for has no safe default to fall back to. |
+| `PROCESSOR_MODEL_URL` | *(none — required)* | The model endpoint's **base URL**, used verbatim; the adapter appends its own route (`/chat/completions` under `openai-compat`, `/api/chat` under `ollama`), so set the origin the route hangs off, not the route. Absent or present-but-empty is a startup error: a local runtime and a hosted gateway serve different addresses, so there is no defensible default. |
 | `PROCESSOR_MODEL_ID` | *(none — required)* | The model id sent with every request, and the value recorded in the run record's `model` field. Absent or present-but-empty is a startup error. |
-| `PROCESSOR_MODEL_KEY` | *(none — optional)* | The model endpoint's bearer key. **Absent means no `Authorization` header is sent at all** — the point of the ruling, not an edge of it: a local runtime commonly needs none. **Present-but-empty is still a startup error**, exactly like every required member — an empty value is a mistake, never a way to spell "no auth", and treating it as absent would be a silent auth downgrade. Never logged, never echoed in an error, never written to the graph. |
+| `PROCESSOR_MODEL_KEY` | *(none — optional)* | The model endpoint's bearer key, sent the same way under both protocols. **Absent means no `Authorization` header is sent at all** — the point of the ruling, not an edge of it: a local runtime commonly needs none. **Present-but-empty is still a startup error**, exactly like every required member — an empty value is a mistake, never a way to spell "no auth", and treating it as absent would be a silent auth downgrade. Never logged, never echoed in an error, never written to the graph. |
 | `PROCESSOR_MODEL_TEMPERATURE` | `0` | The sampling temperature sent with **every** model call. Absent means `0` — greedy decoding — so the sampler stops being a source of run-to-run variation. **Present-but-empty is a startup error**, and so is a non-numeric value; both name the variable. **The default is a trade, not a free win:** greedy decoding is known to produce more repetitive, lower-quality prose on open-ended generation, and this service's product is prose for a human. Reproducibility is the right default while the service is a measurement harness, but answer quality is what it costs — set the variable to opt back into the endpoint's own sampling. |
 | `PROCESSOR_WORKSPACE_DIR` | *(none — optional, every write is refused)* | The directory beneath which each run's own working directory is created. The service creates the root if it does not exist, and one fresh directory per run, lazily — a run that never asks to write a file leaves nothing behind. **Absent means the file tool is still offered and every call to it is refused**, with `no working directory is configured` recorded on the round and shown to the model: the tool list does not change shape with the environment, so a trace reads the same either way and names the operator condition rather than hiding it. Present-but-empty is a startup error naming the variable. Nothing constrains what a run writes inside its own directory, so point this at a directory whose contents are disposable. |
 | `PROCESSOR_MODEL_TOP_P` | *(none — optional, nothing is sent)* | The nucleus-sampling mass sent with every model call. **Absent means the parameter is omitted from the request entirely**, not sent as `0`: `temperature: 0` is the conventional spelling of greedy decoding, but `top_p: 0` is *endpoint-dependent* — the OpenAI-compatible protocol does not specify what a runtime must do with it, and runtimes differ — so there is no value that spells "unset" and none is invented. Asserting `1.0` instead would claim knowledge of an endpoint this service deliberately does not have. Present-but-empty is a startup error, and so is a non-numeric value; both name the variable. |
@@ -238,8 +246,14 @@ and the task, not of the prompt.
 
 Response (`200`) is the run record: the input, the query, the anchor summary, **every** candidate
 retrieval returned — not only the ones kept — each with its rank, similarity, size, content hash, and
-whether it was included or cut and why, the assembled block itself, the model's answer, the model id, every
-tool round in call order (`tool`, naming which tool it was — `recall` or `writeFile`; for a recall round the
+whether it was included or cut and why, the assembled block itself, the model's answer, the model id, which adapter and endpoint served the
+run's model calls (`provider`: `adapter` and `endpoint`, as the adapter itself reported them rather than as
+the environment was set — with two protocols live a trace that cannot name its own transport cannot be
+compared against another), every
+tool round in call order (`tool`, naming which tool it was — `recall` or `writeFile`; `source`, naming how
+the adapter obtained the call — `native` where the endpoint reported it in its own tool-call field,
+`content` where the endpoint reported none and the adapter recovered the call from the response text;
+absent on a round no adapter produced; for a recall round the
 query and, for every row it returned — not only the admitted ones — the same
 rank/id/type/name/similarity/size/content-hash/included/cut-reason columns the candidates carry; for a write
 round the `path` the model asked for and the `bytes` it offered; and on either an `error` if the round was
@@ -251,6 +265,14 @@ absent, never zero-filled), the stop reason (both the loop's own neutral value a
 string), the five constants that governed the run (`limits`: candidate limit, assembly byte budget,
 supplementary byte budget, max model calls, max output tokens), and the sampling the run was made with
 (`sampling`: `temperature` and `topP`, each key absent when nothing was sent for it).
+
+**`source` exists because a correct call is not always reported as one.** Against `qwen3-coder-fixed:30b`
+on ollama 0.33.3 the endpoint sometimes returns `done_reason: stop` with no tool call and a complete,
+correct `<function=NAME><parameter=KEY>value</parameter></function>` block left sitting in the response
+text; the adapter reads that shape when, and only when, the tool-call field is empty. **A round the
+fallback carried is not the same event as one the endpoint parsed**, so the record distinguishes them
+rather than letting a degraded path look like a working one. A call-shaped block the adapter finds but
+cannot complete is recorded as a failed tool round with its `error`, never answered as prose.
 
 **`sampling` reports what was requested, as sent — not what the endpoint applied.** An endpoint that clamps
 a value, or ignores it, yields a record that is true about the request and false about the generation. The
@@ -294,9 +316,9 @@ go test -count=1 -v ./...
 ```
 
 `-count=1` disables Go's test cache; without it a re-run can print `(cached)` and execute nothing.
-A passing run prints one `ok` line per package — **nine**: `cmd/eval`, `cmd/processor`, `internal/boot`,
-`internal/divoid`, `internal/eval`, `internal/loop`, `internal/openaicompat`, `internal/server`,
-`internal/workspace` — and
+A passing run prints one `ok` line per package — **twelve**: `cmd/condense`, `cmd/eval`, `cmd/processor`,
+`internal/boot`, `internal/condense`, `internal/divoid`, `internal/eval`, `internal/loop`,
+`internal/ollama`, `internal/openaicompat`, `internal/server`, `internal/workspace` — and
 every `--- PASS:` line for each test. A `?` line is the one to watch for: it means a package shipped with
 no test at all. The default suite is fully offline and hermetic: no network call, no credential, no live
 graph, no live model, no spend — every
@@ -412,6 +434,23 @@ flags it.
   response's was not (**#10899**), since fixed by the record-fate design above. It stays a **manual**
   check rather than a gate (design §10.6): a live model is nondeterministic and cannot be what a
   per-change assertion runs against.
+- **The native ollama adapter (`internal/ollama`):** pinned at the wire level against a local test
+  server, from fixtures **captured off the live endpoint rather than written from a reading of the
+  protocol** — the route, `stream: false` sent explicitly (omitted, the endpoint streams and the
+  single-object decode fails), sampling under `options` with nothing at the request top level, the output
+  cap spelled `num_predict`, the `Authorization` header sent only when a key is configured, a tool call
+  whose arguments arrive as a **JSON object** rather than a string holding encoded JSON, a call read even
+  though `done_reason` says `stop`, usage read off `prompt_eval_count`/`eval_count`, and the error body
+  that is a bare string rather than an object. The prior-round replay is pinned to the assistant call plus
+  a `tool_name`-tagged result, the native protocol having no call id to pair by.
+- **The content fallback is verified by unit test and has not fired in a live harness run.** The failing
+  shape is real and was reproduced here against `qwen3-coder-fixed:30b` — `done_reason: stop`, no tool
+  call, and a complete `<function=…><parameter=…>` block left in the response text — and the fixtures are
+  those exact bytes. But it reproduces at **short** prompts: a bare user message with one tool. The
+  harness's own request, which carries the full system text and both tool schemas, parsed natively on
+  every call of the live trace below. **So the fallback is a guard against a measured endpoint behaviour
+  that the harness's own request shape did not provoke**, and the run record's `source` field is what will
+  say if that changes — a round it carries reads `content`, never `native`.
 - **The retrieval eval harness (`cmd/eval`, M2):** the corpus loader's validation is pinned rule by rule
   (a required set naming its own subject, one over the cap of three, an empty one, a missing reason or
   hash, a duplicate row id, a stratum outside the closed set), the scorer's four verdicts are pinned

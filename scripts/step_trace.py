@@ -554,6 +554,48 @@ def sampling_lines(record, temperature_requested):
     return lines
 
 
+def provider_lines(record):
+    """The PROVIDER block: which adapter and which endpoint the record says served this run.
+
+    Read off the record, never off argv, for the same reason sampling_lines is: the endpoint address
+    passed to this script is what it ASKED for, and the record is what the adapter reports it DID. A
+    record older than the field carries no `provider` at all, and that is said rather than guessed --
+    an absent field means the binary predates the attribution, not that the run used some default.
+    """
+    provider = record.get("provider") or {}
+    adapter = provider.get("adapter")
+    endpoint = provider.get("endpoint")
+    if not adapter and not endpoint:
+        return [
+            "PROVIDER  not recorded -- this record predates run attribution, so which adapter and "
+            "endpoint produced it cannot be read off the record and must not be inferred."
+        ]
+    return [f"PROVIDER  adapter {adapter!r}  endpoint {endpoint!r}  (as the adapter reported them)"]
+
+
+def source_lines(tool_call):
+    """How the adapter came by this round's tool call, when the record says.
+
+    `native` is the endpoint reporting the call in its own tool-call field. `content` is the endpoint
+    reporting NONE and the adapter recovering the call from the response text -- a degraded path that
+    must not read as a working one, which is the entire reason the field exists. Absent means the
+    record predates the field; that is stated, not filled in.
+    """
+    source = (tool_call or {}).get("source")
+    if source == "native":
+        return []
+    if source == "content":
+        return [
+            f"{'':<24} note: this call was NOT reported by the endpoint. It was recovered from the "
+            f"response TEXT by the adapter's fallback. The run acted, but the endpoint's own tool "
+            f"parsing did not fire -- read this as a degraded path, not a working one."
+        ]
+    return [
+        f"{'':<24} note: this round records no call source; the record predates the field, so "
+        f"whether the endpoint reported the call cannot be told from it."
+    ]
+
+
 def render_trace(record, model_url, model_id, temperature_requested, prior_note):
     """Pure function: every value comes from `record` (W4 -- the record is the source of truth,
     not the argv that produced the request that produced it) plus display-only context the record
@@ -573,6 +615,7 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     out = []
     out.append(RULE)
     out.append(f"TRACE  subject #{subject}  model {model_id} @ {model_url}")
+    out.extend(provider_lines(record))
     out.append(RULE)
     out.append("TASK (verbatim, this is exactly what the record's own Input field carries):")
     out.append(THIN)
@@ -721,6 +764,8 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
             f"task input + {prior_rounds} prior tool round(s) replayed as tool messages "
             f"[{prompt_desc}]"
         )
+        if wanted_recall:
+            out.extend(source_lines(tc))
 
         if wanted_recall and round_tool(tc) == TOOL_WRITE_FILE:
             out.extend(write_round_lines(head, tc, out_tok, limits, cap_reached and i == model_calls - 1))
