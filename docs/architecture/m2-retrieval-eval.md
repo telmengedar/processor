@@ -1194,12 +1194,17 @@ not by a budget.
 
 If §2's trigger ever fires and composition scoring is built, the price for the same 34-row corpus, using
 M1's measured usage (15,327 in / 130 out on a one-call run; 11,446 + 16,508 in on a two-call run) and
-`MaxModelCalls = 3`:
+~~`MaxModelCalls = 3`~~ **`MaxModelCalls = 6` — CORRECTED 2026-09-07 (#13064)**:
 
 | | Value |
 |---|---|
-| Model calls at a mean of 1.5 per row | **~51**, up to **102** at the cap |
-| Input tokens | **~0.8 M**, up to ~1.5 M |
+| Model calls at a mean of 1.5 per row | **~51**, up to ~~**102**~~ **204** at the cap (#13064) |
+| Input tokens | **~0.8 M**, up to ~~~1.5 M~~ **~3 M** (#13064) |
+
+**CORRECTED 2026-09-07 (#13064): the cap doubled, so the at-the-cap column did too.** The mean column is
+unchanged — it is a per-row mean, not a cap — and **the verdict below is unchanged**: the mean is what
+*"affordable occasionally and not on every change"* was weighed against, and the ceiling was already the
+figure nobody was budgeting for.
 
 Against Toni's constraint — *"as long as you don't run insane model loops we should be fine"* — that is
 affordable occasionally and not on every change. Which is the whole argument for keeping it out of the loop
@@ -1498,7 +1503,7 @@ cited**, and those are not the same audit. G-28 and G-29 close it here; the gene
 | G-12 | Every miss is named, never only counted. **Premise that makes it discriminate:** the fixture carries more misses than any plausible truncation limit, so an implementation that prints "the first five" fails it | `TestReportNamesAllTwelveMissesInAFixtureWithTwelveMisses` |
 | G-13 | The labelled and control strata are reported as separate rates and never summed | `TestReportKeepsTheLabelledAndControlRatesSeparate` |
 | G-14 | **Behavioural half of §9.3:** the sweep's dispositions equal what a real run's record carries for the same inputs | `TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidates` |
-| G-14b | **Structural half of §9.3** — a correct reimplementation would pass G-14, so this is not a test. **Revision 1's grep cannot come back clean:** it forbade "any numeric literal equal to a `loop` limit", while §4.3 of this same document mandates a required-node cap of **3**, which equals `loop.MaxModelCalls`. `internal/eval/corpus.go` — `const maxRequiredPerRow = 3` — violates it on a fully compliant implementation | **Two mutations, not a grep.** (a) Mutate `loop.AssemblyByteBudget`: the sweep's admitted counts **and** its reported limits must follow — a re-typed value does not. (b) ~~Mutate `Assemble`'s admission from stop-not-skip to skip~~ **Mutate `Assemble`'s admission to the other rule — currently from skip to stop-not-skip** *(revision 8: PR #22 shipped the skip, so this arm named its mutation* **backwards** *from the moment that merged. It is now stated as a* **direction** *rather than an endpoint pair, so the next change to the rule does not invert it again. Under* **P-30** *the arm must be re-run against the shipped code rather than inherited from the record above.)*: `admittedCount` must follow — a reimplementation does not. The grep survives only in its checkable form: **every limit the eval reports resolves through the exported constant**, no re-typed limit *value* |
+| G-14b | **Structural half of §9.3** — a correct reimplementation would pass G-14, so this is not a test. **Revision 1's grep cannot come back clean:** it forbade "any numeric literal equal to a `loop` limit", while §4.3 of this same document mandates a required-node cap of **3**, which equals `loop.MaxModelCalls`. `internal/eval/corpus.go` — `const maxRequiredPerRow = 3` — violates it on a fully compliant implementation. **NOTE 2026-09-07 (#13064): `loop.MaxModelCalls` is now 6, so the two constants no longer collide** — but that is a coincidence expiring, not a repair, and it is precisely the reason the grep was replaced by two mutations rather than tightened: a rule whose correctness depends on two unrelated constants differing is not a rule | **Two mutations, not a grep.** (a) Mutate `loop.AssemblyByteBudget`: the sweep's admitted counts **and** its reported limits must follow — a re-typed value does not. (b) ~~Mutate `Assemble`'s admission from stop-not-skip to skip~~ **Mutate `Assemble`'s admission to the other rule — currently from skip to stop-not-skip** *(revision 8: PR #22 shipped the skip, so this arm named its mutation* **backwards** *from the moment that merged. It is now stated as a* **direction** *rather than an endpoint pair, so the next change to the rule does not invert it again. Under* **P-30** *the arm must be re-run against the shipped code rather than inherited from the record above.)*: `admittedCount` must follow — a reimplementation does not. The grep survives only in its checkable form: **every limit the eval reports resolves through the exported constant**, no re-typed limit *value* |
 | G-15 | A corpus row demanding a node the query cannot surface is reported as a miss | `TestSweepReportsAMissForARequiredNodeTheQueryCannotSurface` |
 | G-16 | `shutout` is reported when candidates were retrieved and none admitted | ~~`TestSweepReportsAShutoutWhenAnOversizedRankOneCandidateAdmitsNothing`~~ `TestSweepReportsAShutoutWhenEveryCandidateWasOversized`, `TestSweepReportsNoShutoutWhenTheCandidateSetItselfWasEmpty` (`internal/eval/result_test.go`) *(revision 8: renamed in `58b02d8` — the same commit that replaced the stop with a skip, because under skip a shutout needs* **every** *candidate oversized, not only the rank-1 one. The rename is a consequence of §5.1's correction rather than an independent edit, and the empty-set dual arrived with it.)* |
 | G-17 | Whether the anchor also appeared as a candidate, and whether it was admitted, is recorded per row | `TestSweepRecordsThatTheAnchorAlsoAppearedAmongTheCandidates` |
@@ -1721,7 +1726,7 @@ described in prose that the implementation could not satisfy as written.
 | Correction | Where it was wrong | Now |
 |---|---|---|
 | **§9.1's grep was unsatisfiable** | consuming `loop.GraphPort` forces every double to implement `WriteRun`, so the grep hits test sources on compliant code | §9.1 and **G-26b**: the fake's `WriteRun` calls `t.Fatal` — proving the *call* never happens, not that a *string* is absent. Grep demoted to a non-test-scoped backstop |
-| **§13 G-14b's grep was self-colliding** | it forbade any numeric literal equal to a `loop` limit, while §4.3 of this document mandates a required-node cap of **3** = `loop.MaxModelCalls` | **two mutations** on `AssemblyByteBudget` and on the admission rule. The grep survives only as *no re-typed limit value* |
+| **§13 G-14b's grep was self-colliding** | it forbade any numeric literal equal to a `loop` limit, while §4.3 of this document mandates a required-node cap of **3** = `loop.MaxModelCalls` (**no longer equal since 2026-09-07, #13064 — the collision lapsed, the argument did not**) | **two mutations** on `AssemblyByteBudget` and on the admission rule. The grep survives only as *no re-typed limit value* |
 | **§1 S1's grep was weaker than a free fact** | it searched for `ModelPort` / `openaicompat` / POST, and carried a dangling `§13 F-1` reference to a row that never existed | **G-26a**: `go list -deps ./cmd/eval` excludes `internal/openaicompat`. The model adapter is not linked, so the call is unreachable rather than merely unwritten |
 | **§8.2's field table was missing `topSimilarity`** | it appeared only in §8.3's specimen — a seam between two sections of one document | a row with its reader named, and the delete-test sentence extended from five diagnostics to six |
 

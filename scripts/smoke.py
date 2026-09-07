@@ -12,7 +12,7 @@ The default input and subject match no row in internal/eval/corpus.json, deliber
 record that outranks every real candidate for its own input, so a default matching a corpus row would
 poison the next sweep of that row.
 
-Costs two model calls at minimum and six at most, and writes two run records to the graph which it
+Costs two model calls at minimum and twelve at most, and writes two run records to the graph which it
 names on exit; it deletes nothing. Interrupting a run in flight waits for the write-back rather than
 killing it — a second interrupt kills, and a kill landing between the record's node and its body
 leaves a bodyless node behind.

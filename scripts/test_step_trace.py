@@ -65,9 +65,12 @@ import step_trace
 # and `sampling=None` is how a test asks for it.
 ABSENT = object()
 
-# internal/loop/turn.go's five run constants as the record carries them. A module constant, not an
-# inline literal, so a test that needs one value different (ScopeReserveLineTests moves the candidate
-# limit) can copy this and change that one key instead of restating a dict the fixture also owns.
+# The five run constants as a record carries them. maxModelCalls stays 3 -- the cap the runs these
+# fixtures model were made under, not the one turn.go ships today -- because the trace renders every
+# limit out of the record it is given, and must stay readable on records older than the constant.
+# A module constant, not an inline literal, so a test that needs one value different
+# (ScopeReserveLineTests moves the candidate limit) can copy this and change that one key instead of
+# restating a dict the fixture also owns.
 LIMITS = {
     "candidateLimit": 20,
     "assemblyByteBudget": 60_000,

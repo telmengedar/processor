@@ -21,7 +21,7 @@ one unscoped recall plus one recall scoped to the anchor's two-hop neighbourhood
 reciprocal-rank fusion IN PRINCIPLE, but turn.go always calls Retrieve with exactly one query
 (`[]string{input}`), and RRF over a single list is order-preserving -- see the RECALL RANKING note
 below for what that actually means for the order you see) -> assemble a byte-budgeted block -> call
-the model, looping while it asks for supplementary recall, bounded by MaxModelCalls=3 -> write a run
+the model, looping while it asks for supplementary recall, bounded by MaxModelCalls=6 -> write a run
 record. The model has TWO tools: the supplementary "recall", and "write_file", which writes one
 file into a working directory the run is given (internal/workspace). There is still no shell, no
 network and no repo tool, and no notion of a task spanning more than one HTTP call. So a task like

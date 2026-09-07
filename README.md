@@ -61,8 +61,8 @@ words; that document carries the argument.
   first turn is clean by construction, so only the second can show what the first left behind. It takes
   the graph credential from `PROCESSOR_DIVOID_URL`/`PROCESSOR_DIVOID_KEY` when those are set and
   otherwise from the ambient `DIVOID_URL`/`DIVOID_RAZIEL_KEY`, naming both pairs when neither is there.
-  It costs **two model calls at minimum and six at most** — one per turn, and up to the loop's own cap
-  of three per turn when the model asks for supplementary recall — writes two run records and names
+  It costs **two model calls at minimum and twelve at most** — one per turn, and up to the loop's own
+  cap of six per turn when the model asks for supplementary recall — writes two run records and names
   them on exit; it deletes nothing. Its default input and subject match no corpus row on purpose: a run
   writes a record that outranks every real candidate for its own input, so a default matching a row
   would poison the next sweep of that row. Exits non-zero when a turn admits zero candidates, and also
@@ -235,7 +235,7 @@ cap can still arrive while the nodes already at the top keep the ranks they had.
 
 The turn: fetch the subject and recall candidates, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
-model, dispatch a tool each time the model asks for one (up to a call cap of 3 model calls, so at most 2
+model, dispatch a tool each time the model asks for one (up to a call cap of 6 model calls, so at most 5
 tool dispatches per run — the capping call's request is counted but never dispatched), then write the
 record back to the graph as one `session-log` node linked to the subject.
 
