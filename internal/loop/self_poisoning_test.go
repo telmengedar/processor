@@ -67,11 +67,16 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 
 	const input = "what did the split change"
 
+	const (
+		realDocument      = int64(7)
+		foreignSessionLog = int64(8)
+	)
+
 	graph := &poisoningGraph{
 		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "the subject body"},
 		base: []loop.Candidate{
-			{ID: 7, Type: "documentation", Name: "A real document", Similarity: 0.81, Content: strings.Repeat("r", 59_000)},
-			{ID: 8, Type: divoid.RunNodeType, Name: "a session log another agent wrote", Similarity: 0.74, Content: strings.Repeat("h", 900)},
+			{ID: realDocument, Type: "documentation", Name: "A real document", Similarity: 0.81, Content: strings.Repeat("r", 59_000)},
+			{ID: foreignSessionLog, Type: divoid.RunNodeType, Name: "a session log another agent wrote", Similarity: 0.74, Content: strings.Repeat("h", 900)},
 		},
 	}
 	model := answeringModel{}
@@ -98,29 +103,40 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 		t.Fatalf("turn 2: %v", err)
 	}
 
-	if second.Candidates[0].ID != recordID {
-		t.Fatalf("test setup error: turn 2's rank-1 candidate is #%d, want turn 1's record #%d", second.Candidates[0].ID, recordID)
-	}
-	if admittedCount(second.Candidates) == 0 {
-		t.Fatalf("turn 2 admitted nothing from %d candidates: the run record at rank 1 cut everything behind it", len(second.Candidates))
+	for _, d := range second.Candidates {
+		if d.ID == recordID {
+			t.Fatalf("turn 2 carried its own turn-1 record #%d as candidate %d of %d: recall ranks it above every real row, so a record the block refuses only at admission has already spent the slot the row behind it needed", recordID, d.Rank, len(second.Candidates))
+		}
 	}
 	if got, want := admittedCount(second.Candidates), 2; got != want {
-		t.Fatalf("turn 2 admitted %d of %d candidates, want %d — both real rows behind the record", got, len(second.Candidates), want)
+		t.Fatalf("turn 2 admitted %d of %d candidates, want %d — the real document and the session log another agent wrote", got, len(second.Candidates), want)
 	}
-	if second.Candidates[0].Included {
-		t.Fatal("turn 2 admitted its own previous run record")
-	}
-	if !second.Candidates[2].Included {
-		t.Fatalf("turn 2 cut #%d, a session log another agent wrote: the record's own type must not be what excludes it", second.Candidates[2].ID)
+	if foreign := dispositionOf(t, second.Candidates, foreignSessionLog); !foreign.Included {
+		t.Fatalf("turn 2 cut #%d, a session log another agent wrote, with reason %q: it carries the same node type as the record and only the name tells them apart, so excluding the type is a wider rule than the one measured", foreign.ID, foreign.CutReason)
 	}
 
 	self, budget := cutReasons(t)
-	if second.Candidates[0].CutReason != self {
-		t.Fatalf("turn 2's rank-1 record was cut with reason %q, want %q — the row this loop wrote must be cut by the self-produced rule, not merely as one more oversized candidate", second.Candidates[0].CutReason, self)
-	}
 	if self == budget {
 		t.Fatal("test setup error: the two cut reasons are the same string, so this assertion cannot discriminate")
 	}
+
+	_, direct := loop.Assemble(graph.anchor, []loop.Candidate{{ID: recordID, Content: "x", SelfProduced: true}}, loop.AssemblyByteBudget)
+	if direct[0].Included || direct[0].CutReason != self {
+		t.Fatalf("assembly handed a record this system wrote admitted it with reason %q, want it cut as %q: retrieval now keeps such a row out of the candidate list, and admission is the second refusal that still has to hold for one arriving by any other route", direct[0].CutReason, self)
+	}
+}
+
+func dispositionOf(t *testing.T, dispositions []loop.Disposition, id int64) loop.Disposition {
+	t.Helper()
+
+	for _, d := range dispositions {
+		if d.ID == id {
+			return d
+		}
+	}
+
+	t.Fatalf("no candidate carries id %d among the %d turn 2 returned", id, len(dispositions))
+	return loop.Disposition{}
 }
 
 func cutReasons(t *testing.T) (selfProduced, byteBudget string) {

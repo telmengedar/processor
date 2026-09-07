@@ -8,7 +8,7 @@ import (
 
 const fusionRankConstant = 10
 
-// Retrieve fuses one unscoped recall per query with a recall ranked inside the anchor's two-hop scope, returning at most limit candidates and never the anchor itself.
+// Retrieve fuses one unscoped recall per query with a recall ranked inside the anchor's two-hop scope, returning at most limit candidates and never the anchor itself or a record this system produced.
 func Retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []string, limit, reserve int) ([]Candidate, error) {
 	if len(queries) == 0 {
 		return nil, nil
@@ -82,7 +82,7 @@ func fuse(lists [][]Candidate, scoped []Candidate, anchor int64, limit, reserve 
 	out := make([]Candidate, 0, limit)
 
 	appendUnseen := func(candidate Candidate) bool {
-		if taken[candidate.ID] {
+		if taken[candidate.ID] || candidate.SelfProduced {
 			return false
 		}
 		taken[candidate.ID] = true

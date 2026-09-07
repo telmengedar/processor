@@ -508,6 +508,74 @@ func TestTheAnchorIsNotBackfilledIntoASlotTheReserveLeftEmpty(t *testing.T) {
 	}
 }
 
+func poisonedGraph() *fusionGraph {
+	return &fusionGraph{lists: map[string][]Candidate{"input": {
+		{ID: 910, SelfProduced: true},
+		{ID: 810},
+		{ID: 920, SelfProduced: true},
+		{ID: 220},
+		{ID: 640},
+		{ID: 130},
+		{ID: 970},
+	}}}
+}
+
+func TestARecordThisSystemWroteSpendsNoCandidateSlotAndTheRowsBehindItMoveUp(t *testing.T) {
+	t.Parallel()
+
+	got := mustRetrieve(t, poisonedGraph(), []string{"input"}, 4, 0)
+
+	want := []int64{810, 220, 640, 130}
+	if !slices.Equal(got, want) {
+		t.Fatalf("retrieval returned %v, want %v: two records this system wrote stand first and third of seven rows and admission refuses them whatever happens here, so a cap applied before they are dropped hands back two candidates rather than four and the rows behind them never reach the block at all", got, want)
+	}
+}
+
+func TestARecordThisSystemWroteSpendsNoReservedSlotEither(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists:  map[string][]Candidate{"input": ranked(810, 220, 640, 130)},
+		scoped: []Candidate{{ID: 930, SelfProduced: true}, {ID: 590}, {ID: 20}},
+	}
+
+	got := mustRetrieve(t, graph, []string{"input"}, 6, 2)
+
+	want := []int64{810, 220, 640, 130, 590, 20}
+	if !slices.Equal(got, want) {
+		t.Fatalf("retrieval returned %v, want %v: a record this system wrote heads the scoped ranking, so charging it one of the two reserved slots spends a slot on a row that was never added and leaves node 20 outside the cap", got, want)
+	}
+}
+
+func TestARecordThisSystemWroteIsNotBackfilledIntoASlotTheReserveLeftEmpty(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{"input": {
+		{ID: 810}, {ID: 220}, {ID: 940, SelfProduced: true}, {ID: 640},
+	}}}
+
+	got := mustRetrieve(t, graph, []string{"input"}, 4, 2)
+
+	if slices.Contains(got, int64(940)) {
+		t.Fatalf("retrieval returned %v: the fused order does not fill the cap, the reserve draws on an empty scoped list and the backfill runs over the fused order a second time, so an exclusion applied on the first pass alone lets the record back in on the third", got)
+	}
+}
+
+func TestACandidateKeepsTheRankTheGraphGaveItRatherThanTheRankItInheritsWhenARecordAheadOfItIsDropped(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{"input": {
+		{ID: 910, SelfProduced: true}, {ID: 810}, {ID: 220},
+	}}}
+
+	got := mustRetrieveCandidates(t, graph, []string{"input"}, 6, 0)
+
+	want := []Source{{Query: 0, Rank: 2}}
+	if len(got) == 0 || got[0].ID != 810 || !slices.Equal(got[0].Sources, want) {
+		t.Fatalf("the leading candidate is %+v, want node 810 carrying %+v: the graph ranked it second behind a record this system wrote, and renumbering it to first once the record is dropped makes the record's own crowding unreadable in every run written afterwards", got, want)
+	}
+}
+
 func TestACandidateCarriesEveryRecallThatReturnedItSoAScopeReserveArrivalIsNotReadAsAgreement(t *testing.T) {
 	t.Parallel()
 
