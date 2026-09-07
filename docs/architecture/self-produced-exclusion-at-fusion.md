@@ -6,7 +6,7 @@
 > Measurement: **#13091** (six live runs; §6 is the crowding measurement) · Decision record: **#13092**
 > (written against `main` `9d8da90`) · Review: **#13185** (PR #48, CF-1 is what commissioned this document).
 > Project: **#10422** · Documents reconciled by this change: **#10532** (M1), **#10926** (M2), **#11235**
-> (M3), **#12822** (anchor-grounded recall), **#12969** (hub pruning), **#12955** (substance-backed
+> (M3), **#11753** (anchor-grounded recall), **#12969** (hub pruning), **#12955** (substance-backed
 > admission). Not reconciled because nothing in them is falsified: **#10904** (`run-record-fate.md`),
 > **#10437** (`m0-service-skeleton.md`), **#10488** (`process-boundary-test-harness.md`),
 > `anchor-stratified-corpus.md`.
@@ -330,6 +330,20 @@ so its red sends a reader to the fixture, not to the criterion (#13185 W-3). C5 
    that resolve correctly include `substance-backed-admission.md`'s `client.go:34` and `result.go:71–72`
    / `:89`.
 
+6. **Every DiVoid node id a document cites *as* a file's node, resolved against that node.** Added
+   because this round shipped a header, a ledger row and a cross-reference all naming **#12822** as
+   `anchor-grounded-recall.md`'s node. It is not: **#12822 is a 12,378-byte *ruling about* that document,
+   and the document is #11753.** The id came from a ref line reading *"anchor-grounded-recall **ruling**
+   #12822"*, where the load-bearing word was `ruling` — a document and a ruling about it carry
+   near-identical names. **This is layer 5's defect class one level up:** a reference that resolves
+   cleanly to the wrong target while looking checked. The check is `divoid_get_node(id)` and a comparison
+   of its byte length against the blob; an 86,288-byte discrepancy is not subtle. **The answer was already
+   on the branch** — `anchor-grounded-recall.md` §17.5 reads *"verifies this document against #11753"* —
+   which makes this the cheapest available check and the one nobody ran. **And the token may not be swept
+   globally:** `substance-backed-admission.md` carries **six** references to #12822 and every one is
+   **correct**, citing the ruling as an evidential standard rather than as a file. Replacing the token
+   everywhere would break six true statements to fix three false ones.
+
 **What these layers structurally cannot reach.** (a) A claim carried only by a *number* — a table quoting
 "20 candidates" as a measured historical reading is indistinguishable from one asserting current behaviour,
 and only reading the surrounding prose separates them; several were left as dated records on that judgement
@@ -350,7 +364,7 @@ second pass ran. Assume an eighth.
 | `m1-skeleton-loop.md` | #10532 | TL;DR gloss; §1 success criterion S2; §6.3 the *cut-at-admission* rationale; §8.2 `candidates[]`; §11 R13 |
 | `m2-retrieval-eval.md` | #10926 | TL;DR ordering promise; §5.3 `notRetrieved` verdict; §8.2 diagnostic row and delete test; §9 Guard 3's invariant; §11.3 (two); §12 E4; §13 G-19 |
 | `m3-derived-recall.md` | #11235 | §4.3 `Retrieve` row; §7 R4 |
-| `anchor-grounded-recall.md` | #12822 | §6.2; §10 R4; §13 Q3; §14 Unit 3's RETIRED banner; §16.8; §18.4.3; §18.7 (two); §18.8 |
+| `anchor-grounded-recall.md` | #11753 | §6.2; §10 R4; §13 Q3; §14 Unit 3's RETIRED banner; §16.8; §18.4.3; §18.7 (two); §18.8 |
 | `hub-pruning-in-the-anchor-scope.md` | #12969 | §2 items 1 and 2; §4.1 diagram, property 3, Consequence; §5.1; §5.4 displacement bullet; §6; §6.1; §7 opening, table row and item 2; §8 table row and closing; §11; §13 O2 |
 | `substance-backed-admission.md` | #12955 | §6.2 pass 1 and pass 2; §8.4 K6 |
 
@@ -365,7 +379,7 @@ stand as dated record of what M1 shipped and are superseded in M3, per M1's own 
 Unit D, which are about oversized candidates, not records. **On Unit D, note the disagreement rather than
 the strengthening:** #13092 reported that after the exclusion a node of 80,470 B (#10437) reached candidate
 rank 13 — a slot the records had been hiding — while #13185 §4, hours later, found #10437 at scoped rank 6
-and never a candidate at all. One reading, not reproduced. Unit D's own argument (#12822 §16.8) does not
+and never a candidate at all. One reading, not reproduced. Unit D's own argument (#11753 §16.8) does not
 depend on either.
 
 ---
