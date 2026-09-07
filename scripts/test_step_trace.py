@@ -242,9 +242,9 @@ class MalformedToolRequestUncappedTests(unittest.TestCase):
             stop_reason={"reason": "answered", "raw": "stop"},
         )
         out = render(rec)
-        self.assertNotIn("STEP 5  tool call", out)
+        self.assertNotIn("STEP 5  action", out)
         self.assertNotIn("query=None", out)
-        self.assertIn("wants recall, but the tool call itself was malformed and NEVER reached the graph", out)
+        self.assertIn("wants recall, but the action itself was malformed and NEVER reached the graph", out)
         self.assertIn("tool arguments could not be parsed: unexpected end of JSON input", out)
         self.assertIn("query not recorded", out)
 
@@ -271,8 +271,8 @@ class MalformedToolRequestCappedTests(unittest.TestCase):
             cap_reached=True,
         )
         out = render(rec)
-        self.assertNotIn("STEP 5  tool call", out)
-        self.assertIn("wants recall, but the tool call itself was malformed and NEVER reached the graph", out)
+        self.assertNotIn("STEP 5  action", out)
+        self.assertIn("wants recall, but the action itself was malformed and NEVER reached the graph", out)
         self.assertIn("tool arguments had an empty query", out)
         self.assertIn("malformed-request reason wins over the cap reason", out)
 
@@ -288,7 +288,7 @@ class CleanCapReachedTests(unittest.TestCase):
             cap_reached=True,
         )
         out = render(rec)
-        self.assertNotIn("STEP 5  tool call", out)
+        self.assertNotIn("STEP 5  action", out)
         self.assertIn("wants recall (query='Pooshit organization ID')", out)
         self.assertIn("NOT dispatched, counted only", out)
         self.assertNotIn("malformed", out)
@@ -307,7 +307,7 @@ class DispatchedRoundStillRendersTests(unittest.TestCase):
             }],
         )
         out = render(rec)
-        self.assertIn("tool call", out)
+        self.assertIn("STEP 5  action", out)
         self.assertIn("recall(query='second provider'", out)
         self.assertIn("1 candidate(s) returned, 1 admitted", out)
 
@@ -964,3 +964,51 @@ class MixedRoundTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MultiActionRoundTests(unittest.TestCase):
+    """One response may declare several actions, so toolCalls is no longer one entry per model call.
+    Read positionally, the second action of round 1 is attributed to model call 2 and the trace
+    tells a story the run never had -- the same silent misattribution the `tool` field was added to
+    stop, one field along."""
+
+    def test_two_actions_of_one_round_are_both_shown_under_that_one_model_call(self):
+        rec = record(
+            model_calls=2,
+            tool_calls=[
+                {"round": 1, "tool": "writeFile", "path": "index.html", "bytes": 120},
+                {"round": 1, "tool": "writeFile", "path": "README.md", "bytes": 30},
+            ],
+        )
+        out = render(rec)
+        self.assertIn("2 actions declared in this one response", out)
+        self.assertIn("'index.html'", out)
+        self.assertIn("'README.md'", out)
+        self.assertIn("model call 2    input: system + block (10 B) + task input + 2 prior action(s)", out)
+
+    def test_a_record_without_round_numbers_still_reads_one_action_per_model_call(self):
+        rec = record(
+            model_calls=2,
+            tool_calls=[{"query": "first", "error": "call cap reached"}],
+        )
+        out = render(rec)
+        self.assertIn("wants recall (query='first')", out)
+        self.assertIn("model call 2    input: system + block (10 B) + task input + 1 prior action(s)", out)
+
+
+class UnreadContentRoundTests(unittest.TestCase):
+    """Content the harness could not read is recorded as its own round. It has no query, no path and
+    no dispatch, and rendering it through the recall branch would print 'wants recall (query=None)'
+    -- a fabricated request in place of the one thing this round exists to report."""
+
+    def test_unread_content_is_named_as_unread_and_never_printed_as_a_recall(self):
+        rec = record(
+            model_calls=2,
+            tool_calls=[{"round": 1, "tool": "unparsed", "error": "an action block was opened and never closed (900 bytes): <processor-action>"}],
+        )
+        out = render(rec)
+        self.assertIn("COULD NOT READ", out)
+        self.assertIn("an action block was opened and never closed", out)
+        self.assertIn("on the record rather than dropped", out)
+        self.assertNotIn("wants recall", out)
+        self.assertNotIn("STEP 5  action", out)

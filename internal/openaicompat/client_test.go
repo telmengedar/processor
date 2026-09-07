@@ -6,10 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/telmengedar/processor/internal/action"
 	"github.com/telmengedar/processor/internal/loop"
 )
 
@@ -82,7 +83,7 @@ func TestJudgeSendsAuthorizationBearerWhenKeyIsSet(t *testing.T) {
 	}
 }
 
-func TestJudgeRequestBodyCarriesModelSystemBlockInputAndBothTools(t *testing.T) {
+func TestJudgeRequestBodyCarriesModelSystemBlockAndInputAndOffersNoProviderTools(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, stopResponse)
@@ -92,98 +93,45 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndBothTools(t *testing.T) 
 		t.Fatalf("Judge: %v", err)
 	}
 
-	var got struct {
-		Model     string `json:"model"`
-		MaxTokens int    `json:"max_tokens"`
-		Messages  []struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"messages"`
-		Tools []struct {
-			Type     string `json:"type"`
-			Function struct {
-				Name        string          `json:"name"`
-				Description string          `json:"description"`
-				Parameters  json.RawMessage `json:"parameters"`
-			} `json:"function"`
-		} `json:"tools"`
-	}
-	if err := json.Unmarshal(captured.Body, &got); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(captured.Body, &raw); err != nil {
 		t.Fatalf("decode request body: %v; body=%s", err, captured.Body)
 	}
+	if _, present := raw["tools"]; present {
+		t.Fatalf("the request declares provider tools, want none: %s", captured.Body)
+	}
+
+	got := decodeMessages(t, captured.Body)
 
 	const (
 		wantMaxTokens         = 4096
-		wantRecallName        = "recall"
-		wantRecallDescription = "Search memory for something the assembled context did not include. Takes one argument: query, a short description of what is missing."
-		wantWriteName         = "write_file"
-		wantWriteDescription  = "Write a file into the working directory set aside for this request. Takes two arguments: path, a relative path naming the file, and content, the file's full text."
 		wantBlockInputContent = "the block\n===== INPUT =====\nthe input"
 	)
 
-	if got.Model != "the-model-id" {
-		t.Fatalf("model = %q, want %q", got.Model, "the-model-id")
+	var envelope struct {
+		Model     string `json:"model"`
+		MaxTokens int    `json:"max_tokens"`
 	}
-	if got.MaxTokens != wantMaxTokens {
-		t.Fatalf("max_tokens = %d, want %d", got.MaxTokens, wantMaxTokens)
+	if err := json.Unmarshal(captured.Body, &envelope); err != nil {
+		t.Fatalf("decode request body: %v; body=%s", err, captured.Body)
 	}
-	if len(got.Messages) != 2 {
-		t.Fatalf("messages has %d entries, want 2 (system, user)", len(got.Messages))
+	if envelope.Model != "the-model-id" {
+		t.Fatalf("model = %q, want %q", envelope.Model, "the-model-id")
 	}
-	if got.Messages[0].Role != "system" || got.Messages[0].Content != "the system text" {
-		t.Fatalf("messages[0] = %+v, want the system role carrying the system text verbatim", got.Messages[0])
+	if envelope.MaxTokens != wantMaxTokens {
+		t.Fatalf("max_tokens = %d, want %d", envelope.MaxTokens, wantMaxTokens)
 	}
-	if got.Messages[1].Role != "user" {
-		t.Fatalf("messages[1].Role = %q, want %q", got.Messages[1].Role, "user")
+	if len(got) != 2 {
+		t.Fatalf("messages has %d entries, want 2 (system, user)", len(got))
 	}
-	if got.Messages[1].Content != wantBlockInputContent {
-		t.Fatalf("messages[1].Content = %q, want %q byte-exact", got.Messages[1].Content, wantBlockInputContent)
+	if got[0].Role != "system" || got[0].Content != "the system text" {
+		t.Fatalf("messages[0] = %+v, want the system role carrying the system text verbatim", got[0])
 	}
-	if len(got.Tools) != 2 {
-		t.Fatalf("tools has %d entries, want exactly 2 (recall and the file write)", len(got.Tools))
+	if got[1].Role != "user" {
+		t.Fatalf("messages[1].Role = %q, want %q", got[1].Role, "user")
 	}
-	if got.Tools[0].Type != "function" || got.Tools[0].Function.Name != wantRecallName {
-		t.Fatalf("tools[0] = %+v, want the recall function tool named %q", got.Tools[0], wantRecallName)
-	}
-	if got.Tools[0].Function.Description != wantRecallDescription {
-		t.Fatalf("tools[0].function.description = %q, want %q", got.Tools[0].Function.Description, wantRecallDescription)
-	}
-	if got.Tools[1].Type != "function" || got.Tools[1].Function.Name != wantWriteName {
-		t.Fatalf("tools[1] = %+v, want the file-write function tool named %q", got.Tools[1], wantWriteName)
-	}
-	if got.Tools[1].Function.Description != wantWriteDescription {
-		t.Fatalf("tools[1].function.description = %q, want %q", got.Tools[1].Function.Description, wantWriteDescription)
-	}
-
-	var gotRecallParams map[string]any
-	if err := json.Unmarshal(got.Tools[0].Function.Parameters, &gotRecallParams); err != nil {
-		t.Fatalf("decode tools[0].function.parameters: %v; raw=%s", err, got.Tools[0].Function.Parameters)
-	}
-	wantRecallParams := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"query": map[string]any{"type": "string"},
-		},
-		"required": []any{"query"},
-	}
-	if !reflect.DeepEqual(gotRecallParams, wantRecallParams) {
-		t.Fatalf("tools[0].function.parameters = %#v, want %#v", gotRecallParams, wantRecallParams)
-	}
-
-	var gotWriteParams map[string]any
-	if err := json.Unmarshal(got.Tools[1].Function.Parameters, &gotWriteParams); err != nil {
-		t.Fatalf("decode tools[1].function.parameters: %v; raw=%s", err, got.Tools[1].Function.Parameters)
-	}
-	wantWriteParams := map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"path":    map[string]any{"type": "string"},
-			"content": map[string]any{"type": "string"},
-		},
-		"required": []any{"path", "content"},
-	}
-	if !reflect.DeepEqual(gotWriteParams, wantWriteParams) {
-		t.Fatalf("tools[1].function.parameters = %#v, want %#v", gotWriteParams, wantWriteParams)
+	if got[1].Content != wantBlockInputContent {
+		t.Fatalf("messages[1].Content = %q, want %q byte-exact", got[1].Content, wantBlockInputContent)
 	}
 }
 
@@ -291,7 +239,23 @@ func contains(haystack, needle string) bool {
 	})()
 }
 
-func TestJudgeReconstructsPriorRecallRoundsAsAssistantAndToolMessages(t *testing.T) {
+type sentMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+func decodeMessages(t *testing.T, body []byte) []sentMessage {
+	t.Helper()
+	var got struct {
+		Messages []sentMessage `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode request body: %v; body=%s", err, body)
+	}
+	return got.Messages
+}
+
+func TestJudgePutsAPriorRoundBackAsAnActionBlockAndItsResultWithoutUsingTheToolRole(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, stopResponse)
@@ -300,63 +264,77 @@ func TestJudgeReconstructsPriorRecallRoundsAsAssistantAndToolMessages(t *testing
 	in := loop.JudgeInput{
 		System: "sys", Block: "block", Input: "in",
 		PriorTools: []loop.ToolExchange{
-			{Tool: loop.ToolRecall, Query: "first query", Results: []loop.Candidate{
+			{Round: 1, Tool: loop.ToolRecall, Query: "first query", Results: []loop.Candidate{
 				{ID: 5, Type: "task", Name: "Found", Content: "found body"},
 				{ID: 9, Type: "documentation", Name: "Also Found", Content: "second found body"},
 			}},
-			{Tool: loop.ToolRecall, Error: "tool arguments could not be parsed"},
+			{Round: 2, Tool: loop.ToolRecall, Error: "action arguments could not be parsed"},
 		},
 	}
 	if _, err := c.Judge(context.Background(), in); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
 
-	var got struct {
-		Messages []struct {
-			Role       string `json:"role"`
-			Content    string `json:"content"`
-			ToolCallID string `json:"tool_call_id"`
-			ToolCalls  []struct {
-				ID       string `json:"id"`
-				Function struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
-				} `json:"function"`
-			} `json:"tool_calls"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(captured.Body, &got); err != nil {
-		t.Fatalf("decode request body: %v; body=%s", err, captured.Body)
+	got := decodeMessages(t, captured.Body)
+	if len(got) != 6 {
+		t.Fatalf("messages has %d entries, want 6", len(got))
 	}
 
-	if len(got.Messages) != 6 {
-		t.Fatalf("messages has %d entries, want 6", len(got.Messages))
+	for i, m := range got {
+		if m.Role == "tool" {
+			t.Fatalf("messages[%d] uses the tool role, which this protocol does not use", i)
+		}
 	}
 
-	round1Assistant, round1Tool := got.Messages[2], got.Messages[3]
-	if round1Assistant.Role != "assistant" || len(round1Assistant.ToolCalls) != 1 {
-		t.Fatalf("messages[2] = %+v, want an assistant message with one tool call", round1Assistant)
+	if got[2].Role != "assistant" {
+		t.Fatalf("messages[2].Role = %q, want assistant", got[2].Role)
 	}
-	const wantRecallToolName = "recall"
-	if round1Assistant.ToolCalls[0].Function.Name != wantRecallToolName {
-		t.Fatalf("messages[2] tool call function = %q, want %q", round1Assistant.ToolCalls[0].Function.Name, wantRecallToolName)
+	if !contains(got[2].Content, action.Open) || !contains(got[2].Content, action.Close) {
+		t.Fatalf("messages[2].Content = %q, want the round replayed as an action block", got[2].Content)
 	}
-	if !contains(round1Assistant.ToolCalls[0].Function.Arguments, "first query") {
-		t.Fatalf("messages[2] tool call arguments = %q, want it to carry the original query", round1Assistant.ToolCalls[0].Function.Arguments)
+	if !contains(got[2].Content, "first query") {
+		t.Fatalf("messages[2].Content = %q, want it to carry the original query", got[2].Content)
 	}
-	if round1Tool.Role != "tool" || round1Tool.ToolCallID != round1Assistant.ToolCalls[0].ID {
-		t.Fatalf("messages[3] = %+v, want a tool message whose tool_call_id matches messages[2]'s call id", round1Tool)
+	if got[3].Role != "user" {
+		t.Fatalf("messages[3].Role = %q, want user", got[3].Role)
 	}
-	if !contains(round1Tool.Content, "found body") {
-		t.Fatalf("messages[3].Content = %q, want it to carry the recalled body", round1Tool.Content)
+	if !contains(got[3].Content, "found body") {
+		t.Fatalf("messages[3].Content = %q, want it to carry the recalled body", got[3].Content)
 	}
-	if !contains(round1Tool.Content, "second found body") {
-		t.Fatalf("messages[3].Content = %q, want it to carry the SECOND candidate's body too — a renderer that truncated to one hit would still pass without this assertion", round1Tool.Content)
+	if !contains(got[3].Content, "second found body") {
+		t.Fatalf("messages[3].Content = %q, want it to carry the SECOND candidate's body too — a renderer that truncated to one hit would still pass without this assertion", got[3].Content)
+	}
+	if !contains(got[5].Content, "action arguments could not be parsed") {
+		t.Fatalf("messages[5].Content = %q, want the error surfaced to the model", got[5].Content)
+	}
+}
+
+func TestJudgeReplaysTwoActionsOfOneRoundAsASingleAssistantTurnCarryingBothBlocks(t *testing.T) {
+	t.Parallel()
+
+	srv, captured := capturingServer(t, stopResponse)
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
+
+	in := loop.JudgeInput{
+		System: "sys", Block: "block", Input: "in",
+		PriorTools: []loop.ToolExchange{
+			{Round: 1, Tool: loop.ToolWriteFile, Path: "index.html", Content: "<h1>a</h1>", Bytes: 10},
+			{Round: 1, Tool: loop.ToolWriteFile, Path: "README.md", Content: "# a", Bytes: 3},
+		},
+	}
+	if _, err := c.Judge(context.Background(), in); err != nil {
+		t.Fatalf("Judge: %v", err)
 	}
 
-	round2Tool := got.Messages[5]
-	if !contains(round2Tool.Content, "tool arguments could not be parsed") {
-		t.Fatalf("messages[5].Content = %q, want the error surfaced to the model", round2Tool.Content)
+	got := decodeMessages(t, captured.Body)
+	if len(got) != 4 {
+		t.Fatalf("messages has %d entries, want 4 — two actions of one round are one assistant turn and one result turn", len(got))
+	}
+	if strings.Count(got[2].Content, action.Open) != 2 {
+		t.Fatalf("messages[2].Content = %q, want both action blocks in the one assistant turn", got[2].Content)
+	}
+	if !contains(got[3].Content, "index.html") || !contains(got[3].Content, "README.md") {
+		t.Fatalf("messages[3].Content = %q, want both results", got[3].Content)
 	}
 }
 
@@ -429,66 +407,6 @@ func TestJudgeMapsAnUnknownFinishReasonToUnrecognisedAndPreservesTheRawValue(t *
 	}
 	if result.RawReason != "some-vendor-reason" {
 		t.Fatalf("RawReason = %q, want the raw value preserved", result.RawReason)
-	}
-}
-
-func TestJudgeDecodesAToolCallAsWantsRecallWithTheParsedQuery(t *testing.T) {
-	t.Parallel()
-
-	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"recall","arguments":"{\"query\":\"the missing thing\"}"}}]},"finish_reason":"tool_calls"}]}`
-	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
-	if err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-	if result.Reason != loop.WantsRecall {
-		t.Fatalf("Reason = %q, want WantsRecall", result.Reason)
-	}
-	if result.RecallQuery != "the missing thing" {
-		t.Fatalf("RecallQuery = %q, want %q", result.RecallQuery, "the missing thing")
-	}
-	if result.ToolError != "" {
-		t.Fatalf("ToolError = %q, want empty for a well-formed tool call", result.ToolError)
-	}
-}
-
-func TestJudgeFlagsUnparseableToolArgumentsAsAMalformedRecallRequest(t *testing.T) {
-	t.Parallel()
-
-	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"recall","arguments":"not json"}}]},"finish_reason":"tool_calls"}]}`
-	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
-	if err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-	if result.Reason != loop.WantsRecall {
-		t.Fatalf("Reason = %q, want WantsRecall", result.Reason)
-	}
-	if result.ToolError == "" {
-		t.Fatal("ToolError is empty, want the parse failure surfaced")
-	}
-	if result.RecallQuery != "" {
-		t.Fatalf("RecallQuery = %q, want empty when the arguments did not parse", result.RecallQuery)
-	}
-}
-
-func TestJudgeFlagsAnEmptyQueryArgumentAsAMalformedRecallRequest(t *testing.T) {
-	t.Parallel()
-
-	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"recall","arguments":"{\"query\":\"   \"}"}}]},"finish_reason":"tool_calls"}]}`
-	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
-	if err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-	if result.ToolError == "" {
-		t.Fatal("ToolError is empty, want an empty/whitespace-only query flagged")
 	}
 }
 
@@ -571,25 +489,6 @@ func TestJudgeReadsOnlyTheFirstChoiceIgnoringAnyOthers(t *testing.T) {
 	}
 	if result.Reason != loop.Answered {
 		t.Fatalf("Reason = %q, want Answered (the first choice's finish_reason, not the second choice's Truncated)", result.Reason)
-	}
-}
-
-func TestJudgeDecodesAToolCallAsWantsRecallEvenWhenFinishReasonSaysStop(t *testing.T) {
-	t.Parallel()
-
-	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"recall","arguments":"{\"query\":\"the missing thing\"}"}}]},"finish_reason":"stop"}]}`
-	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
-	if err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-	if result.Reason != loop.WantsRecall {
-		t.Fatalf("Reason = %q, want WantsRecall — a tool call's presence must win even when finish_reason says %q", result.Reason, "stop")
-	}
-	if result.RecallQuery != "the missing thing" {
-		t.Fatalf("RecallQuery = %q, want %q", result.RecallQuery, "the missing thing")
 	}
 }
 

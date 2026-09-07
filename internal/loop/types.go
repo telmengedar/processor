@@ -75,8 +75,10 @@ const (
 	Refused TerminalReason = "refused"
 	// WantsWrite means the model asked for the file-write tool.
 	WantsWrite TerminalReason = "wantsWrite"
-	// Unrecognised means the endpoint reported a terminal state outside this set.
+	// Unrecognised means the response asked for an action outside this set.
 	Unrecognised TerminalReason = "unrecognised"
+	// Malformed means the response declared an action the harness could not read.
+	Malformed TerminalReason = "malformed"
 )
 
 const (
@@ -84,6 +86,8 @@ const (
 	ToolRecall = "recall"
 	// ToolWriteFile is the file-write tool's name in a run record.
 	ToolWriteFile = "writeFile"
+	// ToolUnparsed is the name a run record gives a round that carried content the harness could not read.
+	ToolUnparsed = "unparsed"
 )
 
 // Usage is the two token counts as the endpoint reported them.
@@ -92,8 +96,10 @@ type Usage struct {
 	OutTokens int `json:"outTokens"`
 }
 
-// ToolCallRecord is one tool round as the run record carries it.
+// ToolCallRecord is one action as the run record carries it.
 type ToolCallRecord struct {
+	// Round is the model call this action was declared in, counting from one.
+	Round   int           `json:"round"`
 	Tool    string        `json:"tool"`
 	Query   string        `json:"query,omitempty"`
 	Path    string        `json:"path,omitempty"`
@@ -157,7 +163,7 @@ type Record struct {
 	// Workspace is the run's working directory, absent when the run attempted no file write.
 	Workspace  string `json:"workspace,omitempty"`
 	ModelCalls int    `json:"modelCalls"`
-	// CapReached is true exactly when the call cap was hit while the model still wanted a tool.
+	// CapReached is true exactly when the call cap was hit while the response still needed another round.
 	CapReached bool `json:"capReached"`
 	// Usage carries one entry per model call, in call order, nil where the endpoint reported none.
 	Usage      []*Usage   `json:"usage"`
@@ -166,8 +172,9 @@ type Record struct {
 	Sampling   Sampling   `json:"sampling"`
 }
 
-// ToolExchange is one tool round already completed in this turn.
+// ToolExchange is one action already carried out in this turn.
 type ToolExchange struct {
+	Round        int
 	Tool         string
 	Query        string
 	Path         string
@@ -186,15 +193,24 @@ type JudgeInput struct {
 	PriorTools []ToolExchange
 }
 
-// JudgeResult is one judgement step's outcome.
-type JudgeResult struct {
-	Answer       string
-	Reason       TerminalReason
-	RawReason    string
+// Action is one thing the response asked the harness to do, or the reason that request could not be honoured.
+type Action struct {
+	Tool         string
 	RecallQuery  string
 	WritePath    string
 	WriteContent string
-	ToolError    string
-	Usage        *Usage
-	Sampling     Sampling
+	Error        string
+}
+
+// JudgeResult is one judgement step's outcome.
+type JudgeResult struct {
+	Answer    string
+	Reason    TerminalReason
+	RawReason string
+	// Actions is every action the response declared, in the order it declared them.
+	Actions []Action
+	// Problems is every span of action-shaped content the harness could not read.
+	Problems []string
+	Usage    *Usage
+	Sampling Sampling
 }

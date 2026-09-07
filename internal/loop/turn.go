@@ -243,65 +243,86 @@ func (t *Turn) judge(ctx context.Context, block, input string) (judgement, error
 		judged.usages = append(judged.usages, result.Usage)
 		judged.sampling = result.Sampling
 
-		if !wantsTool(result.Reason) {
-			break
+		round := judged.modelCalls
+		exchanges = append(exchanges, unparsedExchanges(round, result.Problems)...)
+
+		if len(result.Actions) == 0 {
+			if len(result.Problems) == 0 {
+				break
+			}
+			if judged.modelCalls >= MaxModelCalls {
+				judged.capReached = true
+				break
+			}
+			continue
 		}
+
 		if judged.modelCalls >= MaxModelCalls {
 			judged.capReached = true
-			exchanges = append(exchanges, cappedExchange(result))
+			exchanges = append(exchanges, cappedExchanges(round, result.Actions)...)
 			break
 		}
 
-		exchanges = append(exchanges, t.dispatch(ctx, result, &judged.workspace))
+		for _, act := range result.Actions {
+			exchanges = append(exchanges, t.dispatch(ctx, round, act, &judged.workspace))
+		}
 	}
 
 	judged.toolCalls = toolCallRecords(exchanges)
 	return judged, nil
 }
 
-func wantsTool(reason TerminalReason) bool {
-	return reason == WantsRecall || reason == WantsWrite
-}
-
-func toolFor(reason TerminalReason) string {
-	if reason == WantsWrite {
-		return ToolWriteFile
+func unparsedExchanges(round int, problems []string) []ToolExchange {
+	exchanges := make([]ToolExchange, 0, len(problems))
+	for _, p := range problems {
+		exchanges = append(exchanges, ToolExchange{Round: round, Tool: ToolUnparsed, Error: p, Dispositions: []Disposition{}})
 	}
-	return ToolRecall
+	return exchanges
 }
 
-func cappedExchange(result JudgeResult) ToolExchange {
-	if result.ToolError != "" {
-		return ToolExchange{Tool: toolFor(result.Reason), Error: result.ToolError}
+func cappedExchanges(round int, actions []Action) []ToolExchange {
+	exchanges := make([]ToolExchange, 0, len(actions))
+	for _, act := range actions {
+		exchanges = append(exchanges, cappedExchange(round, act))
+	}
+	return exchanges
+}
+
+func cappedExchange(round int, act Action) ToolExchange {
+	if act.Error != "" {
+		return ToolExchange{Round: round, Tool: act.Tool, Error: act.Error, Dispositions: []Disposition{}}
 	}
 	return ToolExchange{
-		Tool:    toolFor(result.Reason),
-		Query:   result.RecallQuery,
-		Path:    result.WritePath,
-		Content: result.WriteContent,
-		Bytes:   len(result.WriteContent),
-		Error:   errCallCapReached,
+		Round:        round,
+		Tool:         act.Tool,
+		Query:        act.RecallQuery,
+		Path:         act.WritePath,
+		Content:      act.WriteContent,
+		Bytes:        len(act.WriteContent),
+		Error:        errCallCapReached,
+		Dispositions: []Disposition{},
 	}
 }
 
-func (t *Turn) dispatch(ctx context.Context, result JudgeResult, workspace *string) ToolExchange {
-	if result.Reason == WantsWrite {
-		return t.dispatchWrite(ctx, result, workspace)
+func (t *Turn) dispatch(ctx context.Context, round int, act Action, workspace *string) ToolExchange {
+	if act.Tool == ToolWriteFile {
+		return t.dispatchWrite(ctx, round, act, workspace)
 	}
-	return t.dispatchRecall(ctx, result)
+	return t.dispatchRecall(ctx, round, act)
 }
 
-func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace *string) ToolExchange {
+func (t *Turn) dispatchWrite(ctx context.Context, round int, act Action, workspace *string) ToolExchange {
 	exchange := ToolExchange{
+		Round:        round,
 		Tool:         ToolWriteFile,
-		Path:         result.WritePath,
-		Content:      result.WriteContent,
-		Bytes:        len(result.WriteContent),
+		Path:         act.WritePath,
+		Content:      act.WriteContent,
+		Bytes:        len(act.WriteContent),
 		Dispositions: []Disposition{},
 	}
 
-	if result.ToolError != "" {
-		exchange.Error = result.ToolError
+	if act.Error != "" {
+		exchange.Error = act.Error
 		return exchange
 	}
 	if t.Files == nil {
@@ -319,35 +340,35 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 		*workspace = dir
 	}
 
-	written, err := t.Files.Write(ctx, *workspace, result.WritePath, result.WriteContent)
+	written, err := t.Files.Write(ctx, *workspace, act.WritePath, act.WriteContent)
 	if err != nil {
 		if errors.Is(err, ErrWriteRejected) {
 			exchange.Error = err.Error()
 			return exchange
 		}
-		t.log().Error("file write failed", "path", result.WritePath, "error", err)
+		t.log().Error("file write failed", "path", act.WritePath, "error", err)
 		exchange.Error = errFileWriteFailed
 		return exchange
 	}
 
 	exchange.Bytes = written
-	t.log().Info("file written", "dir", *workspace, "path", result.WritePath, "bytes", written)
+	t.log().Info("file written", "dir", *workspace, "path", act.WritePath, "bytes", written)
 	return exchange
 }
 
-func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult) ToolExchange {
-	if result.ToolError != "" {
-		return ToolExchange{Tool: ToolRecall, Error: result.ToolError, Dispositions: []Disposition{}}
+func (t *Turn) dispatchRecall(ctx context.Context, round int, act Action) ToolExchange {
+	if act.Error != "" {
+		return ToolExchange{Round: round, Tool: ToolRecall, Error: act.Error, Dispositions: []Disposition{}}
 	}
 
-	candidates, err := t.Graph.Recall(ctx, result.RecallQuery, CandidateLimit, nil)
+	candidates, err := t.Graph.Recall(ctx, act.RecallQuery, CandidateLimit, nil)
 	if err != nil {
-		t.log().Error("supplementary recall failed", "query", result.RecallQuery, "error", err)
-		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errSupplementaryRecallFailed, Dispositions: []Disposition{}}
+		t.log().Error("supplementary recall failed", "query", act.RecallQuery, "error", err)
+		return ToolExchange{Round: round, Tool: ToolRecall, Query: act.RecallQuery, Error: errSupplementaryRecallFailed, Dispositions: []Disposition{}}
 	}
 
 	admitted, dispositions := admit(candidates, SupplementaryByteBudget)
-	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions}
+	return ToolExchange{Round: round, Tool: ToolRecall, Query: act.RecallQuery, Results: admitted, Dispositions: dispositions}
 }
 
 func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {
@@ -357,7 +378,7 @@ func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {
 		if results == nil {
 			results = []Disposition{}
 		}
-		records[i] = ToolCallRecord{Tool: e.Tool, Query: e.Query, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results}
+		records[i] = ToolCallRecord{Round: e.Round, Tool: e.Tool, Query: e.Query, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results}
 	}
 	return records
 }

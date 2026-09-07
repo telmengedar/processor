@@ -5,87 +5,32 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/telmengedar/processor/internal/action"
 	"github.com/telmengedar/processor/internal/loop"
 )
+
+const problemExcerptBytes = 1024
 
 type chatRequest struct {
 	Model       string        `json:"model"`
 	Messages    []wireMessage `json:"messages"`
 	MaxTokens   int           `json:"max_tokens"`
-	Tools       []wireTool    `json:"tools,omitempty"`
 	Temperature *float64      `json:"temperature,omitempty"`
 	TopP        *float64      `json:"top_p,omitempty"`
 }
 
 type wireMessage struct {
-	Role       string         `json:"role"`
-	Content    string         `json:"content,omitempty"`
-	ToolCalls  []wireToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Role    string `json:"role"`
+	Content string `json:"content,omitempty"`
 }
 
-type wireToolCall struct {
-	ID       string           `json:"id"`
-	Type     string           `json:"type"`
-	Function wireFunctionCall `json:"function"`
-}
-
-type wireFunctionCall struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-}
-
-type wireTool struct {
-	Type     string       `json:"type"`
-	Function wireFunction `json:"function"`
-}
-
-type wireFunction struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"parameters"`
-}
-
-type recallToolArguments struct {
+type recallArguments struct {
 	Query string `json:"query"`
 }
 
-type writeFileToolArguments struct {
+type writeFileArguments struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
-}
-
-func recallTool() wireTool {
-	return wireTool{
-		Type: "function",
-		Function: wireFunction{
-			Name:        recallToolName,
-			Description: "Search memory for something the assembled context did not include. Takes one argument: query, a short description of what is missing.",
-			Parameters: json.RawMessage(`{
-				"type": "object",
-				"properties": {"query": {"type": "string"}},
-				"required": ["query"]
-			}`),
-		},
-	}
-}
-
-func writeFileTool() wireTool {
-	return wireTool{
-		Type: "function",
-		Function: wireFunction{
-			Name:        writeFileToolName,
-			Description: "Write a file into the working directory set aside for this request. Takes two arguments: path, a relative path naming the file, and content, the file's full text.",
-			Parameters: json.RawMessage(`{
-				"type": "object",
-				"properties": {
-					"path": {"type": "string"},
-					"content": {"type": "string"}
-				},
-				"required": ["path", "content"]
-			}`),
-		},
-	}
 }
 
 type chatResponse struct {
@@ -99,8 +44,7 @@ type wireChoice struct {
 }
 
 type wireResponseMessage struct {
-	Content   *string        `json:"content"`
-	ToolCalls []wireToolCall `json:"tool_calls"`
+	Content *string `json:"content"`
 }
 
 type wireUsage struct {
@@ -120,27 +64,11 @@ func buildMessages(in loop.JudgeInput) []wireMessage {
 		{Role: "user", Content: buildUserContent(in.Block, in.Input)},
 	}
 
-	for i, r := range in.PriorTools {
-		callID := fmt.Sprintf("call-%d", i+1)
-
-		messages = append(messages,
-			wireMessage{
-				Role: "assistant",
-				ToolCalls: []wireToolCall{{
-					ID:   callID,
-					Type: "function",
-					Function: wireFunctionCall{
-						Name:      wireToolName(r.Tool),
-						Arguments: toolArguments(r),
-					},
-				}},
-			},
-			wireMessage{
-				Role:       "tool",
-				ToolCallID: callID,
-				Content:    renderToolResult(r),
-			},
-		)
+	for _, round := range groupRounds(in.PriorTools) {
+		if declared := renderDeclarations(round); declared != "" {
+			messages = append(messages, wireMessage{Role: "assistant", Content: declared})
+		}
+		messages = append(messages, wireMessage{Role: "user", Content: renderResults(round)})
 	}
 
 	return messages
@@ -154,20 +82,67 @@ func buildUserContent(block, input string) string {
 	return b.String()
 }
 
-func wireToolName(tool string) string {
-	if tool == loop.ToolWriteFile {
-		return writeFileToolName
+func groupRounds(exchanges []loop.ToolExchange) [][]loop.ToolExchange {
+	var rounds [][]loop.ToolExchange
+	for i, e := range exchanges {
+		if i > 0 && exchanges[i-1].Round == e.Round {
+			rounds[len(rounds)-1] = append(rounds[len(rounds)-1], e)
+			continue
+		}
+		rounds = append(rounds, []loop.ToolExchange{e})
 	}
-	return recallToolName
+	return rounds
 }
 
-func toolArguments(r loop.ToolExchange) string {
-	if r.Tool == loop.ToolWriteFile {
-		encoded, _ := json.Marshal(writeFileToolArguments{Path: r.Path, Content: r.Content})
-		return string(encoded)
+func renderDeclarations(round []loop.ToolExchange) string {
+	var blocks []string
+	for _, e := range round {
+		if e.Tool == loop.ToolUnparsed {
+			continue
+		}
+		blocks = append(blocks, action.Open+"\n"+declaration(e)+"\n"+action.Close)
 	}
-	encoded, _ := json.Marshal(recallToolArguments{Query: r.Query})
+	return strings.Join(blocks, "\n")
+}
+
+func declaration(e loop.ToolExchange) string {
+	encoded, err := json.Marshal(map[string]any{"name": wireActionName(e.Tool), "arguments": declaredArguments(e)})
+	if err != nil {
+		return ""
+	}
 	return string(encoded)
+}
+
+func declaredArguments(e loop.ToolExchange) any {
+	if e.Tool == loop.ToolWriteFile {
+		return writeFileArguments{Path: e.Path, Content: e.Content}
+	}
+	return recallArguments{Query: e.Query}
+}
+
+func wireActionName(tool string) string {
+	if tool == loop.ToolWriteFile {
+		return action.WriteFile
+	}
+	return action.Recall
+}
+
+func renderResults(round []loop.ToolExchange) string {
+	var b strings.Builder
+	for i, e := range round {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "===== ACTION RESULT =====\naction: %s\n%s\n", resultHeading(e), renderToolResult(e))
+	}
+	return b.String()
+}
+
+func resultHeading(e loop.ToolExchange) string {
+	if e.Tool == loop.ToolUnparsed {
+		return "not read"
+	}
+	return wireActionName(e.Tool)
 }
 
 func renderToolResult(r loop.ToolExchange) string {
@@ -197,64 +172,110 @@ func translate(wire chatResponse) (loop.JudgeResult, error) {
 	}
 	choice := wire.Choices[0]
 
-	result := loop.JudgeResult{
-		Usage: translateUsage(wire.Usage),
-	}
+	content := ""
 	if choice.Message.Content != nil {
-		result.Answer = *choice.Message.Content
+		content = *choice.Message.Content
 	}
 
-	if len(choice.Message.ToolCalls) > 0 {
-		result.RawReason = choice.FinishReason
-		call := choice.Message.ToolCalls[0]
+	parsed := action.Parse(content)
+	result := loop.JudgeResult{
+		Answer:    parsed.Prose,
+		RawReason: choice.FinishReason,
+		Usage:     translateUsage(wire.Usage),
+	}
 
-		switch call.Function.Name {
-		case recallToolName:
-			return translateRecall(result, call.Function.Arguments), nil
-		case writeFileToolName:
-			return translateWrite(result, call.Function.Arguments), nil
+	for _, p := range parsed.Problems {
+		result.Problems = append(result.Problems, describeProblem(p))
+	}
+
+	unknown := false
+	for _, call := range parsed.Calls {
+		act, offered := translateCall(call)
+		if !offered {
+			unknown = true
+			result.Problems = append(result.Problems, fmt.Sprintf("the response asked for %q, which is not an action this harness offers", call.Name))
+			continue
 		}
-
-		result.Reason = loop.Unrecognised
-		return result, nil
+		result.Actions = append(result.Actions, act)
 	}
 
-	result.RawReason = choice.FinishReason
-	result.Reason = mapFinishReason(choice.FinishReason)
+	result.Reason = reasonFor(result, len(parsed.Problems) > 0, unknown, choice.FinishReason)
 	return result, nil
 }
 
-func translateRecall(result loop.JudgeResult, arguments string) loop.JudgeResult {
-	result.Reason = loop.WantsRecall
+func reasonFor(result loop.JudgeResult, unreadable, unknown bool, finish string) loop.TerminalReason {
+	if len(result.Actions) > 0 {
+		if result.Actions[0].Tool == loop.ToolWriteFile {
+			return loop.WantsWrite
+		}
+		return loop.WantsRecall
+	}
+	if len(result.Problems) == 0 {
+		return mapFinishReason(finish)
+	}
+	if finish == "length" {
+		return loop.Truncated
+	}
+	if unreadable {
+		return loop.Malformed
+	}
+	if unknown {
+		return loop.Unrecognised
+	}
+	return loop.Malformed
+}
 
-	var args recallToolArguments
-	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		result.ToolError = fmt.Sprintf("tool arguments could not be parsed: %v", err)
-		return result
+func translateCall(call action.Call) (loop.Action, bool) {
+	switch call.Name {
+	case action.Recall:
+		return recallAction(call.Arguments), true
+	case action.WriteFile:
+		return writeAction(call.Arguments), true
+	}
+	return loop.Action{}, false
+}
+
+func recallAction(arguments json.RawMessage) loop.Action {
+	act := loop.Action{Tool: loop.ToolRecall}
+
+	var args recallArguments
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		act.Error = fmt.Sprintf("action arguments could not be parsed: %v", err)
+		return act
 	}
 
 	query := strings.TrimSpace(args.Query)
 	if query == "" {
-		result.ToolError = "tool arguments had an empty query"
-		return result
+		act.Error = "action arguments had an empty query"
+		return act
 	}
 
-	result.RecallQuery = query
-	return result
+	act.RecallQuery = query
+	return act
 }
 
-func translateWrite(result loop.JudgeResult, arguments string) loop.JudgeResult {
-	result.Reason = loop.WantsWrite
+func writeAction(arguments json.RawMessage) loop.Action {
+	act := loop.Action{Tool: loop.ToolWriteFile}
 
-	var args writeFileToolArguments
-	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
-		result.ToolError = fmt.Sprintf("tool arguments could not be parsed: %v", err)
-		return result
+	var args writeFileArguments
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		act.Error = fmt.Sprintf("action arguments could not be parsed: %v", err)
+		return act
 	}
 
-	result.WritePath = args.Path
-	result.WriteContent = args.Content
-	return result
+	act.WritePath = args.Path
+	act.WriteContent = args.Content
+	return act
+}
+
+func describeProblem(p action.Problem) string {
+	excerpt := p.Text
+	ellipsis := ""
+	if len(excerpt) > problemExcerptBytes {
+		excerpt = strings.ToValidUTF8(excerpt[:problemExcerptBytes], "")
+		ellipsis = "…"
+	}
+	return fmt.Sprintf("%s (%d bytes): %s%s", p.Reason, len(p.Text), excerpt, ellipsis)
 }
 
 func mapFinishReason(reason string) loop.TerminalReason {

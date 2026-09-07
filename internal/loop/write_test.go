@@ -43,7 +43,7 @@ func (f *fakeFiles) Write(_ context.Context, dir, path, content string) (int, er
 }
 
 func wantsWriteOf(path, content string) JudgeResult {
-	return JudgeResult{Reason: WantsWrite, RawReason: "tool_calls", WritePath: path, WriteContent: content}
+	return JudgeResult{Reason: WantsWrite, RawReason: "stop", Actions: []Action{{Tool: ToolWriteFile, WritePath: path, WriteContent: content}}}
 }
 
 func answered(text string) JudgeResult {
@@ -240,7 +240,7 @@ func TestTurnRunRecordsAMalformedWriteRequestWithoutOpeningTheWorkingDirectory(t
 
 	files := &fakeFiles{dir: "/runs/run-1"}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsWrite, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed"},
+		{Reason: WantsWrite, RawReason: "stop", Actions: []Action{{Tool: ToolWriteFile, Error: "tool arguments could not be parsed"}}},
 		answered("done"),
 	}}
 	turn := NewTurn(baseGraph(), model, files, "system", "test-model", testLogger())
@@ -299,7 +299,7 @@ func TestRunRecordNamesTheToolOfEveryRoundSoARecallIsNotReadAsAWrite(t *testing.
 	graph.recallQueue = []recallResponse{{Candidates: []Candidate{{ID: 7, Name: "Found", Content: "body"}}}}
 	files := &fakeFiles{dir: "/runs/run-1"}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing thing"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "the missing thing"}}},
 		wantsWriteOf("index.html", "<h1>hi</h1>"),
 		answered("done"),
 	}}

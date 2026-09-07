@@ -389,7 +389,7 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 		{Candidates: []Candidate{{ID: 99, Type: "task", Name: "Found", Similarity: 0.8, Content: "tool result body"}}},
 	}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing thing"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "the missing thing"}}},
 		{Answer: "final answer", Reason: Answered, RawReason: "stop"},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
@@ -435,7 +435,7 @@ func TestTurnRunRecordsAMalformedToolRequestAsAnErrorFlaggedRoundAndContinues(t 
 
 	graph := baseGraph()
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, Error: "tool arguments could not be parsed"}}},
 		{Answer: "answered anyway", Reason: Answered, RawReason: "stop"},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
@@ -476,7 +476,7 @@ func TestTurnRunRecordsASupplementaryRecallTransportFailureAsAnErrorFlaggedRound
 		{Err: errors.New("literal: 500 from graph")},
 	}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q"}}},
 		{Answer: "answered anyway", Reason: Answered, RawReason: "stop"},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
@@ -498,9 +498,9 @@ func TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall(t *testing.
 
 	graph := baseGraph()
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q1"},
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q2"},
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q3"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q1"}}},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q2"}}},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q3"}}},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
 
@@ -546,9 +546,9 @@ func TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch(t *test
 
 	graph := baseGraph()
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q1"},
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q2"},
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the query that was never dispatched"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q1"}}},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q2"}}},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "the query that was never dispatched"}}},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
 
@@ -583,7 +583,7 @@ func TestTurnRunDoesNotLeakTheGraphErrorDetailIntoTheSupplementaryRecallRound(t 
 		{Err: errors.New("literal: dial tcp 10.0.0.55:443: connect: connection refused")},
 	}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q"}}},
 		{Answer: "answered anyway", Reason: Answered, RawReason: "stop"},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
@@ -615,7 +615,7 @@ func TestTurnRunLogsTheDetailedRecallErrorWhileTheRecordStaysGeneric(t *testing.
 		{Err: errors.New("literal: dial tcp 10.0.0.55:443: connect: connection refused")},
 	}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q"}}},
 		{Answer: "answered anyway", Reason: Answered, RawReason: "stop"},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
@@ -698,7 +698,7 @@ func TestTurnRunUsageArrayLengthAlwaysEqualsModelCalls(t *testing.T) {
 	}
 	usage1 := &Usage{InTokens: 10, OutTokens: 1}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q", Usage: usage1},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q"}}, Usage: usage1},
 		{Answer: "final", Reason: Answered, RawReason: "stop", Usage: nil},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
@@ -879,7 +879,7 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 		}},
 	}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q"}}},
 		{Answer: "final", Reason: Answered, RawReason: "stop"},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
@@ -934,7 +934,7 @@ func TestTurnRunSupplementaryAdmissionStaysInRankOrderEvenWhenIDsDescend(t *test
 		}},
 	}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q"}}},
 		{Answer: "final", Reason: Answered, RawReason: "stop"},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
@@ -974,7 +974,7 @@ func TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRo
 		}},
 	}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q"}}},
 		{Answer: "final", Reason: Answered, RawReason: "stop"},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
@@ -1012,7 +1012,7 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 		{Candidates: []Candidate{{ID: 91, Content: strings.Repeat("a", SupplementaryByteBudget)}}},
 	}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "q"}}},
 		{Answer: "final", Reason: Answered, RawReason: "stop"},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
@@ -1155,7 +1155,7 @@ func TestTurnRunFinishedRecordSumsUsageAcrossCallsAndCountsTheCallsThatReportedI
 	graph := baseGraph()
 	graph.candidates = []Candidate{{ID: 7, Type: "task", Name: "C", Similarity: 0.9, Content: "body"}}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "more"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "more"}}},
 		{Answer: "ok", Reason: Answered, RawReason: "stop", Usage: &Usage{InTokens: 100, OutTokens: 7}},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
@@ -1321,7 +1321,7 @@ func TestTheSupplementaryRecallSendsTheModelsOwnQueryUnscopedAsExactlyOneCall(t 
 
 	graph := &fakeGraph{nodeFound: true, node: Anchor{ID: 7, Type: "documentation", Name: "S", Content: "anchor"}}
 	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the query the model composed"},
+		{Reason: WantsRecall, RawReason: "stop", Actions: []Action{{Tool: ToolRecall, RecallQuery: "the query the model composed"}}},
 		{Answer: "done", Reason: Answered, RawReason: "stop"},
 	}}
 	turn := NewTurn(graph, model, nil, "system text", "test-model", testLogger())

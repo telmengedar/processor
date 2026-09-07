@@ -343,7 +343,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 	temperature := 0.4
 	topP := 0.91
 	model := &stubModel{results: []loop.JudgeResult{
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing thing"},
+		{Reason: loop.WantsRecall, RawReason: "stop", Actions: []loop.Action{{Tool: loop.ToolRecall, RecallQuery: "the missing thing"}}},
 		{
 			Answer:    "the final answer",
 			Reason:    loop.Answered,
@@ -458,9 +458,9 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 		writeReceipt: loop.WriteReceipt{State: loop.NotStored},
 	}
 	model := &stubModel{results: []loop.JudgeResult{
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing budget row"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: unexpected token"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "final desperate query", ToolError: "tool arguments could not be parsed: second malformed request"},
+		{Reason: loop.WantsRecall, RawReason: "stop", Actions: []loop.Action{{Tool: loop.ToolRecall, RecallQuery: "the missing budget row"}}},
+		{Reason: loop.WantsRecall, RawReason: "stop", Actions: []loop.Action{{Tool: loop.ToolRecall, Error: "tool arguments could not be parsed: unexpected token"}}},
+		{Reason: loop.WantsRecall, RawReason: "stop", Actions: []loop.Action{{Tool: loop.ToolRecall, RecallQuery: "final desperate query", Error: "tool arguments could not be parsed: second malformed request"}}},
 	}}
 	turn := loop.NewTurn(graph, model, nil, "system text", "test-model", testLogger())
 
@@ -523,7 +523,7 @@ func TestRunsToolCallsResultsCutReasonIsPopulatedAtTheWireLevel(t *testing.T) {
 		},
 	}
 	model := &stubModel{results: []loop.JudgeResult{
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+		{Reason: loop.WantsRecall, RawReason: "stop", Actions: []loop.Action{{Tool: loop.ToolRecall, RecallQuery: "q"}}},
 		{Answer: "final", Reason: loop.Answered, RawReason: "stop"},
 	}}
 	turn := loop.NewTurn(graph, model, nil, "system text", "test-model", testLogger())

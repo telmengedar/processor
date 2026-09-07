@@ -34,7 +34,7 @@ type probeModel struct{ n int }
 func (m *probeModel) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
 	m.n++
 	if m.n == 1 {
-		return loop.JudgeResult{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "q"}, nil
+		return loop.JudgeResult{Reason: loop.WantsRecall, RawReason: "stop", Actions: []loop.Action{{Tool: loop.ToolRecall, RecallQuery: "q"}}}, nil
 	}
 	return loop.JudgeResult{Answer: "done", Reason: loop.Answered, RawReason: "stop"}, nil
 }

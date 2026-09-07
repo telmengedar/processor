@@ -3,200 +3,265 @@ package openaicompat
 import (
 	"context"
 	"encoding/json"
+	"strconv"
+	"strings"
 	"testing"
 
+	"github.com/telmengedar/processor/internal/action"
 	"github.com/telmengedar/processor/internal/loop"
 )
 
-func TestJudgeDecodesAWriteToolCallAsWantsWriteWithThePathAndContent(t *testing.T) {
-	t.Parallel()
-
-	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"site/index.html\",\"content\":\"<h1>hi</h1>\"}"}}]},"finish_reason":"tool_calls"}]}`
-	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
-	if err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-	if result.Reason != loop.WantsWrite {
-		t.Fatalf("Reason = %q, want WantsWrite", result.Reason)
-	}
-	if result.WritePath != "site/index.html" {
-		t.Fatalf("WritePath = %q, want %q", result.WritePath, "site/index.html")
-	}
-	if result.WriteContent != "<h1>hi</h1>" {
-		t.Fatalf("WriteContent = %q, want %q", result.WriteContent, "<h1>hi</h1>")
-	}
-	if result.RecallQuery != "" {
-		t.Fatalf("RecallQuery = %q, want empty — this call was for the file tool", result.RecallQuery)
-	}
-	if result.ToolError != "" {
-		t.Fatalf("ToolError = %q, want empty for a well-formed tool call", result.ToolError)
-	}
-}
-
-func TestJudgeFlagsUnparseableArgumentsOnAWriteToolCallWithoutInventingAPath(t *testing.T) {
-	t.Parallel()
-
-	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"write_file","arguments":"not json"}}]},"finish_reason":"tool_calls"}]}`
-	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
-	if err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-	if result.Reason != loop.WantsWrite {
-		t.Fatalf("Reason = %q, want WantsWrite", result.Reason)
-	}
-	if result.ToolError == "" {
-		t.Fatal("ToolError is empty, want the parse failure surfaced")
-	}
-	if result.WritePath != "" || result.WriteContent != "" {
-		t.Fatalf("WritePath = %q and WriteContent = %q, want both empty when the arguments did not parse", result.WritePath, result.WriteContent)
-	}
-}
-
-func TestJudgeAcceptsAWriteToolCallWithEmptyContentRatherThanCallingItMalformed(t *testing.T) {
-	t.Parallel()
-
-	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"write_file","arguments":"{\"path\":\"empty.txt\",\"content\":\"\"}"}}]},"finish_reason":"tool_calls"}]}`
-	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
-	if err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-	if result.Reason != loop.WantsWrite || result.ToolError != "" {
-		t.Fatalf("Reason = %q and ToolError = %q, want an accepted write of an empty file", result.Reason, result.ToolError)
-	}
-	if result.WritePath != "empty.txt" {
-		t.Fatalf("WritePath = %q, want %q", result.WritePath, "empty.txt")
-	}
-}
-
-func TestJudgeTreatsACallToAToolThatWasNeverOfferedAsUnrecognised(t *testing.T) {
-	t.Parallel()
-
-	resp := `{"choices":[{"message":{"content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"run_shell","arguments":"{\"cmd\":\"rm -rf /\"}"}}]},"finish_reason":"tool_calls"}]}`
-	srv, _ := capturingServer(t, resp)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
-	if err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-	if result.Reason != loop.Unrecognised {
-		t.Fatalf("Reason = %q, want Unrecognised — the loop dispatches nothing for a tool it never offered", result.Reason)
-	}
-	if result.RecallQuery != "" || result.WritePath != "" || result.WriteContent != "" {
-		t.Fatalf("result = %+v, want no tool arguments carried off an unoffered tool", result)
-	}
-	if result.RawReason != "tool_calls" {
-		t.Fatalf("RawReason = %q, want the endpoint's raw value preserved", result.RawReason)
-	}
-}
-
-func TestJudgeReplaysAPriorWriteRoundAsTheWriteToolAndItsReceipt(t *testing.T) {
-	t.Parallel()
-
-	srv, captured := capturingServer(t, stopResponse)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	in := loop.JudgeInput{
-		System: "sys", Block: "block", Input: "in",
-		PriorTools: []loop.ToolExchange{
-			{Tool: loop.ToolWriteFile, Path: "index.html", Content: "<h1>hi</h1>", Bytes: 11},
-		},
-	}
-	if _, err := c.Judge(context.Background(), in); err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-
-	messages := decodeReplayedMessages(t, captured.Body)
-	if len(messages) != 4 {
-		t.Fatalf("messages has %d entries, want 4 (system, user, assistant, tool)", len(messages))
-	}
-
-	assistant, tool := messages[2], messages[3]
-	if assistant.Role != "assistant" || len(assistant.ToolCalls) != 1 {
-		t.Fatalf("messages[2] = %+v, want an assistant message with one tool call", assistant)
-	}
-	if assistant.ToolCalls[0].Function.Name != "write_file" {
-		t.Fatalf("messages[2] tool call function = %q, want %q", assistant.ToolCalls[0].Function.Name, "write_file")
-	}
-
-	var args struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
-	}
-	if err := json.Unmarshal([]byte(assistant.ToolCalls[0].Function.Arguments), &args); err != nil {
-		t.Fatalf("decode replayed arguments: %v; raw=%s", err, assistant.ToolCalls[0].Function.Arguments)
-	}
-	if args.Path != "index.html" || args.Content != "<h1>hi</h1>" {
-		t.Fatalf("replayed arguments = %+v, want the path and content the model originally sent", args)
-	}
-
-	if tool.Role != "tool" || tool.ToolCallID != assistant.ToolCalls[0].ID {
-		t.Fatalf("messages[3] = %+v, want a tool message whose tool_call_id matches messages[2]'s call id", tool)
-	}
-	if !contains(tool.Content, "11") || !contains(tool.Content, "index.html") {
-		t.Fatalf("messages[3].Content = %q, want the byte count and the path reported back", tool.Content)
-	}
-}
-
-func TestJudgeReplaysARefusedWriteRoundAsTheRefusalTheModelMustSee(t *testing.T) {
-	t.Parallel()
-
-	srv, captured := capturingServer(t, stopResponse)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	const refusal = "write rejected: path must not leave the working directory"
-	in := loop.JudgeInput{
-		System: "sys", Block: "block", Input: "in",
-		PriorTools: []loop.ToolExchange{
-			{Tool: loop.ToolWriteFile, Path: "../escape.html", Content: "x", Error: refusal},
-		},
-	}
-	if _, err := c.Judge(context.Background(), in); err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-
-	messages := decodeReplayedMessages(t, captured.Body)
-	if len(messages) != 4 {
-		t.Fatalf("messages has %d entries, want 4", len(messages))
-	}
-	if !contains(messages[3].Content, refusal) {
-		t.Fatalf("messages[3].Content = %q, want the refusal %q shown to the model", messages[3].Content, refusal)
-	}
-	if contains(messages[3].Content, "wrote ") {
-		t.Fatalf("messages[3].Content = %q, want no write receipt on a refused round", messages[3].Content)
-	}
-}
-
-type replayedMessage struct {
-	Role       string `json:"role"`
-	Content    string `json:"content"`
-	ToolCallID string `json:"tool_call_id"`
-	ToolCalls  []struct {
-		ID       string `json:"id"`
-		Function struct {
-			Name      string `json:"name"`
-			Arguments string `json:"arguments"`
-		} `json:"function"`
-	} `json:"tool_calls"`
-}
-
-func decodeReplayedMessages(t *testing.T, body []byte) []replayedMessage {
+func responseSaying(t *testing.T, content, finish string) string {
 	t.Helper()
+	encoded, err := json.Marshal(content)
+	if err != nil {
+		t.Fatalf("encoding the response content: %v", err)
+	}
+	return `{"choices":[{"message":{"content":` + string(encoded) + `,"tool_calls":[]},"finish_reason":"` + finish + `"}]}`
+}
 
-	var got struct {
-		Messages []replayedMessage `json:"messages"`
+func judgeSaying(t *testing.T, content, finish string) loop.JudgeResult {
+	t.Helper()
+	srv, _ := capturingServer(t, responseSaying(t, content, finish))
+	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
+
+	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	if err != nil {
+		t.Fatalf("Judge: %v", err)
 	}
-	if err := json.Unmarshal(body, &got); err != nil {
-		t.Fatalf("decode request body: %v; body=%s", err, body)
+	return result
+}
+
+func block(body string) string {
+	return action.Open + "\n" + body + "\n" + action.Close
+}
+
+func onlyAction(t *testing.T, result loop.JudgeResult) loop.Action {
+	t.Helper()
+	if len(result.Problems) != 0 {
+		t.Fatalf("Problems = %v, want none", result.Problems)
 	}
-	return got.Messages
+	if len(result.Actions) != 1 {
+		t.Fatalf("len(Actions) = %d, want 1", len(result.Actions))
+	}
+	return result.Actions[0]
+}
+
+func TestJudgeReadsAWriteActionOutOfTheResponseTextWhenToolCallsIsEmptyAndTheFinishReasonIsStop(t *testing.T) {
+	t.Parallel()
+
+	result := judgeSaying(t, block(`{"name":"write_file","arguments":{"path":"site/index.html","content":"<h1>hi</h1>"}}`), "stop")
+
+	if result.Reason != loop.WantsWrite {
+		t.Fatalf("Reason = %q, want WantsWrite — the endpoint reported no structured call and said it stopped", result.Reason)
+	}
+	act := onlyAction(t, result)
+	if act.Tool != loop.ToolWriteFile {
+		t.Fatalf("Tool = %q, want %q", act.Tool, loop.ToolWriteFile)
+	}
+	if act.WritePath != "site/index.html" {
+		t.Fatalf("WritePath = %q, want %q", act.WritePath, "site/index.html")
+	}
+	if act.WriteContent != "<h1>hi</h1>" {
+		t.Fatalf("WriteContent = %q, want %q", act.WriteContent, "<h1>hi</h1>")
+	}
+	if act.Error != "" {
+		t.Fatalf("Error = %q, want empty for a well-formed action", act.Error)
+	}
+}
+
+func TestJudgeReadsARecallActionOutOfTheResponseText(t *testing.T) {
+	t.Parallel()
+
+	result := judgeSaying(t, block(`{"name":"recall","arguments":{"query":"the missing thing"}}`), "stop")
+
+	if result.Reason != loop.WantsRecall {
+		t.Fatalf("Reason = %q, want WantsRecall", result.Reason)
+	}
+	act := onlyAction(t, result)
+	if act.RecallQuery != "the missing thing" {
+		t.Fatalf("RecallQuery = %q, want %q", act.RecallQuery, "the missing thing")
+	}
+}
+
+func TestJudgeReadsBothActionsOfATwoActionResponseInTheOrderTheyWereWritten(t *testing.T) {
+	t.Parallel()
+
+	content := block(`{"name":"write_file","arguments":{"path":"index.html","content":"a"}}`) +
+		"\n" + block(`{"name":"write_file","arguments":{"path":"README.md","content":"b"}}`)
+
+	result := judgeSaying(t, content, "stop")
+
+	if len(result.Problems) != 0 {
+		t.Fatalf("Problems = %v, want none", result.Problems)
+	}
+	if len(result.Actions) != 2 {
+		t.Fatalf("len(Actions) = %d, want 2 — the second action must not be dropped", len(result.Actions))
+	}
+	if result.Actions[0].WritePath != "index.html" || result.Actions[1].WritePath != "README.md" {
+		t.Fatalf("Actions = %+v, want index.html then README.md", result.Actions)
+	}
+}
+
+func TestJudgeKeepsTheProseAsTheAnswerWhenAResponseBothSpeaksAndActs(t *testing.T) {
+	t.Parallel()
+
+	content := "Creating the page now.\n" + block(`{"name":"write_file","arguments":{"path":"index.html","content":"<h1>x</h1>"}}`)
+
+	result := judgeSaying(t, content, "stop")
+
+	if result.Reason != loop.WantsWrite {
+		t.Fatalf("Reason = %q, want WantsWrite — an accompanying sentence does not end the turn", result.Reason)
+	}
+	if result.Answer != "Creating the page now." {
+		t.Fatalf("Answer = %q, want the prose alone", result.Answer)
+	}
+	if strings.Contains(result.Answer, action.Open) {
+		t.Fatal("Answer still carries the action block")
+	}
+	if onlyAction(t, result).WritePath != "index.html" {
+		t.Fatalf("WritePath = %q, want index.html", result.Actions[0].WritePath)
+	}
+}
+
+func TestJudgeFlagsUnreadableActionArgumentsWithoutInventingAPath(t *testing.T) {
+	t.Parallel()
+
+	result := judgeSaying(t, block(`{"name":"write_file","arguments":"not an object"}`), "stop")
+
+	if result.Reason != loop.WantsWrite {
+		t.Fatalf("Reason = %q, want WantsWrite", result.Reason)
+	}
+	act := onlyAction(t, result)
+	if act.Error == "" {
+		t.Fatal("Error is empty, want the argument failure surfaced")
+	}
+	if act.WritePath != "" || act.WriteContent != "" {
+		t.Fatalf("WritePath = %q and WriteContent = %q, want both empty when the arguments did not parse", act.WritePath, act.WriteContent)
+	}
+}
+
+func TestJudgeFlagsAnEmptyQueryArgumentAsAMalformedRecallRequest(t *testing.T) {
+	t.Parallel()
+
+	result := judgeSaying(t, block(`{"name":"recall","arguments":{"query":"   "}}`), "stop")
+
+	act := onlyAction(t, result)
+	if act.Error == "" {
+		t.Fatal("Error is empty, want a whitespace-only query refused")
+	}
+	if act.RecallQuery != "" {
+		t.Fatalf("RecallQuery = %q, want empty", act.RecallQuery)
+	}
+}
+
+func TestJudgeAcceptsAWriteActionWithEmptyContentRatherThanCallingItMalformed(t *testing.T) {
+	t.Parallel()
+
+	result := judgeSaying(t, block(`{"name":"write_file","arguments":{"path":"empty.txt","content":""}}`), "stop")
+
+	act := onlyAction(t, result)
+	if act.Error != "" {
+		t.Fatalf("Error = %q, want an accepted write of an empty file", act.Error)
+	}
+	if act.WritePath != "empty.txt" {
+		t.Fatalf("WritePath = %q, want %q", act.WritePath, "empty.txt")
+	}
+}
+
+func TestJudgeReportsAnActionNamingSomethingNeverOfferedAsUnrecognisedAndDeclaresNoAction(t *testing.T) {
+	t.Parallel()
+
+	result := judgeSaying(t, block(`{"name":"run_shell","arguments":{"cmd":"rm -rf /"}}`), "stop")
+
+	if result.Reason != loop.Unrecognised {
+		t.Fatalf("Reason = %q, want Unrecognised", result.Reason)
+	}
+	if len(result.Actions) != 0 {
+		t.Fatalf("Actions = %+v, want none", result.Actions)
+	}
+	if len(result.Problems) != 1 || !strings.Contains(result.Problems[0], "run_shell") {
+		t.Fatalf("Problems = %v, want the refused name on the record", result.Problems)
+	}
+}
+
+func TestJudgeReportsATruncatedActionAsTruncatedAndKeepsTheUnreadTextOnTheResult(t *testing.T) {
+	t.Parallel()
+
+	content := "Writing it now.\n" + action.Open + "\n" + `{"name":"write_file","arguments":{"path":"index.html","content":"<!DOCTYPE html`
+
+	result := judgeSaying(t, content, "length")
+
+	if result.Reason != loop.Truncated {
+		t.Fatalf("Reason = %q, want Truncated — the endpoint said it ran out of room", result.Reason)
+	}
+	if len(result.Actions) != 0 {
+		t.Fatalf("Actions = %+v, want none from a block that never finished", result.Actions)
+	}
+	if len(result.Problems) != 1 || !strings.Contains(result.Problems[0], "<!DOCTYPE html") {
+		t.Fatalf("Problems = %v, want the unread text carried on the result", result.Problems)
+	}
+}
+
+func TestJudgeReportsAnUnreadableActionAsMalformedWhenTheEndpointSaidItStoppedCleanly(t *testing.T) {
+	t.Parallel()
+
+	result := judgeSaying(t, action.Open+"\n"+`{"name": write_file}`+"\n"+action.Close, "stop")
+
+	if result.Reason != loop.Malformed {
+		t.Fatalf("Reason = %q, want Malformed", result.Reason)
+	}
+	if len(result.Actions) != 0 {
+		t.Fatalf("Actions = %+v, want none", result.Actions)
+	}
+	if len(result.Problems) != 1 {
+		t.Fatalf("Problems = %v, want exactly one", result.Problems)
+	}
+}
+
+func TestJudgeTreatsAResponseWithNoActionAsAnsweredCarryingNoProblem(t *testing.T) {
+	t.Parallel()
+
+	result := judgeSaying(t, "There is nothing in the block about that.", "stop")
+
+	if result.Reason != loop.Answered {
+		t.Fatalf("Reason = %q, want Answered", result.Reason)
+	}
+	if len(result.Actions) != 0 || len(result.Problems) != 0 {
+		t.Fatalf("Actions = %+v and Problems = %v, want neither", result.Actions, result.Problems)
+	}
+	if result.Answer != "There is nothing in the block about that." {
+		t.Fatalf("Answer = %q, want the answer verbatim", result.Answer)
+	}
+}
+
+func TestJudgeCarriesAWriteWhoseContentHoldsTheClosingDelimiterThroughUnharmed(t *testing.T) {
+	t.Parallel()
+
+	content := block(`{"name":"write_file","arguments":{"path":"a.html","content":"before` + action.Close + `after"}}`)
+
+	act := onlyAction(t, judgeSaying(t, content, "stop"))
+	if act.WriteContent != "before"+action.Close+"after" {
+		t.Fatalf("WriteContent = %q, want the closing delimiter preserved inside the file", act.WriteContent)
+	}
+}
+
+func TestJudgeBoundsTheExcerptOfAnUnreadableActionAndStillStatesItsWholeSize(t *testing.T) {
+	t.Parallel()
+
+	filler := strings.Repeat("x", 5000)
+	content := action.Open + "\n" + `{"name":"write_file","arguments":{"path":"a.html","content":"` + filler
+
+	result := judgeSaying(t, content, "stop")
+
+	if len(result.Problems) != 1 {
+		t.Fatalf("Problems = %v, want exactly one", result.Problems)
+	}
+	problem := result.Problems[0]
+	if len(problem) > problemExcerptBytes+512 {
+		t.Fatalf("the recorded problem is %d bytes, want the excerpt bounded", len(problem))
+	}
+	if !strings.Contains(problem, strconv.Itoa(len(content))) {
+		t.Fatalf("problem = %q, want the whole unread size stated even though the excerpt is bounded", problem)
+	}
 }

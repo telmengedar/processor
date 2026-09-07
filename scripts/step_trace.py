@@ -211,6 +211,12 @@ ERR_NO_WORKING_DIRECTORY = "no working directory is configured"
 TOOL_RECALL = "recall"
 TOOL_WRITE_FILE = "writeFile"
 
+# internal/loop/types.go's ToolUnparsed. A round of this tool was never a request at all: it is one
+# span of action-shaped text the harness could not read, recorded so that a response the parser
+# dropped leaves a trace instead of vanishing -- which is the failure the own-action protocol
+# replaced, and would be no better if its replacement failed the same silent way.
+TOOL_UNPARSED = "unparsed"
+
 # internal/workspace's rejection prefix: a refusal by the path rules, whose reason is safe to show
 # and is shown verbatim. Distinct from ERR_FILE_WRITE_FAILED, which is the scrubbed stand-in for a
 # filesystem failure the record deliberately does not describe.
@@ -265,6 +271,21 @@ def fmt_bytes(n):
 def one_line(value, width):
     text = " ".join(str(value).split())
     return text if len(text) <= width else text[: width - 1] + "…"
+
+
+def rounds_by_call(tool_calls):
+    """toolCalls grouped by the model call that declared them.
+
+    One response may declare several actions, so the entries are NOT one-per-model-call and cannot
+    be read by index -- indexing them that way attributes the second action of round 1 to model call
+    2, which is the same class of silent misattribution the `tool` field was added to stop. A record
+    written before `round` existed carries none, and for such a record the positional fallback is
+    exactly the old one-per-call mapping, which was true when it was written.
+    """
+    grouped = {}
+    for i, tool_call in enumerate(tool_calls):
+        grouped.setdefault(tool_call.get("round") or (i + 1), []).append(tool_call)
+    return grouped
 
 
 def classify_round(tool_call):
@@ -706,86 +727,108 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
         )
         out.append("")
 
+    grouped = rounds_by_call(tool_calls)
+
     for i in range(model_calls):
         call_no = i + 1
         u = usage[i] if i < len(usage) else None
         prompt_desc = f"{u['inTokens']} tok in" if u else "usage not reported"
-        wanted_recall = i < len(tool_calls)
-        tc = tool_calls[i] if wanted_recall else None
-        category = classify_round(tc) if wanted_recall else None
+        entries = grouped.get(call_no, [])
         out_tok = f"{u['outTokens']} tok" if u else "? tok"
 
-        prior_rounds = i  # how many completed tool exchanges are already replayed into this call's prompt
+        prior_rounds = sum(len(grouped.get(k, [])) for k in range(1, call_no))
         out.append(
             f"{head('model call ' + str(call_no))} input: system + block ({fmt_bytes(block_size)}) + "
-            f"task input + {prior_rounds} prior tool round(s) replayed as tool messages "
+            f"task input + {prior_rounds} prior action(s) replayed as plain messages "
             f"[{prompt_desc}]"
         )
 
-        if wanted_recall and round_tool(tc) == TOOL_WRITE_FILE:
-            out.extend(write_round_lines(head, tc, out_tok, limits, cap_reached and i == model_calls - 1))
-            continue
-
-        if not wanted_recall:
+        if not entries:
             out.append(
                 f"{'':<24} output: {stop_reason.get('reason')!r} (endpoint raw={stop_reason.get('raw')!r}). "
                 f"out={out_tok}"
             )
-        elif category == ROUND_CAPPED:
-            out.append(
-                f"{'':<24} output: wants recall (query={tc.get('query')!r}), but the model-call cap "
-                f"(MaxModelCalls={limits.get('maxModelCalls')}) was reached -- NOT dispatched, "
-                f"counted only. out={out_tok}"
-            )
-        elif category == ROUND_DISPATCH_FAILED:
-            out.append(
-                f"{'':<24} output: wants recall (query={tc.get('query')!r}), dispatched, but the "
-                f"supplementary recall call itself FAILED (scrubbed reason on this surface by "
-                f"design -- internal/loop/turn.go's error-scrubbing rule, DiVoid #10850). "
-                f"out={out_tok}"
-            )
-        elif category == ROUND_MALFORMED:
-            ambiguous_cap = cap_reached and i == model_calls - 1
-            out.append(
-                f"{'':<24} output: wants recall, but the tool call itself was malformed and NEVER "
-                f"reached the graph -- error: {tc.get('error')!r}. query not recorded (turn.go's "
-                f"ToolExchange on this path never carries one). out={out_tok}"
-            )
-            if ambiguous_cap:
-                out.append(
-                    f"{'':<24} note: this is also the final model call and capReached=true, but "
-                    f"turn.go's malformed-request reason wins over the cap reason when both apply to "
-                    f"the same round -- whether the cap would separately have stopped this round "
-                    f"cannot be told from the record."
-                )
-        else:  # ROUND_DISPATCHED
-            out.append(
-                f"{'':<24} output: wants recall (query={tc.get('query')!r}). out={out_tok}"
-            )
-        out.append("")
-
-        if category == ROUND_DISPATCHED:
-            results = tc.get("results") or []
-            kept = sum(1 for r in results if r.get("included"))
-            kept_bytes = admitted_bytes(results)
-            out.append(
-                f"{head('tool call')} input: recall(query={tc.get('query')!r}, "
-                f"limit={candidate_limit}, scope=nil -- whole graph, deliberately unscoped)"
-            )
-            out.append(
-                f"{'':<24} output: {len(results)} candidate(s) returned, {kept} admitted under "
-                f"the supplementary budget ({fmt_bytes(supplementary_budget or 0)}), "
-                f"{fmt_bytes(kept_bytes)} kept"
-            )
-            if results:
-                out.append(
-                    f"{'':<24} note: a supplementary round is ONE unscoped Graph.Recall handed "
-                    f"straight to admit (turn.go's dispatchRecall) -- no second query, no scope, no "
-                    f"reserve and no fusion -- so these rows carry no recall sources and none is "
-                    f"shown for them. That is the round's construction, not a gap in this record."
-                )
-            out.extend(render_candidate_table(results, supplementary_budget))
             out.append("")
+            continue
+
+        if len(entries) > 1:
+            out.append(
+                f"{'':<24} output: {len(entries)} actions declared in this one response, carried out "
+                f"in the order below before the next model call."
+            )
+
+        for n, tc in enumerate(entries):
+            entry_tok = out_tok if n == 0 else "counted on this call's total"
+            tool = round_tool(tc)
+
+            if tool == TOOL_UNPARSED:
+                out.append(
+                    f"{'':<24} output: the response carried action-shaped text the harness COULD NOT "
+                    f"READ, so nothing was carried out for it -- {tc.get('error')!r}. It is on the "
+                    f"record rather than dropped. out={entry_tok}"
+                )
+                out.append("")
+                continue
+
+            if tool == TOOL_WRITE_FILE:
+                out.extend(write_round_lines(head, tc, entry_tok, limits, cap_reached and i == model_calls - 1))
+                continue
+
+            category = classify_round(tc)
+            if category == ROUND_CAPPED:
+                out.append(
+                    f"{'':<24} output: wants recall (query={tc.get('query')!r}), but the model-call cap "
+                    f"(MaxModelCalls={limits.get('maxModelCalls')}) was reached -- NOT dispatched, "
+                    f"counted only. out={entry_tok}"
+                )
+            elif category == ROUND_DISPATCH_FAILED:
+                out.append(
+                    f"{'':<24} output: wants recall (query={tc.get('query')!r}), dispatched, but the "
+                    f"supplementary recall call itself FAILED (scrubbed reason on this surface by "
+                    f"design -- internal/loop/turn.go's error-scrubbing rule). "
+                    f"out={entry_tok}"
+                )
+            elif category == ROUND_MALFORMED:
+                out.append(
+                    f"{'':<24} output: wants recall, but the action itself was malformed and NEVER "
+                    f"reached the graph -- error: {tc.get('error')!r}. query not recorded (turn.go's "
+                    f"ToolExchange on this path never carries one). out={entry_tok}"
+                )
+                if cap_reached and i == model_calls - 1:
+                    out.append(
+                        f"{'':<24} note: this is also the final model call and capReached=true, but "
+                        f"turn.go's malformed-request reason wins over the cap reason when both apply to "
+                        f"the same round -- whether the cap would separately have stopped this round "
+                        f"cannot be told from the record."
+                    )
+            else:
+                out.append(
+                    f"{'':<24} output: wants recall (query={tc.get('query')!r}). out={entry_tok}"
+                )
+            out.append("")
+
+            if category == ROUND_DISPATCHED:
+                results = tc.get("results") or []
+                kept = sum(1 for r in results if r.get("included"))
+                kept_bytes = admitted_bytes(results)
+                out.append(
+                    f"{head('action')} input: recall(query={tc.get('query')!r}, "
+                    f"limit={candidate_limit}, scope=nil -- whole graph, deliberately unscoped)"
+                )
+                out.append(
+                    f"{'':<24} output: {len(results)} candidate(s) returned, {kept} admitted under "
+                    f"the supplementary budget ({fmt_bytes(supplementary_budget or 0)}), "
+                    f"{fmt_bytes(kept_bytes)} kept"
+                )
+                if results:
+                    out.append(
+                        f"{'':<24} note: a supplementary round is ONE unscoped Graph.Recall handed "
+                        f"straight to admit (turn.go's dispatchRecall) -- no second query, no scope, no "
+                        f"reserve and no fusion -- so these rows carry no recall sources and none is "
+                        f"shown for them. That is the round's construction, not a gap in this record."
+                    )
+                out.extend(render_candidate_table(results, supplementary_budget))
+                out.append("")
 
     # ---- RESULT -------------------------------------------------------------------------------
     out.extend(workspace_lines(record))
@@ -831,7 +874,7 @@ def write_round_lines(head, tool_call, out_tok, limits, ambiguous_cap):
 
     if category == WRITE_MALFORMED:
         lines.append(
-            f"{'':<24} output: wants to write, but the tool call itself was malformed and NEVER "
+            f"{'':<24} output: wants to write, but the action itself was malformed and NEVER "
             f"reached the working directory -- error: {tool_call.get('error')!r}. out={out_tok}"
         )
         if ambiguous_cap:
@@ -844,7 +887,7 @@ def write_round_lines(head, tool_call, out_tok, limits, ambiguous_cap):
 
     lines.append(f"{'':<24} output: wants to write {path!r} ({fmt_bytes(size)}). out={out_tok}")
     lines.append("")
-    lines.append(f"{head('tool call')} input: write_file(path={path!r}, {fmt_bytes(size)})")
+    lines.append(f"{head('action')} input: write_file(path={path!r}, {fmt_bytes(size)})")
 
     if category == WRITE_ACCEPTED:
         lines.append(

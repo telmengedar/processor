@@ -166,7 +166,7 @@ func TestAResponseCarryingNoChoiceIsAnErrorRatherThanAnEmptyCondensation(t *test
 	}
 }
 
-func TestTheJudgementCallStillCarriesItsToolsSoTheCondensationPathChangedNothingForTheTurn(t *testing.T) {
+func TestTheJudgementCallDeclaresNoToolsAndDidNotGainTheCondensationPenalties(t *testing.T) {
 	srv, captured := condenseServer(t, `{"choices":[{"message":{"content":"an answer"},"finish_reason":"stop"}]}`)
 	client := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
@@ -175,8 +175,8 @@ func TestTheJudgementCallStillCarriesItsToolsSoTheCondensationPathChangedNothing
 	}
 
 	body := sentBody(t, *captured)
-	if _, present := body["tools"]; !present {
-		t.Fatalf("the turn's judgement call must still offer the recall tool, got %s", *captured)
+	if _, present := body["tools"]; present {
+		t.Fatalf("the turn's judgement call must declare no provider tools, got %s", *captured)
 	}
 	if _, present := body["frequency_penalty"]; present {
 		t.Fatalf("the turn's judgement call must not have gained the condensation penalties, got %s", *captured)
