@@ -89,8 +89,13 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 	if graph.lastErr != nil {
 		t.Fatalf("the double could not serialise the record it was handed: %v", graph.lastErr)
 	}
-	if admittedCount(first.Candidates) != 2 {
-		t.Fatalf("test setup error: turn 1 admitted %d of %d candidates, want both", admittedCount(first.Candidates), len(first.Candidates))
+	for _, id := range []int64{realDocument, foreignSessionLog} {
+		if d := dispositionOf(t, "turn 1", first.Candidates, id); !d.Included {
+			t.Fatalf("turn 1 cut #%d %q of type %q with reason %q, before this system had written any record for it to be confused with", d.ID, d.Name, d.Type, d.CutReason)
+		}
+	}
+	if got := admittedCount(first.Candidates); got != 2 {
+		t.Fatalf("test setup error: turn 1 admitted %d of %d candidates, want both", got, len(first.Candidates))
 	}
 
 	recordID, recordSize := graph.written[0].ID, len(graph.written[0].Content)
@@ -111,7 +116,7 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 	if got, want := admittedCount(second.Candidates), 2; got != want {
 		t.Fatalf("turn 2 admitted %d of %d candidates, want %d — the real document and the session log another agent wrote", got, len(second.Candidates), want)
 	}
-	if foreign := dispositionOf(t, second.Candidates, foreignSessionLog); !foreign.Included {
+	if foreign := dispositionOf(t, "turn 2", second.Candidates, foreignSessionLog); !foreign.Included {
 		t.Fatalf("turn 2 cut #%d, a session log another agent wrote, with reason %q: it carries the same node type as the record and only the name tells them apart, so excluding the type is a wider rule than the one measured", foreign.ID, foreign.CutReason)
 	}
 
@@ -122,11 +127,48 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 
 	_, direct := loop.Assemble(graph.anchor, []loop.Candidate{{ID: recordID, Content: "x", SelfProduced: true}}, loop.AssemblyByteBudget)
 	if direct[0].Included || direct[0].CutReason != self {
-		t.Fatalf("assembly handed a record this system wrote admitted it with reason %q, want it cut as %q: retrieval now keeps such a row out of the candidate list, and admission is the second refusal that still has to hold for one arriving by any other route", direct[0].CutReason, self)
+		t.Fatalf("assembly reported a record this system wrote as included=%v with reason %q, want included=false with reason %q: retrieval now keeps such a row out of the candidate list, and admission is the second refusal that still has to hold for one arriving by any other route", direct[0].Included, direct[0].CutReason, self)
 	}
 }
 
-func dispositionOf(t *testing.T, dispositions []loop.Disposition, id int64) loop.Disposition {
+func TestARowCarryingTheRunNodeTypeWithoutTheRunNamePrefixIsStillAdmittedAsACandidate(t *testing.T) {
+	t.Parallel()
+
+	const foreignSessionLog = int64(8)
+
+	foreign := loop.Candidate{
+		ID:         foreignSessionLog,
+		Type:       divoid.RunNodeType,
+		Name:       "a session log another agent wrote",
+		Similarity: 0.74,
+		Content:    strings.Repeat("h", 900),
+	}
+	if strings.HasPrefix(foreign.Name, divoid.RunNamePrefix) {
+		t.Fatalf("test setup error: the row is named %q, which opens with the prefix every record this system writes carries, so it cannot stand for a row this system did not write", foreign.Name)
+	}
+
+	graph := &poisoningGraph{
+		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "the subject body"},
+		base:   []loop.Candidate{foreign},
+	}
+	turn := loop.NewTurn(graph, answeringModel{}, nil, "system", "test-model", nil)
+
+	run, _, err := turn.Run(context.Background(), "what did the split change", 42)
+	if err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+
+	if len(run.Candidates) != 1 || run.Candidates[0].ID != foreignSessionLog {
+		t.Fatalf("retrieval returned %d candidates from a graph holding only #%d of type %q named %q, want that one row: it carries the type every record this system writes carries and differs only in the name, so losing it means the exclusion keys on the type",
+			len(run.Candidates), foreignSessionLog, foreign.Type, foreign.Name)
+	}
+	if d := run.Candidates[0]; !d.Included {
+		t.Fatalf("assembly cut #%d of type %q named %q with reason %q against a %d-byte budget it fills %d bytes of, want it admitted: only the name prefix marks a record this system wrote",
+			d.ID, d.Type, d.Name, d.CutReason, loop.AssemblyByteBudget, d.Size)
+	}
+}
+
+func dispositionOf(t *testing.T, turn string, dispositions []loop.Disposition, id int64) loop.Disposition {
 	t.Helper()
 
 	for _, d := range dispositions {
@@ -135,7 +177,7 @@ func dispositionOf(t *testing.T, dispositions []loop.Disposition, id int64) loop
 		}
 	}
 
-	t.Fatalf("no candidate carries id %d among the %d turn 2 returned", id, len(dispositions))
+	t.Fatalf("no candidate carries id %d among the %d %s returned: retrieval left the row out of the candidate list entirely", id, len(dispositions), turn)
 	return loop.Disposition{}
 }
 
