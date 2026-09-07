@@ -233,6 +233,18 @@ The change adds **one query source** and **one exclusion** to the existing retri
 - **Not owned:** removing the anchor from the *block*. The anchor renders whole and is never cut (#11335,
   ruled by #11365 §4).
 
+> **EXTENDED 2026-09-07 — this closure now carries a second exclusion, and its reason is not this one.**
+> `fuse`'s `appendUnseen` refuses `SelfProduced` rows alongside the anchor id
+> (`internal/loop/retrieve.go`, branch `fix/exclude-run-records-from-recall`). The rationale above does
+> **not** transfer: the anchor is excluded because it is *already in the block*, so a disposition row for it
+> would misreport the block; a run record is excluded because it can *never* be in the block and was
+> spending a candidate slot to be told so. Same site, same closure, two different reasons — recorded
+> because a reader who assumes one rationale covers both will draw the wrong boundary the next time
+> something is added here. The self-produced exclusion has its own document:
+> `docs/architecture/self-produced-exclusion-at-fusion.md`. **What is unchanged:** the anchor is still not
+> filtered by the self-produced predicate — an anchor that happens to be a run record (#12967) still renders
+> whole at the head of the block.
+
 ### 6.3 Unchanged, deliberately
 
 The scoped arm and its reserve of three; reciprocal-rank fusion and its constant; the candidate limit; the
@@ -357,7 +369,7 @@ mechanism by which this change could quietly harm a row, and F2 is where it woul
 | **R1** | **r10 loses its answer.** #10943 demotes 1 → 4 (measured) and is 32,105 B; at rank 4 behind three predecessors it may not fit. This is the exact trade that killed the size bound. | Pre-registered as the **hard falsifier** F2. Not mitigated away — if it fires, the change is reverted or restricted. |
 | **R2** | **A wrong anchor now steers half the fan-out**, where today it costs only three reserve slots. | Partly intended: A2 says the anchor is chosen deliberately. Bounded by retaining the raw arm — a wrong anchor loses fusion mass, it does not replace the list. Recorded as a genuine increase in sensitivity, not argued away. |
 | **R3** | **Anchor names that are long, generic, or uninformative.** A generic name is a no-op; a very long one could swamp the input's signal. | Only identity text is used, never the body. Q1 asks for the name-length distribution across the graph before this is called bounded in general rather than in the anchors measured. |
-| **R4** | **Self-poisoning compounds.** A run record of this input already ranks 6th on t1's own recall and has joined the anchor's neighbourhood (#11141, live in §3). A grounded query names the anchor, and run-record names embed the input — so grounded queries may match run records *more* strongly. | The self-produced cut already exists at admission. **But it is a cut, not a rank exclusion**, so poisoned rows still consume candidate slots. Flagged as Q3; not solved here. |
+| **R4** | **Self-poisoning compounds.** A run record of this input already ranks 6th on t1's own recall and has joined the anchor's neighbourhood (#11141, live in §3). A grounded query names the anchor, and run-record names embed the input — so grounded queries may match run records *more* strongly. | The self-produced cut already exists at admission. ~~**But it is a cut, not a rank exclusion**, so poisoned rows still consume candidate slots. Flagged as Q3; not solved here.~~ **CORRECTED 2026-09-07 (§1–§15 are pre-registration; the original is left legible per this document's own rule):** run records are excluded from the candidate list at fusion since `fix/exclude-run-records-from-recall`, so they no longer consume candidate slots on the primary path. Q3 is answered — see §13 Q3 and `docs/architecture/self-produced-exclusion-at-fusion.md`. **The half of R4 that survives is the grounded-query half**: this row's claim that grounded queries may match run records *more* strongly was never measured, and the exclusion removes the consequence without testing the mechanism. It also still holds on the supplementary path, which the exclusion does not reach. |
 | **R5** | **The sweep's baselines are superseded.** Both callers change ranking, so 11/23 retrieved and 9/23 admitted stop being the comparison point. | Intended — the instrument should measure the product (#11142). Both arms must be re-run and the new baseline recorded in the same session, not inferred. |
 | **R6** | **Design-document parity.** This adds a row to the combiner table in M3 §4.2 and changes §4.1's shape diagram and §4.3's placement table. | M3 is `docs/architecture/m3-derived-recall.md`, graph node **#11235**. M1 (#10532) is touched only descriptively. **Q4: is M3 under the same P-40 parity rule as M1?** If so this needs a parity publish. |
 
@@ -479,7 +491,7 @@ after this one:
 |---|---|---|---|
 | **Q1** | ~~What is the distribution of node-name lengths across the graph?~~ | **Answered 2026-09-05, §16.6:** 11–256 characters across the 25 corpus anchors, median 98. The long tail exists. A bound was measured and is **not** shipped — §16.6 records why. | Answered. |
 | **Q2** | ~~Should the anchor's **type** be composed in alongside its name?~~ | **Answered by measurement, 2026-09-05, §16.7: no.** Composing the type loses t1 — the task this design was written for — from admitted to cut, while leaving the 23-row rates unchanged. The name alone is what shipped. | Answered. |
-| **Q3** | Should self-produced run records be excluded from the **ranking** rather than cut at **admission**? | They currently consume candidate slots before being cut (R4), and grounded queries may match them more strongly because run-record names embed the input. | No, but it should be a task. |
+| **Q3** | ~~Should self-produced run records be excluded from the **ranking** rather than cut at **admission**?~~ | **Answered 2026-09-07 — and by neither branch as this row framed them.** The measurement Q3 was waiting for is #13091 §6 (13 of 20 candidate slots to run records); the decision is #13092; the design is `docs/architecture/self-produced-exclusion-at-fusion.md`. What shipped is a **third** mechanism: the row keeps the rank the graph gave it and is dropped from the candidate list at fusion, *after* ranking and *before* the candidate limit, with the admission cut retained as a second refusal for any row arriving by another route. So the ranking was **not** changed (the graph still ranks the record; nothing re-numbers), and the admission cut was **not** replaced. ~~No, but it should be a task.~~ | Answered. |
 | **Q4** | ~~Is `docs/architecture/m3-derived-recall.md` (#11235) under the same P-40 parity rule as M1 (#10532)?~~ | **Answered by the operator, 2026-09-05: yes.** M3 §4.1, §4.2 and §4.3 are edited by this change and the operator publishes and verifies both sides. | Answered. |
 | **Q5** | Does the operator want the sweep's pinned derivation sidecar re-pinned after this lands? | The grounded query is composed inside the retrieval step, so it is *not* a sidecar entry — but the sweep's arm identity and reported hashes change. | No — but the new baseline must be recorded, per R5. |
 
@@ -532,6 +544,14 @@ be judged. Author blind, pre-register required nodes, span two or more projects,
 > slots at fused ranks 18–20 and #11365 §7's F4 says nothing is admitted above rank 16. **"Should be measured,
 > not assumed" was right; it was measured, and it did not pay.** Reopening condition and escrow design in the
 > ruling. **Not an instruction.**
+>
+> **AMENDED 2026-09-07 — the reason given above no longer holds.** *"≤ 3 candidate slots at fused ranks
+> 18–20 and F4 says nothing is admitted above rank 16"* was the retirement's argument; since
+> `fix/exclude-run-records-from-recall` the reserve lands at `n+1 … n+3`, measured at **8–10**, inside F4's
+> permitted range (`hub-pruning-in-the-anchor-scope.md` §4.1 property 3, §5.1, §11; and
+> `docs/architecture/self-produced-exclusion-at-fusion.md` §7). **The retirement still stands and its
+> argument does not** — nothing measured says the channel now yields. Re-derive before reopening or
+> building; §11 of the ruling carries the restated condition.
 
 **Measured motivation, not speculation.** t2's two-hop scope is **362 nodes** and its scoped list still
 returned mamgo and Pooshit CI material at ranks 1–3 — because the project node links to `person Toni` (#10),
@@ -990,8 +1010,9 @@ budget, which already exists and which #11364 makes the product, so no constant 
 doing and it is **explicitly not the fix for r02** (§17.2(c)); filing it as one would put a false causal claim
 into the graph. Belongs with #11308.
 
-**Unresolved and carried forward:** Q3 (self-produced run records consume candidate slots before being cut at
-admission — R4, and unaffected by this ruling); §9.4's near-duplicate collapse, still deferred; §14's Unit 3,
+**Unresolved and carried forward:** ~~Q3 (self-produced run records consume candidate slots before being cut at
+admission — R4, and unaffected by this ruling)~~ **— Q3 ANSWERED 2026-09-07, §13; run records no longer reach
+the candidate list on the primary path. Still unresolved:** §9.4's near-duplicate collapse, still deferred; §14's Unit 3,
 hub pruning in the anchor scope, whose measured motivation — t2's 362-node two-hop scope reaching every project
 through `person Toni` — is untouched by anything measured here and remains the best-evidenced retrieval unit
 the project has not yet built.
@@ -1188,8 +1209,14 @@ on the contrast was wrong.
 
    `fuse` fills `limit - reserve` = **17** slots from the unscoped fused list, then admits **at most
    `reserve` = 3** further candidates from the scoped arm, then tops up from the unscoped list again. So the
-   anchor's entire id-to-scope channel is **structurally capped at 3 exclusive candidate slots out of 20** —
-   and only for candidates the unscoped recall did not already return.
+   anchor's entire id-to-scope channel is **structurally capped at 3 exclusive candidate slots ~~out of 20~~
+   — corrected 2026-09-07: out of `n+3`, where `n` is the number of unscoped fused rows that are not run
+   records, capped at 17; measured `n` = 7 on 2026-09-07** —
+   and only for candidates the unscoped recall did not already return. **The cap of 3 is unchanged and is
+   what the pre-test below turns on; the denominator and the ranks the three land on are not** — see
+   `docs/architecture/hub-pruning-in-the-anchor-scope.md` §4.1 property 3. **The pre-test itself remains
+   valid over the existing 23-row run records**, which record the old placement; re-derive before applying
+   its answer to the shipped loop.
 
    Those slots are individually identifiable in every run record the project already owns: `Source.Scoped` is
    recorded per candidate, so a candidate whose **only** source is scoped is one that is in the block *because
@@ -1336,13 +1363,21 @@ that round and is exactly why this rule is about **commissioning** rather than a
   > (**#12969**). The pre-test §18.4.3 registered was run (#12966) and **failed**: 57 scoped-only arrivals,
   > **3 admitted**, **0 required nodes admitted via the scoped arm in twelve arms**. What the three converging
   > lines establish is that the id-to-scope channel is the anchor's *only* channel — which is a fact about the
-  > anchor, not about the channel's yield. The channel is three candidate slots wide at fused ranks 18–20, and
+  > anchor, not about the channel's yield. The channel is three candidate slots wide at ~~fused ranks 18–20~~
+  > **fused ranks `n+1 … n+3`, measured at 8–10 on 2026-09-07 — corrected; see
+  > `docs/architecture/hub-pruning-in-the-anchor-scope.md` §4.1 property 3**, and
   > **#11365 §7's standing falsifier F4 (*no required node is admitted at fused rank > 16*) is still
-  > un-falsified.** Unit 3 is **retired with a stated reopening condition**, not deferred. The sentence above
+  > un-falsified.** **The two clauses no longer compose.** F4 excluded the reserve only while the reserve sat
+  > above rank 16; since the self-produced exclusion shortened the list in front of it, the reserve lands
+  > inside F4's permitted range and F4 says nothing about it either way. The withdrawal of Unit 3 as a
+  > commission is left standing — nothing measured says the channel now yields — but **the argument for it
+  > is withdrawn, not merely the commission**, and the reopening condition was restated for the same reason
+  > (`hub-pruning-in-the-anchor-scope.md` §11). Unit 3 is **retired with a stated reopening condition**, not deferred. The sentence above
   > is left legible because it is the record of what was directed before the pre-test returned; **it is not an
   > instruction and must not be read as one.**
-- **Carried forward unresolved:** Q3 (self-produced run records consuming candidate slots), §9.4's
-  near-duplicate collapse, and Q4's M3 parity question — none touched by this ruling.
+- **Carried forward unresolved:** ~~Q3 (self-produced run records consuming candidate slots),~~ **Q3 is
+  ANSWERED 2026-09-07 — §13, and `docs/architecture/self-produced-exclusion-at-fusion.md`.** §9.4's
+  near-duplicate collapse, and Q4's M3 parity question — neither touched by this ruling.
 
 ### 18.8 What this round bought
 
@@ -1362,8 +1397,10 @@ What is new is smaller than an account and more useful than one:
   (§18.4.2).
 - **The work population is thin** — roughly 45% of closed tasks carry no paperwork family at all — which
   bounds any effect that family could ever have had (§18.3(a)).
-- **The anchor's whole retrieval channel is capped at three candidate slots in twenty**, and existing run
-  records already say how often those three matter (§18.4.3).
+- **The anchor's whole retrieval channel is capped at three candidate slots ~~in twenty~~ — corrected
+  2026-09-07: the cap of three holds; the "in twenty" does not, and the three no longer sit at ranks 18–20
+  (§18.4.3, and `hub-pruning-in-the-anchor-scope.md` §4.1 property 3)**, and existing run
+  records already say how often those three matter *for the placement those records were written under*.
 - **A rule about ordering that would have saved the round it came from** (§18.6).
 
 The pre-test cost twelve queries. It cancelled a sweep, corrected two of the three figures that motivated the

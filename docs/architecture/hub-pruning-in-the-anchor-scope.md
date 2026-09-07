@@ -17,10 +17,14 @@ operator publishes both sides.
 
 1. **Hub pruning is not commissioned. Unit 3 is retired, with a stated reopening condition (§11).**
    Not deferred behind #12968 — retired. Its entire delivery surface is at most three candidate slots at
-   fused ranks 18–20, and three separate measurements this project already owns say that band is not on a
-   path to an answer.
+   fused ranks ~~18–20~~ **`n+1 … n+3`, measured at 8–10 on 2026-09-07 — corrected, §4.1 property 3**, and
+   three separate measurements this project already owns say that band is not on a path to an answer.
+   **The retirement's evidence base is superseded, not its arithmetic:** all three measurements were taken
+   on code that placed the reserve at 18–20, and the shipped code no longer does. Re-derive before acting
+   on this item — §11's reopening condition is restated for the same reason.
 2. **#12968 is not the unit that unblocks it.** Its non-differential half is measured and true; its
-   differential half — that the 94.7% cut rate is a fact about *the reserve* rather than about *rank 18–20* —
+   differential half — that the 94.7% cut rate is a fact about *the reserve* rather than about *rank 18–20*
+   (**a band the reserve has since left — §4.1 property 3**) —
    is untested, and the project's prior measurement (#11365 §1: P(admit) = 0.04 at rank 20) points the other
    way. A better-placed reserve and a better-scoped reserve are the same bet on the same dead band.
 3. **What is measured, cheaply, before anything at all is commissioned: D1, the promotion counterfactual**
@@ -127,6 +131,10 @@ fact about `internal/loop/retrieve.go` and `internal/loop/assemble.go` rather th
   anchor.ID ─▶ Neighbours ─▶ scope = {anchor} ∪ N(anchor)               │
                    │                                                    ▼
                    └─▶ one scoped recall, on queries[0] only ──▶ RESERVE ranks 18..20   (≤ 3, unseen only)
+                                                                        │            ▲
+                                                                        │            └─ CORRECTED 2026-09-07
+                                                                        │               → ranks n+1..n+3;
+                                                                        │               see §4.1 property 3
                                                                         │
                                                     fused backfill ─────┘  any remaining slots
 
@@ -142,12 +150,31 @@ Three properties of that picture decide this ruling, and each is read from the s
 2. **The reserve step admits only candidates the fused list did not already contain.** A scoped result that
    the unscoped recall also returned occupies no reserve slot and gains no position from having been scoped.
    Its rank was decided by fusion.
-3. **The first fused pass stops at `limit − reserve` = 17.** So reserve occupants are always at fused ranks
-   **18, 19, 20**. The census observes exactly this: 13 at rank 18, 21 at 19, 23 at 20, totalling 57.
+3. ~~**The first fused pass stops at `limit − reserve` = 17.** So reserve occupants are always at fused ranks
+   **18, 19, 20**. The census observes exactly this: 13 at rank 18, 21 at 19, 23 at 20, totalling 57.~~
+   **CORRECTED 2026-09-07 — the reserve's band moved, and it keeps moving as the graph grows. This is the
+   head of a chain; everything in this document that reasons through "ranks 18–20" inherits the
+   correction.** The first fused pass stops at `limit − reserve` = 17 **or when the fused list runs out of
+   rows the pass will accept, whichever comes first** — a distinction that made no difference while the
+   pass accepted every unseen row. Since `fix/exclude-run-records-from-recall`, `fuse`'s `appendUnseen`
+   refuses every `SelfProduced` row (`internal/loop/retrieve.go`), so the first pass fills
+   `min(17, unscoped fused rows that are not run records)` = **`n`**, and reserve occupants sit at fused
+   ranks **`n+1 … n+3`**, not at 18–20. Measured on the live graph 2026-09-07 (**#13185** §4): the unscoped
+   list carried 13 run records in its top 20, `n` = **7**, and the three scoped-only arrivals landed at
+   fused ranks **8, 9 and 10**. The census's 13/21/23 at ranks 18/19/20 is a correct reading of the code at
+   `main` `1e42355` and is retained as that dated record — it is no longer a reading of the shipped code.
+   **How to find the dependents — a rule, not a list, because a list here would go stale the way the claim
+   did:** `git grep -n "18–20\|18\.\.20\|rank 18" -- docs/architecture/hub-pruning-in-the-anchor-scope.md`.
+   Every hit is either struck, carries a pointer back to this property, or is a **dated reading of the
+   census arm**, which stays as written. Do not trust any enumeration of them, including one written in a
+   correction round. Canonical statement of the mechanism:
+   `docs/architecture/self-produced-exclusion-at-fusion.md` §4.
 
 **Consequence, and it is the whole of the ruling's foundation:** every effect any change to the anchor's
 scope can have on a shipped turn is confined to the identity of at most three candidates at fused ranks
-18–20. Hub pruning changes the pool those three are drawn from. It changes nothing else, anywhere.
+~~18–20~~ **`n+1 … n+3` — corrected 2026-09-07, §4.1 property 3**. Hub pruning changes the pool those three
+are drawn from. It changes nothing else, anywhere. **The count survives the correction; the position does
+not, and the position is what the rest of this document reasons from.**
 
 ### 4.2 What arrives in those three slots, and what becomes of it
 
@@ -200,13 +227,22 @@ admitted outcome.*
 > **F4 — *No required node is admitted at fused rank > 16 under the current rule.*** True today with margin —
 > the nine admitted rows sit at ranks 1, 1, 1, 1, 1, 4, 4, 9, 11. One counterexample retires the claim.
 
-The reserve occupies ranks 18–20, strictly inside F4's forbidden band. #12966 §8's twelve-arm sweep — *zero
+~~The reserve occupies ranks 18–20, strictly inside F4's forbidden band.~~ **CORRECTED 2026-09-07 — this is
+the inference the rank-band correction breaks, and it is §5's load-bearing one.** The reserve occupies
+`n+1 … n+3` (§4.1 property 3), which on the 2026-09-07 measurement is ranks **8, 9 and 10** — *inside* F4's
+permitted band, not its forbidden one. F4 (*no required node is admitted at fused rank > 16*) therefore no
+longer excludes the reserve on the shipped code. #12966 §8's twelve-arm sweep — *zero
 required nodes admitted via the scoped arm, in every arm without exception* — is **F4 holding**, not a new
 result. This is the strongest form of evidence available here: a claim registered before the data, on a
-quantity nobody was trying to protect, surviving twelve independent opportunities to fail.
+quantity nobody was trying to protect, surviving twelve independent opportunities to fail. **It remains a
+correct reading of the arm it was taken on, and that arm placed the reserve at 18–20.**
 
-**So Unit 3 delivers into a band that a standing pre-registration of this project says cannot deliver an
-answer.** That is not an argument about how good hub pruning would be at its job.
+~~**So Unit 3 delivers into a band that a standing pre-registration of this project says cannot deliver an
+answer.**~~ **STRUCK 2026-09-07.** Unit 3 delivers into a band whose position is data-dependent and was
+measured *inside* F4's permitted range. **What this does not establish is the converse** — nothing measured
+says the reserve now reaches an answer, and §11's restated reopening condition is what would say so. The
+honest status is that §5.1's argument is withdrawn, not that its conclusion is reversed. That is not an
+argument about how good hub pruning would be at its job.
 
 ### 5.2 The experiment "make the scoped arm better" has already been run, differently, and returned zero
 
@@ -253,8 +289,13 @@ Two of the census's findings cut against the build directly:
 
 - **The displacement channel is measured at zero.** §4(b): re-running admission with every scoped-only
   candidate above a required node removed **flips nothing** — near-impossible by construction, since scoped
-  arrivals only ever sit at 18–20 and the three cut required nodes sit at ranks 3, 3 and 18. So hub pruning
+  arrivals ~~only ever sit at 18–20~~ **sat at 18–20 on the arm this census measured; §4.1 property 3 for why
+  they no longer do** and the three cut required nodes sit at ranks 3, 3 and 18. So hub pruning
   cannot recover a slot from a hub-borne intruder, because no hub-borne intruder has ever cost a slot.
+  **The "by construction" half of that argument is gone as of 2026-09-07** — arrivals at ranks 8–10 are no
+  longer structurally below every required node — while the measured half (it flipped nothing on that arm)
+  stands. The finding is now empirical rather than structural, which is a weaker claim in the same
+  direction.
 - **The "it stops other projects leaking in" justification is largely not what is happening.** §7: only
   **4 of 57** arrivals are off-project. 53 are same-project material. **Pruning therefore removes, in
   expectation, mostly legitimate same-project reachability from a channel whose measured contribution to
@@ -289,6 +330,17 @@ claim, so #12935 applies as well: a negative claim files its falsifier the momen
 > to *what* the scoped arm supplies — hub pruning included — can move `admitted`, and no change to *where* it
 > delivers can either, because the band is dead for byte-budget reasons that promotion does not remove.
 
+**The claim's first premise is false on the shipped code, 2026-09-07** (§4.1 property 3): delivery ranks are
+`n+1 … n+3`, measured at 8–10. **The claim is left verbatim because it is a pre-registration** — this
+document's own §6 discipline is that a gated claim is written so it can fail, and rewriting it after the
+fact destroys the property it was written for. What follows from the correction is that the *first* premise
+now fails for a reason D1 was never built to test, while the *second* — that the band is dead for
+byte-budget reasons — is untouched and is still what D1 measures. **One live data point bears on it and
+must not be read as more than one:** on 2026-09-07 the reserve moved from ranks 19–20 to 8–10 in production
+and `admitted` did not change (3 → 3, 56,411 B → 56,411 B, #13185 §4). That is the *shape* of D1's outcome
+row 1 observed live on **one row, one substrate**; it carries none of D1's (a), (c) or (d), and it is not a
+substitute for running D1.
+
 ### 6.1 D1 — the promotion counterfactual. Commissioned. Runs first.
 
 **Input:** the census's own sweep result — 460 labelled dispositions, one arm, one graph state, each carrying
@@ -299,6 +351,13 @@ no graph query, no model call, nothing written.
 scoped-only candidates moved from ranks 18–20 to the front of the rank order (relative order among them
 preserved, every other candidate shifted down by the same amount). Sizes are the recorded sizes; no
 re-ranking, no re-recall, no new content. Report, before and after:
+
+> **NOTE 2026-09-07 — D1 is still runnable and still worth running; what changed is what its "before" state
+> describes.** The procedure operates on the census's archived 460 dispositions, which record code that
+> placed the reserve at 18–20 (§4.1 property 3). It therefore remains a valid counterfactual **over that
+> arm** and is unaffected by the shipped change. It is no longer a counterfactual over *production*, which
+> has since performed part of the promotion for free. Report D1 as an arm-labelled result, never as a
+> statement about the current loop.
 
 | Reported quantity | Why it is in the gate |
 |---|---|
@@ -384,8 +443,9 @@ Its authoring pass alone would buy three things, all of which survive Unit 3 nev
 ## 7. On #12968 — why it is not the unit that unblocks this
 
 #12968's measurement is right and its structural reading is right as far as it goes: the reserve's slots are
-ranks 18–20 by construction, admission spends the budget in rank order, and the two arrangements are in
-direct contradiction. Its own closing sentence — *"the disposition-level split is the measurement to carry
+~~ranks 18–20 by construction~~ **`n+1 … n+3` by construction — corrected 2026-09-07, §4.1 property 3; the
+"by construction" half is what survives, the integers are not**, admission spends the budget in rank order,
+and the two arrangements are in direct contradiction. Its own closing sentence — *"the disposition-level split is the measurement to carry
 forward"* — is the correct instruction and this ruling adopts it.
 
 **Where it stops short is the differential clause**, and it is the same clause that killed the last two
@@ -394,7 +454,7 @@ accounts:
 | Half | Status |
 |---|---|
 | "Scoped arrivals are cut at 94.7%" | **Measured. Cannot fail. Non-differential.** |
-| "…*because they are the reserve*, placed where the budget is gone" | **Untested.** It requires that rank 18–20 is worse for scoped arrivals than for anything else there. |
+| "…*because they are the reserve*, placed where the budget is gone" | **Untested.** It requires that rank 18–20 is worse for scoped arrivals than for anything else there — **and since 2026-09-07 the reserve is not at 18–20, so the clause no longer even names the right rows (§4.1 property 3)**. |
 
 #11365 §1 measured P(admit) = 0.04 at rank 20 over that corpus (populations named in §4.3 — do not subtract).
 If the same-population version comes back at parity, then **the reserve is admitted at the rate its rank
@@ -410,6 +470,11 @@ Three further facts constrain #12968's option set before any design work begins:
 2. **No admission change currently on the table brings ranks 18–20 into reach.** #11365 §3's compaction, at
    its most aggressive measured bound, takes mean documents per block from 8.1 to 12.2 out of 20. That
    extends the horizon; it does not extend it to 18.
+   **STILL TRUE AND NO LONGER SUFFICIENT, 2026-09-07.** The sentence is about *admission* changes and no
+   admission change has happened. What it did not anticipate is that a **retrieval** change could bring the
+   reserve within the horizon without moving the horizon at all, by shortening the list in front of it —
+   which is what the self-produced exclusion did (§4.1 property 3). Read this item as scoped to admission,
+   which is what it says, and not as a claim that the reserve is out of reach.
 3. **Its option 2 is free and this ruling adopts it.** *Stop counting the reserve as an admission mechanism.*
    The reserve buys retrieval breadth — one row of `retrieved` on this corpus, and it is the only
    non-similarity ranking a turn performs (#11398). That is a real if small property and it should be
@@ -433,10 +498,11 @@ Asked directly, so answered directly.
 | Which scope member causes the inflation | **Yes.** The census did it (§6's pruning table). |
 | Whether a given arrival is hub-only — i.e. whether pruning would *vacate* its slot | **Yes.** D2. Graph walk, no corpus row, no sweep. |
 | Which node would *fill* a vacated slot | **No.** Requires ranking inside the pruned pool — 23 live scoped recalls. D3. Still no corpus row and no sweep harness, but not derivable from records. |
-| Whether the filling node would be admitted | **No, and it does not need to be asked** — its rank is 18–20 by construction, and §5.1 and §6.1 already govern that band. |
+| Whether the filling node would be admitted | ~~**No, and it does not need to be asked** — its rank is 18–20 by construction, and §5.1 and §6.1 already govern that band.~~ **CORRECTED 2026-09-07: it does need to be asked.** The rank is `n+1 … n+3` (§4.1 property 3), §5.1's argument is withdrawn, and §6.1's D1 governs the old band only. |
 
 **So the necessity half of a scope-based prediction is testable on existing records; the benefit half costs
-23 graph queries; and neither reaches the question that decides the unit**, which is whether ranks 18–20 can
+23 graph queries; and neither reaches the question that decides the unit**, which is whether ~~ranks 18–20~~
+**the ranks the reserve actually lands on — §4.1 property 3** can
 ever pay. That question is answered by D1, on a file, at no cost. **That inversion — the cheapest test is the
 deciding one and the graph-based tests are the subordinate ones — is why D1 runs first and why D2 and D3 are
 specified but not commissioned.**
@@ -557,14 +623,28 @@ value has never been measured and which §5 gives no reason to expect matters.
 
 ## 11. Reopening condition — stated, so "retired" is falsifiable rather than final
 
-Unit 3 is not dead in principle. It is dead because its delivery band is dead. **It reopens automatically
+Unit 3 is not dead in principle. It is dead because its delivery band is dead. ~~**It reopens automatically
 when, on any shipped configuration, the measured admission rate of candidates at fused ranks 18–20 exceeds
-0.25** — one in four, against today's measured 0.04 at rank 20 and 0.053 for scoped-only arrivals (populations
+0.25**~~ — one in four, against today's measured 0.04 at rank 20 and 0.053 for scoped-only arrivals (populations
 named in §4.3).
 
-That threshold is registered now, before any admission change is designed, so that it cannot be chosen to fit
-whatever compaction turns out to deliver. If a future change moves the horizon that far, the reserve becomes
-a live channel, scope quality acquires a path to an outcome, and §10's escrow design is the starting point.
+**RESTATED 2026-09-07, because as written the condition can no longer fire.** It was indexed to a fixed band
+the reserve has since left (§4.1 property 3): on the shipped code the reserve sits at `n+1 … n+3`, measured
+at 8–10, so *"the admission rate of candidates at fused ranks 18–20"* now measures rows that are not the
+reserve — and on a run whose fused list ends before rank 18, no rows at all. A reopening condition that
+cannot fire is the guard-that-cries-no-wolf failure #10466 and P-29 name, one level up from the code.
+
+> **It reopens automatically when, on any shipped configuration, the measured admission rate of the
+> candidates the scope reserve actually occupies — the fused ranks it lands on under that configuration,
+> whatever they are — exceeds 0.25.** The population is identifiable per run with no new instrument: a
+> candidate whose *only* `Source` carries `Scoped: true` is a reserve arrival (`anchor-grounded-recall.md`
+> §18.4.3), and every run record already carries `sources` and the admit-or-cut decision.
+
+The threshold keeps its registered value of 0.25 and its registration date; only the population it is
+measured over is un-indexed from a band that has moved. **The pre-registration property is preserved
+deliberately** — the number was not renegotiated, and a reader can check that by comparing the struck line
+with this one. If a future change moves the horizon that far, the reserve becomes a live channel, scope
+quality acquires a path to an outcome, and §10's escrow design is the starting point.
 
 ---
 
@@ -586,7 +666,7 @@ a live channel, scope quality acquires a path to an outcome, and §10's escrow d
 | # | Question | Blocking? |
 |---|---|---|
 | **O1** | Does D1's promotion counterfactual reproduce #11365 §6's live interleave result? If the arithmetic and the live measurement disagree, one of them is wrong and it matters which. | No — but it is the first thing to look at in D1's output. |
-| **O2** | **Supplementary recall passes no scope at all** and admits against a *fresh* 20,000-byte budget, so its early ranks are genuinely admissible — unlike the reserve's. It is the only place in the shipped loop where scope quality could plausibly reach an admitted outcome. **It is also unmeasured by every instrument the project owns**, because the sweep calls no model and therefore never reaches it. Recorded as an observation generated from the code path, per §18.4.3's preferred provenance. **Not commissioned, and it must not be** until an instrument exists that could score it. | No. |
+| **O2** | **Supplementary recall passes no scope at all** and admits against a *fresh* 20,000-byte budget, so its early ranks are genuinely admissible — unlike the reserve's. It is the only place in the shipped loop where scope quality could plausibly reach an admitted outcome. **It is also unmeasured by every instrument the project owns**, because the sweep calls no model and therefore never reaches it. Recorded as an observation generated from the code path, per §18.4.3's preferred provenance. **Not commissioned, and it must not be** until an instrument exists that could score it. **EXTENDED 2026-09-07:** `dispatchRecall` calls `Graph.Recall` directly and never `Retrieve` (`internal/loop/turn.go`), so the self-produced exclusion does **not** reach it — supplementary recall is now the only path on which run records are still candidates, still ranked, and cut only at admission. #13091 §6 measured 10 of its 20 rows self-produced and nothing in the shipped change moves that. O2's two halves — unscoped, and unmeasured — are joined by a third: **unfiltered**. See `docs/architecture/self-produced-exclusion-at-fusion.md` §5. | No. |
 | **O3** | An offline pass deriving a node's condensed `substance` appears to be in flight outside `main` (a `condense` worktree at this checkout, not on `main` at `1e42355`). If it lands, #11365 §3's compaction acquires a non-truncating compact form, which is precisely the half F1 says is unmeasured. Stated as an observation with its provenance; **not verified against any branch and not relied on anywhere in this ruling.** | No. |
 | **O4** | Should the reserve be reported as retrieval breadth rather than as an admission channel in the project's standing rates (#12968's option 2, adopted in §7)? This is a reporting change, not a product change. | No. |
 

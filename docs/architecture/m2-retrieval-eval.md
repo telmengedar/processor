@@ -76,6 +76,11 @@ and would produce a shutout. M2 does **not** fix it — fixing the thing you are
 measuring it, is backwards. The harness reports self-produced candidates as a named diagnostic, and R13's
 exclusion becomes **M3's first tuning decision taken against a number instead of an argument.** That is
 the ordering argument of the whole milestone doing its job on day one.
+**DISCHARGED 2026-09-07, and in the order this paragraph asked for:** the number is #13091 §6 (13 of 20
+candidate slots to run records, measured on six live runs), the decision is #13092, and the change is
+`fix/exclude-run-records-from-recall`, designed at
+`docs/architecture/self-produced-exclusion-at-fusion.md`. The measurement preceded the change, which is
+what this sentence was for. §11.3 carries the consequence for the diagnostic itself.
 
 **What exit 1 means, because the first sweep is about to be read (revision 6, from #11045).** The control
 stratum is read at **both** boundaries, not one. A control node that was **never retrieved** is an instrument
@@ -498,7 +503,7 @@ A closed set, one per required node, each with a producer in this design and a r
 |---|---|---|
 | `admitted` | present in `candidates[]`, `Included == true` | the model saw it |
 | `cut` | present, `Included == false` | the retriever found it, the budget discarded it — carries the rank |
-| `notRetrieved` | absent from all 20 rows | the retriever never surfaced it |
+| `notRetrieved` | absent from ~~all 20 rows~~ **the candidate set — corrected 2026-09-07: `Retrieve` returns *at most* 20, and fewer whenever run records occupy the graph's own top ranks (`self-produced-exclusion-at-fusion.md` §4)** | the retriever never surfaced it. **A required node that is itself a run record is now `notRetrieved` by construction.** None of `corpus.json`'s 25 required ids is one today; stated as a property of the verdict, not as an observed firing |
 | `unresolved` | the node id no longer resolves in the graph | **not a score.** The row is excluded from both rates and counted separately (§6.5) |
 
 ### 5.4 A required node larger than the budget
@@ -847,7 +852,7 @@ is the guard that says so.
 | `candidateCount`, `admittedCount` (`k′`) | the variable `k` §5.1 makes explicit |
 | `admittedBytes`, `budgetBytes` | **§3.2's discriminator** — 96% versus 54% utilisation are opposite problems |
 | `anchorWasCandidate`, `anchorAdmittedAsCandidate` | **§3.3's shipped defect**, made countable |
-| `selfProducedCandidates` | **§3.4 / R13**, made countable |
+| `selfProducedCandidates` | **§3.4 / R13**, made countable. **AMENDED 2026-09-07:** §3.4's quantity is no longer what this counts. Since run records are excluded before the candidate limit, the value reads **0 on every sweep by construction**; what it now reports is *whether the exclusion failed*, which is a real alarm and a different one. §12 E4 carries the restated falsifier |
 | `shutout` | `admittedCount == 0` while `candidateCount > 0` — §3.4's catastrophic shape, which a recall number alone reports as an ordinary miss |
 | `topSimilarity` | **§3.2's discriminator at the other end.** It separates *the required node was lost inside a near-tied top-20* (measured spread 0.0316) from *recall returned nothing useful at all* — a distinction a rank-less `notRetrieved` verdict cannot make. Read by whoever is deciding whether the retriever or the input is at fault |
 | `required[]` → `{node, verdict, rank, size, stale}` | the attribution that makes the number actionable. **`size`** is the required node's own byte count, present whenever the node was a candidate at all — it is what separates a `cut` M3 tuning can rescue from a `cut` no ranking can (§5.4), and it costs no read, because admission already computed it. **Revision 8: `size` is specified here and is *not* in the shipped type** — `NodeResult` (`internal/eval/score.go`) carries `{node, verdict, rank, stale}`. **#11049** is the unstarted task; this row is a contract the tree does not yet meet, and §12 E8 is corrected in the same revision for claiming it as a mitigation in place |
@@ -865,7 +870,7 @@ paragraph rather than joining the list below: **deleting a diagnostic costs an e
 reason §11.2's capture-or-lose argument binds it and nothing else in this section.
 
 Every one of the six diagnostics survives the delete test: remove `anchorWasCandidate` and a shipped defect
-stays invisible; remove `selfProducedCandidates` and the first sweep's low score is inexplicable; remove
+stays invisible; remove `selfProducedCandidates` and the first sweep's low score is inexplicable *(**re-derived 2026-09-07**: that justification is now historical — it describes the first sweep and remains true of it. The diagnostic still survives the delete test on a **different** ground: it is the only field in the result that would notice the self-produced exclusion regressing, and a reader of a 2026-09-04 sweep beside a 2026-09-08 one cannot otherwise tell a graph with no run records from a loop that filtered them)*; remove
 `shutout` and an admission catastrophe reads as a retrieval failure; remove the byte pair and the two cut
 regimes are indistinguishable; remove `topSimilarity` and a `notRetrieved` verdict cannot say whether the
 retriever was close or nowhere near; remove `stale` and the corpus rots silently.
@@ -1088,7 +1093,7 @@ failures want opposite fixes, and the guard that verifies the metric never inher
 
 | The control's required node | Boundary | Reads as | Exit |
 |---|---|---|---|
-| `notRetrieved` | retrieval | **an invariant is broken.** A query that is a paraphrase of its own required node failed to surface it in twenty candidates: the retriever, the graph or the harness is not doing what C22 measured. Retrieval is the ceiling under every number in the sweep, so none of them is readable | **1** |
+| `notRetrieved` | retrieval | **an invariant is broken.** A query that is a paraphrase of its own required node failed to surface it in ~~twenty candidates~~ **the candidate set, which is at most twenty and often fewer — corrected 2026-09-07, §5.3's verdict table**: the retriever, the graph or the harness is not doing what C22 measured. Retrieval is the ceiling under every number in the sweep, so none of them is readable | **1** |
 | `unresolved`, or the row errored | — | the control's own referent is gone, or the graph call failed. There was **no self-check this sweep**, and an absent guard is not a passing one | **1** |
 | no control rows at all | — | unchanged from guard 3 as first written | **1** |
 | `cut` | admission | **a budget alarm, and a measurement.** Retrieval is intact — the control is what proves it — and the assembler discarded the node. The retrieved rate is fully trustworthy; the admitted rate is a true reading of a pipeline with a shipped defect in it | **0**, named loudly (§8.3 rule 3) |
@@ -1248,12 +1253,27 @@ is larger than the entire budget. The first sweep's labelled number may be poor 
 
 **Filtering them out would be wrong**, and #10532 §6.2 says why in its own words: *"a corpus that
 systematically under-represents exactly the failures the eval exists to find."* The eval measures the
-retriever **as shipped**. So the score stands, and the `selfProducedCandidates` and `shutout` diagnostics
-name the cause beside it.
+retriever **as shipped**. So the score stands, and ~~the `selfProducedCandidates` and `shutout` diagnostics
+name the cause beside it~~ **— corrected 2026-09-07: `shutout` still names it; `selfProducedCandidates`
+no longer can (§8.2, §12 E4)**.
+
+> **NOTE 2026-09-07, and read it before concluding this section forbids what shipped.** *"Filtering them
+> out would be wrong"* is a rule about **this instrument**, not about the product, and it still holds
+> unbroken: the sweep filters nothing and reports whatever the shipped `Retrieve` hands it. What changed is
+> that the *product* now excludes run records
+> (`fix/exclude-run-records-from-recall`, `docs/architecture/self-produced-exclusion-at-fusion.md`), and the
+> eval measuring the retriever *as shipped* is precisely why the diagnostic went to zero. The instrument is
+> behaving exactly as §11.3 specified; the cost is that the quantity §3.4 measured is now unrecorded, which
+> is a gap in the **product's** record, not a licence to make the instrument see past it — that is the move
+> §11.3's second rejected alternative already refuses.
 
 > **R13's exclusion then becomes M3's first tuning decision taken against a measurement instead of an
 > argument. That is the ordering claim of this milestone — "it comes second, not last" — discharging itself
 > on day one.**
+
+**DISCHARGED 2026-09-07.** #13091 §6 measured it; #13092 decided it; `fix/exclude-run-records-from-recall`
+shipped it. **The prediction held and the ordering held.** Recorded here rather than in §3 alone so a reader
+arriving at §11.3 does not have to search for whether it ever happened.
 
 ### 11.4 Rejected alternatives, and why
 
@@ -1279,7 +1299,7 @@ name the cause beside it.
 | E1 | **The labeller's definition of *required* silently drifts** across rows, so the metric measures the labeller | the definition is written (§4.3) and each row carries a `why` that can be relitigated | read ten `why` lines cold; if two use *required* in incompatible senses, the definition needs sharpening before the corpus grows |
 | E2 | **The corpus is too small to resolve the moves M3 makes** | §6.3 states the resolution in the document and prints denominators | a tuning change moves the number by less than ~0.12 |
 | E3 | **Graph drift makes two sweeps incomparable** | stale/unresolved counts for the corpus's own referents; §11.2 states the residual honestly | a comparison reverses on re-run days later |
-| E4 | **Self-produced content dominates and the number says nothing about retrieval** | reported by name per sweep (§8.2), not hidden; §11.3 makes it M3's first decision | `selfProducedCandidates` exceeds ~25% of candidate slots, or shutouts exceed ~10% of rows |
+| E4 | **Self-produced content dominates and the number says nothing about retrieval** | reported by name per sweep (§8.2), not hidden; §11.3 makes it M3's first decision. **AMENDED 2026-09-07:** the risk is closed for the path this instrument measures — `Retrieve` drops run records before the candidate limit (`fix/exclude-run-records-from-recall`, `docs/architecture/self-produced-exclusion-at-fusion.md`) — and remains open, unmeasured, on the supplementary path the sweep never reaches | ~~`selfProducedCandidates` exceeds ~25% of candidate slots~~ **RESTATED 2026-09-07: that clause can no longer fire.** Excluded rows never reach the dispositions `BuildRow` counts, so `selfProducedCandidates` reads **0 by construction** on every sweep and a threshold above 0 is unreachable. An alarm that cannot fire is worse than none (#10466, P-29), so the clause is inverted rather than deleted: **`selfProducedCandidates` is non-zero at all** — which now means the exclusion failed, not that crowding is bad. **The original quantity — how much of the graph's answer was this system's own paperwork — is recorded nowhere and is a stated gap**, `self-produced-exclusion-at-fusion.md` §6. Unchanged: shutouts exceed ~10% of rows |
 | E5 | **The harness reports plausible numbers while broken** | four independent guards, one running every sweep (§9.2) | the control stratum's **retrieved** rate reads below 1.00. *(Revision 6: as first written this row said "the control stratum reads below 1.0", which the admitted rate can do for a reason that is neither the harness nor the graph — §9.2)* |
 | E6 | **The eval drifts from the loop** as M3 changes assembly | behavioural test (G-14) plus two mutations on the loop's own constants and admission rule (§9.3, G-14b) | a `loop` constant changes and no eval test notices |
 | E7 | **The anchor duplication (§3.3) distorts every number** | rejected at load where it would be a free hit (§6.2); reported per row where it is budget cost (§8.2) | `anchorWasCandidate` is true on a majority of rows and the admitted byte totals are correspondingly inflated |
@@ -1508,7 +1528,7 @@ cited**, and those are not the same audit. G-28 and G-29 close it here; the gene
 | G-16 | `shutout` is reported when candidates were retrieved and none admitted | ~~`TestSweepReportsAShutoutWhenAnOversizedRankOneCandidateAdmitsNothing`~~ `TestSweepReportsAShutoutWhenEveryCandidateWasOversized`, `TestSweepReportsNoShutoutWhenTheCandidateSetItselfWasEmpty` (`internal/eval/result_test.go`) *(revision 8: renamed in `58b02d8` — the same commit that replaced the stop with a skip, because under skip a shutout needs* **every** *candidate oversized, not only the rank-1 one. The rename is a consequence of §5.1's correction rather than an independent edit, and the empty-set dual arrived with it.)* |
 | G-17 | Whether the anchor also appeared as a candidate, and whether it was admitted, is recorded per row | `TestSweepRecordsThatTheAnchorAlsoAppearedAmongTheCandidates` |
 | G-18 | Admitted bytes and the budget are both recorded, so utilisation is derivable | `TestSweepRecordsTheAdmittedByteTotalBesideTheBudget` |
-| G-19 | A candidate written by the loop's own write path is counted as self-produced; a foreign `session-log` is not | `TestSweepCountsOnlyRunRecordsAsSelfProducedAndNotOtherSessionLogs` |
+| G-19 | A candidate written by the loop's own write path is counted as self-produced; a foreign `session-log` is not | `TestSweepCountsOnlyRunRecordsAsSelfProducedAndNotOtherSessionLogs`. **NOTE 2026-09-07:** the guard is unaffected — it builds candidates directly and calls `Assemble`, never `Retrieve` — and it still discriminates type-and-name-prefix from type alone, which is what it exists for. What changed is that **a live sweep can no longer reach the state it pins**: `Retrieve` excludes run records, so no real sweep produces a candidate this row would count. The row is a guard on the classifier, not on the sweep, and should be read as one |
 | G-20 | The result carries the corpus hash and the loop's limits, so a result names what produced it | `TestResultHeaderCarriesTheCorpusHashAndTheLoopLimits` |
 | G-21 | Result rows are emitted in corpus order, so two results diff | `TestResultRowsAreEmittedInCorpusOrder` |
 | G-22a | **`Render`'s parameter contract** — the result goes to its machine writer, the summary to its human writer. **Premise:** this sits one call-layer *below* the stream binding and structurally cannot observe it — `go list -deps ./internal/eval` contains no `cmd/eval` | `TestRenderWritesTheResultToItsMachineWriterAndTheSummaryToItsHumanWriter` (`internal/eval/report_test.go`) |

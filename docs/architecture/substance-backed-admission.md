@@ -274,7 +274,7 @@ Let `remaining = budget − len(anchor.Content)`, floored at zero, exactly as to
 
 **Pass 1.** Walk candidates in rank order. For each:
 
-- `SelfProduced` → cut, reason `self-produced`. *(unchanged)*
+- `SelfProduced` → cut, reason `self-produced`. *(unchanged — and **note 2026-09-07**: still the spec, still shipped, but no longer reachable from `Retrieve`, which drops run records before the candidate limit. On the primary path this branch and pass 2's skip below are dead; both stay live for the supplementary path. `docs/architecture/self-produced-exclusion-at-fusion.md` §5)*
 - `cumulative + len(Content) ≤ remaining` → admit, **form = content**, `cumulative += len(Content)`.
 - otherwise → cut, reason `byte budget exceeded`. *(unchanged)*
 
@@ -284,7 +284,9 @@ must be pinned by a test asserting identical output on a candidate set carrying 
 **Pass 2.** Walk the candidates pass 1 cut, **in rank order**. For each:
 
 - **Skip if `SelfProduced`.** A cut for self-poisoning is not a cut for size; #11141 is why. Re-admitting a
-  run record in condensed form would reintroduce that exact defect at a discount.
+  run record in condensed form would reintroduce that exact defect at a discount. *(Still required, and see
+  the note on pass 1's `SelfProduced` branch — unreachable from `Retrieve` since 2026-09-07, so a test for
+  this bullet must construct the candidate rather than drive a sweep.)*
 - **Skip if substance is absent** under A7.
 - **Skip if `len(Substance) ≥ len(Content)`.** A substance no smaller than its content is a generation defect,
   not a compaction; rendering it would spend the same bytes and lose fidelity for nothing.
@@ -462,7 +464,7 @@ must come back.
 | K3 | **No fabrication and no hedge-hardening.** A condensation that resolves "appears to" into "is" manufactures a fact. | #10943's family is precisely prose asserting something the underlying artifact does not support. A condenser that smooths uncertainty is a machine for producing that class. |
 | K4 | **Self-containment.** The substance is rendered without its content, beside other nodes. No "as above", no pronouns referring to elided sections, no references to the node's own structure. | The block is a flat concatenation. A substance that assumes its content is adjacent is unreadable where it is actually used. |
 | K5 | **No repetition of id, type, or name.** | The block header already carries them. Repeating them spends the bytes the mechanism exists to save. |
-| K6 | **A stated policy for non-prose content**, e.g. `application/json` bodies. Unit A's simplest answer is to exclude them from the target set. | Run records are `application/json` and are already cut as self-produced, so the case is currently moot — but `contentType` varies across the graph and a prose prompt applied to JSON produces something worse than either. |
+| K6 | **A stated policy for non-prose content**, e.g. `application/json` bodies. Unit A's simplest answer is to exclude them from the target set. | ~~Run records are `application/json` and are already cut as self-produced, so the case is currently moot~~ **— corrected 2026-09-07: still moot, different reason. On the primary path run records are now excluded at fusion and never become candidates at all (`docs/architecture/self-produced-exclusion-at-fusion.md`); the admission cut survives only for the supplementary path.** The conclusion is unchanged and the reason under it is not, which is why it is corrected rather than left — but `contentType` varies across the graph and a prose prompt applied to JSON produces something worse than either. |
 | K7 | **Failure is a refusal, not a short output.** An empty or refusing condensation must be reportable and must not be written. | §8.2's invariant. A written empty substance is invisible under A7 and wastes a model call twice. |
 
 **The one thing the design cannot ask the prompt for:** a guarantee that the answer survives. That is not a

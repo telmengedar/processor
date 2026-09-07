@@ -150,7 +150,8 @@
 
 **What.** `POST /runs` takes a text input and the id of the node the run is about, assembles a context
 block **mechanically** from the graph, makes **one** model call, and writes a run record back. The
-~~response body *is* the record~~ — every candidate, its score, and whether it was kept or cut.
+~~response body *is* the record~~ — every candidate, its score, and whether it was kept or cut
+*(— "every candidate" narrowed 2026-09-07; §8.2's `candidates[]` row is canonical for what the set contains)*.
 **CORRECTED 2026-09-02 (#10899, A3): the response body is the record ***plus exactly one key*** — the
 write receipt, which the stored copy structurally cannot carry. See `docs/architecture/run-record-fate.md`
 §8.1 for what is guaranteed instead.**
@@ -219,7 +220,7 @@ Three things are therefore true at once, and the design has to serve all three:
 | # | Criterion | How it is judged |
 |---|---|---|
 | S1 | The loop closes | A run posted to `POST /runs` returns a record and the graph holds a new node linked to the run's subject. Judged live, in a container, against a local OpenAI-compatible runtime — no credential, no spend (§10.6, §14 step 14) |
-| S2 | The assembled context is legible | The response body names every candidate the query returned, with its score, rank, size, content hash, and **included or cut with the reason**. A human reads it without opening the graph |
+| S2 | The assembled context is legible | The response body names every candidate ~~the query returned~~ **the retrieval step returned — corrected 2026-09-07, §8.2 `candidates[]`; run records the graph returned are excluded upstream and appear in no field** — with its score, rank, size, content hash, and **included or cut with the reason**. A human reads it without opening the graph |
 | S3 | No LLM chooses what is retrieved | The retrieval query is the input text, verbatim, and the subject id comes from the request. Falsifier: any model output feeding the assembler's query. The supplementary-recall tool is *additive* and post-assembly (§2.4) |
 | S4 | Assembly is deterministic and byte-pinnable | Given a fixed candidate set, the assembled block is one exact string, asserted byte-for-byte offline (§9) |
 | S5 | Milestone 2 is not foreclosed | The record carries the **whole** candidate set with scores and hashes, not the surviving subset (§9.4) |
@@ -683,13 +684,38 @@ accurate, not less** — before this change a shutout record carried nineteen ca
 
 **Why self-produced content is cut at admission rather than filtered from the query.** §6.2's three
 narrowings stay unbuilt and §11 R13's *"one query parameter"* remedy is **rejected as a mechanism** while
-its goal is adopted: filtering removes the row before it is written down, which is the one thing
-milestone 2 forbids (§9.4 obligation 1), and node type alone cannot carry the distinction because run
+its goal is adopted: ~~filtering removes the row before it is written down, which is the one thing
+milestone 2 forbids (§9.4 obligation 1)~~, and node type alone cannot carry the distinction because run
 records are typed `session-log` and so are human-written session logs — two of them were ranks 2 and 3 in
-the failing run. Cut at admission, the row is still retrieved, still ranked, and still recorded with its
+the failing run. ~~Cut at admission, the row is still retrieved, still ranked, and still recorded with its
 similarity and a cut reason of its own, so the evidence about how self-produced content competes with
-real content accumulates in every record written from here on. **Self-recall is ruled a capability worth
+real content accumulates in every record written from here on.~~ **Self-recall is ruled a capability worth
 having; the run record is the wrong vehicle for it** (#11158 §4).
+
+> **SUPERSEDED IN PART, 2026-09-07 — `fix/exclude-run-records-from-recall`. Canonical:
+> `docs/architecture/self-produced-exclusion-at-fusion.md`; measurement #13091 §6; decision #13092.**
+> Run records are now dropped from the candidate list at fusion, before the candidate limit is spent, so on
+> the primary path they are no longer *"still retrieved, still ranked, and still recorded"* and the evidence
+> this paragraph wanted **no longer accumulates in any record**. That loss is real, is deliberate, and is
+> the design gap named in the new document §6 — it is not an oversight this note is papering over.
+>
+> **The reason given here for cutting rather than filtering does not survive scrutiny, and that is worth
+> more than the reversal.** §9.4 obligation 1 constrains *the record* against *the candidate set* — *"the
+> record carries the whole candidate set … not the surviving subset"* — and it says nothing at all about the
+> candidate set against the recall result. It never forbade this change. Obligation 1 is still true and is
+> **not** annotated; what is struck is this paragraph's inference from it.
+>
+> **Three claims in this paragraph survive and must not be swept as stale.** (1) *Node type alone cannot
+> carry the distinction* — honoured exactly: the shipped predicate is `divoid.IsRunRecord(type, name)`,
+> type **and** name prefix. Guard on this path:
+> `TestARowCarryingTheRunNodeTypeWithoutTheRunNamePrefixIsStillAdmittedAsACandidate`
+> (`internal/loop/self_poisoning_test.go`); the eval-side classifier has its own,
+> `TestSweepCountsOnlyRunRecordsAsSelfProducedAndNotOtherSessionLogs`. (2) The admission cut is **retained**, unchanged, as the second refusal for a row arriving by any
+> other route (`internal/loop/assemble.go`) — the rest of §6.3 is untouched. (3) The **supplementary**
+> recall path is not filtered at all: `dispatchRecall` calls `Graph.Recall` directly and its rows still
+> arrive, are still ranked and are still cut at admission with this reason, so §6.4a's record is exactly
+> what this paragraph described. §8.2's `toolCalls[]` row is therefore **still true** where its
+> `candidates[]` row is not.
 
 **Block layout, fixed:**
 
@@ -1009,7 +1035,7 @@ a second lookup does.
 | `subject` | The node id the run is about |
 | `query` | The text sent to the retriever. **At M1 this equals `input`, and it is a separate field precisely so that the day it stops being equal is visible in the record** |
 | `anchor` | Subject node: id, type, name, size, content hash |
-| `candidates[]` | **Every** row the query returned, in rank order: rank, id, type, name, similarity, size, content hash, `included` or `cut`, and the cut reason. **Two cut reasons since 2026-09-04 (#11158, B4)**: the byte budget, and *self-produced* for a run record this system wrote. A self-produced row is recorded exactly like any other — retrieved, ranked, sized and hashed — which is what keeps the evidence about how it competes against real content |
+| `candidates[]` | ~~**Every** row the query returned~~ **CORRECTED 2026-09-07: every row the *retrieval step* returned** — which since `fix/exclude-run-records-from-recall` excludes the anchor and every run record this system wrote — in rank order: rank, id, type, name, similarity, size, content hash, `included` or `cut`, and the cut reason. **Two cut reasons since 2026-09-04 (#11158, B4)**: the byte budget, and *self-produced* for a run record this system wrote. ~~A self-produced row is recorded exactly like any other — retrieved, ranked, sized and hashed — which is what keeps the evidence about how it competes against real content~~ **STRUCK 2026-09-07: on this path a self-produced row is not recorded at all.** The *self-produced* cut reason is **not** dead — it still fires for a row reaching `Assemble` by another route, which today means the supplementary path below. **The count of records the recall returned and the exclusion dropped is recorded nowhere**; that gap and its remedy are `docs/architecture/self-produced-exclusion-at-fusion.md` §6. **The `toolCalls[]` row directly below is unaffected and its *every* is still literal** — do not sweep it with this one |
 | `block` | The assembled context, verbatim |
 | `answer` | The model's final text |
 | `toolCalls[]` | Per supplementary recall round: the query the model asked, and **every** row it returned — with the same columns `candidates[]` carries: rank, id, type, name, similarity, size, content hash, `included` or `cut`, and the cut reason. **Widened in revision 3** (#10821 CF-4, W-7): the two paths are the same event under §6.4a, a cut is unreadable without the size that caused it, and §9.4 obligation 3 was simply false for any run that used the tool |
@@ -1674,7 +1700,7 @@ section just learned about itself.
 | R8 | **The model treats the block as a transcript** and answers from position rather than relevance | §8.6's system text establishes what the block is. Falsifiable on the first live runs by reading the answers |
 | R9 | **Graph latency dominates.** ~2 s per run before the model is reached (C20, C23, C29) | Accepted at M1. The two reads are independent and could run concurrently — one obvious optimisation, deliberately not taken until a measurement says it matters |
 | R10 | **The seams get load-bearing** and the design drifts toward interface-per-service | §9.2's falsifier is checkable by inspection: any interface without an experiment behind it goes |
-| **R13** | **Run records are unfiltered recall candidates, and they are copies of earlier prompts.** M1 writes a `session-log` node per run (§8.3) into the same graph its recall query reads, and nothing scopes that query (§6.2). So run *n*'s candidate set can contain run *n−1*'s record — a node 10–19× median size (R5) whose body is a **verbatim copy of a block the run already has**, and which under §6.3's stop-don't-skip admission can consume the entire assembly budget and cut all nineteen other candidates | **Named in revision 3; not fixed here, and the distinction matters.** §6.2's argument against filtering was made about *human-authored* content and it still holds; **self-produced content is a case it does not cover**, and this design did not notice that writing into the pool it reads from changes that premise. The remedy is measured and cheap — C25 confirms `type=` composes with `query=`, so excluding the run-record type is one query parameter — but it is a change to unit A's shipped read path, and **no run record has ever been written, so the evidence for it does not exist yet.** **Falsifier, and it produces that evidence in ten runs:** run ten, then read the eleventh's candidate set. If `session-log` nodes appear above rank 5, or if one is admitted and cuts the rest, the exclusion goes in with a measurement behind it — the same standard R1 and R2 are held to. **FIRED AND RULED 2026-09-04 (#11158, B5). It took two runs, not ten:** the record ranked first, could never be admitted, and cut all nineteen behind it (#11141). The goal is adopted and **the proposed mechanism is not** — neither branch this row named shipped. A `type=` exclusion filters the row before it is written down (§9.4 obligation 1 forbids it) and node type alone cannot carry the distinction, because human-written session logs carry the same type and were ranks 2 and 3 in the failing run. **The row is cut at admission instead** (§6.3), so it stays retrieved, ranked and recorded. **What survives of this row as a live risk:** run records still occupy retrieval slots out of the candidate limit. That is countable per run from `candidates[]`, and it is what would justify a query-level change later — with the measurement §6.2 has always demanded |
+| **R13** | **Run records are unfiltered recall candidates, and they are copies of earlier prompts.** M1 writes a `session-log` node per run (§8.3) into the same graph its recall query reads, and nothing scopes that query (§6.2). So run *n*'s candidate set can contain run *n−1*'s record — a node 10–19× median size (R5) whose body is a **verbatim copy of a block the run already has**, and which under §6.3's stop-don't-skip admission can consume the entire assembly budget and cut all nineteen other candidates | **Named in revision 3; not fixed here, and the distinction matters.** §6.2's argument against filtering was made about *human-authored* content and it still holds; **self-produced content is a case it does not cover**, and this design did not notice that writing into the pool it reads from changes that premise. The remedy is measured and cheap — C25 confirms `type=` composes with `query=`, so excluding the run-record type is one query parameter — but it is a change to unit A's shipped read path, and **no run record has ever been written, so the evidence for it does not exist yet.** **Falsifier, and it produces that evidence in ten runs:** run ten, then read the eleventh's candidate set. If `session-log` nodes appear above rank 5, or if one is admitted and cuts the rest, the exclusion goes in with a measurement behind it — the same standard R1 and R2 are held to. **FIRED AND RULED 2026-09-04 (#11158, B5). It took two runs, not ten:** the record ranked first, could never be admitted, and cut all nineteen behind it (#11141). The goal is adopted and **the proposed mechanism is not** — neither branch this row named shipped. A `type=` exclusion filters the row before it is written down (§9.4 obligation 1 forbids it) and node type alone cannot carry the distinction, because human-written session logs carry the same type and were ranks 2 and 3 in the failing run. **The row is cut at admission instead** (§6.3), so it stays retrieved, ranked and recorded. ~~**What survives of this row as a live risk:** run records still occupy retrieval slots out of the candidate limit. That is countable per run from `candidates[]`, and it is what would justify a query-level change later — with the measurement §6.2 has always demanded~~ **CLOSED 2026-09-07 — and once again by a mechanism this row did not name, which is now the second time. The measurement §6.2 demanded exists: #13091 §6, 13 of 20 candidate slots to run records. The change is `fix/exclude-run-records-from-recall`, designed at `docs/architecture/self-produced-exclusion-at-fusion.md`.** It is **not** the query-level change this row anticipated: nothing is passed to the graph, the graph still returns and ranks the records, and the exclusion happens in `fuse` after the ranking and before the candidate limit. So R13's remedy has now been declined twice — once as `type=` on the query, once as a rank-level exclusion — and adopted twice by a third route. **What replaces this row as the live risk** is the mirror of it: the supplementary path (§6.4a) is still unfiltered and #13091 §6 measured 10 of its 20 rows self-produced, and the primary path's crowding is now invisible in every record written from here on |
 | **R14** | **M1 does not fit an 8,192-token window, and that is a real size among the ruling's own target runtimes.** §8.4's ceiling table: the assembly budget alone is ≈ 15,000 tokens, **183%** of such a window, ~~before the anchor and~~ **CORRECTED 2026-09-05 (#11335, E7): the anchor is inside that 183% now, so the figure is the whole block rather than a floor under it — the row is unchanged in verdict and slightly sharper in statement** before any tool use | **Named rather than repaired, because the constant that causes it is unit A's and is shipped.** The tool path is not the cause — §6.4a bounds it, and a run with zero tool calls overflows an 8K window just as badly. The fix, when there is evidence for it, is `AssemblyByteBudget`. ~~The honest position today is that **M1's floor is a 32,768-token endpoint**~~ **CORRECTED 2026-09-07 (#13064): the call cap moved 3 → 6, so the floor is a 131,072-token endpoint — §8.4's table carries it, and the 32,768 row there no longer fits either**, and §13.6 asks whether that is acceptable. **Falsifier:** point it at an 8K runtime. The first call fails or truncates, §6.5's rows carry it, and the number to change is in §8.4 |
 
 ---
