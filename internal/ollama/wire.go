@@ -110,7 +110,7 @@ type wireError struct {
 func buildMessages(in loop.JudgeInput) []wireMessage {
 	messages := []wireMessage{
 		{Role: "system", Content: in.System},
-		{Role: "user", Content: buildUserContent(in.Block, in.Input)},
+		{Role: "user", Content: loop.RenderUserContent(in.Block, in.Input)},
 	}
 
 	for _, r := range in.PriorTools {
@@ -132,14 +132,6 @@ func buildMessages(in loop.JudgeInput) []wireMessage {
 	}
 
 	return messages
-}
-
-func buildUserContent(block, input string) string {
-	var b strings.Builder
-	b.WriteString(block)
-	b.WriteString("\n===== INPUT =====\n")
-	b.WriteString(input)
-	return b.String()
 }
 
 func wireToolName(tool string) string {

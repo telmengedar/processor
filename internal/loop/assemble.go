@@ -63,6 +63,21 @@ func admit(candidates []Candidate, budget int) (admitted []Candidate, dispositio
 	return admitted, dispositions
 }
 
+// RenderUserContent composes the user message: the request, the assembled block, then the same request again.
+func RenderUserContent(block, input string) string {
+	request := "===== INPUT =====\n" + input
+
+	var b strings.Builder
+
+	b.WriteString(request)
+	b.WriteString("\n\n\n")
+	b.WriteString(block)
+	b.WriteString("\n")
+	b.WriteString(request)
+
+	return b.String()
+}
+
 // renderBlock renders the fixed layout of design §6.3: the anchor first
 // (the run's stable subject), then the admitted candidates ascending by
 // id (the volatile part).
