@@ -37,7 +37,7 @@ cannot — and shape is fixable. Provenance was never a reason. **This document 
 | | |
 |---|---|
 | **We shipped `substance` and never asked for it** | `candidateFields = "id,type,name,similarity,content"` (`internal/divoid/client.go:34`). `loop.Candidate` has no substance member. `assemble.go` renders `c.Content`, always. We asked DiVoid for the field (#11367), DiVoid shipped it (#11371), we designed admission around it (#12955) — and the loop has never requested it. **The listing route accepts `fields=…,substance` and returns it; verified live today.** |
-| **But the graph has almost no substance to give** | Sampled live: **1 of 500** random nodes, **6 of 500** documentation, **0 of 500** session-logs, **0 of 500** tasks. On the yardstick's own top-20, **1 of 20**. `cmd/condense` has only ever been pointed at the 25 required nodes of the eval corpus (#12984). **Coverage, not admission policy, is the binding constraint.** |
+| **But the graph has almost no substance to give** | Sampled live: **1 of 500** random nodes, **6 of 500** documentation, **0 of 500** session-logs, **0 of 500** tasks. On the yardstick's own top-20, **1 of 20**. `cmd/condense` has only ever been pointed at the 25 required nodes of the eval corpus (#12984). **That is not a data gap — it is the absence of a behaviour** (§7.3), and it is what Unit 2 becomes. |
 | **Where it would pay is exactly where the crowding is** | The yardstick's seven real candidates total **106,829 B against a 60,000-byte budget** — they cannot all fit. Applying #12984's measured stratum ratios: **36,081 B in substance form, all seven fit, 23,919 B spare.** (One row is a real measurement: #13101, 11,961 B → 5,527 B, ratio 0.462.) |
 | **And the condenser refuses the class that needs it most** | `internal/condense/condense.go:283` skips `SelfProduced`; `:296`'s `isProse` refuses `application/json`. **A run record is refused twice.** A third gate is measured, not designed: at 195 KB, node #10926 could not be condensed at all — truncated and refused (#12984), and run records are 77–88 KB. |
 
@@ -46,9 +46,35 @@ cannot — and shape is fixable. Provenance was never a reason. **This document 
 | | |
 |---|---|
 | **Unit 1 — See it** | Request `substance` in recall; carry it on `Candidate`; record which form was rendered. **No admission-policy change.** Small, and nothing downstream is measurable without it. |
-| **Unit 2 — Generate it** | Point `cmd/condense` at the *retrievable* corpus, not the eval corpus. Mostly runtime and model spend, not code. **It pays off under all three payload designs**, which is why it is not gated on choosing between them. |
+| **Unit 2 — Generate it, on demand** | **A behaviour of the memory core, not a backfill campaign.** Retrieval finds a node it wants to push, finds no substance, and makes one. **Bounded by the cache — cost is proportional to novelty, not traffic** — plus a size gate, a pressure gate, and a transition-only ceiling. §7.4. |
 | **Unit 3 — Render it, size-gated** | Substance replaces content **where condensation actually compacts** — the ≥8 KB stratum, measured median ratio **0.298**. Below 4 KB the measured ratio is **0.886**: substance saves ~11 % and spends fidelity, so content stays. |
-| **Unit 4 — The catalogue** | #13106 §8.3, unchanged and still third. Its payload *is* substance, so it is downstream of Unit 2 by construction, and its three-arm falsifier cannot run until Unit 2 has covered the twenty rows. |
+| **Unit 4 — The catalogue** | #13106 §8.3, unchanged and still third. Its payload *is* substance, so it is downstream of Unit 2 by construction, and its three-arm falsifier cannot run until the fill has warmed the twenty rows. |
+
+**This crosses an invariant, and the crossing is the design's main claim.** `internal/condense/condense.go:1`
+says the pass *"is never reachable from a turn"*. Two things make moving it defensible.
+
+**What bounds a turn's spend is the cache, not a cap.** Substance is stored on the node, so **cost is
+proportional to novelty, not to traffic** — a presence check in an active area, one condensation per *new*
+node above the size gate, paid once ever. Three regimes, priced separately in §7.4.1. **But we are entirely
+inside the transition** — 0 of 500 session-logs, 0 of 500 tasks — so the first run on a novel area pays
+about **three fills, ~90 s**, against a turn that runs 33–81 s. *"It converges to free"* is true and is the
+wrong sentence to read before the first run (§7.4.2).
+
+**What keeps the instrument clean is structural, and measured rather than asserted.** #12955's **primary**
+objection was never latency — it was **determinism**. `cmd/eval`'s entire dependency closure is
+`boot, loop, divoid, eval`: **no model adapter, no `condense`, so the sweep cannot fill.** Put the fill
+behind a port the loop declares and only `cmd/processor` constructs — exactly as `FilePort` already works,
+and forced anyway, since `loop` importing `condense` is a compile cycle — and **the instrument is
+structurally incapable of contaminating the substrate it measures** (§7.4.4).
+
+**And the property that matters most is not coverage — it is self-healing.** Substance is derived state, so
+it is lost whenever content changes, and **our own parity sync is half an operation**: it republishes a
+body and drops the derived form. Verified today — **#13203 `null`, #12955 `null`, and #13238, this very
+document, `null`.** Three for three, including the design that argues substance is the thing we lack. Under
+the fill that repairs itself: the next retrieval that wants the node notices the absence and fills it. **No
+guard, no re-derive step in any procedure, no discipline anyone has to remember**, and it holds for every
+cause — never generated, invalidated by a legitimate edit, dropped by a republish, lost in a migration.
+It also means **§4.1's 1-in-500 is a floor on the problem, not a measure of it** (§7.4.5).
 
 **Where I disagree with #12955, explicitly.** Its invariant — *substance may stand in for content only where
 content would have been absent* — was the right first move **under zero fidelity evidence**. That evidence
@@ -149,6 +175,11 @@ run-record exclusion from a provenance rule to a form rule. The node type run re
 | A10 | `CandidateLimit = 20`, `AssemblyByteBudget = 60_000`, `SupplementaryByteBudget = 20_000`, `MaxModelCalls = 6` | `internal/loop/turn.go:12-18`. Certain |
 | A11 | The graph is live, shared and mutating; every candidate-set figure is one substrate at one instant | Hard constraint (#12955 A5) |
 | A12 | A new node type needs no schema change; #9 sanctions new types explicitly, asking only for a linked note | **#9**. Certain |
+| A13 | **`cmd/eval` cannot make a model call.** Its whole dependency closure is `internal/boot`, `internal/loop`, `internal/divoid`, `internal/eval` — no `openaicompat`, no `ollama`, no `condense` | `go list -deps ./cmd/eval` at `da01ee8`. Certain, and §7.4.4's determinism repair rests on it |
+| A14 | **`internal/loop` cannot import `internal/condense`** — it is a cycle. `internal/condense/targets.go:6` imports `internal/eval`, which imports `internal/divoid`, which imports `internal/loop` | `go list -deps` at `da01ee8`. Certain, and it forces the fill to be a port the loop declares |
+| A15 | The project already has an absent-by-default port that refuses with a recorded reason: `FilePort`, declared at `internal/loop/turn.go:60`, documented *"nil refuses every write"* at `:81`, guarded at `:317` | Read from source. Certain — it is the precedent §7.4.4 follows |
+| A16 | **Substance is derived state and is invalidated whenever content is written.** In every case observed on real work the content had genuinely changed, so the invalidation was **correct** | #12984 also measured the degenerate byte-identical case; nobody performs one, so it is a curiosity rather than an exposure (§7.4.5). Certain |
+| A17 | **UNKNOWN: whether `substance` participates in similarity ranking.** If it does, a fill changes *retrieval* and not merely *rendering*, and §7.4.4's argument weakens sharply | **Not established.** F-7 is the gate and it must fire before any fill ships |
 
 ---
 
@@ -172,6 +203,12 @@ pointed at the graph.
 **This is the constraint that orders everything below.** Choose any payload rule you like; today it would
 render content for nineteen of twenty rows because there is nothing else to render. **The payload argument
 cannot be settled by argument. It is blocked on generation.**
+
+**And these numbers are a floor, not a measurement.** Part of the zero is not *never generated* but
+*generated and then discarded* — a design document's substance is written once and then dropped by the next
+parity re-sync, with three confirmed instances in §7.4.5, one of them this document. The true shortfall is
+larger than the sample shows, and it is why §7.4.5 treats self-healing as the property that matters rather
+than coverage.
 
 ### 4.2 What substance costs and buys — measured, and strongly size-dependent
 
@@ -274,9 +311,12 @@ it is the reason no rule in this document may key on the `session-log` type.
   │     substance  — lossy, generated, present only where generated      │
   └──────────────────────────────────────────────────────────────────────┘
              │                                        ▲
-   ranked +  │ Unit 1: ask for BOTH                   │ Unit 2: cmd/condense
-   addressed │                                        │  offline, deterministic,
-     reads   ▼                                        │  over the RETRIEVABLE corpus
+   ranked +  │ Unit 1: ask for BOTH                   │ Unit 2: THE FILL (§7.4)
+   addressed │                                        │  a memory-core behaviour:
+     reads   ▼                                        │  no substance where one is
+                                                      │  wanted → make it, once,
+                                                      │  behind a port cmd/eval
+                                                      │  structurally cannot build
   ┌── internal/loop ─────────────────────────────────────────────────────┐
   │  Retrieve → fuse → admit → RENDER                                    │
   │                              │                                       │
@@ -293,10 +333,14 @@ it is the reason no rule in this document may key on the `session-log` type.
 form does each row travel?*, and dropping becomes what the budget does to whatever is left — which is
 Toni's *"automatically degrade irrelevant stuff"*.
 
-**Why the units are in this order.** Unit 1 is a precondition for observing anything. Unit 2 is the binding
-constraint (§4.1) and pays off under every payload rule, so it is not gated on choosing one. Unit 3 is the
-rule, and it cannot be measured before Unit 2. Unit 4's payload is substance, so it is downstream of Unit 2
-by construction — and #13106 §8.3 already says so.
+**Why the units are in this order.** Unit 1 is a precondition for observing anything. Unit 2 is what puts
+substance in the graph at all, and it pays off under every payload rule, so it is not gated on choosing one.
+Unit 3 is the rule, and it cannot be measured before Unit 2 has warmed something to measure it on. Unit 4's
+payload is substance, so it is downstream of Unit 2 by construction — and #13106 §8.3 already says so.
+
+**Unit 2 is no longer a scheduled pass over a declared corpus. It is a behaviour**, and that is the change
+this revision makes: coverage is discovered by retrieval rather than planned by a person, which is why §15's
+Q1 could be struck instead of answered.
 
 ---
 
@@ -309,7 +353,8 @@ by construction — and #13106 §8.3 already says so.
 | **`internal/loop` — `admit`** | The byte budget, over **rendered** bytes | Which bytes those are |
 | **`internal/loop` — the form rule (new)** | **The single decision: content or substance, per candidate.** One pure function of node properties (S2) | Generation, fidelity, prompts |
 | **`internal/loop` — `renderBlock`** | Emitting the chosen form, **marked** (S5) | The choice |
-| **`cmd/condense` / `internal/condense`** | Generating substance offline, deterministically, over a named target set. Refusing to store a defective condensation | Being reachable from a turn. #12955's determinism argument stands unchanged and unchallenged |
+| **The fill port (new)** | **Declared by `internal/loop`** (it must be — importing `internal/condense` is a cycle, A14). One operation: *this node has no substance and I want to push it; make one.* Absent by default; every refusal carries a reason | Deciding *whether* to fill — that is the gate set (§7.4.3). It also never decides what is rendered |
+| **`cmd/condense` / `internal/condense`** | The condensation itself: the prompt, the audit, the refusal to store a defective result. Reachable **both** offline and, via the port, from a turn | The gates, the ceiling, and the graph-wide campaign it is no longer asked to run |
 | **The condensation prompt (#11373)** | Fidelity | Everything else. §4.5's failure is here |
 
 **The one responsibility that is genuinely new** is the **form rule**, and it must be a pure function of
@@ -352,12 +397,198 @@ present meaning, because `eval.scoreOne` compares `contentHash` against the corp
 a rendered substance instead would mark **every** substance-rendered required node stale — a false rot
 signal indistinguishable by inspection from a real one.
 
-### 7.3 What generation does not do
+### 7.3 Where generation happens — the invariant, and why this document moves it
 
-**Generation never happens inside a turn**, and #12955's rejection of in-turn generation is adopted without
-qualification: it destroys the determinism every measurement in this project rests on, and it puts up to
-twenty model calls before assembly against a six-call cap. Toni's policy — *absent substance is the
-trigger* — is right; the **place** is the offline pass. This design does not reopen it.
+**A previous revision of this document said generation never happens inside a turn, adopting #12955's
+rejection without qualification. That is withdrawn.** Toni's mechanism is a behaviour, not a campaign:
+
+> *"it's actually a task of our memory core — it sees a matching node it wants to push, it sees that there
+> is no substance available, it creates substance. Obviously there is no substance available yet — no one
+> but us knows about it."*
+
+**The reframe is correct, and it changes what §4.1's measurement means.** 1-in-500 is not a data gap to be
+closed once. It is **the absence of a behaviour**. We invented the field, so of course nothing carries one;
+a backfill treats the symptom and leaves the system in the same state for every node created after it runs.
+Under a behaviour, coverage grows where retrieval actually goes and nowhere else, a node nobody recalls
+never costs a condensation, and **Q1 dissolves — the retrievable corpus is whatever retrieval retrieves,
+discovered rather than declared.**
+
+**The invariant this crosses is ours, and `internal/condense/condense.go:1` states it in terms:** *"Package
+condense is the offline pass that derives a node's substance from its content, and is never reachable from
+a turn."* §7.4 is what replaces it.
+
+### 7.4 The fill — condensation as a memory-core behaviour
+
+**This is the first behaviour of the memory core.** The map (#10454) records that this repository has none.
+This unit is where one starts, and that should be claimed openly rather than smuggled in as a retrieval
+tweak.
+
+#### 7.4.1 The economics, which are not what a per-turn cap would suggest
+
+> *"condensation and substance have an implicit cache — as long as the content isn't changed it stays on the
+> graph and doesn't need to be recreated — yes if your process reaches into unexplored memory you have to
+> condense a lot and that takes a bit, but if you are in active areas of static truth it's basically free
+> and reduced to a simple check."* — Toni, 2026-09-08
+
+**That is right, and it is a better bound than any cap, because it is structural rather than imposed.** A
+condensation is a pure function of a node's content, cached in the graph in the substance field itself.
+**Cost is therefore proportional to novelty, not to traffic.** Three regimes, and the design names them
+separately because they behave nothing alike:
+
+| regime | what a turn pays | bound |
+|---|---|---|
+| **Steady state** — an active area of static truth | a **presence check**. Zero model calls | self-limiting: converges to free |
+| **Cold start** — retrieval reaches into unexplored memory | one condensation per *new* node above the size gate, paid **once, ever** | the count of distinct unmet nodes, which shrinks monotonically |
+| **Churn** — content changes, so the derived form is correctly discarded | re-condensation of the affected node, on next use | **self-healing, not self-limiting — §7.4.5** |
+
+**The framing this replaces was mine and it was wrong.** An earlier draft priced the worst case as *twenty
+candidates, twenty condensations* against a per-turn budget. That is a per-**turn** cost only if nothing is
+cached; it is in fact a per-**node** cost paid once. On a stable working area the second run and every run
+after it fire zero fills.
+
+#### 7.4.2 But we are entirely inside the transition, and that must not be averaged away
+
+**The graph is 100 % cold start today.** §4.1: 1 of 500 random nodes, 6 of 500 documentation, **0 of 500
+session-logs, 0 of 500 tasks**. So the convergence argument is a claim about **where this ends up**, not
+about **what the next run costs**, and the two must not be conflated in anyone's planning.
+
+**The expected shape of the transition, from this project's own numbers.** On the yardstick, three of the
+seven real candidates are ≥ 8 KB (§4.3). At #12984's measured ~31 s per node (13 minutes for 25):
+
+| run | fills | added latency | against a turn that runs 33–81 s (#13091 §1) |
+|---|---|---|---|
+| first, on a novel area | ~3 | ~90 s | roughly a doubling to tripling |
+| second, same area | **0** | **0** | unchanged |
+| a year in, static area | 0 | 0 | a presence check |
+
+**Read that as a transition cost with a shape, not as an amortised average.** *"It converges to free"* is
+true and is a misleading sentence to put in front of someone about to make the first run.
+
+#### 7.4.3 The three options, and the recommendation
+
+| | Option | Ruling |
+|---|---|---|
+| 1 | **Synchronous fill** — retrieval blocks on condensing what it wants to push | **ADOPTED.** §7.4.1's cache is what makes it defensible; the gates below make it shippable |
+| 2 | **Lazy trigger, asynchronous fill** — notice the gap, enqueue, use what is there this time | **REJECTED** on two grounds, §7.4.6 |
+| 3 | **A bound on the synchronous case** | Not an alternative to 1 — it *is* 1. Three gates, and the third is demoted from what an earlier draft made it |
+
+**Three gates, and their roles are different.** Two are economic — do not spend where it does not pay. One
+is a safety bound for the transition, and it is explicitly **not** what bounds steady state, because
+§7.4.1's cache already does that.
+
+| # | Gate | Value | Role |
+|---|---|---|---|
+| **G1** | **Size** — fill only where condensation is measured to pay | content **≥ 8 KB** | *Economic.* §4.2: median ratio 0.298 at ≥ 8 KB against 0.886 below 4 KB. Below the gate a fill spends a model call to save ~11 % and buys a fidelity risk. Not a new concept — it is the form rule's own stratum (§8.1) |
+| **G2** | **Pressure** — fill only when the budget is actually exceeded | content-form admission < candidate count | *Economic.* **This is Toni's "a node it *wants to push*"** — wanting to push means competing for a slot it cannot get. If everything fits as content there is nothing to gain and no fill fires |
+| **G3** | **Per-turn fill ceiling** | recommend **2**, and **retire or raise it once coverage crosses a threshold** | *Safety, transition-only.* **Demoted.** It does not bound steady state — the cache does. It bounds **one cold-start turn**, so a first run into unexplored memory cannot spend ten minutes. Q8 |
+
+**G3 is a transition instrument and the design says so**, because a permanent constant that exists to
+survive a temporary regime is how a system ends up with limits nobody can explain. Its retirement condition
+belongs in the same commit that introduces it: when the coverage metric (Q5) shows the working set is warm,
+raise it or delete it.
+
+**Fills must not consume `MaxModelCalls`.** That cap governs the model's *reasoning* budget — six calls in
+which to answer. A fill is infrastructure, not judgement. Spending a judgement call on a condensation would
+make a turn's reasoning budget depend on how condensed the graph happens to be, which is exactly the
+coupling this project keeps eliminating elsewhere. **Separate counter, separate ceiling, both in the
+record.**
+
+#### 7.4.4 The seam, and why the instrument stays clean
+
+This is #12955's **primary** objection to in-turn generation, and it was never latency — it was
+**determinism**: every A/B here needs byte-identical candidate lists across arms, and a turn that writes
+into the substrate destroys that.
+
+**The loop declares a fill port; it cannot do otherwise.** Importing `internal/condense` from
+`internal/loop` is a compile cycle (A14). The forced shape is the right one and it is already this
+project's: **`FilePort`** (A15) — declared by the consumer, implemented outside, **nil means the capability
+is absent and every call is refused with a recorded reason**, so the shape of a trace does not change with
+the environment, only the outcome does (#10454 on PR #43).
+
+| binary | constructs a fill port? | consequence |
+|---|---|---|
+| `cmd/processor` | **yes** | turns fill |
+| `cmd/eval` | **cannot** — no model adapter anywhere in its closure (A13) | **the sweep reads substance and creates none** |
+
+**That is the determinism repair, and it is structural rather than procedural.** Every A/B stays runnable:
+pin the substrate, sweep both arms, no fill can fire, candidate lists stay byte-identical — which is
+#11365's stated requirement. It is a stronger guarantee than the convention it replaces, because a
+convention can be forgotten and a dependency closure cannot.
+
+**What is genuinely lost, stated plainly.** Two *turns* on the same input now differ: the first fills, the
+second reads. That is new and real. Three things bound it: it was **already true** (#13091 §5(a) measured a
+single run record changing a block); it **converges** rather than diverges, because a filled node stays
+filled; and the record says which fills fired, so a trace **explains** the difference instead of hiding it.
+
+**The refusal contract matters more than it looks.** A fill that does not happen must say why — port absent,
+size gate, pressure gate, ceiling reached, condenser refused (§9.3), model failed. A silent no-op would make
+§9.3's two gates invisible at exactly the moment they bite.
+
+#### 7.4.5 Substance loss, and why the fill makes it self-healing
+
+**An earlier revision of this document called this an invalidation trap and proposed a change request
+against DiVoid. Both are withdrawn.** The claim was that substance is cleared on a content *write* rather
+than a content *change*, so a byte-identical republish destroys it. The mechanism is real (#12984 measured
+it) and the exposure is not, because nobody republishes identical bytes. Toni's ruling:
+
+> *"why would you write content byte identically? … replace the same text with the same, that's the most
+> expensive noop I've ever heard of… in 'makes sense' paths this is really just an unnecessary operational
+> check."*
+
+**A hash gate would defend against a caller doing something no caller should do. No ask against DiVoid.**
+
+**The real defect is ours, and checking for it found it.** Every invalidation observed on real work was
+**correct** — the content genuinely changed, so the derived form was genuinely stale. What is wrong is that
+**our parity sync is half an operation**: it republishes the body and drops the derived form on the floor.
+
+**Measured on the live graph, 2026-09-08:**
+
+| node | what it is | `substance` |
+|---|---|---|
+| **#13203** | the PR #48 decision record, re-synced across four review rounds | **`null`** — written once at creation, cleared four times, never written back |
+| **#12955** | **the design document about substance-backed admission** | **`null`** |
+| **#13238** | **this document** | **`null`** |
+
+Three for three, including the two that argue substance is the thing this project is missing. Nobody was
+careless; the procedure simply has no step for it, and a derived form with no owner decays to null.
+
+**There are two ways to fix that, and only one of them is architecture.**
+
+| | Fix | Why not / why |
+|---|---|---|
+| A rule | *"the parity sync must also re-derive substance"* | One more step in a procedure, forgotten the first time somebody is in a hurry — and it covers **our** syncs only, not migrations, not manual edits, not a peer agent rewriting a node |
+| A behaviour | **the fill** | The next retrieval that wants the node notices the absence and makes one. **Nothing to remember, and it does not care what caused the loss** |
+
+**So the fill's strongest property is not coverage. It is that substance loss is self-healing wherever it
+comes from** — never generated, correctly invalidated by an edit, dropped by a republish, destroyed in a
+migration, cleared by hand. Coverage says *the graph gets warmer*; self-healing says *there is no way to
+lose substance that the system does not repair on next use*. The second is strictly stronger, and it is the
+honest answer to *what happens when substance goes stale* — an answer this design would otherwise have to
+give as process.
+
+**This document therefore declines to add a "the sync must re-derive substance" requirement.** Naming it
+would be process where a behaviour already suffices, and process is exactly what gets forgotten — as the
+three rows above demonstrate.
+
+**And it changes what §4.1 measures.** Some of that zero is not *never generated* but *generated and then
+destroyed by our own workflow*, with three confirmed instances above. **1-in-500 is a floor on the problem,
+not a measurement of it.**
+
+#### 7.4.6 Why not asynchronous
+
+Option 2 is rejected on two grounds, and the second is the one that matters.
+
+1. **It does not preserve the invariant.** A queue a turn writes to *is* reachable from a turn; it defers
+   the crossing, it does not avoid it. #12955 ruled on this exact option: *"keeps a non-deterministic writer
+   coupled to the turn that read it, and introduces a queue, a worker lifecycle, and a failure mode inside a
+   service that currently has none. All the offline pass's benefits, none of its isolation."* Nothing in the
+   new evidence overturns that, and §7.4.4 achieves the isolation async was reaching for — without the
+   worker.
+2. **It does not satisfy the intent.** Toni's mechanism is that *this* turn pushes the node. Async means the
+   turn that discovered the gap renders content or cuts the node exactly as today, and only a later run
+   benefits. On a repeated task that converges; **on a new question about a new area — precisely the
+   cold-start regime where the gap exists — it never closes in time.** It optimises the case that already
+   worked.
 
 ---
 
@@ -518,13 +749,13 @@ next attempt at the same task** — and today it is refused twice by the one com
 
 | Concern | Ruling |
 |---|---|
-| **Determinism** | Preserved absolutely. Generation stays offline (§7.3); a turn reads a value that is already there. Every A/B in this project depends on it |
-| **Staleness** | A6: re-posting identical content clears the substance, so the graph guarantees a substance is never older than its content. #12955 §3.2 verified this live and withdrew the sidecar ledger it made unnecessary. **A cleared substance means the form rule falls back to content — degradation, never a wrong render** |
+| **Determinism** | **Preserved where it is load-bearing, and lost where it is not.** The *instrument* is clean by construction: `cmd/eval` has no model adapter in its closure, so a sweep cannot fill (A13, §7.4.4), and candidate lists stay byte-identical across arms. Two *turns* on the same input now differ on first encounter; that converges, is recorded, and was already true of run records (#13091 §5(a)) |
+| **Staleness** | A6/A16: the graph clears substance whenever content is written, so a substance is never older than its content and #12955 §3.2's sidecar ledger stays withdrawn. **A cleared substance means the form rule falls back to content — degradation, never a wrong render.** Under the fill it is also **temporary**: the next retrieval that wants the node re-derives it (§7.4.5), so staleness needs no procedure |
 | **Fidelity** | §4.5. Zero-tolerance gate, currently failing. Routed to the prompt (#11373), gating Unit 3 |
 | **Observability** | The record gains the form and the rendered size (§7.2 step 5); `size` and `contentHash` keep their meaning. A sweep can then report *bytes saved by form* and *rows whose form changed*, which is what makes F-2 measurable |
 | **Error handling** | Substance absent is not an error; it is the common case today. A condensation that fails is not stored (#12984's refusal of the truncated 195 KB node is the correct behaviour and should stay) |
-| **Coverage as an operational concern** | Unit 2 is a recurring pass, not a migration. New nodes arrive uncondensed; the graph's substance coverage is a number someone must watch. **Nothing measures it today** (Q5) |
-| **Cost** | Generation is model spend proportional to the retrievable corpus. #12984: ~13 minutes for 25 nodes. The retrievable corpus is four orders of magnitude larger and the criterion for it is undefined (Q1) |
+| **Coverage as an operational concern** | **Not a pass at all — a behaviour** (§7.3). Coverage grows where retrieval goes; a node nobody recalls is never condensed. What must still be watched is the **warmth of the working set**, because it is what retires G3 and what §7.4.5's trap silently destroys. **Nothing measures it today** (Q5) |
+| **Cost** | **Proportional to novelty, not to traffic** (§7.4.1). Steady state is a presence check; cold start is ~31 s per new node above the gate (#12984), paid once. **Today the graph is 100 % cold** (§7.4.2), so early runs pay near the worst case — a transition cost with a shape, never an amortised average |
 | **Security / access** | Unchanged. Substance is a projection of a node the caller can already read |
 
 ---
@@ -536,13 +767,23 @@ next attempt at the same task** — and today it is refused twice by the one com
 | **F-1** | **Fidelity, re-run at zero tolerance** after the prompt is fixed. Every required node's substance must support its pre-registered `why` | **Unit 3.** A single FAIL blocks substitution outright — this is #12955's own gate | **FAILING** — #12984, 23/1/1 |
 | **F-2** | **The regression check that replaces the withdrawn invariant.** Sweep the corpus at several budgets with the form rule on and off; no row may go from *admitted* to *not admitted* | **Unit 3.** Any such row is either a bug or the threshold is wrong | Not run |
 | **F-3** | **The threshold curve.** Bytes reclaimed and rows admitted, as a function of the ratio threshold | Sets §8.1's dial. If the curve is flat, the stratum distinction is decoration and a single rule is simpler | Not run |
-| **F-4** | **The coverage number.** What fraction of the *retrievable* corpus carries a substance, before and after Unit 2 | **Unit 2.** If a pass over the retrievable corpus cannot reach useful coverage in a schedulable time, Units 3 and 4 are both blocked and should be re-planned, not started | **~0.3 % today** (§4.1) |
+| **F-4** | **Convergence, not coverage.** Run the same task twice against a cold area: run 1 fills, **run 2 must fire zero fills and reach the same or a better admitted set** | **Unit 2.** If run 2 still fills, the cache is not doing what §7.4.1 claims and the whole economic argument collapses to per-turn cost | Not run. **~0.3 % coverage today** (§4.1) |
 | **F-5** | **#13106 §8.3's three-arm differential** — opaque labels vs names-only vs name+substance | **Unit 4.** Ties against either weaker arm sink the catalogue's central claim | Not run; **requires Unit 2 for the twenty rows** |
-| **F-6** | **Run-record substance is worth reading.** Condense a run record and have a reader that did not write it judge whether the substance supports *what that run did and why* | **§9.2's form rule as applied to run records.** If the substance is unreadable or vacuous, exclusion stays a provenance rule and this document is wrong about §9 | Not run — **and it is the cheapest of the six** |
+| **F-6** | **Run-record substance is worth reading.** Condense a run record and have a reader that did not write it judge whether the substance supports *what that run did and why* | **§9.2's form rule as applied to run records — and now the fill path too.** With the memory core condensing on demand, `condense.go:283`'s `SelfProduced` skip and `:296`'s `application/json` refusal are the two rules that make the core **structurally unable** to condense the class Toni most wants condensed. If the substance is vacuous, exclusion stays a provenance rule and §9 is wrong | Not run — **and it is the cheapest of the eight** |
+| **F-7** | **Does `substance` participate in similarity ranking?** Record a node's similarity for a fixed query, write a substance, re-query | **The fill, outright.** If ranking moves, a fill changes *retrieval* and not merely *rendering*, retrieval becomes path-dependent, and §7.4.4's repair is insufficient — the sweep would still read a substrate that turns have re-ranked | Not run. **A17 is unknown and this must fire first** |
+| **F-8** | **The transition's real shape.** Instrument fills per turn and their wall clock over a cold working area | **G3's value, and §7.4.2's estimate.** If a first run fires far more than ~3 fills, or a fill costs far more than ~31 s, the ceiling is set wrong and the latency claim is wrong with it | Not run — the numbers in §7.4.2 are derived from #12984, not measured on this path |
 
-**F-6 is the one to run first.** It is a single node, one condensation, one reader, and it decides whether
-§9 — the most contested part of this document — is right. It cannot run until the `SelfProduced` gate is
-removed, which is one line.
+**Two run first, and in this order.**
+
+**F-7 is the hard gate**, because it is the only one that can invalidate the *mechanism* rather than a
+value. If substance participates in ranking, the fill changes what retrieval returns, not merely what
+assembly renders, and §7.4.4's structural repair does not reach it — the sweep would be reading a substrate
+that live turns have silently re-ranked. It is one node, one query, one write, one re-query.
+
+**F-6 is the cheapest and it decides the most contested section.** One node, one condensation, one reader,
+and it settles whether §9 is right. It cannot run until the `SelfProduced` gate is removed, which is one
+line — and under the fill that same line is what decides whether the memory core can serve run records at
+all.
 
 ---
 
@@ -558,6 +799,10 @@ removed, which is one line.
 | R6 | **A peer session log is excluded** by a rule aimed at run records | Nothing here keys on `session-log`; #11387 is the named live occupant (§4.7) | Any predicate reaching the `session-log` type |
 | R7 | **`block` is dropped from the record without #10904 being re-ruled**, or dropped in a way that makes a 15–25 KB transcript *admissible in content form* for the first time | §9.3 item 3 states the constraint; §9.2's form rule is the guard that must exist first | A record shrinking below the budget while §9.2 is unimplemented |
 | R8 | **Unit 4 is started before Unit 2** and its falsifier cannot run | F-5's dependency is stated; #13106 §8.3 says the same | A catalogue arm running against rows with null substance |
+| R9 | **The sweep acquires the ability to fill** — a model adapter enters `cmd/eval`'s closure for some unrelated reason, and every A/B silently starts measuring a substrate it is mutating | A13 is the guarantee, and it should be pinned by a test asserting the closure rather than left as a convention | `go list -deps ./cmd/eval` naming any model adapter or `internal/condense` |
+| R10 | **Substance is lost and stays lost**, because the sync that republishes a body has no step that re-derives it — measured three times over (§7.4.5) | **The fill is the mitigation, and it is the reason not to add a procedural one.** Under it the loss repairs on next use, whatever caused it | Substance still `null` on a re-synced design document *after* the fill ships and that node has been retrieved |
+| R11 | **The steady-state argument is quoted as the cost** and someone plans against a free fill on a cold graph | §7.4.2 states the transition separately and gives its shape; F-8 measures it | Any plan citing *"basically free"* without naming the cold-start regime |
+| R12 | **A fill fires below the size gate**, spending a model call and a fidelity risk to save ~11 % | G1, and #12984's 0.886 median below 4 KB is the number | A fill recorded against a candidate under 8 KB |
 
 ---
 
@@ -599,13 +844,15 @@ error: its bounding invariant is withdrawn, on the evidence of the very measurem
 
 | # | Question | Blocking? | Recommendation |
 |---|---|---|---|
-| **Q1** | **What is the "retrievable corpus"?** Unit 2's target set. Everything? Everything above a size? Everything a recall could plausibly return? #13106 §8.3 flags it as *"the difference is the whole graph"* | **Yes, for Unit 2** | Start from the size stratum where condensation actually pays: **nodes ≥ 8 KB** (median ratio 0.298). That is where the crowding is and where the spend is justified |
+| **Q1** | ~~What is the "retrievable corpus"?~~ **ANSWERED — the question dissolves.** Under §7.3 the retrievable corpus is *whatever retrieval retrieves*, discovered rather than declared. There is no set to define, no campaign to schedule, and a node nobody recalls is never condensed | **No longer blocking** | Struck rather than deleted: it was the open question that made Unit 2 a scheduling problem, and the reframe is what closed it |
 | **Q2** | **The ratio threshold** in §8.1 | No — it ships behind a dial | Set it by F-3's curve, not by argument |
 | **Q3** | **Does the condenser get a JSON path, or does the record get a prose projection?** (§9.3 item 2) | **Yes, for F-6** | The prose projection — it is reusable and does not couple the condenser to a schema |
 | **Q4** | **Does `block` leave the stored record?** Requires #10904 to re-rule PR #8's stored-vs-response invariant | Only for §9.3 item 3 | Yes, but only after §9.2's form rule exists — otherwise a 15–25 KB transcript becomes admissible for the first time (R7) |
 | **Q5** | **Who measures substance coverage, and how often?** Nothing does today | No | A line in the sweep report; it is one query |
 | **Q6** | **`fields=substance` works on the listing route and is undocumented in #8** | No | One line in #8 by whoever touches it next. Named because A4 rests on it |
 | **Q7** | **Two-phase retrieval** — rank without bodies, then batch-fetch the survivors. Measured 1,236,611 B → 115,382 B on the yardstick (§7.1) | No | Its own unit, any time. It composes with every payload rule and depends on none of them |
+| **Q8** | **G3's value, and its retirement condition** (§7.4.3). Recommended 2, on a three-fill estimate that is derived rather than measured | No — but it ships with the fill | Set it from **F-8**, and write the retirement condition into the same commit. It is a transition instrument, not a constant |
+| **Q9** | ~~Should DiVoid invalidate substance on a content-hash change rather than on a content write?~~ **WITHDRAWN — no ask against DiVoid.** Every invalidation observed on real work was correct, and the byte-identical case it would defend is one no caller should perform (§7.4.5) | No | Struck rather than deleted, because a later reader will have the same idea. The answer is that the defect was ours, not DiVoid's, and the fill repairs it without a rule |
 
 ---
 
@@ -624,16 +871,27 @@ error: its bounding invariant is withdrawn, on the evidence of the very measurem
 5. Guard: a candidate set carrying no substance anywhere produces a byte-identical block to today's. This is
    #12955's pass-1 identity property, and it is the reason Unit 1 is safe to ship alone.
 
-### Unit 2 — coverage *(the binding constraint; mostly not code)*
+### Unit 2 — the fill *(a behaviour, not a campaign; gated on F-7)*
 
-1. Answer **Q1**. Recommendation: nodes ≥ 8 KB first.
-2. Extend `cmd/condense`'s target resolution from a corpus or an id list to that set. Idempotent and
-   `-force`-guarded already.
-3. **Rule the oversized case.** #12984 refused #10926 at 195,448 B rather than storing a truncated
-   condensation, and that refusal is correct. A set defined by size will hit more of them; the pass needs an
-   answer beyond refusing, and #11373 §5c hands it to this binary.
-4. Run it, and publish **F-4**: coverage before and after, wall clock, spend.
-5. **Do not start Unit 3 on the strength of a plan to run this.** Run it.
+1. **Run F-7 before writing any of this.** If substance participates in ranking, stop and re-design — the
+   determinism repair in §7.4.4 does not cover that case (A17).
+2. **Declare the fill port in `internal/loop`.** It cannot live anywhere else: importing `internal/condense`
+   from `internal/loop` is a compile cycle (A14). Follow `FilePort` exactly (A15) — nil is a legitimate
+   construction, and it refuses every call **with a recorded reason**, never silently.
+3. Implement it outside the loop, over `internal/condense`'s existing `ModelPort`/`GraphPort` seams. The
+   condensation logic is not rewritten; it gains a second caller.
+4. Wire it in `cmd/processor` **only**. `cmd/eval` must keep a closure with no model adapter — that is not a
+   convention to remember, it is the guarantee (A13), and a test asserting the closure is cheap.
+5. Implement the three gates (§7.4.3) as a single decision with a recorded outcome per candidate: filled,
+   or the reason it was not. **G3 ships with its retirement condition written down** (Q8).
+6. **Fills get their own counter and their own ceiling**, never `MaxModelCalls`.
+7. **Rule the oversized case.** #12984 refused #10926 at 195,448 B rather than store a truncated
+   condensation, and that refusal is correct. Under the fill this now happens *inside a turn*, so the
+   refusal must be fast and recorded rather than merely correct. #11373 §5c hands the policy to this binary.
+8. Publish **F-4** (convergence) and **F-8** (transition shape). §7.4.2's numbers are derived from #12984
+   and have never been measured on this path.
+9. **Do not present the steady state as the cost.** The graph is 100 % cold (§7.4.2); the first runs pay
+   near the worst case and whoever runs them should be told so.
 
 ### Unit 3 — the form rule *(gated on F-1)*
 
@@ -646,17 +904,24 @@ error: its bounding invariant is withdrawn, on the evidence of the very measurem
 6. Run **F-2** and publish it. The withdrawn invariant made regression impossible; this measurement is what
    replaces the proof.
 
-### Unit 3a — run records become condensable *(smallest, and it decides §9)*
+### Unit 3a — run records become condensable *(smallest, and it decides §9 — pull it forward)*
+
+**Under the fill this stops being a side-branch.** `internal/condense/condense.go:283`'s `SelfProduced` skip
+and `:296`'s `application/json` refusal now sit *inside the memory core's own fill path*, which means they
+are the two rules making the core **structurally unable** to condense the class Toni most wants condensed —
+a prior run's own account of itself. **Run this before committing to Unit 2's shape**, not after.
 
 1. Remove the `SelfProduced` gate at `internal/condense/condense.go:283`. One line.
 2. Resolve **Q3**, then **run F-6** on a single record. **This is the cheapest experiment in the document
    and it decides whether §9 is right.** If a run record's substance turns out to be vacuous, exclusion
    stays a provenance rule and §9 is wrong — say so, and correct this document in place.
 3. Only after F-6: state §9.2's form rule as a guard, and consider **Q4**.
+4. Whatever F-6 returns, the fill's **refusal contract** (§7.4.4) must surface a condenser skip as a stated
+   reason. A gate that silently declines is the failure mode this unit exists to expose.
 
 ### Unit 4 — the catalogue
 
-**#13106 §8.3, unchanged.** Do not start before Unit 2 delivers substance for the twenty rows F-5 needs, and
+**#13106 §8.3, unchanged.** Do not start before the fill has warmed the twenty rows F-5 needs, and
 note that #13106 already establishes it probably requires the call ceiling raised.
 
 ### What must not happen
@@ -665,4 +930,9 @@ note that #13106 already establishes it probably requires the call ceiling raise
 - No provenance clause in the form rule (S2, R5).
 - No predicate keying on the `session-log` type (R6) — #11387 is its live occupant.
 - No `block` removal before §9.2's form rule exists and **#10904** has re-ruled (R7).
-- No in-turn generation (§7.3).
+- **No fill before F-7 fires.** A17 is unknown and it is the one gate that can invalidate the mechanism.
+- **No fill port constructed in `cmd/eval`**, and no model adapter admitted to its dependency closure — that
+  closure *is* the determinism guarantee (A13, §7.4.4).
+- **No fill counted against `MaxModelCalls`** (§7.4.3).
+- **No silent fill refusal.** Every skipped fill carries its reason, or §9.3's two gates become invisible.
+- No claim that the steady state is free without saying we are entirely inside the transition (§7.4.2).
