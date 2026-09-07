@@ -118,7 +118,7 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndBothTools(t *testing.T) 
 		wantRecallDescription = "Search memory for something the assembled context did not include. Takes one argument: query, a short description of what is missing."
 		wantWriteName         = "write_file"
 		wantWriteDescription  = "Write a file into the working directory set aside for this request. Takes two arguments: path, a relative path naming the file, and content, the file's full text."
-		wantBlockInputContent = "the block\n===== INPUT =====\nthe input"
+		wantBlockInputContent = "===== INPUT =====\nthe input\n\n\nthe block\n===== INPUT =====\nthe input"
 	)
 
 	if got.Model != "the-model-id" {
