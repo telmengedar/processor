@@ -286,15 +286,28 @@ transferred bytes linearly against a population that grows on its own.
 
 Every row names a test. **A falsifier cell must name the mutation *and* carry the pointer to where its
 output is quoted** — no cell predicts a result nobody ran, and no cell asserts a result without saying
-where it can be read. Sources: **#13185 §3** (round 1, five tests) and **#13207** (round 2, re-run against
-all six).
+where it can be read. Sources: **#13185 §3** (round 1, five tests), **#13207** (round 2, re-run against
+all six), and **#13211** (round 4 — a fresh 7×8 matrix, 56 anchored runs, 0 failures, the latest
+independent verification of every cell below).
 
-**The pointer is the enforcement, not decoration** *(#13207 round 3, CF-3)*. The previous revision stated
+**The pointer is the enforcement, not decoration** *(#13208, review round 3, CF-3)*. The previous revision stated
 the first half of that rule and nothing enforced it, because a cell could name a mutation without carrying
 a pointer — and one such cell, C7, claimed a **RED** that its own named source records as **green**. You
 cannot write `(#13185 §3)` beside a verdict without opening §3, and opening §3 *is* the check. Signal
 rather than law at n=4, but it is the signal available: the one row that carried provenance was correct,
 and of the three that did not, one was false.
+
+**The lint that follows must be named for what it does** *(#13211, review round 4)*. Three recurrences is
+enough to mechanise the rule, and the check to build is a **presence** check: *every falsifier cell carries
+a resolvable pointer*. **It would not have caught C7.** Had that cell read `M2 …: RED (#13185 §3)` the
+pointer resolves, the named node does contain `M2`, the lint passes — and the cell is still false, because
+the defect was the **verdict**, not the label. So it ships under that name and never as *"the falsifier
+column is verified"*, which would make it exactly the plausible-green artifact this project distrusts,
+silent on the failure mode that has now occurred twice. **The gate that reaches verdicts is regeneration,
+not grep:** a column generated from the mutation matrix cannot disagree with it. The two are complementary
+and neither subsumes the other — regeneration reaches only verdict cells, while limit (b) below is
+qualitative prose, which is why that one needed the pointer discipline and §11's end-of-round judgement
+re-open instead, and was still wrong until round 4.
 
 | # | Property | Guard | Falsifier — observed |
 |---|---|---|---|
@@ -313,7 +326,16 @@ for.
 **Two limits of this table, stated.** (a) It covers the primary path only; nothing here guards the
 supplementary path, because nothing there changed and no instrument reaches it (§5). (b) C7's guard fails
 under a retrieval-side type mutant at a **turn-1 setup assertion**, upstream of the criterion assertion —
-so its red sends a reader to the fixture, not to the criterion (#13185 W-3). C5 exists because of that.
+~~so its red sends a reader to the fixture, not to the criterion (#13185 W-3)~~ — **half of that was
+superseded by this branch's own `bb09a2c`, the commit made in answer to that very finding. CORRECTED
+2026-09-07 (#13211, W-11).** *Not to the criterion* still holds. *To the fixture* no longer does: `bb09a2c`
+inserted a `dispositionOf` check **ahead of** the blanket admitted-count guard in
+`internal/loop/self_poisoning_test.go`, so what now fires first is *"no candidate carries id 8 among the 1
+turn 1 returned: retrieval left the row out of the candidate list entirely"* — which names the retrieval
+outcome. **Note the mechanism precisely, because "replaced" is the tempting shorthand and is wrong:** the
+older *"test setup error: turn 1 admitted … want both"* assertion still exists and still runs, now
+downstream of the stronger guard; it was superseded in **order**, not deleted. C5 exists because of the
+original defect and is unaffected.
 
 ---
 
@@ -373,7 +395,7 @@ so its red sends a reader to the fixture, not to the criterion (#13185 W-3). C5 
    everywhere would break six true statements to fix three false ones.
 
 **The class these layers belong to, stated after three rounds of finding it one sub-case at a time**
-*(#13207 round 3)*. Layers 5 and 6 resolve identifiers, and identifiers kept being the defects found — but
+*(#13208, review round 3)*. Layers 5 and 6 resolve identifiers, and identifiers kept being the defects found — but
 that is a fact about **greppability**, not about risk. Three defects in this document's own history pass
 both layers cleanly: C7's *"M2: RED"* carries **no identifier at all**; `#13185 round 2` **resolves** — the
 node exists and is genuinely a QA review of this PR — and is still wrong, because round 2 is #13207; and
