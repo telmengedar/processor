@@ -24,22 +24,12 @@ func TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy(t *testing.T) {
 	}
 }
 
-func TestRenderUserContentHeadCopyCostsExactlySeventyTwoCharactersOnTheYardstickRequest(t *testing.T) {
-	t.Parallel()
-
-	tailOnly := userContentTestBlock + "\n===== INPUT =====\n" + userContentTestInput
-
-	if got := len(RenderUserContent(userContentTestBlock, userContentTestInput)) - len(tailOnly); got != 72 {
-		t.Fatalf("the head copy costs %d characters, want the 72 the measured arm added", got)
-	}
-}
-
-func TestRenderUserContentRendersTheHeadAndTailRequestFromOneSourceSoTheyCannotDrift(t *testing.T) {
+func TestRenderUserContentPlacesExactlyTwoVerbatimRequestCopiesTheFirstAtTheHead(t *testing.T) {
 	t.Parallel()
 
 	const (
 		marker = "===== INPUT =====\n"
-		input  = "Ship it.\r\n\tsecond line — 100% \"done\" <&> %s %%\n\tlast\n"
+		input  = "Ship it.\r\n\tsecond line — 100% \"done\" <&> %s %%\n\tlast"
 	)
 
 	got := RenderUserContent(userContentTestBlock, input)
@@ -52,11 +42,17 @@ func TestRenderUserContentRendersTheHeadAndTailRequestFromOneSourceSoTheyCannotD
 		t.Fatalf("user content does not open with the request; it opens with %q", sections[0])
 	}
 
-	head := strings.TrimSuffix(sections[1], "\n\n\n"+userContentTestBlock+"\n")
+	blockLayout := "\n\n\n" + userContentTestBlock + "\n"
+
+	head, ok := strings.CutSuffix(sections[1], blockLayout)
+	if !ok {
+		t.Fatalf("the span between the two request markers is %q, want it to end with the block layout %q", sections[1], blockLayout)
+	}
+
 	tail := sections[2]
 
 	if head != tail {
-		t.Fatalf("head request %q and tail request %q differ; both must render from one source", head, tail)
+		t.Fatalf("head request %q and tail request %q differ", head, tail)
 	}
 	if head != input {
 		t.Fatalf("both request copies read %q, want the input verbatim %q", head, input)

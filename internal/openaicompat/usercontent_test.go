@@ -8,7 +8,7 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
-func TestJudgeUserMessageComesFromTheSharedRendererSoTheProvidersCannotDrift(t *testing.T) {
+func TestJudgeSendsAUserMessageByteEqualToRenderUserContentOfTheSameBlockAndInput(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -34,6 +34,9 @@ func TestJudgeUserMessageComesFromTheSharedRendererSoTheProvidersCannotDrift(t *
 	}
 	if len(got.Messages) != 2 {
 		t.Fatalf("messages has %d entries, want 2 (system, user)", len(got.Messages))
+	}
+	if got.Messages[1].Role != "user" {
+		t.Fatalf("messages[1].Role = %q, want %q", got.Messages[1].Role, "user")
 	}
 	if want := loop.RenderUserContent(block, input); got.Messages[1].Content != want {
 		t.Fatalf("messages[1].Content = %q, want %q byte-exact", got.Messages[1].Content, want)
