@@ -14,8 +14,14 @@ For the task *"Add an HTTP endpoint to this service that returns the build versi
 returned fourteen of seventeen slots as `HealthController.cs` documentation nodes from fourteen different
 mamgo netcore services — a different project, a different language, a different repository — spread across
 0.008 of similarity. The one document that answers the task, **#10466**, ranked 18th, roughly 0.06 *below*
-every one of the fourteen wrong ones, and entered the candidate set only because slots 18–20 are reserved
-for the anchor's two-hop neighbourhood.
+every one of the fourteen wrong ones, and entered the candidate set only because slots ~~18–20 are~~
+**`n+1 … n+3` were, on the run measured here,** reserved
+for the anchor's two-hop neighbourhood. **CORRECTED 2026-09-07 — the tense, not the observation.** The
+reading is accurate for the run it describes, but the sentence asserts a *current* mechanism, and the
+reserve's slots stopped being 18–20 when the self-produced exclusion shortened the list in front of them.
+Canonical: `docs/architecture/hub-pruning-in-the-anchor-scope.md` §4.1 property 3; in this file, §18.4.3
+and §18.8. **The pointer sits here rather than only at §18.8 because that correction is 1,384 lines below
+this line**, and a reader of §1 would never reach it.
 
 The question this document answers is: **how should a turn's retrieval know what is relevant to this task?**
 

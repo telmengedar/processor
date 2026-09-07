@@ -1,7 +1,9 @@
 # Architectural Document: Excluding Self-Produced Run Records at Fusion
 
-> Repo path: `docs/architecture/self-produced-exclusion-at-fusion.md` (canonical copy — the DiVoid node
-> carries the same bytes; an edit to one is not finished until the other matches it, P-40).
+> Repo path: `docs/architecture/self-produced-exclusion-at-fusion.md`, DiVoid node **#13203** — the two
+> are the same document, byte for byte, and an edit to one is not finished until the other matches it
+> (P-40). The obligation is runnable: `divoid_download_content(13203)` and `cmp` against
+> `git cat-file blob <ref>:docs/architecture/self-produced-exclusion-at-fusion.md`.
 > Change: branch `fix/exclude-run-records-from-recall`, one predicate in `internal/loop/retrieve.go`.
 > Measurement: **#13091** (six live runs; §6 is the crowding measurement) · Decision record: **#13092**
 > (written against `main` `9d8da90`) · Review: **#13185** (PR #48, CF-1 is what commissioned this document).
@@ -20,9 +22,9 @@
 **What.** Record the decision, already shipped, that `fuse` drops every row this system wrote from the
 candidate list — and reconcile the six design documents whose reasoning it falsifies.
 
-**How.** One predicate in `fuse`'s `appendUnseen`, beside the anchor exclusion already there: a
-`SelfProduced` row is refused a candidate slot. Placed **after `sourcesOf`**, so a survivor keeps the rank
-the graph gave it; **not** in the adapter, which marks and drops nothing. The admission cut is retained.
+**How.** One predicate in `fuse`'s `appendUnseen`, beside the anchor exclusion: a `SelfProduced` row is
+refused a candidate slot. **`fuse` does not mutate the lists `sourcesOf` reads**, so a survivor keeps the
+rank the graph gave it; **not** in the adapter, which marks and drops nothing. The admission cut stays.
 
 **Cost.** Two instruments go quiet. `selfProducedCandidates` reads 0 by construction, so the crowding
 quantity #13091 §6 measured is now recorded nowhere (§6). And the scope reserve no longer lands at fused
@@ -98,8 +100,8 @@ than paraphrased:**
 
 | Placement | Ruling |
 |---|---|
-| In `fuse`, after `sourcesOf` is built from the **unfiltered** lists | **Chosen.** A surviving candidate keeps *the rank the graph gave it*, not the rank it inherits once the records ahead of it are dropped |
-| In `Retrieve`, before fusing | **Rejected.** Filtering before `sourcesOf` renumbers every rank and makes the crowding unreadable in every run record written afterwards |
+| Inside `fuse`, which reads `lists` and `scoped` without mutating them and appends survivors to a new slice | **Chosen.** `sourcesOf` therefore ranks over the **unfiltered** lists, and a surviving candidate keeps *the rank the graph gave it* rather than the rank it inherits once the records ahead of it are dropped |
+| In `Retrieve`, filtering `lists` before either call | **Rejected.** Both functions read the same slices, so filtering them renumbers every rank and makes the crowding unreadable in every run record written afterwards |
 | Behind `GraphPort.Recall`, in the adapter | **Rejected.** `Candidate.SelfProduced` is documented as *"the graph adapter sets it"* — adapter classifies, loop decides. Moving the exclusion behind that seam puts a domain policy where test doubles also implement it, and makes the flag it sets always false |
 
 **The consequence that is easy to miss, and it is the one §7 turns on.** The first fused pass now stops at
@@ -217,6 +219,12 @@ scoped rows where it previously delivered up to three rows of which some could b
 count of 57 scoped-only arrivals was taken under the old behaviour** and is a second reason its yield
 figures do not describe the shipped loop.
 
+**Where the weight belongs, and it is not §5.1** *(#13185 round 2)*. Every measurement under the
+retirement is **rank-conditioned on the band the reserve has left**, so Unit 3's state moved from *measured
+not to pay* to **unmeasured**, and P-3 carries it from there. That makes §11's restated reopening condition
+the load-bearing repair rather than §5.1's withdrawn inference: without a condition that can fire,
+*"retired"* becomes permanent **by instrument failure** rather than by evidence.
+
 **What this does and does not establish.** It does not say the anchor's scope channel now reaches an
 answer. One live data point bears on it and only one: the reserve moved from ranks 19–20 to 8–10 and
 `admitted` did not change (3 → 3, #13185 §4), on **one row, one substrate**. That is the *shape* of D1's
@@ -252,9 +260,20 @@ surviving ground: node **type** alone cannot carry the distinction, because huma
 share the type and were ranks 2 and 3 in the failing run. The shipped predicate is type **and** name
 prefix, and it runs in the loop, so the graph's ranking is never asked to change.
 
-### 8.3 Excluding at the adapter, or before `sourcesOf`
+### 8.3 Excluding at the adapter, or by filtering the lists themselves
 
 Both in §4's table. The first moves policy behind a port; the second destroys the rank evidence.
+
+**A correction to how this was first stated, because the wrong version protects the wrong thing**
+*(2026-09-07, QA W-8).* Revisions up to `842f841` said the predicate is *"placed **after** `sourcesOf`"*.
+**Go evaluates it before.** The shipped line is
+`attribute(fuse(lists, scoped, …), sourcesOf(lists, scoped))`, and call operands are evaluated left to
+right, so `fuse` runs first. **Ordering was never the property. The property is that `fuse` does not mutate
+what `sourcesOf` reads** — it appends survivors to a new slice, and `fuseByReciprocalRank` sorts a copy it
+built rather than the caller's lists — so `sourcesOf` sees the graph's original ranks whichever call runs
+first. The distinction is load-bearing rather than pedantic: an in-place `slices.DeleteFunc` over `lists`
+would also satisfy *"before `sourcesOf`"* and would **break** the real property. C4's guard was always
+aimed at the right thing; only the prose was wrong.
 
 ### 8.4 Doing nothing and raising `CandidateLimit`
 
@@ -273,7 +292,7 @@ Every row names a test. The falsifier column names **only mutations whose observ
 | C1 | A run record spends no candidate slot, and the rows behind it move up | `TestARecordThisSystemWroteSpendsNoCandidateSlotAndTheRowsBehindItMoveUp` | M1, revert the predicate: RED (#13185 §3) |
 | C2 | A skipped record spends no **reserved** slot — `reserved++` does not fire | `TestARecordThisSystemWroteSpendsNoReservedSlotEither` | M4, a skipped record still spends a reserved slot: RED, **and alone** |
 | C3 | A record is not backfilled into a slot the reserve left empty | `TestARecordThisSystemWroteIsNotBackfilledIntoASlotTheReserveLeftEmpty` | M3, exclusion on the first pass only: RED |
-| C4 | A surviving candidate keeps the rank the graph gave it, not the rank it inherits | `TestACandidateKeepsTheRankTheGraphGaveItRatherThanTheRankItInheritsWhenARecordAheadOfItIsDropped` | M5, move the filter into `Retrieve` ahead of `sourcesOf`: RED, **and alone**. This is §4's placement argument, pinned |
+| C4 | A surviving candidate keeps the rank the graph gave it, not the rank it inherits | `TestACandidateKeepsTheRankTheGraphGaveItRatherThanTheRankItInheritsWhenARecordAheadOfItIsDropped` | M5, move the filter into `Retrieve` so it filters the shared `lists`: RED, **and alone**. This is §4's placement argument, pinned — and what it pins is the *non-mutation* property, not an ordering (§8.3) |
 | C5 | The exclusion is by type **and** name prefix, never type alone | `TestARowCarryingTheRunNodeTypeWithoutTheRunNamePrefixIsStillAdmittedAsACandidate` | **No runnable falsifier established.** M6 (exclude by node type) reddened five tests, but four of them set no `Type` in their fixtures, so M6 degenerated to the revert for those four and their reds carry no information about the criterion. The one test written for the criterion is named here; no mutation against it has been run and quoted |
 | C6 | A record cannot be admitted even when it fits, and is refused before the byte test | `TestAssembleReportsSelfProducedRatherThanBudgetForAFittingRunRecord`, `TestAssembleCutsSelfProducedCandidatesWithoutChargingTheBudget` | **No runnable falsifier established.** These guards predate this change and `internal/loop/assemble.go` is not in its diff; every mutation quoted in #13185 §3 was applied to `internal/loop/retrieve.go` and none of them reaches these two |
 | C7 | End to end: a turn is not poisoned by its own previous record | `TestTurnRunIsNotPoisonedByItsOwnPreviousRecord` | M2, filter *after* the limit: RED |
@@ -376,11 +395,14 @@ stand as dated record of what M1 shipped and are superseded in M3, per M1's own 
 (*"§6.2 stands as dated record of what M1 shipped and is superseded there, not here"*);
 `substance-backed-admission.md` §8.1's adapter contract; its §15.3 note on the run-record **anchor**
 (#12967), which this predicate does not touch; `anchor-grounded-recall.md` §16.3, §17.2(c) and §16.8's
-Unit D, which are about oversized candidates, not records. **On Unit D, note the disagreement rather than
-the strengthening:** #13092 reported that after the exclusion a node of 80,470 B (#10437) reached candidate
-rank 13 — a slot the records had been hiding — while #13185 §4, hours later, found #10437 at scoped rank 6
-and never a candidate at all. One reading, not reproduced. Unit D's own argument (#11753 §16.8) does not
-depend on either.
+Unit D, which are about oversized candidates, not records. **On Unit D, the apparent disagreement is
+adjudicated and the mechanism is known** *(#13185 round 2)*: #13092 reported that after the exclusion a
+node of 80,470 B (#10437) reached candidate rank 13 — a slot the records had been hiding — while #13185 §4,
+hours later, found it at scoped rank 6 and never a candidate. **Both readings are correct, and the
+difference is graph drift rather than error.** #10437 takes the third reserve slot only while at most
+**two** scoped rows ahead of it are absent from the fused set; that count was 2 in the morning, 3 at review
+round 1, and 4 now. The connecting mechanism is this change's own residual displacement. Unit D's argument
+(#11753 §16.8) does not depend on either reading.
 
 ---
 
