@@ -326,7 +326,7 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	if record.CapReached {
 		t.Fatal("record.CapReached = true, want false — the model answered on the first call, the cap never fired")
 	}
-	wantLimits := Limits{CandidateLimit: 20, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 3, MaxOutputTokens: 4_096}
+	wantLimits := Limits{CandidateLimit: 20, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, MaxOutputTokens: 4_096}
 	if record.Limits != wantLimits {
 		t.Fatalf("record.Limits = %+v, want %+v", record.Limits, wantLimits)
 	}
@@ -509,7 +509,7 @@ func TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall(t *testing.
 		t.Fatalf("Run: %v", err)
 	}
 	const (
-		wantModelCallCap      = 3
+		wantModelCallCap      = MaxModelCalls
 		wantInitialRecalls    = primaryRecallCalls
 		wantDispatchedRecalls = wantModelCallCap - 1
 	)
@@ -556,21 +556,22 @@ func TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch(t *test
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(record.ToolCalls) != 3 {
-		t.Fatalf("record.ToolCalls has %d entries, want 3 (2 dispatched + the cap-reached round)", len(record.ToolCalls))
+	if len(record.ToolCalls) != MaxModelCalls {
+		t.Fatalf("record.ToolCalls has %d entries, want %d (every dispatched round + the cap-reached round)", len(record.ToolCalls), MaxModelCalls)
 	}
-	last := record.ToolCalls[2]
+	last := record.ToolCalls[MaxModelCalls-1]
 	if last.Query != "the query that was never dispatched" {
-		t.Fatalf("record.ToolCalls[2].Query = %q, want the model's final query preserved", last.Query)
+		t.Fatalf("the final record.ToolCalls entry has Query = %q, want the model's final query preserved", last.Query)
 	}
 	if last.Error == "" {
-		t.Fatal("record.ToolCalls[2].Error is empty, want the cap-reached round flagged")
+		t.Fatal("the final record.ToolCalls entry has an empty Error, want the cap-reached round flagged")
 	}
 	if len(last.Results) != 0 {
-		t.Fatalf("record.ToolCalls[2].Results = %+v, want empty — the round was never dispatched", last.Results)
+		t.Fatalf("the final record.ToolCalls entry has Results = %+v, want empty — the round was never dispatched", last.Results)
 	}
-	if len(graph.recallCalls) != primaryRecallCalls+2 {
-		t.Fatalf("Recall was called %d times, want %d (the primary pair + 2 dispatched) — the final round must still not be dispatched", len(graph.recallCalls), primaryRecallCalls+2)
+	wantRecalls := primaryRecallCalls + MaxModelCalls - 1
+	if len(graph.recallCalls) != wantRecalls {
+		t.Fatalf("Recall was called %d times, want %d (the primary pair + every dispatched round) — the final round must still not be dispatched", len(graph.recallCalls), wantRecalls)
 	}
 }
 
@@ -1027,10 +1028,10 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 	}
 }
 
-func TestTheWorstCaseGraphDerivedPromptCeilingIsOneHundredThousandBytes(t *testing.T) {
+func TestTheWorstCaseGraphDerivedPromptCeilingIsOneHundredSixtyThousandBytes(t *testing.T) {
 	t.Parallel()
 
-	const wantCeiling = 100_000
+	const wantCeiling = 160_000
 	gotCeiling := AssemblyByteBudget + SupplementaryByteBudget*(MaxModelCalls-1)
 	if gotCeiling != wantCeiling {
 		t.Fatalf("AssemblyByteBudget + SupplementaryByteBudget*(MaxModelCalls-1) = %d, want %d (design §8.4's stated ceiling)", gotCeiling, wantCeiling)

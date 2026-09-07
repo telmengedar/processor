@@ -278,17 +278,17 @@ func TestTurnRunCountsTheCappingWriteRoundWithoutDispatchingIt(t *testing.T) {
 	}
 
 	if !record.CapReached {
-		t.Fatal("record.CapReached is false, want true — the third call still wanted the tool")
+		t.Fatal("record.CapReached is false, want true — the final call still wanted the tool")
 	}
-	if len(files.writes) != 2 {
-		t.Fatalf("files.writes = %+v, want exactly two dispatched writes under a cap of %d model calls", files.writes, MaxModelCalls)
+	if len(files.writes) != MaxModelCalls-1 {
+		t.Fatalf("files.writes = %+v, want exactly %d dispatched writes under a cap of %d model calls", files.writes, MaxModelCalls-1, MaxModelCalls)
 	}
-	if len(record.ToolCalls) != 3 {
-		t.Fatalf("record.ToolCalls has %d entries, want 3 — the capped round is counted", len(record.ToolCalls))
+	if len(record.ToolCalls) != MaxModelCalls {
+		t.Fatalf("record.ToolCalls has %d entries, want %d — the capped round is counted", len(record.ToolCalls), MaxModelCalls)
 	}
-	capped := record.ToolCalls[2]
+	capped := record.ToolCalls[MaxModelCalls-1]
 	if capped.Tool != ToolWriteFile || capped.Path != "c.html" || capped.Error != "call cap reached" {
-		t.Fatalf("record.ToolCalls[2] = %+v, want the undispatched write named with the cap reason", capped)
+		t.Fatalf("the final record.ToolCalls entry = %+v, want the undispatched write named with the cap reason", capped)
 	}
 }
 

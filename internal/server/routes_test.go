@@ -427,7 +427,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 		SupplementaryByteBudget int
 		MaxModelCalls           int
 		MaxOutputTokens         int
-	}{20, 60_000, 20_000, 3, 4_096}
+	}{20, 60_000, 20_000, 6, 4_096}
 	if got.Limits.CandidateLimit != wantLimits.CandidateLimit ||
 		got.Limits.AssemblyByteBudget != wantLimits.AssemblyByteBudget ||
 		got.Limits.SupplementaryByteBudget != wantLimits.SupplementaryByteBudget ||
@@ -474,14 +474,14 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 		t.Fatalf("decode response: %v; body=%s", err, rec.Body.String())
 	}
 
-	if got.ModelCalls != 3 {
-		t.Fatalf("record.modelCalls = %d, want 3", got.ModelCalls)
+	if got.ModelCalls != loop.MaxModelCalls {
+		t.Fatalf("record.modelCalls = %d, want %d", got.ModelCalls, loop.MaxModelCalls)
 	}
 	if !got.CapReached {
-		t.Fatal("record.capReached = false, want true — the model still wanted recall on the third and final call")
+		t.Fatal("record.capReached = false, want true — the model still wanted recall on the final call")
 	}
-	if len(got.ToolCalls) != 3 {
-		t.Fatalf("record.toolCalls has %d entries, want 3", len(got.ToolCalls))
+	if len(got.ToolCalls) != loop.MaxModelCalls {
+		t.Fatalf("record.toolCalls has %d entries, want %d", len(got.ToolCalls), loop.MaxModelCalls)
 	}
 	if got.ToolCalls[0].Query != "the missing budget row" {
 		t.Fatalf("record.toolCalls[0].query = %q, want %q", got.ToolCalls[0].Query, "the missing budget row")

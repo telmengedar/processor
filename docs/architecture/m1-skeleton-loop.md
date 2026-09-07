@@ -155,8 +155,9 @@ write receipt, which the stored copy structurally cannot carry. See `docs/archit
 **How.** Two graph reads: the subject by id, and one semantic query whose text is the input **verbatim**.
 A byte budget applied in score order. A block rendered **sorted by node id, never by score**. One tool —
 supplementary recall — whose results append at the message tail, **under a byte budget of their own**,
-and never enter the block. **Every graph body that reaches the model is under a stated ceiling: 100,000
-bytes per run, ~~plus the anchor~~** (§8.4). **CORRECTED 2026-09-05 (#11335, E7): the anchor is now
+and never enter the block. **Every graph body that reaches the model is under a stated ceiling: ~~100,000~~ 160,000
+bytes per run, ~~plus the anchor~~** (§8.4). **CORRECTED 2026-09-07 (#13064): the ceiling moved with
+the call cap, 3 → 6.** **CORRECTED 2026-09-05 (#11335, E7): the anchor is now
 *inside* that ceiling rather than on top of it — with one residual, stated at §11 R4.** Write-back is a harness step: the harness picks the type, name and edge; the model contributes prose only.
 
 **Cost.** Five environment variables, each arriving with its consumer, at the one existing read site.
@@ -817,6 +818,15 @@ once, at §11 R4: a run whose anchor alone exceeds 60,000 B renders it anyway, s
 `|anchor| + 40,000 B` rather than 100,000 B. `SupplementaryByteBudget`'s derivation below is unaffected —
 it solves the 32,768-token row against the ceiling, and the ceiling's arithmetic did not move.
 
+**CORRECTED 2026-09-07 (#13064). The ceiling's arithmetic has now moved, because `MaxModelCalls` did:
+3 → 6.** The fence's second and third lines are struck — ~~40,000 B~~ **100,000 B** per run of
+supplementary, and ~~100,000 B~~ **160,000 B** with the block. The fence itself is left as written because
+a fence carries no strikethrough and the original figures are dated record. **The derivation of
+`SupplementaryByteBudget` does not survive this**: 20,000 was the largest per-round figure keeping a run
+inside a 32,768-token window, and at six calls no per-round figure above ~1,300 B does. That window is no
+longer the one being solved for — the measured host runs 131,072, where 160,000 B is 34% — but the
+constant is now inherited rather than derived, and §8.4 below says so in its own row.
+
 **The mechanism is per-round; the claim is per-run.** §8.4 states the ceiling as a literal so that a test
 can assert it against the arithmetic of the three constants, and §14 requires exactly that — they cannot
 drift apart from the number this design defends without something going red.
@@ -1089,7 +1099,7 @@ milestone 5's memory core replaces — the adapter, not its callers.
 |---|---|---|
 | Candidate limit | **20** | Measured C23: one round trip, 206 KB, ~1.5 s — and the whole Processor neighbourhood is ~22 nodes (C25), so 20 sees the region. No operator tunes it; milestone 2 is where it becomes measurable |
 | Assembly byte budget | **60,000 UTF-8 bytes** | ≈15,000 tokens — bytes, not tokens, because a tokenizer is a dependency (§10.9) and the ratio is stable enough for a floor. **Revision 3 corrects the justification, not the value.** Revision 1 called it *"roughly 1.5% of the model's window, by intent"*. That figure is arithmetic against a **one-million-token** window — the provider revision 2 removed — and under the ruling there is no single window to take a fraction of. The premise it was expressing still stands: a small precise context beats a large one, so the budget is small by choice, not by capacity. But **a budget stated as a fraction of an unmeasured quantity bounds nothing and cannot be checked**, which is how the recall path shipped at 3.3× over it with nobody able to say so (#10821 CF-4, §6.4a). The number is 60,000 bytes; what fraction of a window that is, is stated below against named window classes instead of assumed. ~~Measured on C23's real 20-row set: it admits ranks 1–5, uses 44,931 B, and **cuts 15 of 20**, so the cut path runs on ordinary production runs and not only in tests~~ **CORRECTED 2026-09-05 (#11335, E6). What this constant bounds changed, and so did that measurement.** It now bounds **the whole initial block — the anchor plus the admitted candidates** — rather than the admitted candidates alone: `Assemble` subtracts the anchor's size from it before considering the first candidate, floored at zero (§11 R4). The C23 profile above holds only for a zero-length anchor and is superseded by the 23-row sweep in §11 R4, where mean documents per block fall **8.09 → 6.91** and one row in twenty-three admits nothing. The value is **unchanged at 60,000** and the cut path is exercised harder, not less. **The name is unchanged too, and deliberately.** `AssemblyByteBudget` now names a block budget, which reads a shade narrow, and renaming it was declined: it would move roughly fifteen references in this document, the JSON wire key `assemblyByteBudget` that already-written records carry in `limits` (§8.2), and any external script reading that literal key — cost with no product (#11034 P-3). **Recorded so it is not re-opened;** the godoc line on the constant states what it bounds, which is where a reader of the code meets it |
-| Model call cap per run | **3** | One judgement call plus two supplementary rounds. Enough to observe the escalation path; small enough that a loop cannot run away |
+| Model call cap per run | ~~**3**~~ **6** | ~~One judgement call plus two supplementary rounds. Enough to observe the escalation path; small enough that a loop cannot run away~~ **CORRECTED 2026-09-07 (#13064): raised to 6 on measurement.** The old value bought the escalation path and cost the terminal: across 20 distinct inputs the model calls needed to reach the model's *own* terminal ran **median 4.5, max 9**, so a cap of 3 let **8 of 20** finish, and cut the yardstick task off one call short of its terminal with a file already on disk. **6 is the knee — 17 of 20** — at a median **6.99 s** per extra call. 9 buys the last 3 of 20 and roughly doubles the worst case. **A loop still cannot run away; what would move this number again is a re-measurement of that distribution, not an operator** |
 | Output-token cap (`max_tokens`) | **4,096** | **Re-derived in revision 2; it was 16,000.** The old value came from the Anthropic reference's non-streaming default, and that justification is gone with the provider. Re-derived against the ruling's actual target: many local models cap output well below 16,000 and either clamp silently or reject the request, and the answer here is *prose for a human*, which does not need 16,000 tokens. 4,096 is inside every plausible local runtime's capability and generous for the job. **Falsifier:** the §6.5 *truncated* row is exactly how a wrong value announces itself — if real runs report truncation, the number is too small and the record says so |
 | **Supplementary byte budget** | **20,000 UTF-8 bytes, per recall round** | New in revision 3 (§6.4a). **Derived, not picked:** it is the largest per-round figure that keeps a whole run's graph-derived prompt inside a 32,768-token window with the output cap reserved — the derivation is below. Against C23's real distribution it admits **3 median bodies** (5,758 B each), 6 of the smallest (2,872 B), and **none** of the largest (42,978 B) — which the record reports as a cut rather than hiding |
 
@@ -1137,24 +1147,37 @@ the allowance.** Read that line as **~3,700 B ≈ 925 tokens**. The 32,768 row o
 already unreachable by a wide margin. The allowance is stated here rather than edited into the fence,
 because a fence carries no strikethrough and the original figure is dated record (#11034 P-43).
 
+**CORRECTED 2026-09-07 (#13064). `MaxModelCalls` moved 3 → 6, so the ceiling moved 100,000 B →
+160,000 B ≈ 40,000 tokens**, and a worst-case run is **≈ 45,000 tokens** with the framing allowance and
+the output reserve. **The block-alone column is unchanged** — `AssemblyByteBudget` did not move — and
+**one verdict flips**: the 32,768 row no longer fits, at ~137% of that window. The measured residual run
+(the 70,660 B anchor) goes from **110,838 B ≈ 27,710 tokens** to **170,838 B ≈ 42,710 tokens**, which is
+36% of a 131,072-token window and does not fit 32,768 either. **This is the cost of the cap stated at its
+most useful: the worst run moves back out of the 32,768 window it was corrected into on 2026-09-05, into
+the 131,072 window the measured host actually runs.** The rows below are corrected in place.
+
 At the same four-bytes-per-token ratio this table already uses for the budget itself:
 
 | Endpoint window | The block alone | A worst-case run, ~~anchor excluded~~ **anchor included (E5)** | Verdict |
 |---|---|---|---|
 | **8,192 tokens** | **183%** | does not fit | **M1 cannot run here at all** — and the tool is not why. §11 R14 |
-| **32,768 tokens** | 46% | ~~≈ 29,600 tokens, **90%**~~ **≈ 30,000 tokens, 92% — CORRECTED 2026-09-05 (#11335, E5): the framing allowance was 1.8× short; the verdict is unchanged** | Fits, leaving ~~≈ 3,200 tokens — about **12,500 bytes** — for the anchor~~ **CORRECTED 2026-09-05 (#11335, E5): ≈ 2,750 tokens, about 11,000 bytes, and it is slack rather than an allocation. The anchor is funded from the 46% column now; the leftover shrank because the framing allowance in the same row grew** |
-| **131,072 tokens** | 11% | 23% | Comfortable |
-| **1,000,000 tokens** | 1.5% | 3% | The figure revision 1 quoted, and the window it was quoting |
+| **32,768 tokens** | 46% | ~~≈ 29,600 tokens, **90%**~~ ~~**≈ 30,000 tokens, 92% — CORRECTED 2026-09-05 (#11335, E5): the framing allowance was 1.8× short; the verdict is unchanged**~~ **≈ 45,000 tokens, 137% — CORRECTED 2026-09-07 (#13064): the call cap moved 3 → 6, and this time the verdict does change** | Fits, leaving ~~≈ 3,200 tokens — about **12,500 bytes** — for the anchor~~ **CORRECTED 2026-09-05 (#11335, E5): ≈ 2,750 tokens, about 11,000 bytes, and it is slack rather than an allocation. The anchor is funded from the 46% column now; the leftover shrank because the framing allowance in the same row grew** |
+| **131,072 tokens** | 11% | ~~23%~~ **34% (#13064)** | Comfortable — **and, since 2026-09-07, the smallest window M1 fits** |
+| **1,000,000 tokens** | 1.5% | ~~3%~~ **4.5% (#13064)** | The figure revision 1 quoted, and the window it was quoting |
 
-**Two things this table is for.** First, `SupplementaryByteBudget` is the free variable, and 20,000 is
-what solving the 32,768 row gives — a derivation, not a taste. Second, the row that matters is the one
+**Two things this table is for.** First, `SupplementaryByteBudget` is the free variable, and ~~20,000 is
+what solving the 32,768 row gives — a derivation, not a taste~~ **CORRECTED 2026-09-07 (#13064): at six
+calls, solving the 32,768 row gives ~1,300 B, so 20,000 is no longer that derivation's answer. The value is
+unchanged and is now inherited rather than derived** — worth naming, because it is exactly the kind of
+number that goes on reading as measured long after the measurement stopped applying to it. Second, the row that matters is the one
 with the smallest window: **the ruling's own target is small local runtimes, and 8,192 is a real window
 size among them.** M1 does not fit it — because of the *assembly* budget, which is unit A's shipped
 constant and outside this revision. §11 R14 records that with its falsifier rather than repairing it
 here, and §13.6 asks the one question that would settle it.
 
-**`100,000` is a literal this design defends, not an incidental product.** §14 requires it asserted as a
-literal against the arithmetic of the three constants, so that moving any one of them without
+**~~`100,000`~~ `160,000` is a literal this design defends, not an incidental product** (**CORRECTED
+2026-09-07, #13064** — the arithmetic is unchanged, the cap it multiplies is not). §14 requires it asserted
+as a literal against the arithmetic of the three constants, so that moving any one of them without
 re-deriving the window table above turns a test red. The alternative — a test computing the same
 expression production computes — is the assertion #10466 names as one that can never fail, and #10821
 CF-2 found seven of those in this milestone already.
@@ -1857,7 +1880,8 @@ No code appears in this document by design. The order below is architectural, no
     **both** the admitted set and that *every* row still reaches the record with its admit-or-cut
     decision. Pin the round that admits **zero** because its best hit is oversized (§6.5's new row). Pin
     that the error branch is bounded and carries no address (§8.5). **And assert the ceiling as a
-    literal:** `100,000` against `AssemblyByteBudget + SupplementaryByteBudget × (MaxModelCalls − 1)` —
+    literal:** ~~`100,000`~~ **`160,000` (CORRECTED 2026-09-07, #13064)** against
+    `AssemblyByteBudget + SupplementaryByteBudget × (MaxModelCalls − 1)` —
     the literal on the expected side per step 1, so that moving any constant without re-deriving §8.4's
     window table turns this red.
 11. **`internal/divoid`, write side.** The three-POST sequence (C32). Pin at the wire level: the order,
