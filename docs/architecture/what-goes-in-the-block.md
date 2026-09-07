@@ -67,6 +67,18 @@ behind a port the loop declares and only `cmd/processor` constructs — exactly 
 and forced anyway, since `loop` importing `condense` is a compile cycle — and **the instrument is
 structurally incapable of contaminating the substrate it measures** (§7.4.4).
 
+**The generating model is a design parameter, and this design makes it one.** *"Substance is taken as
+fact"* — everything downstream consumes it as if it were the node, and a weak model does not produce a
+smaller truth, it produces a confident paraphrase with facts missing. **#12984's single FAIL is exactly
+that failure mode**: it dropped a *negation* binding two mechanisms, which reads as a fact rather than as
+an omission. So the fill gets **its own model configuration, not the turn's** — and checking found a
+regression the fill would otherwise introduce: `cmd/processor` and `cmd/condense` both call
+`boot.LoadModel()` today and are only differentiable because they are separate **processes**, which is
+precisely how #12984 ran gemma while #13091 ran qwen. **In one process that separation disappears.** The
+floor is a capable semantic model, gemma-class; **absent an explicitly configured condensation model the
+fill is off**, because a silent fallback to the tool-calling model is the failure being guarded against
+(§7.4.7).
+
 **And the property that matters most is not coverage — it is self-healing.** Substance is derived state, so
 it is lost whenever content changes, and **our own parity sync is half an operation**: it republishes a
 body and drops the derived form. Verified today — **#13203 `null`, #12955 `null`, and #13238, this very
@@ -180,6 +192,9 @@ run-record exclusion from a provenance rule to a form rule. The node type run re
 | A15 | The project already has an absent-by-default port that refuses with a recorded reason: `FilePort`, declared at `internal/loop/turn.go:60`, documented *"nil refuses every write"* at `:81`, guarded at `:317` | Read from source. Certain — it is the precedent §7.4.4 follows |
 | A16 | **Substance is derived state and is invalidated whenever content is written.** In every case observed on real work the content had genuinely changed, so the invalidation was **correct** | #12984 also measured the degenerate byte-identical case; nobody performs one, so it is a curiosity rather than an exposure (§7.4.5). Certain |
 | A17 | **UNKNOWN: whether `substance` participates in similarity ranking.** If it does, a fill changes *retrieval* and not merely *rendering*, and §7.4.4's argument weakens sharply | **Not established.** F-7 is the gate and it must fire before any fill ships |
+| A18 | **The turn and the condenser share one model configuration.** `cmd/processor/main.go:41` and `cmd/condense/main.go:56` both call `boot.LoadModel()`, reading the same `PROCESSOR_MODEL_*` members | Read from source at `f774c37`. Certain. They differ today only because they are separate **processes** — #12984 ran `ai/gemma3` at `:12434`, #13091 ran `qwen3-coder:30b` at `:11434` |
+| A19 | **The condensation pass knows which model produced each substance and drops it at the graph boundary.** `Provenance` carries `Model` and `Sampling` (`internal/condense/condense.go:107-108`), but `SetSubstance` writes exactly one patch op — `/substance` (`internal/divoid/substance.go:67-81`) | Read from source at `f774c37`. Certain, and it is §7.4.8's whole problem |
+| A20 | **DiVoid has no field for substance provenance.** A node carries `substance` as an opaque string; `PATCH /api/nodes/{id}` exposes no provenance path | **#8** and the MCP patch surface. Certain |
 
 ---
 
@@ -566,6 +581,19 @@ lose substance that the system does not repair on next use*. The second is stric
 honest answer to *what happens when substance goes stale* — an answer this design would otherwise have to
 give as process.
 
+**The boundary of that claim, stated because it is the boundary of this document's strongest argument.**
+**Self-healing repairs *absence*. It does not repair *wrongness*.** A substance that exists but is wrong —
+a load-bearing negation dropped, a qualifier lost — is not missing, so the fill sees nothing to do and
+heals it into nothing. It is **stable, indistinguishable from good substance, and consumed as fact**. That
+is §7.4.8, and it is why the generating model (§7.4.7) is a design parameter rather than a setting.
+
+**One mechanism does repair it, and its coverage is exactly inverted from where the design wants it.** A16:
+a content write clears substance, so a bad substance is destroyed the moment its node is edited. **Therefore
+bad substance is durable precisely on nodes whose content is static** — and *"active areas of static truth"*
+is the regime §7.4.1 names as the fill's best case. **The exposure concentrates exactly where the benefit
+is claimed.** That is not an argument against the fill; it is the reason §7.4.8 cannot be deferred
+indefinitely.
+
 **This document therefore declines to add a "the sync must re-derive substance" requirement.** Naming it
 would be process where a behaviour already suffices, and process is exactly what gets forgotten — as the
 three rows above demonstrate.
@@ -589,6 +617,95 @@ Option 2 is rejected on two grounds, and the second is the one that matters.
    benefits. On a repeated task that converges; **on a new question about a new area — precisely the
    cold-start regime where the gap exists — it never closes in time.** It optimises the case that already
    worked.
+
+#### 7.4.7 The generating model is a design parameter, not a config detail
+
+> *"since it is client side and we use a local ai for testing we need to make sure to select a good semantic
+> model to generate that substance — like gemma is supposed to be capable — definitely not some super small
+> cheap chat model. substance is taken as fact — it should actually be substance."* — Toni, 2026-09-08
+
+**"Substance is taken as fact" is the whole argument.** Everything downstream — the form rule, the block,
+the model's reasoning, the answer — consumes a substance as though it were the node. The substitution is
+lossy by construction, so **the only variable is the *quality* of the loss, and that is entirely the
+generating model's.** A weak model does not produce a smaller truth. It produces a **confident paraphrase
+with facts missing**, and nothing downstream can tell the difference, because a fluent condensation of a
+document nobody has read reads exactly like a good one.
+
+**This project has already measured the failure mode, and it is the worst available one.** #12984's
+zero-tolerance audit failed 23/1/1, and the FAIL (#11278) dropped *"which a mutation matrix cannot do
+because it tests single omissions"* — a **negation binding two mechanisms**. An omission a reader would
+notice is survivable; **a polarity inversion that reads as a fact is not.** #11373 §1 predicted exactly
+this — *a compressor discriminates by salience, not by load-bearing-ness* — and it happened inside the
+prompt written to prevent it. **That is what a capable model is being bought to avoid.**
+
+**The floor, recorded as a class rather than a pin.** A capable semantic model — **gemma-class was the
+example given, not the requirement** — and explicitly **not a small cheap chat model.** Recorded here with
+its reason so that nobody later swaps in something smaller for latency and silently changes what *fact*
+means in this system. The fill's latency is the visible cost and the fidelity is the invisible one; only
+the first will ever show up in a graph.
+
+**The regression the fill would introduce if this were left implicit — found by checking, not assumed.**
+A18: `cmd/processor/main.go:41` and `cmd/condense/main.go:56` **both call `boot.LoadModel()`**, reading the
+same `PROCESSOR_MODEL_*` members. They differ today **only because they are separate processes** — which is
+exactly how #12984 ran `ai/gemma3` at `:12434` while #13091 ran `qwen3-coder:30b` at `:11434`. **Under the
+fill they are one process, and that separation silently disappears.** The turn's model is chosen for
+tool-calling and instruction-following; the fill's is chosen for semantic compression. There is no reason
+those are the same model, and every reason they are not.
+
+**So the fill carries its own model configuration**, a fifth boot loader beside the four that exist.
+
+**And it does not fall back to the turn's model. Absent a configured condensation model, the fill is off.**
+
+| | Ruling |
+|---|---|
+| **Fall back to `PROCESSOR_MODEL_*`** | **Rejected.** A silent fallback to the tool-calling model is precisely the failure being guarded against: the system would keep working, produce substance from whatever chat model happened to be configured, and write it to the graph as fact |
+| **Absent config ⇒ capability absent** | **Adopted.** It is `FilePort`'s own contract (A15) — nil means every call is refused **with a recorded reason**, so a trace shows *"no condensation model configured"* rather than quietly degrading. The floor becomes enforceable by construction: you cannot accidentally get substance from the turn's model |
+
+**Second port, or second configuration on the same one?** *(the coordinator's question, answered.)*
+**Neither, exactly: one port on the loop side, its own model client behind the seam.** The loop asks *fill
+this node*; which model answers is not the loop's concern and must not become part of its interface — that
+is the same inversion `GraphPort`, `ModelPort` and `FilePort` already discharge. A second `ModelPort` on
+`Turn` would put provider configuration into the loop's constructor for a capability the loop does not
+reason about.
+
+#### 7.4.8 A bad substance is invisible and durable — the unresolved half
+
+**This is raised, not answered.** It is the gap with teeth, and inventing a mechanism for it here would be
+worse than naming it.
+
+**The problem.** A substance produced by a model later judged inadequate sits on the graph
+**indistinguishable from a good one** and is consumed as fact. §7.4.5's self-healing does not reach it:
+the fill repairs absence, and a bad substance is present.
+
+**Two facts make it sharper than it looks, and both were checked.**
+
+- **A19 — the provenance exists and is thrown away at the boundary.** `internal/condense`'s `Provenance`
+  carries `Model` and `Sampling` (`condense.go:107-108`), so the pass knows exactly what produced each
+  substance. `SetSubstance` then writes **one** patch op — `/substance` (`substance.go:67-81`). The
+  attribution is computed, emitted on the pass's machine channel, and **never attached to the node.**
+  **Under the fill it gets worse:** a fill happens inside a turn, where there is no result document at all,
+  so the provenance would be discarded with the turn unless something is done.
+- **A20 — DiVoid has no field to put it in.** A node carries `substance` as an opaque string and the patch
+  surface exposes no provenance path.
+
+**Three shapes, none recommended yet, all with their cost stated.**
+
+| shape | needs | cost |
+|---|---|---|
+| **A header line inside the substance string** | nothing new | It is the payload — it renders into the block, spends budget, and every reader must learn to strip it. Makes substance non-self-describing for anyone who does not know the convention |
+| **A provenance field on the node** | **a DiVoid change** | The honest place for it. Unlike the hash-gate ask withdrawn in §7.4.5 — which defended against a caller doing something no caller should do — this is a genuinely missing dimension, not a guard |
+| **A generator-identity node**, one per (model, prompt version), linked to every node it condensed | nothing new — nodes and links exist | *"Which substances came from model X"* becomes one `linkedto` walk, and invalidation becomes a sweep. Cost: an edge per condensed node, so link count grows with coverage |
+
+**What this design does commit to now, because it is free.** The run record already carries the turn's
+model and provider. **A fill must record, per filled node, the model that produced it** — so every
+substance written *by a turn* is attributable from the moment the fill ships. That does not solve the
+existing backlog, and it does not cover substance written by the offline pass, and the document does not
+pretend otherwise.
+
+**When this must be decided: before the fill runs beyond a pilot, and it does not gate F-7 or F-6.** The
+reason it cannot be deferred indefinitely is in §7.4.5 — a content edit is the one thing that destroys a
+bad substance, so the exposure concentrates on **static** nodes, which is exactly the regime the fill is
+being built to serve. **Q10.**
 
 ---
 
@@ -764,7 +881,7 @@ next attempt at the same task** — and today it is refused twice by the one com
 
 | # | Gate | Fires against | Status |
 |---|---|---|---|
-| **F-1** | **Fidelity, re-run at zero tolerance** after the prompt is fixed. Every required node's substance must support its pre-registered `why` | **Unit 3.** A single FAIL blocks substitution outright — this is #12955's own gate | **FAILING** — #12984, 23/1/1 |
+| **F-1** | **Model qualification.** #12984's audit, re-run at zero tolerance: every required node's substance must support its pre-registered `why`. **It is not a one-time release gate — it is the instrument that qualifies a *model*, and it re-runs whenever the fill model or the prompt changes** (§7.4.7) | **Unit 2 *and* Unit 3, and every model change thereafter.** A single FAIL disqualifies that model. **Note it now gates generation, not only rendering** — under the fill an unqualified model writes to the graph as a side effect of serving traffic, where the offline pass could be re-run and its output discarded | **FAILING** — #12984, 23/1/1, on `ai/gemma3`. That result qualifies *that model with that prompt*, nothing else |
 | **F-2** | **The regression check that replaces the withdrawn invariant.** Sweep the corpus at several budgets with the form rule on and off; no row may go from *admitted* to *not admitted* | **Unit 3.** Any such row is either a bug or the threshold is wrong | Not run |
 | **F-3** | **The threshold curve.** Bytes reclaimed and rows admitted, as a function of the ratio threshold | Sets §8.1's dial. If the curve is flat, the stratum distinction is decoration and a single rule is simpler | Not run |
 | **F-4** | **Convergence, not coverage.** Run the same task twice against a cold area: run 1 fills, **run 2 must fire zero fills and reach the same or a better admitted set** | **Unit 2.** If run 2 still fills, the cache is not doing what §7.4.1 claims and the whole economic argument collapses to per-turn cost | Not run. **~0.3 % coverage today** (§4.1) |
@@ -791,7 +908,7 @@ all.
 
 | # | Risk | Mitigation | Falsifier |
 |---|---|---|---|
-| R1 | **Substance ships before fidelity is clean** and the model is confidently told something a lossy pass mangled | F-1 is a hard gate on Unit 3. Unit 1 renders nothing new; Unit 2 writes to the graph but changes no block | Any block containing a substance-form candidate before F-1 passes |
+| R1 | **Substance ships before fidelity is clean** and the model is confidently told something a lossy pass mangled | F-1 gates **Unit 2 as well as Unit 3** — the fill *writes* to the shared graph, so an unqualified model contaminates the substrate whether or not anything renders it yet. Unit 1 alone is safe: it renders nothing new and writes nothing | Any block containing a substance-form candidate, **or any fill at all**, before F-1 passes |
 | R2 | **Unit 2 is treated as a one-off migration.** Coverage decays as the graph grows | §10 names it a recurring pass; Q5 asks for the coverage metric | Coverage measured once and never again |
 | R3 | **A stale substance renders in place of correct content** | A6: the server clears substance on a content write, verified live. Fallback is content, never a wrong render | A substance surviving a content edit |
 | R4 | **`contentHash` is re-based onto rendered bytes**, marking every substance-rendered required node stale | §7.2, adopted from #12955 §6.4 verbatim, with the reason | A sweep reporting corpus-wide staleness after Unit 3 |
@@ -803,6 +920,9 @@ all.
 | R10 | **Substance is lost and stays lost**, because the sync that republishes a body has no step that re-derives it — measured three times over (§7.4.5) | **The fill is the mitigation, and it is the reason not to add a procedural one.** Under it the loss repairs on next use, whatever caused it | Substance still `null` on a re-synced design document *after* the fill ships and that node has been retrieved |
 | R11 | **The steady-state argument is quoted as the cost** and someone plans against a free fill on a cold graph | §7.4.2 states the transition separately and gives its shape; F-8 measures it | Any plan citing *"basically free"* without naming the cold-start regime |
 | R12 | **A fill fires below the size gate**, spending a model call and a fidelity risk to save ~11 % | G1, and #12984's 0.886 median below 4 KB is the number | A fill recorded against a candidate under 8 KB |
+| R13 | **A bad substance is invisible and durable.** It is present, so the fill sees nothing to repair; it is consumed as fact; and it survives exactly on the static nodes the fill is built to serve (§7.4.5, §7.4.8) | **Unresolved and named as such.** F-1 qualifies the model *before* it writes; §7.4.8's three shapes are the remedy space; Q10 is the decision | A substance found to contradict its node with no way to determine which model wrote it |
+| R14 | **The fill silently inherits the turn's model**, because both call `boot.LoadModel()` today (A18) and one process makes that invisible | §7.4.7: separate configuration, **no fallback**, capability absent when unconfigured | A fill recorded with the same model id the turn used, absent explicit operator intent |
+| R15 | **A model is swapped for latency** and *fact* quietly changes meaning | §7.4.7 records the floor **as a class with its reason**, and F-1 re-runs on model change | A fill model changed with no F-1 re-run cited |
 
 ---
 
@@ -852,6 +972,7 @@ error: its bounding invariant is withdrawn, on the evidence of the very measurem
 | **Q6** | **`fields=substance` works on the listing route and is undocumented in #8** | No | One line in #8 by whoever touches it next. Named because A4 rests on it |
 | **Q7** | **Two-phase retrieval** — rank without bodies, then batch-fetch the survivors. Measured 1,236,611 B → 115,382 B on the yardstick (§7.1) | No | Its own unit, any time. It composes with every payload rule and depends on none of them |
 | **Q8** | **G3's value, and its retirement condition** (§7.4.3). Recommended 2, on a three-fill estimate that is derived rather than measured | No — but it ships with the fill | Set it from **F-8**, and write the retirement condition into the same commit. It is a transition instrument, not a constant |
+| **Q10** | **How is a substance attributed to the model that produced it?** (§7.4.8) The pass computes it and drops it (A19); DiVoid has no field (A20); three shapes are costed and none is recommended | **Not blocking F-7 or F-6. Blocking the fill running beyond a pilot** | **Raised, deliberately unanswered.** Decide it before coverage grows, because the remedy space narrows as the un-attributed backlog grows. My weak preference is the generator-identity node — it needs no schema change and makes invalidation a sweep — but this is a decision about the graph's conventions, not about Processor |
 | **Q9** | ~~Should DiVoid invalidate substance on a content-hash change rather than on a content write?~~ **WITHDRAWN — no ask against DiVoid.** Every invalidation observed on real work was correct, and the byte-identical case it would defend is one no caller should perform (§7.4.5) | No | Struck rather than deleted, because a later reader will have the same idea. The answer is that the defect was ours, not DiVoid's, and the fill repairs it without a rule |
 
 ---
@@ -885,15 +1006,23 @@ error: its bounding invariant is withdrawn, on the evidence of the very measurem
 5. Implement the three gates (§7.4.3) as a single decision with a recorded outcome per candidate: filled,
    or the reason it was not. **G3 ships with its retirement condition written down** (Q8).
 6. **Fills get their own counter and their own ceiling**, never `MaxModelCalls`.
-7. **Rule the oversized case.** #12984 refused #10926 at 195,448 B rather than store a truncated
+7. **Add a fifth boot loader for the condensation model** — its own `PROCESSOR_CONDENSE_MODEL_*` members,
+   read at the one environment site like everything else. **No fallback to `PROCESSOR_MODEL_*`**: absent
+   config means the fill port is nil and every call is refused with a recorded reason (§7.4.7). The cheap
+   guard is a test that the fill is **off** when only the turn's model is configured.
+8. **Do not run the fill with a model that has not passed F-1** (§7.4.7). The floor is a class — a capable
+   semantic model, gemma-class — not a pin, and the audit is what converts the class into a decision.
+9. **Record the producing model on every fill** in the run record (§7.4.8). Free, and it is the only part of
+   the attribution problem this design commits to solving now. **Q10 is the rest of it and it is open.**
+10. **Rule the oversized case.** #12984 refused #10926 at 195,448 B rather than store a truncated
    condensation, and that refusal is correct. Under the fill this now happens *inside a turn*, so the
    refusal must be fast and recorded rather than merely correct. #11373 §5c hands the policy to this binary.
-8. Publish **F-4** (convergence) and **F-8** (transition shape). §7.4.2's numbers are derived from #12984
+11. Publish **F-4** (convergence) and **F-8** (transition shape). §7.4.2's numbers are derived from #12984
    and have never been measured on this path.
-9. **Do not present the steady state as the cost.** The graph is 100 % cold (§7.4.2); the first runs pay
+12. **Do not present the steady state as the cost.** The graph is 100 % cold (§7.4.2); the first runs pay
    near the worst case and whoever runs them should be told so.
 
-### Unit 3 — the form rule *(gated on F-1)*
+### Unit 3 — the form rule *(gated on F-1: a qualified generating model)*
 
 1. **Do not start until F-1 passes at zero tolerance.** The prompt fix is Kim's (#11373); §4.5 is the brief.
 2. Implement §8.1 as a pure function of size, ratio and presence. **No provenance branch** (R5).
@@ -936,3 +1065,5 @@ note that #13106 already establishes it probably requires the call ceiling raise
 - **No fill counted against `MaxModelCalls`** (§7.4.3).
 - **No silent fill refusal.** Every skipped fill carries its reason, or §9.3's two gates become invisible.
 - No claim that the steady state is free without saying we are entirely inside the transition (§7.4.2).
+- **No fill from a model that has not passed F-1**, and **no fallback to the turn's model** (§7.4.7).
+- **No substance written without the run record naming the model that produced it** (§7.4.8).
