@@ -461,6 +461,9 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing budget row"},
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: unexpected token"},
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "final desperate query", ToolError: "tool arguments could not be parsed: second malformed request"},
+		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: third malformed request"},
+		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: fourth malformed request"},
+		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the query the cap refused", ToolError: "tool arguments could not be parsed: the malformed request the cap refused"},
 	}}
 	turn := loop.NewTurn(graph, model, nil, "system text", "test-model", testLogger())
 
@@ -495,9 +498,13 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	if got.ToolCalls[2].Error != "tool arguments could not be parsed: second malformed request" {
 		t.Fatalf("record.toolCalls[2].error = %q, want %q", got.ToolCalls[2].Error, "tool arguments could not be parsed: second malformed request")
 	}
-	const round3Wire = `"error":"tool arguments could not be parsed: second malformed request","results":[]`
-	if !strings.Contains(rec.Body.String(), round3Wire) {
-		t.Fatalf("body does not contain %q — record.toolCalls[2].results must serialise as [] not null; body=%s", round3Wire, rec.Body.String())
+	cappedRound := got.ToolCalls[loop.MaxModelCalls-1]
+	if cappedRound.Error != "tool arguments could not be parsed: the malformed request the cap refused" {
+		t.Fatalf("the capped round's error = %q, want the capping call's own malformed-request sentence — the model queue gives it a string no earlier round shares, so the wire pin below cannot be satisfied by a dispatched round", cappedRound.Error)
+	}
+	const cappedRoundWire = `"error":"tool arguments could not be parsed: the malformed request the cap refused","results":[]`
+	if !strings.Contains(rec.Body.String(), cappedRoundWire) {
+		t.Fatalf("body does not contain %q — the capped round's results must serialise as [] not null; body=%s", cappedRoundWire, rec.Body.String())
 	}
 	if got.Written.State != "notStored" {
 		t.Fatalf("written.state = %q, want %q — the closed vocabulary names the fate, no free text", got.Written.State, "notStored")

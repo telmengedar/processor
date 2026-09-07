@@ -84,7 +84,10 @@
 > §6.6's depended-on subset, so this set is **E**.
 >
 > **Why now, and it is not tidiness.** **#11364** added the constrained-context vector: the measured working
-> context on the project's own RTX 3090 is **32,768 tokens** — roughly 131,000 bytes of raw text before the
+> context on the project's own RTX 3090 is **32,768 tokens** (**NOTE 2026-09-07 (#13064): the host now
+> measures 131,072. The figure is left as written — it was true when made and is what the round below was
+> argued against — but it is no longer the working context, and §8.4's window table is where the current
+> one is read off**) — roughly 131,000 bytes of raw text before the
 > system prompt, the input and the reserved output. Measured blocks ran **60,601–130,383 B** against a
 > constant reading 60,000, with **r05 at 130,383 B** and **r14 at 108,317 B**. Under that vector an
 > unbounded anchor stops being untidiness and becomes a product failure: a project whose claim is *"a
@@ -1161,7 +1164,7 @@ At the same four-bytes-per-token ratio this table already uses for the budget it
 | Endpoint window | The block alone | A worst-case run, ~~anchor excluded~~ **anchor included (E5)** | Verdict |
 |---|---|---|---|
 | **8,192 tokens** | **183%** | does not fit | **M1 cannot run here at all** — and the tool is not why. §11 R14 |
-| **32,768 tokens** | 46% | ~~≈ 29,600 tokens, **90%**~~ ~~**≈ 30,000 tokens, 92% — CORRECTED 2026-09-05 (#11335, E5): the framing allowance was 1.8× short; the verdict is unchanged**~~ **≈ 45,000 tokens, 137% — CORRECTED 2026-09-07 (#13064): the call cap moved 3 → 6, and this time the verdict does change** | Fits, leaving ~~≈ 3,200 tokens — about **12,500 bytes** — for the anchor~~ **CORRECTED 2026-09-05 (#11335, E5): ≈ 2,750 tokens, about 11,000 bytes, and it is slack rather than an allocation. The anchor is funded from the 46% column now; the leftover shrank because the framing allowance in the same row grew** |
+| **32,768 tokens** | 46% | ~~≈ 29,600 tokens, **90%**~~ ~~**≈ 30,000 tokens, 92% — CORRECTED 2026-09-05 (#11335, E5): the framing allowance was 1.8× short; the verdict is unchanged**~~ **≈ 45,000 tokens, 137% — CORRECTED 2026-09-07 (#13064): the call cap moved 3 → 6, and this time the verdict does change** | ~~Fits, leaving~~ ~~≈ 3,200 tokens — about **12,500 bytes** — for the anchor~~ ~~**CORRECTED 2026-09-05 (#11335, E5): ≈ 2,750 tokens, about 11,000 bytes, and it is slack rather than an allocation. The anchor is funded from the 46% column now; the leftover shrank because the framing allowance in the same row grew**~~ **DOES NOT FIT — CORRECTED 2026-09-07 (#13064): the call cap moved 3 → 6, so this row is ≈ 12,000 tokens **over** rather than 2,750 under. There is no slack left to describe — what E5 called leftover is now overflow — and the third cell's 137% is the whole verdict** |
 | **131,072 tokens** | 11% | ~~23%~~ **34% (#13064)** | Comfortable — **and, since 2026-09-07, the smallest window M1 fits** |
 | **1,000,000 tokens** | 1.5% | ~~3%~~ **4.5% (#13064)** | The figure revision 1 quoted, and the window it was quoting |
 
