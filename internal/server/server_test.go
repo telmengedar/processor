@@ -7,10 +7,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/telmengedar/processor/internal/divoid"
+	"github.com/telmengedar/processor/internal/loop"
 )
 
 func discardLogger() *slog.Logger {
@@ -179,17 +182,71 @@ func TestServeOnUnusableListenerReturnsNonNilError(t *testing.T) {
 	}
 }
 
-const (
-	writeBackCalls = 3
-	graceMargin    = 15 * time.Second
-)
+const graceMargin = divoid.DefaultTimeout
 
-func TestTheDrainGraceIsElevenMinutesDerivedFromTheRunBoundTheWriteBackAndAStatedMargin(t *testing.T) {
+type graphCallCounter struct {
+	calls  int
+	failed []int
+}
+
+func (g *graphCallCounter) RoundTrip(*http.Request) (*http.Response, error) {
+	g.calls++
+
+	status := http.StatusOK
+	if slices.Contains(g.failed, g.calls) {
+		status = http.StatusInternalServerError
+	}
+
+	return &http.Response{
+		StatusCode: status,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(strings.NewReader(`{"id":1}`)),
+	}, nil
+}
+
+var writeBackPaths = []struct {
+	path   string
+	failed []int
+	calls  int
+}{
+	{"every leg lands", nil, 4},
+	{"the create fails", []int{1}, 1},
+	{"the content write fails and the discard lands", []int{2}, 3},
+	{"the content write fails and the discard fails too", []int{2, 3}, 3},
+	{"the substance write fails and the link still lands", []int{3}, 4},
+	{"the link fails", []int{4}, 4},
+}
+
+func writeBackGraphCalls(failed ...int) int {
+	counter := &graphCallCounter{failed: failed}
+	graph := divoid.NewClient("http://graph.test", "k", &http.Client{Transport: counter}, discardLogger())
+	graph.WriteRun(context.Background(), loop.Record{Input: "a run in flight at shutdown", Subject: 42})
+	return counter.calls
+}
+
+func writeBackGraphCallCeiling() int {
+	ceiling := 0
+	for _, p := range writeBackPaths {
+		ceiling = max(ceiling, writeBackGraphCalls(p.failed...))
+	}
+	return ceiling
+}
+
+func TestTheWriteBackIssuesFourGraphCallsUnlessTheCreateOrTheContentWriteFails(t *testing.T) {
+	t.Parallel()
+
+	for _, p := range writeBackPaths {
+		if got := writeBackGraphCalls(p.failed...); got != p.calls {
+			t.Errorf("the write-back issued %d graph calls when %s, want %d", got, p.path, p.calls)
+		}
+	}
+}
+
+func TestTheDrainGraceIsTheRunBoundPlusTheMeasuredWriteBackCeilingPlusAStatedMargin(t *testing.T) {
 	t.Parallel()
 
 	const wantRunBound = 10 * time.Minute
-	const wantGrace = 11 * time.Minute
-	const wantWriteBackAllowance = 45 * time.Second
+	const wantGrace = 11*time.Minute + 15*time.Second
 
 	if runBound != wantRunBound {
 		t.Fatalf("runBound = %v, want %v", runBound, wantRunBound)
@@ -198,12 +255,10 @@ func TestTheDrainGraceIsElevenMinutesDerivedFromTheRunBoundTheWriteBackAndAState
 		t.Fatalf("shutdownGrace = %v, want %v", shutdownGrace, wantGrace)
 	}
 
-	writeBackAllowance := writeBackCalls * divoid.DefaultTimeout
-	if writeBackAllowance != wantWriteBackAllowance {
-		t.Fatalf("%d write-back calls at the graph client's per-call timeout = %v, want %v (design §8.4a enumerates every path and its call count)", writeBackCalls, writeBackAllowance, wantWriteBackAllowance)
-	}
-	if derived := runBound + writeBackAllowance + graceMargin; derived != shutdownGrace {
-		t.Fatalf("runBound %v + write-back %v + margin %v = %v, but shutdownGrace is %v", runBound, writeBackAllowance, graceMargin, derived, shutdownGrace)
+	calls := writeBackGraphCallCeiling()
+	allowance := time.Duration(calls) * divoid.DefaultTimeout
+	if derived := runBound + allowance + graceMargin; derived != shutdownGrace {
+		t.Fatalf("runBound %v + a measured write-back ceiling of %d graph calls at %v each (%v) + margin %v = %v, but shutdownGrace is %v", runBound, calls, divoid.DefaultTimeout, allowance, graceMargin, derived, shutdownGrace)
 	}
 }
 
@@ -213,7 +268,7 @@ func TestTheDrainGraceKeepsAPositiveMarginOverTheBoundItMustCover(t *testing.T) 
 	if graceMargin <= 0 {
 		t.Fatalf("graceMargin = %v, want a positive headroom — the margin is the whole reason the grace does not sit on its own bound", graceMargin)
 	}
-	covered := runBound + writeBackCalls*divoid.DefaultTimeout
+	covered := runBound + time.Duration(writeBackGraphCallCeiling())*divoid.DefaultTimeout
 	if shutdownGrace <= covered {
 		t.Fatalf("shutdownGrace = %v, but a run plus its write-back can take %v — the grace sits on its own bound with no headroom", shutdownGrace, covered)
 	}
