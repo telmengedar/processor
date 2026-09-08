@@ -155,12 +155,19 @@ type Result struct {
 func (r Result) OperationalFailures() int {
 	failures := 0
 	for _, s := range r.Skipped {
-		switch s.Reason {
-		case skipReadFailed, skipModelFailed, skipWriteFailed, skipTruncated:
+		if isOperationalFailure(s.Reason) {
 			failures++
 		}
 	}
 	return failures
+}
+
+func isOperationalFailure(reason string) bool {
+	switch reason {
+	case skipReadFailed, skipModelFailed, skipWriteFailed, skipTruncated:
+		return true
+	}
+	return false
 }
 
 type outcome struct {
