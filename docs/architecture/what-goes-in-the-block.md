@@ -39,16 +39,39 @@ cannot — and shape is fixable. Provenance was never a reason. **This document 
 | **We shipped `substance` and never asked for it** | `candidateFields = "id,type,name,similarity,content"` (`internal/divoid/client.go:34`). `loop.Candidate` has no substance member. `assemble.go` renders `c.Content`, always. We asked DiVoid for the field (#11367), DiVoid shipped it (#11371), we designed admission around it (#12955) — and the loop has never requested it. **The listing route accepts `fields=…,substance` and returns it; verified live today.** |
 | **But the graph has almost no substance to give** | Sampled live: **1 of 500** random nodes, **6 of 500** documentation, **0 of 500** session-logs, **0 of 500** tasks. On the yardstick's own top-20, **1 of 20**. `cmd/condense` has only ever been pointed at the 25 required nodes of the eval corpus (#12984). **That is not a data gap — it is the absence of a behaviour** (§7.3), and it is what Unit 2 becomes. |
 | **Where it would pay is exactly where the crowding is** | The yardstick's seven real candidates total **106,829 B against a 60,000-byte budget** — they cannot all fit. Applying #12984's measured stratum ratios: **36,081 B in substance form, all seven fit, 23,919 B spare.** (One row is a real measurement: #13101, 11,961 B → 5,527 B, ratio 0.462.) |
-| **And the condenser refuses the class that needs it most** | `internal/condense/condense.go:283` skips `SelfProduced`; `:296`'s `isProse` refuses `application/json`. **A run record is refused twice.** A third gate is measured, not designed: at 195 KB, node #10926 could not be condensed at all — truncated and refused (#12984), and run records are 77–88 KB. |
+| **And the condenser cannot serve the class that needs it most** | `condense.go:283` skips `SelfProduced`; `:296`'s `isProse` refuses `application/json`. **But the gates turned out not to be the constraint** — #13242 removed both and the pass still refused every record at **84 KB**, then fabricated when forced through. The obstacle is shape, and the remedy is §9.3.2's template, not a gate deletion. |
 
 **The recommendation, in four lines.**
 
 | | |
 |---|---|
 | **Unit 1 — See it** | Request `substance` in recall; carry it on `Candidate`; record which form was rendered. **No admission-policy change.** Small, and nothing downstream is measurable without it. |
-| **Unit 2 — Generate it, on demand** | **A behaviour of the memory core, not a backfill campaign.** Retrieval finds a node it wants to push, finds no substance, and makes one. **Bounded by the cache — cost is proportional to novelty, not traffic** — plus a size gate, a pressure gate, and a transition-only ceiling. §7.4. |
+| **Unit 2 — Generate it, on demand** | **A behaviour of the memory core, not a backfill campaign.** Retrieval finds a node it wants to push, finds no substance, and makes one. **Bounded by the cache — cost is proportional to novelty, not traffic** — plus a size gate, a pressure gate, and a transition-only ceiling. §7.4. **Prose nodes only: run records take the template, not the model (§9.3.1).** |
 | **Unit 3 — Render it, size-gated** | Substance replaces content **where condensation actually compacts** — the ≥8 KB stratum, measured median ratio **0.298**. Below 4 KB the measured ratio is **0.886**: substance saves ~11 % and spends fidelity, so content stays. |
 | **Unit 4 — The catalogue** | #13106 §8.3, unchanged and still third. Its payload *is* substance, so it is downstream of Unit 2 by construction, and its three-arm falsifier cannot run until the fill has warmed the twenty rows. |
+
+**Both gates have now run, and the negative one is the useful one.**
+
+**F-7 passed (#13241).** A probe carrying content about arctic terns and a substance about quantum error
+correction returns at **rank 1 / 0.7801** for its content's topic and **does not return at all** for its
+substance's — on `divoid_search` and on the exact route `Recall` builds. **Substance is stored and served
+but not embedded**, so a fill changes what assembly renders and never what retrieval returns; §7.4.4's
+structural argument holds, and **coverage changes the block, never the candidate set**. It becomes a
+standing guard rather than a settled fact: nothing would announce it if DiVoid ever started embedding.
+
+**F-6 came back negative and corrects this document's own sequencing (#13242).** With both gates removed,
+`cmd/condense` refuses every run record at **84 KB** while reporting `operational failures 0`; with thinking
+disabled it produces a digest of *other nodes*, **fabricates a count** (ten where the record says twenty),
+and invents figures the prompt forbids rounding. **Dropping `block` was tested and does not fix it** — the
+remainder is a **data table**, and condensing a data table is transcription. An earlier revision billed
+*"remove the `SelfProduced` gate — one line"* as the cheap first experiment; **it is not, because a one-line
+change that converts a refusal into a plausible-looking wrong fact on a permanent node is not cheap.**
+**Shape first, gates last.**
+
+**So the fill splits by node class, and this is the round's main change.** Prose nodes keep the model fill —
+that is what #12984 measured at 23 PASS / 1 FAIL. **Run records get deterministic rendering: a template over
+the record's own fields, no model at all** (§9.3.2). A template cannot fabricate a count, needs no F-1
+qualification, costs nothing, and closes Q3 and Q4 outright.
 
 **This crosses an invariant, and the crossing is the design's main claim.** `internal/condense/condense.go:1`
 says the pass *"is never reachable from a turn"*. Two things make moving it defensible.
@@ -195,7 +218,7 @@ run-record exclusion from a provenance rule to a form rule. The node type run re
 | A14 | **`internal/loop` cannot import `internal/condense`** — it is a cycle. `internal/condense/targets.go:6` imports `internal/eval`, which imports `internal/divoid`, which imports `internal/loop` | `go list -deps` at `da01ee8`. Certain, and it forces the fill to be a port the loop declares |
 | A15 | The project already has an absent-by-default port that refuses with a recorded reason: `FilePort`, declared at `internal/loop/turn.go:60`, documented *"nil refuses every write"* at `:81`, guarded at `:317` | Read from source. Certain — it is the precedent §7.4.4 follows |
 | A16 | **Substance is derived state and is invalidated whenever content is written.** In every case observed on real work the content had genuinely changed, so the invalidation was **correct** | #12984 also measured the degenerate byte-identical case; nobody performs one, so it is a curiosity rather than an exposure (§7.4.5). Certain |
-| A17 | **UNKNOWN: whether `substance` participates in similarity ranking.** If it does, a fill changes *retrieval* and not merely *rendering*, and §7.4.4's argument weakens sharply | **Not established.** F-7 is the gate and it must fire before any fill ships |
+| A17 | **MEASURED: `substance` does not participate in similarity ranking.** It is stored and served but **not embedded**, so writing one changes what assembly renders and never what retrieval returns | **#13241**, 2026-09-08. A probe carrying content about arctic terns and substance about quantum error correction: the content topic returns it at **rank 1, sim 0.7801** (next hit 0.5558); the substance topic does not return it at all, whole field at the ~0.57 noise floor. Run on `divoid_search` **and** on `GET /api/nodes?query=`, the exact route `Recall` builds — both agree. **Standing guard, not settled: re-run when the fill ships** (F-7) |
 | A18 | **The turn and the condenser share one model configuration.** `cmd/processor/main.go:41` and `cmd/condense/main.go:56` both call `boot.LoadModel()`, reading the same `PROCESSOR_MODEL_*` members | Read from source at `f774c37`. Certain. They differ today only because they are separate **processes** — #12984 ran `ai/gemma3` at `:12434`, #13091 ran `qwen3-coder:30b` at `:11434` |
 | A19 | **The condensation pass knows which model produced each substance and drops it at the graph boundary.** `Provenance` carries `Model` and `Sampling` (`internal/condense/condense.go:107-108`), but `SetSubstance` writes exactly one patch op — `/substance` (`internal/divoid/substance.go:67-81`) | Read from source at `f774c37`. Certain. **Recorded, no longer load-bearing:** it was checked while costing provenance-on-the-node, which §7.4.7 withdraws |
 | A20 | **DiVoid has no field for substance provenance.** A node carries `substance` as an opaque string; `PATCH /api/nodes/{id}` exposes no provenance path | **#8** and the MCP patch surface. Certain. **Recorded, no longer load-bearing** — same reason as A19 |
@@ -268,17 +291,25 @@ project's own failing task.**
 **Read the mechanism, not the digits** (#13203 §4's discipline). The claim is that substance moves the
 eligible set from *does not fit* to *fits with room*. The exact bytes will differ per run and per substrate.
 
-### 4.4 The condenser refuses run records twice, and near-misses a third time
+### 4.4 The condenser refuses run records twice — and the gates are not why it cannot serve them
 
 | gate | site | effect on a run record |
 |---|---|---|
 | `SelfProduced` | `internal/condense/condense.go:283` | skipped before any model call |
 | `isProse` — `text/*` or empty | `:296`, `:298` | `application/json` refused |
-| **size** — measured, not designed | #12984 skips | #10926 at 195,448 B hit the output ceiling, returned `finish_reason: length`, and was **refused rather than stored truncated**. Run records are 77–88 KB, in the same direction |
+| **size** — measured, not designed | #12984 skips | #10926 at 195,448 B hit the output ceiling, returned `finish_reason: length`, and was **refused rather than stored truncated** |
 
 **So the class of node with the worst shape in the graph is the one class the condenser structurally cannot
 improve.** That is the concrete form of Toni's *"something sounds fishy here"*: we built a compressor,
 declined to run it on our own output, and then excluded our own output for being uncompressed.
+
+> **Corrected 2026-09-08 by F-6 (#13242), and the correction matters more than the original point.** An
+> earlier revision called the size row a *near-miss* — *"run records are 77–88 KB, in the same direction"*.
+> **It is not a near-miss and 195 KB is not an outlier: the pass refuses run records at 84 KB, across the
+> whole class**, and it does so while reporting `operational failures 0`. More importantly, the framing
+> above — *the gates are what stop us* — is **wrong**. Removing both gates changes the outcome from
+> *refused* to *fabricated* (§9.3). The gates are a boundary between two node classes, not an obstacle;
+> §9.3.1 keeps run records off the model path deliberately.
 
 ### 4.5 The fidelity audit failed, and it is zero-tolerance
 
@@ -534,6 +565,14 @@ pin the substrate, sweep both arms, no fill can fire, candidate lists stay byte-
 #11365's stated requirement. It is a stronger guarantee than the convention it replaces, because a
 convention can be forgotten and a dependency closure cannot.
 
+**The premise is now measured rather than assumed (A17, #13241).** Substance is stored and served but
+**not embedded**, so a fill cannot move a rank. That closes the one hole this argument had: retrieval does
+not become path-dependent on what an earlier run happened to condense.
+
+**A corollary worth stating on its own, because it separates two effects that would otherwise be
+confounded: coverage changes the block, never the candidate set.** An admission change observed after a
+fill has some other cause and must not be attributed to the fill.
+
 **What is genuinely lost, stated plainly.** Two *turns* on the same input now differ: the first fills, the
 second reads. That is new and real. Three things bound it: it was **already true** (#13091 §5(a) measured a
 single run record changing a block); it **converges** rather than diverges, because a filled node stays
@@ -687,6 +726,24 @@ concern and must not enter its interface — the same inversion `GraphPort`, `Mo
 already discharge. A second `ModelPort` on `Turn` would put provider configuration into the loop's
 constructor for a capability the loop does not reason about.
 
+#### 7.4.8 Four defects in `cmd/condense` the fill inherits
+
+**Found by F-6 while probing the run-record class (#13242 §5), but none is specific to it.** The fill calls
+the same pipeline, so it inherits all four. They are recorded here rather than left in the probe because
+three of them are the difference between *the fill works* and *the fill silently produces nothing*.
+
+| # | Defect | Consequence for the fill |
+|---|---|---|
+| **D1** | **The pass reports success while producing nothing.** `condensed 0 · skipped N · operational failures 0`, ratio 0.000 | The fourth instance of *instrument reports clean while measuring nothing* in this project. Under the fill it is worse than an offline report: a refusal is per-turn and invisible unless §7.4.4's refusal contract names it, which is now load-bearing rather than tidy |
+| **D2** | **The pass cannot use a non-thinking adapter.** `cmd/condense/main.go:71` constructs `openaicompat.NewClient` **unconditionally**; it loads and validates `PROCESSOR_MODEL_PROTOCOL` through `boot.LoadModel()` and then **discards it**, while `cmd/processor/main.go:89-90` branches on the same field | OpenAI-compat carries no `think` parameter, so the pass cannot suppress a reasoning stream. **The single change that turned *produces nothing* into *produces something* is unreachable from the shipped binary.** The fill must reach the ollama adapter, which means honouring the protocol field the loader already parses |
+| **D3** | **`maxOutputTokens` is sized as if reasoning tokens do not exist.** The budget is 0.5 × input tokens; a thinking model charges reasoning against the same ceiling | **Every thinking model trips `skipTruncated` on large inputs regardless of capability.** Measured: ~33,000 characters of reasoning consumed the entire 9,831–9,956-token budget without emitting one character of content. This disqualifies models by accident rather than by the bar §7.4.7 defines |
+| **D4** | **`outputTokenFraction = 0.5` inverts on dense structured input.** It granted 2,259–2,459 tokens for input that cannot compress below roughly 1:1 | The formula assumes prose. It is right for the class §9.3.1 keeps on the model path and wrong for anything tabular — which is one more reason run records leave that path entirely |
+
+**D2 and D3 are prerequisites, not follow-ups.** Until the pass can select a non-thinking adapter and size
+its budget around reasoning tokens, a fill against a capable model is indistinguishable from a fill against
+an incapable one: both return nothing and both report success. **Fix them before F-1 is re-run**, or F-1
+measures the harness rather than the model.
+
 ---
 
 ## 8. The form rule
@@ -778,7 +835,7 @@ provenance; the defensible statement is about shape:
 | content type | `text/markdown` | `application/json` |
 | shape | prose narrative | serialised struct, 71–80 % of it a copy of a prior prompt (§4.6) |
 | carries a lesson | by definition (#59) | no |
-| condensable today | **yes** — and none has been condensed (§4.1) | **no** — refused twice (§4.4) |
+| condensable by the model pass | **yes** — and none has been condensed (§4.1) | **no, and not for the reason it looked like.** Gates aside, the pass refuses at 84 KB and fabricates when forced (§9.3). Run records take the template instead (§9.3.2) |
 
 **Both are equally unusable in the block today, for the same reason: neither has a substance.** The peer's
 log is 20,019 B of prose that will be cut for bytes; ours is 84,089 B of JSON that is cut by rule. The
@@ -802,31 +859,84 @@ been asserting: thirteen of twenty slots go to rows that score 0.722–0.736 bec
 verbatim. **But that is an argument about what those rows say, and once they have a substance it becomes
 testable rather than decidable in advance** — which is the honest position, and not the one #13237 took.
 
-### 9.3 What it takes to give a run record a substance
+### 9.3 What it takes to give a run record a substance — measured, and the ordering was backwards
 
-Three obstacles, in the order they must be removed:
+**F-6 ran and came back negative (#13242). It does not sink the fill; it corrects this section.** An
+earlier revision billed *"remove the `SelfProduced` gate — one line"* as the cheap first experiment and
+told the next agent to pull it forward. **That was wrong, and the correction is the finding:**
 
-1. **The `SelfProduced` gate** (`condense.go:283`). Delete it. It exists to prevent re-admitting a
-   transcript; §9.2's form rule does that job properly. **This is the single most consequential line in the
-   design.**
-2. **The `isProse` gate** (`:296`). A record is `application/json`. Two ways out, and they are not
-   equivalent: teach the condenser to accept a **known** JSON shape with its own prompt (narrow, and it
-   couples the condenser to the record's schema), or give the record a prose projection. **Recommendation:
-   the second** — see item 3, which supplies it for free.
-3. **The record's shape.** §4.6: three quarters of a record is a verbatim copy of nodes the graph already
-   holds. Condensing that produces a condensation of *other nodes*, which is worthless as memory of the
-   run. **What a run's memory should say is what the record already contains outside `block`**: the input,
-   the queries, which rows were admitted and cut and why, the answer, the terminal reason, whether the cap
-   was hit. That is 15–25 KB of structured fact, and it is exactly what *"a prior run of this task wrote a
-   Go project instead of a webpage, because the block held no webpage-related node"* is derived from.
+> **A one-line change that converts a refusal into a plausible-looking wrong fact on a permanent node is
+> not a cheap experiment.**
 
-**This is where the earlier "distilled second artifact" idea collapses into something simpler.** A separate
-per-run memory node is unnecessary: the record already holds the facts, and the condenser already exists to
-distil facts into prose. **What is missing is a prose-shaped projection of the record for the condenser to
-read.** Whether that is achieved by dropping `block` from the stored record, storing it separately, or
-rendering a prose sidecar is an implementation choice with one architectural constraint attached: PR #8's
-ruling that the stored body is the response body minus exactly one key is owned by **#10904** and must be
-re-ruled before it is broken (Q4).
+**What was measured.** With **both** gates removed, `cmd/condense` condensed **nothing** — all three run
+records refused as `condensation truncated`, ratio 0.000, **while reporting `operational failures 0`.**
+#12984's 195 KB refusal is not a size outlier: it happens at **84 KB**, across the whole class. With
+thinking disabled and the pipeline replicated byte for byte, the pass does produce output — and the output
+is worse than nothing:
+
+| what it produced | why |
+|---|---|
+| **A digest of *other nodes*.** The substances faithfully summarise #10422, #1804, #6375, #13101 — all already in the graph, in better form | `block` is 71–72 % of a record and holds other nodes' bodies (§4.6) |
+| **Two of three never mention the run at all**; the third gives it ~8 % of its text | there is little else in the input to summarise |
+| **A fabricated count stated as fact** — *"returns 10 results"* where the record says **20** | the model took the first ten, reordered them, and asserted a total |
+| **Measured byte values replaced by invented integers** — `0/3092`, `1002/302`, `1471/0` rendered as `0/3`, `1/3`, `1/0`, violating the prompt's own *"never round"* | and a sibling condensation of the same source got them right: **two condensations disagree** |
+| **Every decision-relevant fact absent** — the admitted/cut split, `stopReason`, `modelCalls`, `capReached`, `usage` | none of it is prose, so a prose compressor discards it |
+
+**And dropping `block` does not fix it — that was tested, not assumed.** On the block-stripped projection
+(19–21 KB) the model **transcribed** rather than condensed — JSON to YAML, verbatim — and hit `done=length`
+at candidate rank 11–13 of 20, never reaching `answer`, `toolCalls`, `stopReason`, `modelCalls` or
+`limits`: the only members that describe the run. The reason is structural, and it is the sentence to keep:
+
+> **A run record's non-`block` half is a data table, not prose. Condensing a data table is transcription.**
+
+`candidates` is 20 × (id, name, similarity, size, 64-char hash, cutReason, sources), and the prompt's own
+fidelity clause — *identifiers, paths and hashes survive verbatim* — **forbids compressing it**. Dropping
+`block` is necessary and nowhere near sufficient.
+
+#### 9.3.1 The fill splits by node class, because F-6 tested only the hardest one
+
+**This is the architectural consequence and it should not be read as a setback.** #12984 condensed **prose
+documents** at 23 PASS / 1 FAIL. F-6 condensed **run records** and got nothing usable. Those are different
+inputs to the same pipeline, and the pipeline is right for one of them.
+
+| class | mechanism | basis |
+|---|---|---|
+| **Prose nodes** — `documentation`, `session-log`, `task`, the ≥ 8 KB stratum §4.2 measures | **The model fill, as designed in §7.4.** Unchanged | #12984: 23 PASS / 1 FAIL, median ratio 0.298 at ≥ 8 KB |
+| **Run records** | **Deterministic rendering — a template over the record's own fields, no model at all.** §9.3.2 | #13242: the model path produces a digest of other nodes, fabricates counts, and truncates before reaching the fields that matter |
+
+**The gates are not the binding constraint and must be re-sequenced accordingly. Shape first, gates last.**
+Removing `SelfProduced` and `isProse` changes the outcome from *refused* to *wrong*, and *refused* is the
+safer of the two while nothing better exists. **They come out when there is a mechanism that produces
+something worth writing — not before.**
+
+#### 9.3.2 Deterministic rendering, and why it is better than the model path for this class
+
+**Recommended.** Almost everything that makes a run worth remembering is **already a field**: the input,
+the subject, the derived queries, how many candidates were admitted and cut and under which reasons, the
+tool sequence, the answer, the terminal reason, the model-call count, whether the cap was hit. Rendering
+those through a fixed template produces one or two kilobytes of accurate prose.
+
+| | Deterministic rendering | The model path |
+|---|---|---|
+| **Can it fabricate a count?** | **No — structurally impossible.** A template reads `len(candidates)`; it cannot assert ten where there are twenty | It did, on the first record tried (#13242 §3) |
+| **Determinism** | Total. No sampling, no model, no A/B exposure whatsoever | Two condensations of one source disagreed |
+| **Cost** | **Zero model calls.** No fill latency, no ceiling, no cold-start regime for this class | ~31 s per node, and every thinking model trips the truncation guard (§7.4.8) |
+| **F-1 dependency** | **None** — no model, no qualification needed | Blocked; see F-1's stated blocker |
+| **What it cannot do** | Summarise the answer's *prose*, or say anything the record does not contain. Include the answer verbatim, truncated with a marker | Could in principle — and on this class demonstrably does not |
+
+**It also resolves what §9.3 previously called an implementation choice.** The prose projection the
+condenser was supposed to read does not need to exist for a condenser to read: **the template is the
+projection, and its output is written directly as the record's `substance`.** No new node type, no second
+artifact, no re-ruling of #10904's stored-vs-response invariant, and **Q4 stops blocking this** — dropping
+`block` is no longer on the path, because a template ignores `block` rather than being defeated by it.
+
+**One consequence that A17 forces into the open, and it sharpens the question this document opened with.**
+Substance is **not embedded** (#13241), so giving a run record a substance **cannot change how it ranks**.
+A record will still rank near the top on a repeat of its own input, because its *content* still contains
+that input verbatim. What changes is only what a slot costs: **an accurate ~1–2 KB summary of the prior
+run instead of an excluded 84 KB transcript.** So the live question is no longer *should we exclude our own
+records* but **is an accurate summary of the last attempt worth one candidate slot** — which is a question
+about value, is testable, and is a far better question than the one PR #48 was arguing about.
 
 ### 9.4 The prize, stated so it is not lost
 
@@ -838,7 +948,14 @@ measured.** #13091 §5(a) found that a *single* run record entering the candidat
 block by one row and thereby changed the outcome from *"no webpage"* to *"a webpage"* — while the record
 itself was cut and never reached the model. It influenced the run by displacement alone. **A record whose
 substance said what that run actually did would be the most directly relevant node in the graph for the
-next attempt at the same task** — and today it is refused twice by the one component built to produce it.
+next attempt at the same task.**
+
+**The prize stands; the vehicle changed.** An earlier revision ended this section *"and today it is refused
+twice by the one component built to produce it"*, which read as though the two gates were all that stood in
+the way. **F-6 measured otherwise (#13242):** removing them yields a digest of other nodes with a fabricated
+count, so the condenser was never the component that could produce this. **§9.3.2's template is**, and it
+produces the summary above from fields the record already carries, without a model and without the ability
+to invent one.
 
 ---
 
@@ -861,13 +978,13 @@ next attempt at the same task** — and today it is refused twice by the one com
 
 | # | Gate | Fires against | Status |
 |---|---|---|---|
-| **F-1** | **Model qualification.** #12984's audit, re-run at zero tolerance: every required node's substance must support its pre-registered `why`. **It is not a one-time release gate — it is the instrument that qualifies a *model*, and it re-runs whenever the fill model or the prompt changes** (§7.4.7) | **Unit 2 *and* Unit 3, and every model change thereafter.** A single FAIL disqualifies that model. **Note it now gates generation, not only rendering** — under the fill an unqualified model writes to the graph as a side effect of serving traffic, where the offline pass could be re-run and its output discarded | **FAILING** — #12984, 23/1/1, on `ai/gemma3`. That result qualifies *that model with that prompt*, nothing else |
+| **F-1** | **Model qualification.** #12984's audit, re-run at zero tolerance: every required node's substance must support its pre-registered `why`. **It is not a one-time release gate — it is the instrument that qualifies a *model*, and it re-runs whenever the fill model or the prompt changes** (§7.4.7) | **Unit 2 *and* Unit 3, and every model change thereafter.** A single FAIL disqualifies that model. **Note it now gates generation, not only rendering** — under the fill an unqualified model writes to the graph as a side effect of serving traffic, where the offline pass could be re-run and its output discarded | **OPEN, with a stated blocker.** #12984 read 23/1/1 on `ai/gemma3`, qualifying *that model with that prompt* and nothing else. **#13242 could not advance it: `gemma4:31b` meets the bar and cannot complete one record inside the 30-minute timeout — 15.4 of 22.8 GB in VRAM, ~32 % on CPU — while the 26B MoE that was fast enough is the model that produced the fabrications.** F-1 needs a host where the 31B fits in VRAM, and §7.4.8's D2/D3 fixed first |
 | **F-2** | **The regression check that replaces the withdrawn invariant.** Sweep the corpus at several budgets with the form rule on and off; no row may go from *admitted* to *not admitted* | **Unit 3.** Any such row is either a bug or the threshold is wrong | Not run |
 | **F-3** | **The threshold curve.** Bytes reclaimed and rows admitted, as a function of the ratio threshold | Sets §8.1's dial. If the curve is flat, the stratum distinction is decoration and a single rule is simpler | Not run |
 | **F-4** | **Convergence, not coverage.** Run the same task twice against a cold area: run 1 fills, **run 2 must fire zero fills and reach the same or a better admitted set** | **Unit 2.** If run 2 still fills, the cache is not doing what §7.4.1 claims and the whole economic argument collapses to per-turn cost | Not run. **~0.3 % coverage today** (§4.1) |
 | **F-5** | **#13106 §8.3's three-arm differential** — opaque labels vs names-only vs name+substance | **Unit 4.** Ties against either weaker arm sink the catalogue's central claim | Not run; **requires Unit 2 for the twenty rows** |
-| **F-6** | **Run-record substance is worth reading.** Condense a run record and have a reader that did not write it judge whether the substance supports *what that run did and why* | **§9.2's form rule as applied to run records — and now the fill path too.** With the memory core condensing on demand, `condense.go:283`'s `SelfProduced` skip and `:296`'s `application/json` refusal are the two rules that make the core **structurally unable** to condense the class Toni most wants condensed. If the substance is vacuous, exclusion stays a provenance rule and §9 is wrong | Not run — **and it is the cheapest of the eight** |
-| **F-7** | **Does `substance` participate in similarity ranking?** Record a node's similarity for a fixed query, write a substance, re-query | **The fill, outright.** If ranking moves, a fill changes *retrieval* and not merely *rendering*, retrieval becomes path-dependent, and §7.4.4's repair is insufficient — the sweep would still read a substrate that turns have re-ranked | Not run. **A17 is unknown and this must fire first** |
+| **F-6** | **Run-record substance is worth reading.** Condense a run record and have a reader that did not write it judge whether the substance supports *what that run did and why* | **§9.2's form rule as applied to run records, and the sequencing of §9.3** | **ANSWERED, NEGATIVE — #13242.** With both gates removed the pass refuses all three records at 84 KB while reporting `operational failures 0`; with thinking disabled it yields a digest of *other nodes*, a fabricated count (10 where the record says 20), and invented figures where the prompt forbids rounding. Dropping `block` was tested and does not fix it — the remainder is a data table and the model transcribes it. **This does not sink the fill; it moves run records off the model path (§9.3.1) and re-sequences the gates last (§9.3)** |
+| **F-7** | **Does `substance` participate in similarity ranking?** A probe node whose content and substance carry unrelated topics; query each topic in turn, on both instruments | **The fill, outright** — if ranking moved, retrieval would become path-dependent and §7.4.4's repair would be insufficient | **PASSED — #13241.** Content topic rank 1 / 0.7801; substance topic absent, field at the noise floor; `divoid_search` and `GET /api/nodes?query=` agree. **Now a standing guard rather than a gate: it is invalidated silently if DiVoid ever re-embeds on substance write, and nothing in the graph would announce that. Four calls; re-run when the fill ships** |
 | **F-8** | **The transition's real shape.** Instrument fills per turn and their wall clock over a cold working area | **G3's value, and §7.4.2's estimate.** If a first run fires far more than ~3 fills, or a fill costs far more than ~31 s, the ceiling is set wrong and the latency claim is wrong with it | Not run — the numbers in §7.4.2 are derived from #12984, not measured on this path |
 
 **Two run first, and in this order.**
@@ -894,7 +1011,7 @@ all.
 | R4 | **`contentHash` is re-based onto rendered bytes**, marking every substance-rendered required node stale | §7.2, adopted from #12955 §6.4 verbatim, with the reason | A sweep reporting corpus-wide staleness after Unit 3 |
 | R5 | **The form rule acquires a provenance clause** — "except for nodes we wrote" | S2; §8.3. The rule is a pure function of size, ratio and presence | Any branch in the form rule reading `SelfProduced` or a node type |
 | R6 | **A peer session log is excluded** by a rule aimed at run records | Nothing here keys on `session-log`; #11387 is the named live occupant (§4.7) | Any predicate reaching the `session-log` type |
-| R7 | **`block` is dropped from the record without #10904 being re-ruled**, or dropped in a way that makes a 15–25 KB transcript *admissible in content form* for the first time | §9.3 item 3 states the constraint; §9.2's form rule is the guard that must exist first | A record shrinking below the budget while §9.2 is unimplemented |
+| R7 | ~~`block` is dropped from the record without #10904 being re-ruled~~ **RETIRED.** Dropping `block` was on the path only to feed a record to the condenser; §9.3.2's template ignores it, and #13242 measured that dropping it would not have worked anyway — the remainder is a data table the model transcribes | No mitigation needed; the risk has no route | — |
 | R8 | **Unit 4 is started before Unit 2** and its falsifier cannot run | F-5's dependency is stated; #13106 §8.3 says the same | A catalogue arm running against rows with null substance |
 | R9 | **The sweep acquires the ability to fill** — a model adapter enters `cmd/eval`'s closure for some unrelated reason, and every A/B silently starts measuring a substrate it is mutating | A13 is the guarantee, and it should be pinned by a test asserting the closure rather than left as a convention | `go list -deps ./cmd/eval` naming any model adapter or `internal/condense` |
 | R10 | **Substance is lost and stays lost**, because the sync that republishes a body has no step that re-derives it — measured three times over (§7.4.5) | **The fill is the mitigation, and it is the reason not to add a procedural one.** Under it the loss repairs on next use, whatever caused it | Substance still `null` on a re-synced design document *after* the fill ships and that node has been retrieved |
@@ -903,6 +1020,9 @@ all.
 | R13 | **A bad substance is invisible and durable.** It is present, so the fill sees nothing to repair; it is consumed as fact by runs that never touch its node; and it survives exactly on the static nodes the fill is built to serve (§7.4.5) | **The requirement, not machinery.** §7.4.7 defines the capability the fill's model must have, and **F-1 qualifies that model before it is allowed to write.** The durability asymmetry is why the bar sits above the turn's | An unqualified model runs a fill — i.e. F-1 not re-run after the fill model or prompt changed |
 | R14 | **The fill silently inherits the turn's model**, because both call `boot.LoadModel()` today (A18) and one process makes that invisible | §7.4.7: separate configuration, **no fallback**, capability absent when unconfigured | A fill recorded with the same model id the turn used, absent explicit operator intent |
 | R15 | **A model is swapped for latency** and *fact* quietly changes meaning | §7.4.7 records the floor **as a class with its reason**, and F-1 re-runs on model change | A fill model changed with no F-1 re-run cited |
+| R16 | **DiVoid starts embedding substance** and F-7's discharge silently becomes false, making retrieval path-dependent on what earlier runs condensed | F-7 is retained as a **standing guard**, four calls, re-run when the fill ships (A17, #13241) | A substance-topic query returning its node |
+| R17 | **The fill is judged against the harness rather than the model.** D2 and D3 (§7.4.8) make a capable model and an incapable one both return nothing and both report success | Fix D2/D3 before F-1 is re-run; D1's silent-success shape is the tell | An F-1 result quoted from a run where `PROCESSOR_MODEL_PROTOCOL` was discarded |
+| R18 | **A run record's substance is trusted because it reads well.** #13242 produced fluent prose that summarised the wrong nodes and asserted a count that was wrong | §9.3.2's template cannot fabricate; and any *model*-produced substance for this class is out of scope by §9.3.1 | A run-record substance written by a model path |
 
 ---
 
@@ -946,8 +1066,8 @@ error: its bounding invariant is withdrawn, on the evidence of the very measurem
 |---|---|---|---|
 | **Q1** | ~~What is the "retrievable corpus"?~~ **ANSWERED — the question dissolves.** Under §7.3 the retrievable corpus is *whatever retrieval retrieves*, discovered rather than declared. There is no set to define, no campaign to schedule, and a node nobody recalls is never condensed | **No longer blocking** | Struck rather than deleted: it was the open question that made Unit 2 a scheduling problem, and the reframe is what closed it |
 | **Q2** | **The ratio threshold** in §8.1 | No — it ships behind a dial | Set it by F-3's curve, not by argument |
-| **Q3** | **Does the condenser get a JSON path, or does the record get a prose projection?** (§9.3 item 2) | **Yes, for F-6** | The prose projection — it is reusable and does not couple the condenser to a schema |
-| **Q4** | **Does `block` leave the stored record?** Requires #10904 to re-rule PR #8's stored-vs-response invariant | Only for §9.3 item 3 | Yes, but only after §9.2's form rule exists — otherwise a 15–25 KB transcript becomes admissible for the first time (R7) |
+| **Q3** | ~~Does the condenser get a JSON path, or does the record get a prose projection?~~ **ANSWERED BY MEASUREMENT — neither.** #13242 shows the model path yields a digest of other nodes and fabricates counts on this class, and the block-stripped remainder is a data table it transcribes rather than condenses | **No longer blocking** | **Deterministic rendering** (§9.3.2). The template *is* the projection, it needs no condenser and no model, and it cannot invent a figure |
+| **Q4** | ~~Does `block` leave the stored record?~~ **NO LONGER ON THE PATH.** It was required only to feed a run record to the condenser; §9.3.2's template ignores `block` rather than being defeated by it, so #10904's stored-vs-response invariant is untouched. **#13242 also shows removing `block` would not have worked** — the remainder is a data table | No | Yes, but only after §9.2's form rule exists — otherwise a 15–25 KB transcript becomes admissible for the first time (R7) |
 | **Q5** | **Who measures substance coverage, and how often?** Nothing does today | No | A line in the sweep report; it is one query |
 | **Q6** | **`fields=substance` works on the listing route and is undocumented in #8** | No | One line in #8 by whoever touches it next. Named because A4 rests on it |
 | **Q7** | **Two-phase retrieval** — rank without bodies, then batch-fetch the survivors. Measured 1,236,611 B → 115,382 B on the yardstick (§7.1) | No | Its own unit, any time. It composes with every payload rule and depends on none of them |
@@ -972,10 +1092,11 @@ error: its bounding invariant is withdrawn, on the evidence of the very measurem
 5. Guard: a candidate set carrying no substance anywhere produces a byte-identical block to today's. This is
    #12955's pass-1 identity property, and it is the reason Unit 1 is safe to ship alone.
 
-### Unit 2 — the fill *(a behaviour, not a campaign; gated on F-7)*
+### Unit 2 — the fill *(a behaviour, not a campaign; F-7 discharged, F-1 open)*
 
-1. **Run F-7 before writing any of this.** If substance participates in ranking, stop and re-design — the
-   determinism repair in §7.4.4 does not cover that case (A17).
+1. **F-7 is discharged (#13241) — substance is not embedded, so the fill cannot move a rank.** Carry it
+   forward as a **standing guard**: re-run the four-call probe when the fill ships, because a change to
+   DiVoid's embedding would invalidate every downstream conclusion here and announce nothing (A17).
 2. **Declare the fill port in `internal/loop`.** It cannot live anywhere else: importing `internal/condense`
    from `internal/loop` is a compile cycle (A14). Follow `FilePort` exactly (A15) — nil is a legitimate
    construction, and it refuses every call **with a recorded reason**, never silently.
@@ -1014,20 +1135,26 @@ error: its bounding invariant is withdrawn, on the evidence of the very measurem
 6. Run **F-2** and publish it. The withdrawn invariant made regression impossible; this measurement is what
    replaces the proof.
 
-### Unit 3a — run records become condensable *(smallest, and it decides §9 — pull it forward)*
+### Unit 3a — run records get a rendered substance *(shape first, gates last)*
 
-**Under the fill this stops being a side-branch.** `internal/condense/condense.go:283`'s `SelfProduced` skip
-and `:296`'s `application/json` refusal now sit *inside the memory core's own fill path*, which means they
-are the two rules making the core **structurally unable** to condense the class Toni most wants condensed —
-a prior run's own account of itself. **Run this before committing to Unit 2's shape**, not after.
+**F-6 has run and the ordering in an earlier revision was backwards (#13242).** Removing the two gates does
+not produce a usable substance; it produces a digest of other nodes with a fabricated count. **Do not start
+with the gates.**
 
-1. Remove the `SelfProduced` gate at `internal/condense/condense.go:283`. One line.
-2. Resolve **Q3**, then **run F-6** on a single record. **This is the cheapest experiment in the document
-   and it decides whether §9 is right.** If a run record's substance turns out to be vacuous, exclusion
-   stays a provenance rule and §9 is wrong — say so, and correct this document in place.
-3. Only after F-6: state §9.2's form rule as a guard, and consider **Q4**.
-4. Whatever F-6 returns, the fill's **refusal contract** (§7.4.4) must surface a condenser skip as a stated
-   reason. A gate that silently declines is the failure mode this unit exists to expose.
+1. **Build the template** (§9.3.2): a deterministic rendering of the record's own fields — input, subject,
+   queries, admitted/cut counts with their reasons, tool sequence, terminal reason, model calls,
+   `capReached`, and the answer verbatim or truncated with a marker. **No model.** The load-bearing property
+   is that a template reads `len(candidates)` and therefore cannot assert ten where there are twenty.
+2. **Write its output as the record's `substance`** at write-back time. `block` is ignored rather than
+   removed, so **Q4 stays closed** and #10904's stored-vs-response invariant is untouched.
+3. **Only then reconsider the gates.** `condense.go:283` and `:296` keep run records off the *model* path,
+   which after F-6 is where they should be. They are not obstacles to remove; they are the boundary between
+   the two classes in §9.3.1 — and if the template writes the substance directly, the condenser never needs
+   to see a run record at all.
+4. **Judge the result the way F-6 judged the model's:** a reader who did not write it, checking every count
+   and figure against the record. A template earns trust by construction, but only once.
+5. The fill's **refusal contract** (§7.4.4) must still surface a condenser skip as a stated reason. D1
+   (§7.4.8) is that failure mode already observed offline.
 
 ### Unit 4 — the catalogue
 
@@ -1039,8 +1166,8 @@ note that #13106 already establishes it probably requires the call ceiling raise
 - No substance rendered into a block before **F-1** passes.
 - No provenance clause in the form rule (S2, R5).
 - No predicate keying on the `session-log` type (R6) — #11387 is its live occupant.
-- No `block` removal before §9.2's form rule exists and **#10904** has re-ruled (R7).
-- **No fill before F-7 fires.** A17 is unknown and it is the one gate that can invalidate the mechanism.
+- **No `block` removal** — it is off the path entirely (Q4); §9.3.2's template ignores it (R7).
+- **No fill shipped without re-running F-7's probe** (#13241). It passed once; it is silently invalidated if DiVoid ever embeds substance, and nothing would announce that.
 - **No fill port constructed in `cmd/eval`**, and no model adapter admitted to its dependency closure — that
   closure *is* the determinism guarantee (A13, §7.4.4).
 - **No fill counted against `MaxModelCalls`** (§7.4.3).
