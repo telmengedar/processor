@@ -50,7 +50,7 @@ cannot — and shape is fixable. Provenance was never a reason. **This document 
 | **Unit 3 — Render it, size-gated** | Substance replaces content **where condensation actually compacts** — the ≥8 KB stratum, measured median ratio **0.298**. Below 4 KB the measured ratio is **0.886**: substance saves ~11 % and spends fidelity, so content stays. |
 | **Unit 4 — The catalogue** | #13106 §8.3, unchanged and still third. Its payload *is* substance, so it is downstream of Unit 2 by construction, and its three-arm falsifier cannot run until the fill has warmed the twenty rows. |
 
-**`block` leaves the record — and the measurement that settled it also overturned why.** `Record.Block` is
+**`block` leaves the record — for three reasons plus a fourth that is a retrieval improvement, and explicitly not for the one everybody reaches for.** `Record.Block` is
 **73.6 %** of an 84 KB record and holds other nodes' bodies verbatim, for content the graph already keeps
 behind an edge. Toni: *"duplicating content in a graph is complete nonsense — that's what edges are for."*
 The principle stands and Q4 answers **yes, drop it** — **on storage grounds, not retrieval grounds.** The
@@ -60,6 +60,15 @@ carries verbatim — returns **13, holding ranks 1–11, 13 and 14**. **The crow
 content-driven; removing `block` will not fix it, because the name still matches** (§4.8, §9.5). That is a
 correction to every prior account in this project, this document included, and **the name is a retrieval
 surface nothing here treats as one** — named as Q11 and left as its own unit.
+
+**But content is still a retrieval defect — a different one, and an earlier revision of this document missed
+it by generalising the result above.** Two more queries (#13274, re-run here): a **generic activity**
+description returns **13 records holding ranks 1–13 contiguously** inside a 1.8 % band — findable as *"a
+run"*, mutually indistinguishable — while a description of **one run's most distinctive outcome**, uniquely
+true of #13034, returns it **not at all**. A record's embedding is 73.6 % other nodes' bodies, so what makes
+it *this* run contributes almost nothing. **Crowding is *the wrong rows appear*; skew is *the right row
+cannot be recognised*. `block` causes the second, not the first**, which makes its removal a **retrieval
+improvement** and not the cleanup an earlier revision called it (§4.8.1, §9.5).
 
 **Both gates have now run, and the negative one is the useful one.**
 
@@ -359,7 +368,7 @@ substance** (§4.1).
 traces, 20,019 B.** It is real memory by anyone's definition, it is uncondensed like everything else, and
 it is the reason no rule in this document may key on the `session-log` type.
 
-### 4.8 The crowding is name-driven, not content-driven — and that was not obvious
+### 4.8 Crowding and skew are different failures, and `block` causes only the second
 
 **Measured 2026-09-08 on `GET /api/nodes?query=`, the route `Recall` builds.** Two queries, `count=30`,
 chosen to separate the two candidate explanations for why run records hold the top of the list.
@@ -378,15 +387,53 @@ that text outranks the record that copied it, and the record does not appear at 
 that on a probe). But a ~60 KB record spanning eight unrelated topics has a **diffuse** embedding: no single
 topic inside it outranks the node actually about that topic. **Dilution, not exclusion.**
 
-> **The two problems are separable and have different levers. Removing `block` would not fix the crowding —
-> the name would still match.**
+> **Removing `block` would not fix the crowding — the name would still match.**
 
 **This corrects an attribution every prior account in this project made**, including earlier revisions of
 this document: the top-of-list records were credited to similarity on their *content*, or to the exclusion
 policy. **Neither is the mechanism.** Toni's own hypothesis on reading a record — that content duplication is
 *"probably the strongest reason for your 'poisoning' earlier"* — was the discriminating test's target and
-**did not hold**; the principle he drew from the same reading (§9.5) survives untouched and is why `block`
-should still go.
+**did not hold**.
+
+#### 4.8.1 But content is still a retrieval defect — a different one
+
+**An earlier revision of this document generalised the result above into *content is not a retrieval
+problem*. That does not follow, and #13274 measured why.** Toni named the gap:
+
+> *"doesn't matter whether the embedding actually hits on the topic, it definitely does not hit where it
+> should because the content drives the actual 'thing' the session log represents away."*
+
+**Two more queries, same route, `count=20`, re-run independently for this document on 2026-09-08:**
+
+| query | run records in top 20 |
+|---|---|
+| **generic activity** — *"a harness run that wrote index.html, styles.css, README.md and .gitignore into a workspace and answered that it created a barebones webpage"* | **13, holding ranks 1–13 contiguously**, 0.7256–0.7435 — a **0.0179** spread |
+| **one run's distinctive outcome** — *"a run where the terminal reason said answered but the answer came back empty after three model calls"*, uniquely true of **#13034** | **0. #13034 does not return at all** |
+
+**Neither result is the one you would want.** The first says a run record is findable as *"a run"* — thirteen
+of them, occupying the entire head of the result set inside a 1.8 % similarity band, mutually
+indistinguishable. The second says a record is **not** findable as *"the run where X happened"*, even when X
+is described exactly and is true of precisely one record.
+
+**The cause is the same 73.6 %.** A record's embedding is mostly other nodes' bodies, so the fields that make
+it *this* run — the tool sequence, the stop reason, the admitted/cut split, an empty answer against a
+terminal reason of `answered` — contribute almost nothing. **The dump does not merely fail to help; it
+displaces the record's own identity.**
+
+> **Crowding and skew are different failures. Crowding is *the wrong rows appear*; skew is *the right row
+> cannot be recognised*.** §4.8 measures the first and is silent on the second. For a system whose substrate
+> is memory, skew is the more serious of the two — and it is the one `block` causes.
+
+**Both measurements stand; only the inference from the first was wrong.** This is the second time in two
+rounds that a correct measurement was generalised one step too far, and the shape is the same both times:
+a discriminating test rules out *one* mechanism and gets read as ruling out a *class*.
+
+**Reproduction note, because the numbers differ from #13274's.** Re-running its exact query strings gives
+**ranks 1–13 contiguous with a 0.0179 spread**, where #13274 reports *"13, holding ranks 1–4"* at a 0.0035
+spread. Thirteen rows cannot occupy four ranks, so that cell is internally inconsistent; the figures above
+are the ones measured for this document and are the stronger claim on the rank half. **The skew half — zero
+returns for the distinctive-outcome query, #13034 absent — reproduced exactly**, and it is the load-bearing
+half.
 
 **The name is therefore a retrieval surface, and nothing in this design or in #12955, #13106 or #13203
 treats it as one.** Named here as a mechanism with its numbers; **deliberately not addressed** — it is its
@@ -1003,7 +1050,7 @@ count, so the condenser was never the component that could produce this. **§9.3
 produces the summary above from fields the record already carries, without a model and without the ability
 to invent one.
 
-### 9.5 `block` should leave the record — and the reason is storage, not retrieval
+### 9.5 `block` should leave the record — storage, renderability, **and retrieval**, but not crowding
 
 > *"The session log itself dumps the full content of the nodes into it. There is absolutely no reason for
 > that — it's redundant to record content again. It's a bad memory strategy… duplicating content in a graph
@@ -1015,19 +1062,43 @@ bodies has stopped being a graph; the edge already answers *where is that conten
 go stale against the node it copied. `Record.Block` is **73.6 % of an 84 KB record** and holds other nodes'
 bodies **verbatim** — header, id, type, name and full body, for content the record already has an edge to.
 
-**Three independent reasons to drop it, and one that is not on the list.**
+**Four independent reasons to drop it, and one that is not on the list. The fourth and the struck one are
+adjacent and must not be blurred: one is a retrieval claim that is true, the other is a retrieval claim
+that is false.**
 
 | | Reason | Standing |
 |---|---|---|
 | 1 | **Redundant storage.** ~60 KB of verbatim duplicate per record, of content the graph already holds behind an edge | Toni's principle, above |
 | 2 | **It is what makes a record unrenderable.** A prose compressor handed 73.6 % other-nodes' bodies produces a digest of those nodes — exactly what #13242 measured | §9.3 |
 | 3 | **It is what makes a record unadmittable.** 77–88 KB against a 60,000-byte budget, so the exclusion in PR #48 exists to stop something that could never have fitted | §4.6 |
+| **4** | **It displaces the record's identity in the record's own embedding — so removal is a *retrieval improvement*.** A record is findable as *"a run"* (13 of them across ranks 1–13, a 1.8 % band) and **not** as *"the run where X happened"*: a query describing exactly one record's most distinctive outcome returns it **not at all** | **§4.8.1**, #13274 |
 | — | ~~**It causes the crowding.**~~ | **NOT A REASON. Measured false** — §4.8: a literal from inside `block` returns **zero** run records; the input, which the *name* carries, returns thirteen |
 
-**Reason 4 is struck rather than omitted, because it is the one everybody reaches for** — including Toni on
-first reading, and including earlier revisions of this document. **State it plainly wherever this change is
-described: dropping `block` does not fix the crowding, the name still matches, and anyone citing this as
-the crowding fix has stopped looking one step too early.**
+**Reason 4 and the struck reason are both about retrieval and they are not the same claim.** Reason 4 says
+the dump keeps the **right row out**; the struck one says it pulls the **wrong rows in**. The first is
+measured true, the second measured false, and the distinction is exactly the crowding/skew split in §4.8.1.
+**Anyone reading this table quickly will collapse them — do not let a summary of this change do that.**
+
+**So this is not cleanup and must not be scheduled as cleanup.** An earlier revision of this section called
+it storage hygiene, which undersells it: removal is what makes a run record retrievable **as itself**, and
+that is the whole point of a memory substrate holding one.
+
+**And the struck row stays struck.** *State it plainly wherever this change is described: dropping `block`
+does not fix the crowding, the name still matches (Q11), and anyone citing this as the crowding fix has
+stopped looking one step too early.*
+
+**Falsifier for reason 4, and it cannot be run yet.** #13274 measures the **defect**, not the **fix**:
+whether a record written *without* `block` becomes findable by its outcome needs a record written after the
+change, or a constructed one. **Until that runs, reason 4 is a well-supported inference and not a measured
+outcome** — the test is to write one such record and re-run the distinctive-outcome query against it.
+
+**One live interaction worth stating, because the two facts sit on the same node and pull opposite ways.**
+PR #51 (`004afa8`, in flight as of 2026-09-08) gives every new record a **deterministic summary of its own
+run**. That unit is unaffected by any of this — it reads fields and never touches `block`. But from it
+onward a record carries **an accurate substance while its content still holds the 73.6 % dump**, and
+**retrieval sees the content**, because substance is not embedded (A17, #13241). So the summary improves
+what a record *renders* and changes nothing about what it *is findable as*. Reason 4 is what closes that
+gap; the summary does not.
 
 **What this does not change.** The template (§9.3.2) reads fields and ignores `block`, so it works either
 way and does not depend on this. And **#10904's stored-vs-response invariant — PR #8's ruling that the
@@ -1065,6 +1136,7 @@ bodies may differ by more than the write receipt — not whether anything loses 
 | **F-6** | **Run-record substance is worth reading.** Condense a run record and have a reader that did not write it judge whether the substance supports *what that run did and why* | **§9.2's form rule as applied to run records, and the sequencing of §9.3** | **ANSWERED, NEGATIVE — #13242.** With both gates removed the pass refuses all three records at 84 KB while reporting `operational failures 0`; with thinking disabled it yields a digest of *other nodes*, a fabricated count (10 where the record says 20), and invented figures where the prompt forbids rounding. Dropping `block` was tested and does not fix it — the remainder is a data table and the model transcribes it. **This does not sink the fill; it moves run records off the model path (§9.3.1) and re-sequences the gates last (§9.3)** |
 | **F-7** | **Does `substance` participate in similarity ranking?** A probe node whose content and substance carry unrelated topics; query each topic in turn, on both instruments | **The fill, outright** — if ranking moved, retrieval would become path-dependent and §7.4.4's repair would be insufficient | **PASSED — #13241.** Content topic rank 1 / 0.7801; substance topic absent, field at the noise floor; `divoid_search` and `GET /api/nodes?query=` agree. **Now a standing guard rather than a gate: it is invalidated silently if DiVoid ever re-embeds on substance write, and nothing in the graph would announce that. Four calls; re-run when the fill ships** |
 | **F-8** | **The transition's real shape.** Instrument fills per turn and their wall clock over a cold working area | **G3's value, and §7.4.2's estimate.** If a first run fires far more than ~3 fills, or a fill costs far more than ~31 s, the ceiling is set wrong and the latency claim is wrong with it | Not run — the numbers in §7.4.2 are derived from #12984, not measured on this path |
+| **F-9** | **Does removing `block` make a record findable by its outcome?** Write (or construct) one record without `block`, then run §4.8.1's distinctive-outcome query against it | **§9.5's reason 4.** #13274 measures the *defect*; this measures the *fix*. If the record still does not return, the dump was not what displaced its identity and reason 4 is wrong — leaving only reasons 1–3 | Not run, **and it cannot be until a record is written after the change.** Reason 4 stands as inference until then |
 
 **Two run first, and in this order.**
 
@@ -1091,6 +1163,7 @@ all.
 | R5 | **The form rule acquires a provenance clause** — "except for nodes we wrote" | S2; §8.3. The rule is a pure function of size, ratio and presence | Any branch in the form rule reading `SelfProduced` or a node type |
 | R6 | **A peer session log is excluded** by a rule aimed at run records | Nothing here keys on `session-log`; #11387 is the named live occupant (§4.7) | Any predicate reaching the `session-log` type |
 | R7 | **`block` is dropped without #10904 re-ruling the stored-vs-response invariant**, or dropped in a way that makes a 15–25 KB record admissible **in content form** for the first time | **Reinstated — an earlier revision retired this and §9.5 puts the change back on the path.** Q4 names the #10904 dependency; §9.2's form rule (*substance form only, never content form*) is the guard that must exist first | A record shrinking below the budget while §9.2 is unimplemented |
+| **R7a** | **The exclusion is removed before `block` is**, switching on a latent **recursion**: a record carrying another node's content is admitted into a later record's block, and that content is copied a second time | **This is why §9.5's ordering is a correctness requirement, not a preference.** It does not fire today **only because the exclusion is total** — cut at fusion (PR #48) and again at `admit` (§9.2). Either alone is load-bearing while `block` remains | A record's `block` containing a `===== CANDIDATE =====` section whose body is itself a run record |
 | R19 | **This change is cited as the crowding fix.** It is the natural reading and it is wrong — §4.8 measured the crowding to be name-driven | §9.5 strikes it as a reason in the same table that lists the real ones; Q11 carries the actual lever | Any PR body, node or design citing `block` removal against candidate-slot crowding |
 | R8 | **Unit 4 is started before Unit 2** and its falsifier cannot run | F-5's dependency is stated; #13106 §8.3 says the same | A catalogue arm running against rows with null substance |
 | R9 | **The sweep acquires the ability to fill** — a model adapter enters `cmd/eval`'s closure for some unrelated reason, and every A/B silently starts measuring a substrate it is mutating | A13 is the guarantee, and it should be pinned by a test asserting the closure rather than left as a convention | `go list -deps ./cmd/eval` naming any model adapter or `internal/condense` |
@@ -1249,6 +1322,7 @@ note that #13106 already establishes it probably requires the call ceiling raise
 - No provenance clause in the form rule (S2, R5).
 - No predicate keying on the `session-log` type (R6) — #11387 is its live occupant.
 - **No `block` removal before #10904 re-rules the stored-vs-response invariant, and before §9.2's form rule exists** (Q4, R7).
+- **No removal of the run-record exclusion before `block` is gone** (R7a). While the dump is still stored, the exclusion is the only thing stopping a record's content being copied into a later record's block. **That ordering is a correctness requirement, not a preference.**
 - **No description of `block` removal that presents it as the crowding fix.** §4.8 measured that it is not (R19).
 - **No fill shipped without re-running F-7's probe** (#13241). It passed once; it is silently invalidated if DiVoid ever embeds substance, and nothing would announce that.
 - **No fill port constructed in `cmd/eval`**, and no model adapter admitted to its dependency closure — that
