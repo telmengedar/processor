@@ -170,7 +170,7 @@ constants, not configuration (`docs/architecture/run-record-fate.md` §8.4):
 | Constant | Value | What it bounds |
 |---|---|---|
 | Run bound | **10 minutes** | Everything from the handler's entry up to and including the answer. Exceeding it is `504 run_deadline_exceeded` |
-| Drain grace | **11 min 15 s** | How long `Shutdown` is willing to wait for connections to go idle: the run bound, plus **60 s** for a write-back of at most four graph calls at 15 s each, plus **15 s** of stated margin — one whole per-call graph timeout, so a graph call added to the write-back without re-deriving this number is survivable rather than an outage. A test asserts the literal against both parts separately, and it **measures** the four by running the graph adapter's write-back against a counting transport rather than restating the count, so a fifth call turns it red |
+| Drain grace | **11 min 15 s** | How long `Shutdown` is willing to wait for connections to go idle: the run bound, plus **60 s** for a write-back of at most four graph calls at 15 s each, plus **15 s** of stated margin — one whole per-call graph timeout, so a fifth graph call added to the write-back without re-deriving this number **exhausts the margin rather than overrunning the grace**: the worst case becomes 11 min 15 s against a grace of 11 min 15 s, which is zero headroom and the state the margin exists to prevent. A test asserts the literal against both parts separately, and it **measures** the four by running the graph adapter's write-back against a counting transport rather than restating the count, so a fifth call turns it red |
 
 An **idle** shutdown still returns immediately — the grace is a ceiling, not a wait — so the longer number
 costs nothing when there is no run to protect.
