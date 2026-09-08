@@ -546,6 +546,14 @@ func TestEverySkipWhoseCauseIsThePassItselfIsCountedAsAnOperationalFailure(t *te
 	}
 }
 
+func TestASkipReasonNoConstantInThisPackageNamesCountsAsAFailureOfThePass(t *testing.T) {
+	unnamed := Result{TargetCount: 1, Skipped: []Skip{{Node: 1, Reason: "a reason no constant in this package names"}}}
+
+	if unnamed.OperationalFailures() != 1 {
+		t.Fatalf("a skip reason nothing has classified must count as the pass failing, got %d", unnamed.OperationalFailures())
+	}
+}
+
 func TestTheOutputCeilingIsOneTokenPerInputTokenRatherThanHalfOfThem(t *testing.T) {
 	if got := maxOutputTokens(strings.Repeat("a", 100000)); got != 23810 {
 		t.Fatalf("want a ceiling of 23810 tokens for a 100000 byte node, got %d", got)

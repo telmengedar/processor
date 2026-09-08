@@ -164,10 +164,12 @@ func (r Result) OperationalFailures() int {
 
 func isOperationalFailure(reason string) bool {
 	switch reason {
-	case skipReadFailed, skipModelFailed, skipWriteFailed, skipTruncated:
-		return true
+	case skipNodeAbsent, skipContentAbsent, skipSubstancePresent, skipSelfProduced,
+		skipNonProseContent, skipEmptyCondensation, skipNotShorter, skipBelowFloor,
+		skipPreamble, skipContentMoved:
+		return false
 	}
-	return false
+	return true
 }
 
 type outcome struct {
