@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,7 +16,7 @@ func summaryRecord() Record {
 	return Record{
 		Input:   "Generate a new barebones webpage and a repo for it.",
 		Subject: 41,
-		Queries: []string{"Generate a new barebones webpage and a repo for it."},
+		Queries: []string{"barebones webpage repo scaffold"},
 		Anchor: AnchorSummary{
 			ID:   41,
 			Type: "project",
@@ -309,12 +310,292 @@ func TestRenderSummarySaysProviderNotRecordedRatherThanNamingAnEmptyEndpoint(t *
 	}
 }
 
-func TestRenderSummaryOfAFullTwentyCandidateRunStaysUnderTwoAndAHalfKilobytes(t *testing.T) {
+func TestRenderSummaryEchoesAShortInputWholeAndBoundsALongOne(t *testing.T) {
+	t.Parallel()
+
+	short := summaryRecord()
+
+	shortSummary := RenderSummary(short, summaryInstant())
+
+	if !strings.Contains(shortSummary, "input    "+short.Input+"\n") {
+		t.Fatalf("the summary does not echo the run's %d-rune input whole.\nsummary:\n%s", len([]rune(short.Input)), shortSummary)
+	}
+
+	long := summaryRecord()
+	long.Input = strings.Repeat("z", 5000)
+
+	longSummary := RenderSummary(long, summaryInstant())
+
+	line, found := summaryLineWithPrefix(longSummary, "input    ")
+	if !found {
+		t.Fatalf("a 5000-rune input produced no input line at all.\nsummary:\n%s", longSummary)
+	}
+	if got := len([]rune(line)) - len([]rune("input    ")); got != 200 {
+		t.Fatalf("the input line carries %d runes of a 5000-rune input, want it bounded at 200.\nline: %s", got, line)
+	}
+}
+
+func TestRenderSummaryFlattensWhitespaceSoOneRecordedFactStaysOnOneLine(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Input = "first line\n\tsecond   line\nthird line"
+
+	summary := RenderSummary(record, summaryInstant())
+
+	if !strings.Contains(summary, "input    first line second line third line\n") {
+		t.Fatalf("the input's own newlines survive into the summary, so one fact spans several lines and every line below it names something other than what precedes it.\nsummary:\n%s", summary)
+	}
+}
+
+func TestRenderSummaryIdentifiesTheSubjectByIdTypeNameAndSize(t *testing.T) {
+	t.Parallel()
+
+	summary := RenderSummary(summaryRecord(), summaryInstant())
+
+	const want = `subject  #41 project "Processor — memory-substrate agent harness" (3408 B)`
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not identify the subject as %q; a record whose anchor is unidentifiable cannot be read back against the node it was about.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryNamesTheAdapterAndEndpointThatServedTheRun(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+
+	summary := RenderSummary(record, summaryInstant())
+
+	want := "model    " + record.Model + " via " + record.Provider.Adapter + " " + record.Provider.Endpoint
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not carry %q; which adapter reached which endpoint is what makes a run reproducible.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryStatesEveryLimitTheRunWasBoundBy(t *testing.T) {
+	t.Parallel()
+
+	summary := RenderSummary(summaryRecord(), summaryInstant())
+
+	const want = "limits   20 cands / 60000 B block / 20000 B suppl / 6 calls / 4096 tok"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not state %q, the five limits this run was bound by.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryReportsTemperatureAndTopPEachUnderItsOwnName(t *testing.T) {
+	t.Parallel()
+
+	temperature, topP := 0.2, 0.95
+	record := summaryRecord()
+	record.Sampling = Sampling{Temperature: &temperature, TopP: &topP}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	const want = "4096 tok  temp=0.2 topP=0.95"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not state %q; the two values differ so that reporting one under the other's name is visible.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryLeavesTheSamplingFieldsOutWhenTheRunSetNeither(t *testing.T) {
+	t.Parallel()
+
+	summary := RenderSummary(summaryRecord(), summaryInstant())
+
+	if !strings.Contains(summary, "4096 tok\n") {
+		t.Fatalf("the limits line does not end at the token cap on a run that set no sampling parameter.\nsummary:\n%s", summary)
+	}
+	if strings.Contains(summary, "temp=") || strings.Contains(summary, "topP=") {
+		t.Fatalf("the summary names a sampling parameter the run left to the endpoint's default.\nsummary:\n%s", summary)
+	}
+}
+
+func TestRenderSummaryNamesTheWorkingDirectoryOnlyWhenTheRunOpenedOne(t *testing.T) {
+	t.Parallel()
+
+	without := RenderSummary(summaryRecord(), summaryInstant())
+
+	if strings.Contains(without, "workdir") {
+		t.Fatalf("a run that opened no working directory is given a workdir line anyway.\nsummary:\n%s", without)
+	}
+
+	record := summaryRecord()
+	record.Workspace = "/runs/2026-09-07T15-20-01Z"
+
+	with := RenderSummary(record, summaryInstant())
+
+	if !strings.Contains(with, "workdir  "+record.Workspace+"\n") {
+		t.Fatalf("the summary does not name %q, the directory this run's file writes went to.\nsummary:\n%s", record.Workspace, with)
+	}
+}
+
+func TestRenderSummaryPrintsEveryDerivedQueryUnderItsOwnIndexAndCountsThem(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Queries = []string{"first derived query", "second derived query", "third derived query"}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	if !strings.Contains(summary, "ASSEMBLY  3 queries,") {
+		t.Fatalf("the summary does not count the three queries assembly was given.\nsummary:\n%s", summary)
+	}
+	for i, query := range record.Queries {
+		want := fmt.Sprintf("  q%d: %s\n", i, query)
+		if !strings.Contains(summary, want) {
+			t.Fatalf("the summary does not carry %q; which query was issued is what makes the candidates below it auditable.\nsummary:\n%s", want, summary)
+		}
+	}
+}
+
+func TestRenderSummaryHeadsTheAdmittedListWithItsCountAndBytesAgainstTheBudget(t *testing.T) {
+	t.Parallel()
+
+	summary := RenderSummary(summaryRecord(), summaryInstant())
+
+	const want = "  admitted (2, 44.4 kB of 60000 B):"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not head the admitted list %q; two dispositions of 1111 B and 43300 B were admitted against a 60000 B budget.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryGivesEachAdmittedCandidateItsSimilarityTypeSizeAndName(t *testing.T) {
+	t.Parallel()
+
+	summary := RenderSummary(summaryRecord(), summaryInstant())
+
+	for _, want := range []string{
+		"    #11     0.689 task            1111 B  Pitch-Site hosting",
+		"    #12     0.659 documentation  43.3 kB  Profilgenerator wireframe",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("the summary does not carry the admitted row %q; an id with no similarity, type, size or name cannot be judged as an admission.\nsummary:\n%s", want, summary)
+		}
+	}
+}
+
+func TestRenderSummaryHeadsTheCutListWithHowManyCandidatesWereCut(t *testing.T) {
+	t.Parallel()
+
+	summary := RenderSummary(summaryRecord(), summaryInstant())
+
+	const want = "  cut (3):"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not head the cut list %q; three of the five dispositions record a cut.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryWrapsALongCutGroupsIdsAcrossLinesNoneOverNinetySixRunes(t *testing.T) {
 	t.Parallel()
 
 	record := summaryRecord()
 	record.Candidates = nil
-	for i := range 20 {
+	for i := range 40 {
+		record.Candidates = append(record.Candidates, Disposition{
+			Rank: i + 1, ID: int64(1000000 + i), Size: 10, CutReason: "byte budget exceeded",
+		})
+	}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	carrying := 0
+	for _, line := range strings.Split(summary, "\n") {
+		if !strings.Contains(line, "#1000") {
+			continue
+		}
+		carrying++
+		if got := len([]rune(line)); got > 96 {
+			t.Fatalf("a cut group's ids run to %d runes on one line, above the 96 the renderer wraps at.\nline: %s", got, line)
+		}
+	}
+	if carrying < 2 {
+		t.Fatalf("forty cut ids reached %d line(s), so this fixture never exercised wrapping.\nsummary:\n%s", carrying, summary)
+	}
+	for _, d := range record.Candidates {
+		id := "#" + strconv.FormatInt(d.ID, 10)
+		if !strings.Contains(summary, id) {
+			t.Fatalf("wrapping dropped cut candidate %s.\nsummary:\n%s", id, summary)
+		}
+	}
+}
+
+func TestRenderSummaryStatesTheTerminalReasonTheEndpointsRawStringAndTheCallCount(t *testing.T) {
+	t.Parallel()
+
+	summary := RenderSummary(summaryRecord(), summaryInstant())
+
+	const want = `OUTCOME  answered (raw "stop"), 3/6 model calls, cap not reached`
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not state %q; how a run ended and how many calls it spent are the two facts a reader weighs the answer against.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryReportsTheCallCapAsReachedWhenTheRunHitIt(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.CapReached = true
+
+	summary := RenderSummary(record, summaryInstant())
+
+	if strings.Contains(summary, "cap not reached") {
+		t.Fatalf("a run that hit the call cap is reported as not having reached it.\nsummary:\n%s", summary)
+	}
+	if !strings.Contains(summary, "cap reached") {
+		t.Fatalf("a run that hit the call cap does not say so.\nsummary:\n%s", summary)
+	}
+}
+
+func TestRenderSummarySaysARecallRoundRecordedNoResultsRatherThanShowingNone(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.ToolCalls = []ToolCallRecord{{Tool: ToolRecall, Source: ToolSourceNative, Query: "nothing matched"}}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	if !strings.Contains(summary, "      -> no results recorded\n") {
+		t.Fatalf("a recall round that returned nothing is rendered as though it were never asked.\nsummary:\n%s", summary)
+	}
+}
+
+func TestRenderSummarySaysNoneAdmittedWhenEveryRecallResultWasCut(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.ToolCalls = []ToolCallRecord{{Tool: ToolRecall, Source: ToolSourceNative, Query: "all too large", Results: []Disposition{
+		{Rank: 1, ID: 31, Size: 90000, CutReason: "byte budget exceeded"},
+	}}}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	for _, want := range []string{
+		"      -> 1 results, 0 admitted (0 B) / cut: byte budget exceeded 1\n",
+		"      (none admitted)\n",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("the summary does not carry %q; a supplementary recall that admitted nothing is the case a reader most needs told.\nsummary:\n%s", want, summary)
+		}
+	}
+}
+
+func TestRenderSummaryOfTheLargestRunTheseLimitsPermitStaysUnderFourKilobytes(t *testing.T) {
+	t.Parallel()
+
+	temperature, topP := 0.2, 0.95
+	record := summaryRecord()
+	record.Workspace = "/runs/2026-09-07T15-20-01Z"
+	record.Sampling = Sampling{Temperature: &temperature, TopP: &topP}
+	record.Answer = strings.Repeat("answer prose ", 500)
+
+	record.Queries = nil
+	for i := range record.Limits.MaxModelCalls {
+		record.Queries = append(record.Queries, fmt.Sprintf("q%d %s", i, strings.Repeat("a long derived query ", 10)))
+	}
+
+	record.Candidates = nil
+	for i := range record.Limits.CandidateLimit {
 		record.Candidates = append(record.Candidates, Disposition{
 			Rank:       i + 1,
 			ID:         int64(100 + i),
@@ -326,16 +607,60 @@ func TestRenderSummaryOfAFullTwentyCandidateRunStaysUnderTwoAndAHalfKilobytes(t 
 			CutReason:  "byte budget exceeded",
 		})
 	}
-	record.ToolCalls = []ToolCallRecord{
-		{Tool: ToolRecall, Source: ToolSourceNative, Query: strings.Repeat("a long recall query ", 10), Results: record.Candidates},
-		{Tool: ToolWriteFile, Source: ToolSourceNative, Path: "index.html", Bytes: 502},
+
+	record.ToolCalls = nil
+	for range record.Limits.MaxModelCalls {
+		record.ToolCalls = append(record.ToolCalls, ToolCallRecord{
+			Tool:    ToolRecall,
+			Source:  ToolSourceNative,
+			Query:   strings.Repeat("a long recall query ", 10),
+			Results: record.Candidates,
+		})
 	}
-	record.Answer = strings.Repeat("answer prose ", 500)
 
 	summary := RenderSummary(record, summaryInstant())
 
-	const bound = 2560
+	const bound = 4096
 	if len(summary) > bound {
-		t.Fatalf("the summary of a full run is %d B, above the %d B bound the recall slot is worth.\nsummary:\n%s", len(summary), bound, summary)
+		t.Fatalf("the summary of the largest run these limits permit is %d B, above the %d B bound.\nsummary:\n%s", len(summary), bound, summary)
 	}
+}
+
+func TestRenderSummaryNamesTheNodesASupplementaryRecallAdmitted(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.ToolCalls = []ToolCallRecord{{Tool: ToolRecall, Source: ToolSourceNative, Query: "repository creation", Results: []Disposition{
+		{Rank: 1, ID: 21, Size: 400, Included: true},
+		{Rank: 2, ID: 23, Size: 700, Included: true},
+		{Rank: 3, ID: 22, Size: 90000, CutReason: "byte budget exceeded"},
+	}}}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	if !strings.Contains(summary, "      #21 #23\n") {
+		t.Fatalf("the summary counts what a supplementary recall admitted without naming it; which node came in mid-run is the same decision the assembly list exists to record.\nsummary:\n%s", summary)
+	}
+}
+
+func TestRenderSummaryStatesTheAnswersByteCountAboveTheExcerptItPrints(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+
+	summary := RenderSummary(record, summaryInstant())
+
+	want := fmt.Sprintf("  answer   %d B\n", len(record.Answer))
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not state %q; the excerpt below it stands for the whole answer only if the whole answer's size is given.\nsummary:\n%s", want, summary)
+	}
+}
+
+func summaryLineWithPrefix(summary, prefix string) (string, bool) {
+	for _, line := range strings.Split(summary, "\n") {
+		if strings.HasPrefix(line, prefix) {
+			return line, true
+		}
+	}
+	return "", false
 }

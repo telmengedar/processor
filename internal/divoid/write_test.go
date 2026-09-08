@@ -135,7 +135,7 @@ func TestWriteRunCreatesBodiesSummarisesThenLinksInThatOrder(t *testing.T) {
 
 	want := []string{"POST /api/nodes", "POST /api/nodes/10525/content", "PATCH /api/nodes/10525", "POST /api/nodes/10525/links"}
 	if got := methodPaths(*calls); !slices.Equal(got, want) {
-		t.Fatalf("calls = %v, want %v — the graph clears a substance on any content write, so the summary has to follow the body", got, want)
+		t.Fatalf("calls = %v, want %v — the record's body, then its summary, then the edge to its subject, in that order", got, want)
 	}
 }
 
