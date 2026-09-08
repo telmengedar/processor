@@ -836,7 +836,7 @@ three of them are the difference between *the fill works* and *the fill silently
 
 | # | Defect | Consequence for the fill |
 |---|---|---|
-| **D1** | **The pass reports success while producing nothing.** `condensed 0 · skipped N · operational failures 0`, ratio 0.000 | The fourth instance of *instrument reports clean while measuring nothing* in this project. Under the fill it is worse than an offline report: a refusal is per-turn and invisible unless §7.4.4's refusal contract names it, which is now load-bearing rather than tidy |
+| **D1** | **The pass reports success while producing nothing.** `condensed 0 · skipped N · operational failures 0`, ratio 0.000. **Fixed on `fix/condense-reports-its-own-failures` (`c659909`), which reclassified truncation as operational** | The fourth instance of *instrument reports clean while measuring nothing* in this project. Under the fill it is worse than an offline report: a refusal is per-turn and invisible unless §7.4.4's refusal contract names it, which is now load-bearing rather than tidy. **The rule deciding *failed* from *correctly declined* is `substance-backed-admission.md` §6.7 (#12955) — cited, not restated, because the pass's contract has one owner.** The fill's refusal contract consumes that partition and must surface a rule-side skip as a stated reason rather than as silence |
 | **D2** | **The pass cannot use a non-thinking adapter.** `cmd/condense/main.go:71` constructs `openaicompat.NewClient` **unconditionally**; it loads and validates `PROCESSOR_MODEL_PROTOCOL` through `boot.LoadModel()` and then **discards it**, while `cmd/processor/main.go:89-90` branches on the same field | OpenAI-compat carries no `think` parameter, so the pass cannot suppress a reasoning stream. **The single change that turned *produces nothing* into *produces something* is unreachable from the shipped binary.** The fill must reach the ollama adapter, which means honouring the protocol field the loader already parses |
 | **D3** | **`maxOutputTokens` is sized as if reasoning tokens do not exist.** The budget is 0.5 × input tokens; a thinking model charges reasoning against the same ceiling | **Every thinking model trips `skipTruncated` on large inputs regardless of capability.** Measured: ~33,000 characters of reasoning consumed the entire 9,831–9,956-token budget without emitting one character of content. This disqualifies models by accident rather than by the bar §7.4.7 defines |
 | **D4** | **`outputTokenFraction = 0.5` inverts on dense structured input.** It granted 2,259–2,459 tokens for input that cannot compress below roughly 1:1 | The formula assumes prose. It is right for the class §9.3.1 keeps on the model path and wrong for anything tabular — which is one more reason run records leave that path entirely |
@@ -974,7 +974,12 @@ told the next agent to pull it forward. **That was wrong, and the correction is 
 
 **What was measured.** With **both** gates removed, `cmd/condense` condensed **nothing** — all three run
 records refused as `condensation truncated`, ratio 0.000, **while reporting `operational failures 0`.**
-#12984's 195 KB refusal is not a size outlier: it happens at **84 KB**, across the whole class. With
+#12984's 195 KB refusal is not a size outlier: it happens at **84 KB**, across the whole class.
+
+*(The `operational failures 0` half is a dated reading, not current behaviour: `c659909` reclassified
+truncation as operational, so the same run would now report four failures rather than a clean pass. The
+measurement stands as recorded — the refusals and the 84 KB threshold are unchanged — and the boundary that
+decides which side a skip falls on is now stated as a principle in `substance-backed-admission.md` §6.7.)* With
 thinking disabled and the pipeline replicated byte for byte, the pass does produce output — and the output
 is worse than nothing:
 

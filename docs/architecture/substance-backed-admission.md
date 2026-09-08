@@ -372,10 +372,57 @@ This narrows the lost-update window to one round trip. It does not close it; §3
 **Idempotence.** Re-running the pass over the same targets with the same content must be a no-op: nodes with
 substance present are skipped. A `--force` flag re-derives, and is what a prompt revision uses.
 
-**Failure isolation.** A failure on one node — model error, write rejection, content moved — skips that node
-and continues. The pass never aborts a run because one node failed, and it reports the skips. A pass that
-half-completed leaves a graph in a valid state by construction, because every write is independent and
-substance is optional everywhere.
+**Failure isolation.** A failure on one node — a graph read, the model call, the substance write, or a
+condensation that exhausted its output budget — skips that node and continues. The pass never aborts a run
+because one node failed, and it reports the skips. A pass that half-completed leaves a graph in a valid
+state by construction, because every write is independent and substance is optional everywhere.
+
+*(Corrected 2026-09-08. This sentence read "model error, write rejection, content moved" — three causes, one
+of which is not a failure at all. **Content moved is a rule the pass applies**, not a failure of the pass:
+the condensation completed and the write was correctly declined because its premise had changed. And it
+omitted **truncation**, which is a failure. The corrected list is the four in §6.7's table. The sentence was
+written before the partition below existed and nothing pointed at it, which is the gap §6.7 closes.)*
+
+### 6.7 The failure boundary — a principle, not a list
+
+**The pass reports a count of operational failures, and a binary's exit code turns on it.** So the rule
+deciding *did the pass fail, or did it correctly decline* is load-bearing, and until now it existed nowhere
+in `docs/architecture/` — it survived only in two test names and their failure strings. This section is that
+rule, stated once, where the pass is designed.
+
+> **A skip is *rule-side* when the pass reached a decision about the node and the decision was "no substance
+> belongs here". It is *operational* when the pass could not reach a decision at all.**
+
+**Stated as a principle deliberately, because a list does not survive its own growth.** A fifteenth skip
+reason will be added by someone who never read this document; a principle tells them which side it belongs
+on, an enumeration only tells them which side today's reasons are on.
+
+**The current partition is a consequence of the principle, not the definition of it.** Fourteen reasons,
+ten rule-side and four operational:
+
+| | reasons | why the principle puts them here |
+|---|---|---|
+| **Rule-side (10)** | node absent · content absent · substance present · self-produced · non-prose content type · condensation empty · condensation not shorter than content · condensation below the floor · condensation opens with a preamble · **content moved during condensation** | In every one of these the pass looked, judged, and declined. The last four judge a *completed* condensation and reject it on quality; `content moved` judges a completed condensation and declines the *write* because the premise changed under it. A decision was reached in all ten |
+| **Operational (4)** | graph read failed · model call failed · substance write failed · **condensation truncated** | The pass was prevented from reaching a decision. The first three are plainly I/O. The fourth is the discriminating case |
+
+**Truncation is the case that tests the principle, and it is why the principle beats an intuition.** It
+*looks* rule-side — output arrived and was rejected — but the pass never obtained a complete candidate to
+judge: the model exhausted the output budget mid-sentence. **Nothing was decided about the node; the
+machinery ran out.** The shipped test says exactly this in its name
+(`TestATruncatedCondensationIsAnOperationalFailureBecauseThePassExhaustedItsOwnOutputBudget`), and it is the
+reason a reader cannot derive the boundary from "was there output?".
+
+**The default direction for an unclassified reason is operational, and this follows from the principle
+rather than from caution.** *"The pass reached a decision"* is a positive claim and needs evidence; *"the
+pass could not"* is what is true when nobody has established otherwise. So a reason nobody has classified
+must count as a failure — **a fail-safe default, not a fail-quiet one.** The alternative has already cost
+this project once: a pass that condensed nothing and reported `operational failures 0` is precisely the
+*instrument reports clean while measuring nothing* shape, and a whitelist that silently absorbs a new reason
+reproduces it by construction.
+
+**Falsifier for this section:** a skip reason exists whose side cannot be decided by asking *did the pass
+reach a decision about this node?* If one appears, the principle is incomplete and this section is wrong —
+not the classification of that one reason.
 
 ---
 
