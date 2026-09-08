@@ -50,6 +50,17 @@ cannot — and shape is fixable. Provenance was never a reason. **This document 
 | **Unit 3 — Render it, size-gated** | Substance replaces content **where condensation actually compacts** — the ≥8 KB stratum, measured median ratio **0.298**. Below 4 KB the measured ratio is **0.886**: substance saves ~11 % and spends fidelity, so content stays. |
 | **Unit 4 — The catalogue** | #13106 §8.3, unchanged and still third. Its payload *is* substance, so it is downstream of Unit 2 by construction, and its three-arm falsifier cannot run until the fill has warmed the twenty rows. |
 
+**`block` leaves the record — and the measurement that settled it also overturned why.** `Record.Block` is
+**73.6 %** of an 84 KB record and holds other nodes' bodies verbatim, for content the graph already keeps
+behind an edge. Toni: *"duplicating content in a graph is complete nonsense — that's what edges are for."*
+The principle stands and Q4 answers **yes, drop it** — **on storage grounds, not retrieval grounds.** The
+discriminating test: a literal taken from **inside** `block` returns **0 run records in the top 30** (the
+node that owns the text, #6375, is top at 0.7855), while the yardstick input — which the record's **name**
+carries verbatim — returns **13, holding ranks 1–11, 13 and 14**. **The crowding is name-driven, not
+content-driven; removing `block` will not fix it, because the name still matches** (§4.8, §9.5). That is a
+correction to every prior account in this project, this document included, and **the name is a retrieval
+surface nothing here treats as one** — named as Q11 and left as its own unit.
+
 **Both gates have now run, and the negative one is the useful one.**
 
 **F-7 passed (#13241).** A probe carrying content about arctic terns and a substance about quantum error
@@ -347,6 +358,39 @@ substance** (§4.1).
 **Rank 20 of the yardstick's unfiltered list is #11387 — a peer-written session log about Processor
 traces, 20,019 B.** It is real memory by anyone's definition, it is uncondensed like everything else, and
 it is the reason no rule in this document may key on the `session-log` type.
+
+### 4.8 The crowding is name-driven, not content-driven — and that was not obvious
+
+**Measured 2026-09-08 on `GET /api/nodes?query=`, the route `Recall` builds.** Two queries, `count=30`,
+chosen to separate the two candidate explanations for why run records hold the top of the list.
+
+| query | where that text lives in a run record | run records in top 30 |
+|---|---|---|
+| a literal from **inside `block`** — *"High-Fidelity interaktives Wireframe für Profilgenerator Phase 1"*, which belongs to **#6375** | duplicated verbatim in the record's **content** | **0.** Top hit is **#6375 itself at 0.7855** |
+| the yardstick input — *"Generate a new barebones webpage and a repo for it."* | in the record's **name**, and also in its content | **13**, holding **ranks 1–11, 13 and 14**, 0.675–0.7359 |
+
+**A run record is named `processor-run <timestamp> — <the input, truncated to 80 runes>`**
+(`internal/divoid/write.go:101`). So a repeat of an input is a near-exact lexical match against the *name*,
+while 60 KB of duplicated bodies inside the record contribute **nothing measurable** — the node that owns
+that text outranks the record that copied it, and the record does not appear at all.
+
+**Why that is consistent with F-7 rather than in tension with it.** Content *is* embedded (#13241 measured
+that on a probe). But a ~60 KB record spanning eight unrelated topics has a **diffuse** embedding: no single
+topic inside it outranks the node actually about that topic. **Dilution, not exclusion.**
+
+> **The two problems are separable and have different levers. Removing `block` would not fix the crowding —
+> the name would still match.**
+
+**This corrects an attribution every prior account in this project made**, including earlier revisions of
+this document: the top-of-list records were credited to similarity on their *content*, or to the exclusion
+policy. **Neither is the mechanism.** Toni's own hypothesis on reading a record — that content duplication is
+*"probably the strongest reason for your 'poisoning' earlier"* — was the discriminating test's target and
+**did not hold**; the principle he drew from the same reading (§9.5) survives untouched and is why `block`
+should still go.
+
+**The name is therefore a retrieval surface, and nothing in this design or in #12955, #13106 or #13203
+treats it as one.** Named here as a mechanism with its numbers; **deliberately not addressed** — it is its
+own question and its own unit (Q11).
 
 ---
 
@@ -854,10 +898,12 @@ shrinks.
 correct today, and Unit 3 is what eventually makes it a statement about form rather than about us.
 
 **What survives of the crowding argument, and what does not.** Toni is right that under substance the
-*byte* problem dissolves. The *slot* problem is a separate claim and it is weaker than this project has
-been asserting: thirteen of twenty slots go to rows that score 0.722–0.736 because they contain the query
-verbatim. **But that is an argument about what those rows say, and once they have a substance it becomes
-testable rather than decidable in advance** — which is the honest position, and not the one #13237 took.
+*byte* problem dissolves. The *slot* problem is separate, and §4.8 has since located it precisely: the rows
+holding ranks 1–11 are there because the input is in their **name**, not because 60 KB of copied bodies sits
+in their content. **So the slot problem is real, is untouched by anything in §9.5, and is untouched by
+substance either** — A17 says a substance cannot move a rank. What a substance changes is what the slot
+*costs*: an accurate 1–2 KB summary instead of an excluded 84 KB transcript. **Whether that is worth a slot
+is testable and is the honest live question**, and it is not the one #13237 answered.
 
 ### 9.3 What it takes to give a run record a substance — measured, and the ordering was backwards
 
@@ -927,8 +973,8 @@ those through a fixed template produces one or two kilobytes of accurate prose.
 **It also resolves what §9.3 previously called an implementation choice.** The prose projection the
 condenser was supposed to read does not need to exist for a condenser to read: **the template is the
 projection, and its output is written directly as the record's `substance`.** No new node type, no second
-artifact, no re-ruling of #10904's stored-vs-response invariant, and **Q4 stops blocking this** — dropping
-`block` is no longer on the path, because a template ignores `block` rather than being defeated by it.
+artifact, and **no dependency on Q4 in either direction**: a template reads fields and ignores `block`, so
+it neither requires §9.5's removal nor is blocked by it. #10904's re-ruling gates that removal, not this.
 
 **One consequence that A17 forces into the open, and it sharpens the question this document opened with.**
 Substance is **not embedded** (#13241), so giving a run record a substance **cannot change how it ranks**.
@@ -956,6 +1002,39 @@ the way. **F-6 measured otherwise (#13242):** removing them yields a digest of o
 count, so the condenser was never the component that could produce this. **§9.3.2's template is**, and it
 produces the summary above from fields the record already carries, without a model and without the ability
 to invent one.
+
+### 9.5 `block` should leave the record — and the reason is storage, not retrieval
+
+> *"The session log itself dumps the full content of the nodes into it. There is absolutely no reason for
+> that — it's redundant to record content again. It's a bad memory strategy… duplicating content in a graph
+> in general is complete nonsense — that's what edges are for. I thought about it and found these nodes for
+> that reason — am I interested in content? Okay, let's traverse the graph."* — Toni, 2026-09-08
+
+**The principle is right and needs no defence from this document.** A graph whose nodes copy each other's
+bodies has stopped being a graph; the edge already answers *where is that content*, and the copy can only
+go stale against the node it copied. `Record.Block` is **73.6 % of an 84 KB record** and holds other nodes'
+bodies **verbatim** — header, id, type, name and full body, for content the record already has an edge to.
+
+**Three independent reasons to drop it, and one that is not on the list.**
+
+| | Reason | Standing |
+|---|---|---|
+| 1 | **Redundant storage.** ~60 KB of verbatim duplicate per record, of content the graph already holds behind an edge | Toni's principle, above |
+| 2 | **It is what makes a record unrenderable.** A prose compressor handed 73.6 % other-nodes' bodies produces a digest of those nodes — exactly what #13242 measured | §9.3 |
+| 3 | **It is what makes a record unadmittable.** 77–88 KB against a 60,000-byte budget, so the exclusion in PR #48 exists to stop something that could never have fitted | §4.6 |
+| — | ~~**It causes the crowding.**~~ | **NOT A REASON. Measured false** — §4.8: a literal from inside `block` returns **zero** run records; the input, which the *name* carries, returns thirteen |
+
+**Reason 4 is struck rather than omitted, because it is the one everybody reaches for** — including Toni on
+first reading, and including earlier revisions of this document. **State it plainly wherever this change is
+described: dropping `block` does not fix the crowding, the name still matches, and anyone citing this as
+the crowding fix has stopped looking one step too early.**
+
+**What this does not change.** The template (§9.3.2) reads fields and ignores `block`, so it works either
+way and does not depend on this. And **#10904's stored-vs-response invariant — PR #8's ruling that the
+stored body is the response body minus exactly one key — must still be re-ruled before `block` can actually
+leave** (Q4). The operator instruments read `block` from the **response**, not from the graph
+(`scripts/smoke.py:241-244`, `scripts/step_trace.py:700`), so what has to be decided is whether the two
+bodies may differ by more than the write receipt — not whether anything loses access.
 
 ---
 
@@ -1011,7 +1090,8 @@ all.
 | R4 | **`contentHash` is re-based onto rendered bytes**, marking every substance-rendered required node stale | §7.2, adopted from #12955 §6.4 verbatim, with the reason | A sweep reporting corpus-wide staleness after Unit 3 |
 | R5 | **The form rule acquires a provenance clause** — "except for nodes we wrote" | S2; §8.3. The rule is a pure function of size, ratio and presence | Any branch in the form rule reading `SelfProduced` or a node type |
 | R6 | **A peer session log is excluded** by a rule aimed at run records | Nothing here keys on `session-log`; #11387 is the named live occupant (§4.7) | Any predicate reaching the `session-log` type |
-| R7 | ~~`block` is dropped from the record without #10904 being re-ruled~~ **RETIRED.** Dropping `block` was on the path only to feed a record to the condenser; §9.3.2's template ignores it, and #13242 measured that dropping it would not have worked anyway — the remainder is a data table the model transcribes | No mitigation needed; the risk has no route | — |
+| R7 | **`block` is dropped without #10904 re-ruling the stored-vs-response invariant**, or dropped in a way that makes a 15–25 KB record admissible **in content form** for the first time | **Reinstated — an earlier revision retired this and §9.5 puts the change back on the path.** Q4 names the #10904 dependency; §9.2's form rule (*substance form only, never content form*) is the guard that must exist first | A record shrinking below the budget while §9.2 is unimplemented |
+| R19 | **This change is cited as the crowding fix.** It is the natural reading and it is wrong — §4.8 measured the crowding to be name-driven | §9.5 strikes it as a reason in the same table that lists the real ones; Q11 carries the actual lever | Any PR body, node or design citing `block` removal against candidate-slot crowding |
 | R8 | **Unit 4 is started before Unit 2** and its falsifier cannot run | F-5's dependency is stated; #13106 §8.3 says the same | A catalogue arm running against rows with null substance |
 | R9 | **The sweep acquires the ability to fill** — a model adapter enters `cmd/eval`'s closure for some unrelated reason, and every A/B silently starts measuring a substrate it is mutating | A13 is the guarantee, and it should be pinned by a test asserting the closure rather than left as a convention | `go list -deps ./cmd/eval` naming any model adapter or `internal/condense` |
 | R10 | **Substance is lost and stays lost**, because the sync that republishes a body has no step that re-derives it — measured three times over (§7.4.5) | **The fill is the mitigation, and it is the reason not to add a procedural one.** Under it the loss repairs on next use, whatever caused it | Substance still `null` on a re-synced design document *after* the fill ships and that node has been retrieved |
@@ -1067,12 +1147,13 @@ error: its bounding invariant is withdrawn, on the evidence of the very measurem
 | **Q1** | ~~What is the "retrievable corpus"?~~ **ANSWERED — the question dissolves.** Under §7.3 the retrievable corpus is *whatever retrieval retrieves*, discovered rather than declared. There is no set to define, no campaign to schedule, and a node nobody recalls is never condensed | **No longer blocking** | Struck rather than deleted: it was the open question that made Unit 2 a scheduling problem, and the reframe is what closed it |
 | **Q2** | **The ratio threshold** in §8.1 | No — it ships behind a dial | Set it by F-3's curve, not by argument |
 | **Q3** | ~~Does the condenser get a JSON path, or does the record get a prose projection?~~ **ANSWERED BY MEASUREMENT — neither.** #13242 shows the model path yields a digest of other nodes and fabricates counts on this class, and the block-stripped remainder is a data table it transcribes rather than condenses | **No longer blocking** | **Deterministic rendering** (§9.3.2). The template *is* the projection, it needs no condenser and no model, and it cannot invent a figure |
-| **Q4** | ~~Does `block` leave the stored record?~~ **NO LONGER ON THE PATH.** It was required only to feed a run record to the condenser; §9.3.2's template ignores `block` rather than being defeated by it, so #10904's stored-vs-response invariant is untouched. **#13242 also shows removing `block` would not have worked** — the remainder is a data table | No | Yes, but only after §9.2's form rule exists — otherwise a 15–25 KB transcript becomes admissible for the first time (R7) |
+| **Q4** | **Does `block` leave the stored record? — ANSWERED: yes, and the reason changed.** An earlier revision closed this as *not on the path*, because the template made it unnecessary. **It is back, on different grounds: storage and graph hygiene** (§9.5) — ~60 KB of verbatim duplicate per record of content the graph already holds behind an edge. **Explicitly not on retrieval grounds: §4.8 measures that it does not touch the crowding** | **Yes for the change itself** — #10904 must re-rule PR #8's stored-vs-response invariant first; that dependency is unchanged | Yes, but only after §9.2's form rule exists — otherwise a 15–25 KB transcript becomes admissible for the first time (R7) |
 | **Q5** | **Who measures substance coverage, and how often?** Nothing does today | No | A line in the sweep report; it is one query |
 | **Q6** | **`fields=substance` works on the listing route and is undocumented in #8** | No | One line in #8 by whoever touches it next. Named because A4 rests on it |
 | **Q7** | **Two-phase retrieval** — rank without bodies, then batch-fetch the survivors. Measured 1,236,611 B → 115,382 B on the yardstick (§7.1) | No | Its own unit, any time. It composes with every payload rule and depends on none of them |
 | **Q8** | **G3's value, and its retirement condition** (§7.4.3). Recommended 2, on a three-fill estimate that is derived rather than measured | No — but it ships with the fill | Set it from **F-8**, and write the retirement condition into the same commit. It is a transition instrument, not a constant |
 | **Q10** | ~~How is a substance attributed to the model that produced it?~~ **WITHDRAWN — no provenance machinery.** It was raised as a hedge against choosing the model badly; the answer is to **define the requirement and qualify against it** (§7.4.7), not to instrument for having failed to | No | Struck rather than deleted, because a later reader will reach for provenance the same way. A19/A20 record what was checked. What remains is free: the run record names the model behind each fill, as it already does for the answer |
+| **Q11** | **The record's *name* is a retrieval surface and nothing treats it as one.** §4.8: `processor-run <ts> — <input truncated to 80 runes>` (`write.go:101`) makes a repeat of an input a near-exact lexical match, and that — not content — is what holds ranks 1–11 | **Not blocking anything here** | **Named, deliberately not addressed.** It is its own unit with its own falsifier, and widening this document into it would bury the finding. Neither this design nor #12955, #13106 or #13203 treats a name as ranked text |
 | **Q9** | ~~Should DiVoid invalidate substance on a content-hash change rather than on a content write?~~ **WITHDRAWN — no ask against DiVoid.** Every invalidation observed on real work was correct, and the byte-identical case it would defend is one no caller should perform (§7.4.5) | No | Struck rather than deleted, because a later reader will have the same idea. The answer is that the defect was ours, not DiVoid's, and the fill repairs it without a rule |
 
 ---
@@ -1145,8 +1226,9 @@ with the gates.**
    queries, admitted/cut counts with their reasons, tool sequence, terminal reason, model calls,
    `capReached`, and the answer verbatim or truncated with a marker. **No model.** The load-bearing property
    is that a template reads `len(candidates)` and therefore cannot assert ten where there are twenty.
-2. **Write its output as the record's `substance`** at write-back time. `block` is ignored rather than
-   removed, so **Q4 stays closed** and #10904's stored-vs-response invariant is untouched.
+2. **Write its output as the record's `substance`** at write-back time. The template **reads fields and
+   ignores `block`**, so it works whether or not `block` is still stored — it neither requires nor blocks
+   §9.5's removal, and the two units are independent.
 3. **Only then reconsider the gates.** `condense.go:283` and `:296` keep run records off the *model* path,
    which after F-6 is where they should be. They are not obstacles to remove; they are the boundary between
    the two classes in §9.3.1 — and if the template writes the substance directly, the condenser never needs
@@ -1166,7 +1248,8 @@ note that #13106 already establishes it probably requires the call ceiling raise
 - No substance rendered into a block before **F-1** passes.
 - No provenance clause in the form rule (S2, R5).
 - No predicate keying on the `session-log` type (R6) — #11387 is its live occupant.
-- **No `block` removal** — it is off the path entirely (Q4); §9.3.2's template ignores it (R7).
+- **No `block` removal before #10904 re-rules the stored-vs-response invariant, and before §9.2's form rule exists** (Q4, R7).
+- **No description of `block` removal that presents it as the crowding fix.** §4.8 measured that it is not (R19).
 - **No fill shipped without re-running F-7's probe** (#13241). It passed once; it is silently invalidated if DiVoid ever embeds substance, and nothing would announce that.
 - **No fill port constructed in `cmd/eval`**, and no model adapter admitted to its dependency closure — that
   closure *is* the determinism guarantee (A13, §7.4.4).
