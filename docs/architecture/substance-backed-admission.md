@@ -386,12 +386,24 @@ written before the partition below existed and nothing pointed at it, which is t
 ### 6.7 The failure boundary — a principle, not a list
 
 **The pass reports a count of operational failures, and a binary's exit code turns on it.** So the rule
-deciding *did the pass fail, or did it correctly decline* is load-bearing, and until now it existed nowhere
-in `docs/architecture/` — it survived only in two test names and their failure strings. This section is that
-rule, stated once, where the pass is designed.
+deciding *did the pass fail, or did it correctly decline* is load-bearing, and until recently it existed
+nowhere in `docs/architecture/` — it survived only in two test names and their failure strings. This section
+is that rule, stated once, where the pass is designed.
 
-> **A skip is *rule-side* when the pass reached a decision about the node and the decision was "no substance
-> belongs here". It is *operational* when the pass could not reach a decision at all.**
+> **A skip is *rule-side* when the skip *is* a decision the pass made on a complete basis.**
+> **Every other skip is *operational* — by definition, not by enumeration.**
+
+**One side is defined and the other is its complement, and that is the whole point of the shape.** A
+principle with two independent positive clauses can leave a hole between them, and this one did — see the
+correction below. A defined side plus its complement cannot: every skip is either in the defined set or it
+is not.
+
+**The two-part test, for whoever adds the fifteenth reason.** Rule-side requires **yes to both**:
+
+1. **Did the pass have a complete basis to decide on?** If it never obtained one, the skip reports a
+   shortfall rather than a judgement. → operational.
+2. **Is the skip itself the decision the pass made?** If the pass decided *to write* and the skip is what
+   happened instead of that decision, the skip is not the decision. → operational.
 
 **Stated as a principle deliberately, because a list does not survive its own growth.** A fifteenth skip
 reason will be added by someone who never read this document; a principle tells them which side it belongs
@@ -402,28 +414,57 @@ ten rule-side and four operational:
 
 | | reasons | why the principle puts them here |
 |---|---|---|
-| **Rule-side (10)** | node absent · content absent · substance present · self-produced · non-prose content type · condensation empty · condensation not shorter than content · condensation below the floor · condensation opens with a preamble · **content moved during condensation** | In every one of these the pass looked, judged, and declined. The last four judge a *completed* condensation and reject it on quality; `content moved` judges a completed condensation and declines the *write* because the premise changed under it. A decision was reached in all ten |
-| **Operational (4)** | graph read failed · model call failed · substance write failed · **condensation truncated** | The pass was prevented from reaching a decision. The first three are plainly I/O. The fourth is the discriminating case |
+| **Rule-side (10)** | node absent · content absent · substance present · self-produced · non-prose content type · condensation empty · condensation not shorter than content · condensation below the floor · condensation opens with a preamble · **content moved during condensation** | In every one the pass held a complete basis and the skip **is** the decision it took on it. The four quality reasons judge a *completed* condensation; `content moved` re-checks the premise before writing and **chooses not to write** |
+| **Operational (4)** | graph read failed · model call failed · **substance write failed** · **condensation truncated** | Each fails one of the two tests. `read`/`model` never yield a basis. **`substance write failed` fails test 2**: the decision was *write*, and the skip is what happened instead of it. `condensation truncated` fails test 1 |
 
-**Truncation is the case that tests the principle, and it is why the principle beats an intuition.** It
-*looks* rule-side — output arrived and was rejected — but the pass never obtained a complete candidate to
-judge: the model exhausted the output budget mid-sentence. **Nothing was decided about the node; the
-machinery ran out.** The shipped test says exactly this in its name
-(`TestATruncatedCondensationIsAnOperationalFailureBecauseThePassExhaustedItsOwnOutputBudget`), and it is the
-reason a reader cannot derive the boundary from "was there output?".
+**The two write-step reasons are the pair that makes the principle earn its keep.** `content moved`
+(`internal/condense/condense.go:268`) and `substance write failed` (`:272`) sit **four lines apart, after a
+completed condensation, and land on opposite sides.** Nothing about *when* they occur separates them; what
+separates them is **chose not to write** versus **was prevented from writing** — test 2, exactly.
 
-**The default direction for an unclassified reason is operational, and this follows from the principle
-rather than from caution.** *"The pass reached a decision"* is a positive claim and needs evidence; *"the
-pass could not"* is what is true when nobody has established otherwise. So a reason nobody has classified
-must count as a failure — **a fail-safe default, not a fail-quiet one.** The alternative has already cost
+**Truncation is the case that tests the other clause.** It *looks* rule-side — output arrived and was
+rejected — but the pass never obtained a complete candidate to judge: the model exhausted the output budget
+mid-sentence. **Nothing was decided about the node; the machinery ran out.** The shipped test says exactly
+this in its name (`TestATruncatedCondensationIsAnOperationalFailureBecauseThePassExhaustedItsOwnOutputBudget`),
+and it is why a reader cannot derive the boundary from *"was there output?"*.
+
+**The default direction for an unclassified reason is operational, and under this shape it is *derived*
+rather than chosen.** Rule-side is the defined set; membership in it is a positive claim that has to be
+established. A reason nobody has classified has not been shown to satisfy either test, so **it is in the
+complement by construction** — not by a judgement call about caution. That is a stronger footing than the
+previous statement had, and it is what a fail-safe default should rest on. The alternative has already cost
 this project once: a pass that condensed nothing and reported `operational failures 0` is precisely the
 *instrument reports clean while measuring nothing* shape, and a whitelist that silently absorbs a new reason
 reproduces it by construction.
 
-**Falsifier for this section:** a skip reason exists whose side cannot be decided by asking *did the pass
-reach a decision about this node?* If one appears, the principle is incomplete and this section is wrong —
-not the classification of that one reason.
+> **Correction, 2026-09-08 — the falsifier fired, on a reason already inside the table.** The first
+> statement of this principle read: *"A skip is rule-side when the pass reached a decision about the node
+> and the decision was 'no substance belongs here'. It is operational when the pass could not reach a
+> decision at all."* Its falsifier asked for *a skip reason whose side cannot be decided by that question*.
+>
+> **`substance write failed` is one, and it was in the table the whole time.** It *reached* a decision, and
+> the decision was that substance **does** belong — so clause 1 excludes it, and clause 2 excludes it too,
+> because the pass plainly did reach a decision. It fell between the clauses. Found by QA (**#13305**) while
+> re-reviewing the code half, in the sharpest available form: **`content moved` and `substance write failed`
+> both sit at the write step after a completed condensation and land on opposite sides, and the original
+> question does not separate them.** The missing axis was *chose not to write* versus *was prevented from
+> writing*.
+>
+> **Practical effect was nil** — all fourteen were and are classified correctly in the code, and the
+> fail-safe default already made operational the effective complement. **This was a completeness defect in
+> the statement, not a misclassification in the pass.** The repair is the shape above: define one side,
+> take the other as its complement, so a hole of this kind is not expressible.
+>
+> **Recorded rather than quietly fixed, because it is evidence about the method.** A principle that named
+> what would break it, and was then broken by something already inside its own table, is better evidence
+> that the falsifier was doing work than a principle nobody ever tested. The previous wording is quoted
+> above rather than deleted, so a reader meeting the old form elsewhere can recognise it.
 
+**Falsifier for this section, restated for the new shape.** A complement cannot leave a gap, so the
+falsifiable half is now the **defined** side: *a skip that satisfies both tests — the pass held a complete
+basis and the skip is the decision it took — yet ought to be reported as a failure of the pass.* If one
+appears, the defined side is drawn in the wrong place and this section is wrong. Note this is a strictly
+narrower target than the original falsifier, which is what closing the hole bought.
 ---
 
 ## 7. Data Model (Conceptual)
