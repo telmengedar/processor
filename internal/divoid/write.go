@@ -26,6 +26,7 @@ const (
 	logWriteBackFailed  = "write-back failed"
 	logRepairableOrphan = "repairable orphan"
 	logUncollectedShell = "uncollected shell"
+	logSummaryNotStored = "run record stored without its summary"
 )
 
 // IsRunRecord reports whether a graph row is a run record this system wrote.
@@ -50,7 +51,9 @@ func (c *Client) WriteRun(ctx context.Context, record loop.Record) loop.WriteRec
 		return loop.WriteReceipt{State: loop.NotStored}
 	}
 
-	id, err := c.createRunNode(ctx, c.runName(record))
+	at := c.now()
+
+	id, err := c.createRunNode(ctx, c.runName(record, at))
 	if err != nil {
 		c.log().Error(logWriteBackFailed, "subject", record.Subject, "error", err)
 		return loop.WriteReceipt{State: loop.NotStored}
@@ -60,6 +63,10 @@ func (c *Client) WriteRun(ctx context.Context, record loop.Record) loop.WriteRec
 		c.log().Error(logWriteBackFailed, "subject", record.Subject, "node", id, "error", fmt.Errorf("divoid: set run node content: %w", err))
 		c.discardShell(ctx, id)
 		return loop.WriteReceipt{State: loop.NotStored}
+	}
+
+	if err := c.SetSubstance(ctx, id, loop.RenderSummary(record, at)); err != nil {
+		c.log().Error(logSummaryNotStored, "node", id, "subject", record.Subject, "error", err)
 	}
 
 	if err := c.linkRunNode(ctx, id, record.Subject); err != nil {
@@ -97,8 +104,8 @@ func (c *Client) linkRunNode(ctx context.Context, id, target int64) error {
 	return c.post(ctx, fmt.Sprintf("/api/nodes/%d/links", id), "application/json", body, nil)
 }
 
-func (c *Client) runName(record loop.Record) string {
-	return fmt.Sprintf("%s %s — %s", RunNamePrefix, c.now().UTC().Format(time.RFC3339), truncateRunes(record.Input, runNameInputRunes))
+func (c *Client) runName(record loop.Record, at time.Time) string {
+	return fmt.Sprintf("%s %s — %s", RunNamePrefix, at.UTC().Format(time.RFC3339), truncateRunes(record.Input, runNameInputRunes))
 }
 
 func truncateRunes(s string, limit int) string {
