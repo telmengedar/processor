@@ -70,6 +70,17 @@ it *this* run contributes almost nothing. **Crowding is *the wrong rows appear*;
 cannot be recognised*. `block` causes the second, not the first**, which makes its removal a **retrieval
 improvement** and not the cleanup an earlier revision called it (§4.8.1, §9.5).
 
+**And the invariant that blocked it is re-ruled here (§9.6), not deferred.** #10904 required the stored
+record to carry what the response carried. **Amended, not abolished:** the response keeps `block`, the
+stored body replaces it with `blockBytes`, and the invariant becomes a named list of **two** divergences
+whose test still reddens on a third. The census ran before the proposal, not after: **`internal/eval` and
+`cmd/eval` never fetch a record body at all**, and the only stored-record reader in the repo
+(`scripts/compare.py:279`) reads **`input` alone**. Everything that reads `block` reads it from the
+**response**, which does not change. And storing block *ordering* — the one thing #13245 called
+unrecoverable — is **not needed**: `assemble.go:25` sorts admitted candidates ascending by id before
+rendering, so block order is the anchor followed by every `Included` disposition sorted by id, derivable
+from fields already stored.
+
 **Both gates have now run, and the negative one is the useful one.**
 
 **F-7 passed (#13241).** A probe carrying content about arctic terns and a substance about quantum error
@@ -1101,11 +1112,139 @@ what a record *renders* and changes nothing about what it *is findable as*. Reas
 gap; the summary does not.
 
 **What this does not change.** The template (§9.3.2) reads fields and ignores `block`, so it works either
-way and does not depend on this. And **#10904's stored-vs-response invariant — PR #8's ruling that the
-stored body is the response body minus exactly one key — must still be re-ruled before `block` can actually
-leave** (Q4). The operator instruments read `block` from the **response**, not from the graph
-(`scripts/smoke.py:241-244`, `scripts/step_trace.py:700`), so what has to be decided is whether the two
-bodies may differ by more than the write receipt — not whether anything loses access.
+way and does not depend on this.
+
+**And the invariant that stood in the way is re-ruled in §9.6 rather than left as a dependency.** #10904's
+*stored body is the response body minus exactly one key* is **amended, not abolished**: the response keeps
+`block`, the stored body carries `blockBytes` instead, and the guard test is renamed and extended so a
+*third* divergence still reddens it. The operator instruments read `block` from the **response**
+(`scripts/smoke.py:241-244`, `scripts/step_trace.py:700`), so nothing loses access; what was decided is
+whether the two bodies may differ by more than the write receipt, and §9.6.5 says how far.
+
+---
+
+### 9.6 Re-ruling #10904's stored-vs-response invariant
+
+**This section re-rules an invariant settled in another design document.** #10904 §8.1, decided on PR #8,
+states it, and a test at `cmd/processor/artifacts_test.go:161` enforces it:
+
+> *"The stored node's body and the HTTP response body carry the same record, byte-for-byte, in every key
+> that describes the run. The response body carries exactly one key more: the write receipt. The stored body
+> is the response body minus that one key, and nothing else differs."*
+
+**Ruling: amend it. `block` leaves the stored body and stays in the response; one integer replaces it. The
+invariant is not abolished — it is narrowed to a named list of two divergences, and its test keeps its job.**
+
+#### 9.6.1 What the invariant was for, and why this is not a violation of it
+
+**Read #10904's own description of the guard, because it decides the shape of the answer:** the test is one
+where *"a new field added to either side **without a decision** reddens it."* **The invariant is a
+change-control tripwire, not a claim about what a reader needs.** It exists so the two bodies cannot drift
+silently.
+
+**A considered divergence therefore does not violate it — it is the thing the tripwire exists to summon.**
+This section is that decision. What must keep being prevented is a *third* divergence appearing because
+someone added a field and nobody noticed.
+
+#### 9.6.2 What the stored record owes a reader that the response did not
+
+PR #8 answered *"the same bytes"*, and **that was right when it was made, because the two readers were the
+same reader.** The record was the only account of a run. Three things have changed, none of which existed
+when the invariant was ruled:
+
+| | Then | Now |
+|---|---|---|
+| the only account of a run | the record | **plus a deterministic ~2 KB summary on every record** — PR #51 (`004afa8`, on `main` at `2b07bed`): `WriteRun` calls `loop.RenderSummary` and stores it as the node's substance |
+| what identifies an admitted node | the copied body | `candidates[]` carries **every** candidate's id, name, similarity, size, `contentHash`, cut reason and sources |
+| where the body itself lives | the copy | the node, **behind an edge the record already has** |
+
+**The two readers have separated, and they want opposite things:**
+
+| | The **response** reader | The **stored** reader |
+|---|---|---|
+| who | an operator debugging *this* run, synchronously, workspace still on disk | a later run, or a human walking the graph |
+| asks | *what exactly did the model see?* | *what happened, and what did it cost?* |
+| wants `block` | **yes** — `scripts/smoke.py:241-244` prints it verbatim; `scripts/step_trace.py:700` reconstructs the turn from it | **no** — 60 KB of other nodes' bodies, each already behind an edge, and §4.8.1 measures that carrying them **destroys the record's own identity in its embedding** |
+
+**That is the answer to the question posed.** The stored record owes a reader an **account of the run**; the
+response owes a reader a **reproduction of the prompt**. PR #8 could not tell those apart because nothing
+had yet forced them apart. **They are now different artifacts for different readers, and the invariant that
+fused them has outlived the condition that made it true.**
+
+#### 9.6.3 What breaks — established before proposing, not after
+
+**Census run against `main` at `2b07bed` (post PR #51), re-confirmed against `b021fdc`.**
+
+| reader | reads the **stored** record? | what it needs |
+|---|---|---|
+| **`internal/eval`, `cmd/eval`** | **No — it never fetches a record body at all.** Its single reference is `internal/eval/result.go:162`, `divoid.IsRunRecord(d.Type, d.Name)`, which **classifies a candidate row a sweep retrieved** | nothing |
+| **`scripts/compare.py:279`** (`find_prior_run`) | **Yes — the only one** | **`record["input"]` alone.** It parses the body and compares one field |
+| `scripts/smoke.py`, `scripts/step_trace.py` | No — both read the **response** of `POST /runs` | unaffected |
+| `scripts/compare.py` elsewhere | No — the response again. Note `:497` is `len(record["block"])`: **a byte count, never the text** | see §9.6.4 |
+
+> **Nothing that reads the stored record reads `block`. The one instrument that touches `block` at all takes
+> its length.**
+
+**The brief asked specifically what `internal/eval` needs. Measured answer: nothing from the stored record.**
+It loads corpora, sweeps retrieval, and classifies rows by type and name. Removal cannot reach it.
+
+**On reproducing a run's exact prompt — no identified reader requires it, and the stored block does not
+reliably provide it anyway.** The block holds node bodies *as they were at run time*; the graph holds them
+as they are now. A reproduction is exact only until any admitted node changes, which is precisely why
+`contentHash` exists (#10904 §7: *"a record of ids alone rots as the nodes change"*). **The stored block is a
+snapshot with no stated lifetime and no reader who has claimed it.** Where exact-prompt reproduction was
+actually needed, it was done by capturing request bodies on the wire — #13091 archived 70 of them to a zip —
+not by reading a graph node. **If someone does need it, say who and why and this reopens. Absent that it is
+a capability nobody has asked for, at 60 KB per record.**
+
+#### 9.6.4 The three options weighed — and one rests on a claim that is false
+
+| | Option | Ruling |
+|---|---|---|
+| **a** | **Drop `block` entirely** | **Adopted**, together with (b)'s byte count |
+| **b** | **Store a hash, or a byte count, only** | **Byte count adopted; hash rejected.** A hash serves verification of a reproduction nobody performs, and per-candidate `contentHash` already carries drift detection. The byte count is different: it is the one derived quantity an instrument actually uses (`compare.py:497`), and it is **not** exactly reconstructible — the block's framing (`===== ANCHOR =====`, `===== CANDIDATE =====`, the `id/type/name` headers) appears in no field. Reconstruction would be approximate; an integer is exact and costs eight bytes against sixty thousand |
+| **c** | **Store the block ordering**, since `candidates[]` is in similarity order and #13101 makes position the largest lever | **Rejected — the premise is false, and I read the code rather than the claim.** `internal/loop/assemble.go:25` sorts admitted candidates **ascending by id** and hands that slice to `renderBlock`, which writes the anchor and then the slice in order. **So block order is exactly: the anchor, then every disposition with `Included == true`, ascending by id.** Fully derivable from fields already stored; no field needed |
+
+> **Correction to #13245 finding 3.** It states *"block ordering is the honest cost of not rendering
+> `block`… `candidates` is in similarity order, which is not necessarily block order — and it needs a field,
+> not a longer render."* The observation is right and the conclusion does not follow: block order is not
+> *candidates* order, but it is a **known deterministic transform** of it. **No field is needed.** This
+> removes what would otherwise have been the strongest reason to keep part of the block.
+
+#### 9.6.5 The amended invariant, stated so #10904 can adopt it verbatim
+
+> **The stored node's body and the HTTP response body carry the same record in every key that describes the
+> run, with exactly two named exceptions: the response carries the *write receipt*, which the stored body
+> does not; and the response carries *`block`*, which the stored body replaces with `blockBytes`, its length
+> in bytes. Nothing else differs.**
+
+**The test survives and keeps its purpose.** `TestTheStoredBodyIsTheResponseBodyMinusTheWriteReceiptAndNothingElse`
+(`cmd/processor/artifacts_test.go:161`) is renamed and extended to strip both named keys before comparing.
+**A third divergence, added without a decision, still reddens it** — which is the whole value of the
+invariant, preserved rather than spent.
+
+**Consequences, stated plainly:**
+
+- **Forward-only.** Existing records keep their `block`; nothing rewrites them.
+- **It does not fix the crowding** (§4.8, §9.5's struck row). The name still matches; Q11 remains the lever.
+- **It must not land before §9.2's form rule exists** — a record without `block` is 15–25 KB and would be
+  admissible **in content form** for the first time (R7).
+- **The exclusion must not be lifted before this lands** (R7a): while the dump is stored, the exclusion is
+  the only thing preventing a record's content being copied into a later record's block.
+
+#### 9.6.6 If the invariant should have stood
+
+**It should not, and the case for keeping it deserves stating so the ruling is not mistaken for
+inevitability.** The strongest version: *the record is the graph's only durable account of what a run was
+given, and a system whose premise is "substrate is memory" should not store a summary of its own input while
+discarding the input.*
+
+**It fails on the measurement rather than on the argument.** §4.8.1 shows the stored block does not preserve
+the run's account — it **destroys** it, displacing the record's identity in its own embedding so that a query
+naming one run's unique outcome returns nothing. **A copy that makes the original unfindable is not an
+archive.** And the premise cuts the other way: the bodies are in the graph, behind edges, which is what a
+memory substrate is *for*. **The block is the one part of the record that does not trust the graph to hold
+what the graph already holds.**
 
 ---
 
@@ -1220,7 +1359,7 @@ error: its bounding invariant is withdrawn, on the evidence of the very measurem
 | **Q1** | ~~What is the "retrievable corpus"?~~ **ANSWERED — the question dissolves.** Under §7.3 the retrievable corpus is *whatever retrieval retrieves*, discovered rather than declared. There is no set to define, no campaign to schedule, and a node nobody recalls is never condensed | **No longer blocking** | Struck rather than deleted: it was the open question that made Unit 2 a scheduling problem, and the reframe is what closed it |
 | **Q2** | **The ratio threshold** in §8.1 | No — it ships behind a dial | Set it by F-3's curve, not by argument |
 | **Q3** | ~~Does the condenser get a JSON path, or does the record get a prose projection?~~ **ANSWERED BY MEASUREMENT — neither.** #13242 shows the model path yields a digest of other nodes and fabricates counts on this class, and the block-stripped remainder is a data table it transcribes rather than condenses | **No longer blocking** | **Deterministic rendering** (§9.3.2). The template *is* the projection, it needs no condenser and no model, and it cannot invent a figure |
-| **Q4** | **Does `block` leave the stored record? — ANSWERED: yes, and the reason changed.** An earlier revision closed this as *not on the path*, because the template made it unnecessary. **It is back, on different grounds: storage and graph hygiene** (§9.5) — ~60 KB of verbatim duplicate per record of content the graph already holds behind an edge. **Explicitly not on retrieval grounds: §4.8 measures that it does not touch the crowding** | **Yes for the change itself** — #10904 must re-rule PR #8's stored-vs-response invariant first; that dependency is unchanged | Yes, but only after §9.2's form rule exists — otherwise a 15–25 KB transcript becomes admissible for the first time (R7) |
+| **Q4** | ~~Does `block` leave the stored record?~~ **CLOSED — §9.6 re-rules #10904's invariant.** `block` leaves the stored body, stays in the response, and is replaced by `blockBytes`. The amended invariant names exactly two divergences and keeps its test. **The blocker Q4 named is discharged by this document rather than deferred to #10904** | No | Adopt §9.6.5's wording into #10904 §8.1 and rename the guard test. Forward-only; nothing rewrites existing records |
 | **Q5** | **Who measures substance coverage, and how often?** Nothing does today | No | A line in the sweep report; it is one query |
 | **Q6** | **`fields=substance` works on the listing route and is undocumented in #8** | No | One line in #8 by whoever touches it next. Named because A4 rests on it |
 | **Q7** | **Two-phase retrieval** — rank without bodies, then batch-fetch the survivors. Measured 1,236,611 B → 115,382 B on the yardstick (§7.1) | No | Its own unit, any time. It composes with every payload rule and depends on none of them |
@@ -1321,7 +1460,7 @@ note that #13106 already establishes it probably requires the call ceiling raise
 - No substance rendered into a block before **F-1** passes.
 - No provenance clause in the form rule (S2, R5).
 - No predicate keying on the `session-log` type (R6) — #11387 is its live occupant.
-- **No `block` removal before #10904 re-rules the stored-vs-response invariant, and before §9.2's form rule exists** (Q4, R7).
+- **No `block` removal before §9.2's form rule exists** (R7). #10904's invariant is re-ruled in §9.6 and no longer blocks it — but the amended wording and the renamed guard test must land **with** the removal, not after it, or the tripwire is spent rather than preserved.
 - **No removal of the run-record exclusion before `block` is gone** (R7a). While the dump is still stored, the exclusion is the only thing stopping a record's content being copied into a later record's block. **That ordering is a correctness requirement, not a preference.**
 - **No description of `block` removal that presents it as the crowding fix.** §4.8 measured that it is not (R19).
 - **No fill shipped without re-running F-7's probe** (#13241). It passed once; it is silently invalidated if DiVoid ever embeds substance, and nothing would announce that.
