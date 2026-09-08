@@ -36,9 +36,8 @@ const (
 )
 
 const (
-	minOutputTokens     = 2048
-	bytesPerToken       = 4.2
-	outputTokenFraction = 0.5
+	minOutputTokens = 2048
+	bytesPerToken   = 4.2
 )
 
 const finishReasonStop = "stop"
@@ -156,12 +155,19 @@ type Result struct {
 func (r Result) OperationalFailures() int {
 	failures := 0
 	for _, s := range r.Skipped {
-		switch s.Reason {
-		case skipReadFailed, skipModelFailed, skipWriteFailed:
+		if isOperationalFailure(s.Reason) {
 			failures++
 		}
 	}
 	return failures
+}
+
+func isOperationalFailure(reason string) bool {
+	switch reason {
+	case skipReadFailed, skipModelFailed, skipWriteFailed, skipTruncated:
+		return true
+	}
+	return false
 }
 
 type outcome struct {
@@ -299,7 +305,7 @@ func isProse(contentType string) bool {
 }
 
 func maxOutputTokens(content string) int {
-	estimate := int(math.Ceil(float64(len(content)) / bytesPerToken * outputTokenFraction))
+	estimate := int(math.Ceil(float64(len(content)) / bytesPerToken))
 	if estimate < minOutputTokens {
 		return minOutputTokens
 	}

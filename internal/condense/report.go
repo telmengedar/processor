@@ -11,6 +11,11 @@ import (
 
 const unsetSampling = "(unset)"
 
+const (
+	ruleSkipHeading    = "skipped by a rule the pass applied"
+	failureSkipHeading = "skipped by a failure of the pass itself"
+)
+
 // Render writes the pass result as JSON to machine and as the operator-facing audit bundle to human.
 func Render(result Result, machine, human io.Writer) error {
 	encoder := json.NewEncoder(machine)
@@ -100,16 +105,39 @@ func writeRatios(w io.Writer, result Result) {
 }
 
 func writeSkips(w io.Writer, result Result) {
-	fmt.Fprintln(w, "skipped, by rule")
 	if len(result.Skipped) == 0 {
-		fmt.Fprintln(w, "  nothing was skipped")
+		fmt.Fprintln(w, "nothing was skipped")
 		fmt.Fprintln(w)
 		return
 	}
 
+	rules, failures := partitionSkips(result.Skipped)
+	writeSkipSection(w, ruleSkipHeading, rules)
+	writeSkipSection(w, failureSkipHeading, failures)
+}
+
+func partitionSkips(skipped []Skip) ([]Skip, []Skip) {
+	rules := make([]Skip, 0, len(skipped))
+	failures := make([]Skip, 0, len(skipped))
+	for _, s := range skipped {
+		if isOperationalFailure(s.Reason) {
+			failures = append(failures, s)
+			continue
+		}
+		rules = append(rules, s)
+	}
+	return rules, failures
+}
+
+func writeSkipSection(w io.Writer, heading string, skipped []Skip) {
+	if len(skipped) == 0 {
+		return
+	}
+
+	fmt.Fprintln(w, heading)
 	byReason := make(map[string][]string)
 	reasons := make([]string, 0)
-	for _, s := range result.Skipped {
+	for _, s := range skipped {
 		if _, seen := byReason[s.Reason]; !seen {
 			reasons = append(reasons, s.Reason)
 		}
@@ -122,7 +150,7 @@ func writeSkips(w io.Writer, result Result) {
 		fmt.Fprintf(w, "  %-40s %3d   %s\n", reason, len(nodes), strings.Join(nodes, " "))
 	}
 
-	for _, s := range result.Skipped {
+	for _, s := range skipped {
 		if s.Detail != "" {
 			fmt.Fprintf(w, "  node %d · %s · %s\n", s.Node, s.Reason, s.Detail)
 		}

@@ -139,3 +139,76 @@ func TestAPassThatCondensedNothingSaysSoRatherThanPrintingAnEmptyTable(t *testin
 		t.Fatalf("want the sampling section to say nothing was read back, got:\n%s", human)
 	}
 }
+func headingOver(t *testing.T, human, reason string) string {
+	t.Helper()
+
+	heading := ""
+	for _, line := range strings.Split(human, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, " ") {
+			heading = line
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(line), reason) {
+			return heading
+		}
+	}
+
+	t.Fatalf("want %q listed among the skips, got:\n%s", reason, human)
+	return ""
+}
+
+func TestATruncatedCondensationIsNotListedUnderAHeadingThatCallsItARuleThePassApplied(t *testing.T) {
+	result := Result{TargetCount: 2, Skipped: []Skip{
+		{Node: 200, Reason: skipTruncated, Detail: "length"},
+		{Node: 300, Reason: skipSubstancePresent},
+	}}
+
+	_, human := renderedPass(t, result)
+
+	truncated := headingOver(t, human, skipTruncated)
+	if strings.Contains(truncated, "rule") {
+		t.Fatalf("a truncation is the pass exhausting its own output budget, yet the report files it under %q", truncated)
+	}
+	if rule := headingOver(t, human, skipSubstancePresent); rule == truncated {
+		t.Fatalf("a rule the pass applied and a failure of the pass share the heading %q", truncated)
+	}
+}
+
+func TestEverySkipIsListedUnderTheHeadingThatMatchesHowTheResultCountsIt(t *testing.T) {
+	reasons := []string{
+		skipNodeAbsent, skipContentAbsent, skipSubstancePresent, skipSelfProduced,
+		skipNonProseContent, skipEmptyCondensation, skipNotShorter, skipBelowFloor,
+		skipPreamble, skipContentMoved, skipTruncated, skipReadFailed,
+		skipModelFailed, skipWriteFailed,
+	}
+
+	result := Result{TargetCount: len(reasons)}
+	for i, reason := range reasons {
+		result.Skipped = append(result.Skipped, Skip{Node: int64(100 + i), Reason: reason})
+	}
+
+	_, human := renderedPass(t, result)
+
+	for _, reason := range reasons {
+		want := ruleSkipHeading
+		if (Result{Skipped: []Skip{{Reason: reason}}}).OperationalFailures() == 1 {
+			want = failureSkipHeading
+		}
+		if got := headingOver(t, human, reason); got != want {
+			t.Fatalf("the report files %q under %q while the count places it under %q", reason, got, want)
+		}
+	}
+}
+
+func TestAPassWhoseSkipsAreAllRulesPrintsNoHeadingClaimingAFailureOfThePass(t *testing.T) {
+	result := Result{TargetCount: 1, Skipped: []Skip{{Node: 200, Reason: skipSubstancePresent}}}
+
+	_, human := renderedPass(t, result)
+
+	if strings.Contains(human, failureSkipHeading) {
+		t.Fatalf("no skip here is a failure of the pass, yet the report announces a section of them:\n%s", human)
+	}
+}

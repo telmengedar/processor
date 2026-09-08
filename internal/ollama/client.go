@@ -19,6 +19,8 @@ const DefaultTimeout = 5 * time.Minute
 
 const adapterName = "ollama"
 
+const chatRoute = "/api/chat"
+
 const (
 	recallToolName    = "recall"
 	writeFileToolName = "write_file"
@@ -70,7 +72,7 @@ func (c *Client) client() *http.Client {
 
 // Judge runs one judgement step against the endpoint.
 func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
-	endpoint := c.baseURL + "/api/chat"
+	endpoint := c.baseURL + chatRoute
 
 	reqBody := chatRequest{
 		Model:    c.modelID,
