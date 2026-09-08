@@ -5,12 +5,14 @@ import (
 
 	"github.com/telmengedar/processor/internal/condense"
 	"github.com/telmengedar/processor/internal/divoid"
+	"github.com/telmengedar/processor/internal/ollama"
 	"github.com/telmengedar/processor/internal/openaicompat"
 )
 
 var (
 	_ condense.GraphPort = (*graphAdapter)(nil)
-	_ condense.ModelPort = (*modelAdapter)(nil)
+	_ condense.ModelPort = (*openAICompatModel)(nil)
+	_ condense.ModelPort = (*ollamaModel)(nil)
 )
 
 type graphAdapter struct {
@@ -41,11 +43,34 @@ func (g *graphAdapter) SetSubstance(ctx context.Context, id int64, substance str
 	return g.client.SetSubstance(ctx, id, substance)
 }
 
-type modelAdapter struct {
+type openAICompatModel struct {
 	client *openaicompat.Client
 }
 
-func (m *modelAdapter) Condense(ctx context.Context, prompt string, maxOutputTokens int) (condense.Completion, error) {
+func (m *openAICompatModel) Condense(ctx context.Context, prompt string, maxOutputTokens int) (condense.Completion, error) {
+	result, err := m.client.Condense(ctx, prompt, maxOutputTokens)
+	if err != nil {
+		return condense.Completion{}, err
+	}
+	return condense.Completion{
+		Text:         result.Text,
+		FinishReason: result.FinishReason,
+		Model:        result.Model,
+		Sampling: condense.Sampling{
+			Temperature:      result.Sampling.Temperature,
+			TopP:             result.Sampling.TopP,
+			FrequencyPenalty: result.Sampling.FrequencyPenalty,
+			PresencePenalty:  result.Sampling.PresencePenalty,
+			MaxTokens:        result.Sampling.MaxTokens,
+		},
+	}, nil
+}
+
+type ollamaModel struct {
+	client *ollama.Client
+}
+
+func (m *ollamaModel) Condense(ctx context.Context, prompt string, maxOutputTokens int) (condense.Completion, error) {
 	result, err := m.client.Condense(ctx, prompt, maxOutputTokens)
 	if err != nil {
 		return condense.Completion{}, err

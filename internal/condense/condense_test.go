@@ -465,3 +465,102 @@ func TestAnEmptyContentTypeIsTreatedAsProseAndAnImageOneIsNot(t *testing.T) {
 		t.Fatalf("a non-prose content type must be excluded")
 	}
 }
+
+func TestATruncatedCondensationIsAnOperationalFailureBecauseThePassExhaustedItsOwnOutputBudget(t *testing.T) {
+	graph := newFakeGraph(proseNode(1, strings.Repeat("a", 1000)))
+	model := &fakeModel{text: strings.Repeat("b", 200), finishReason: "length"}
+
+	result := runPass(t, graph, model, Options{}, Target{Node: 1})
+
+	if len(result.Provenance) != 0 {
+		t.Fatalf("want nothing condensed, got %+v", result.Provenance)
+	}
+	if result.OperationalFailures() != 1 {
+		t.Fatalf("a pass that condensed nothing must not report a clean run, got %d operational failures", result.OperationalFailures())
+	}
+}
+
+func TestNoRuleThePassAppliesIsCountedAsAnOperationalFailure(t *testing.T) {
+	content := strings.Repeat("a", 1000)
+
+	selfProduced := proseNode(3, content)
+	selfProduced.SelfProduced = true
+	nonProse := proseNode(4, content)
+	nonProse.ContentType = "application/json"
+	carrying := proseNode(5, content)
+	carrying.Substance = "an existing condensation"
+	moved := newFakeGraph(proseNode(6, content))
+	moved.liveBody = map[int64]string{6: strings.Repeat("z", 1000)}
+
+	cases := []struct {
+		reason string
+		result Result
+	}{
+		{skipNodeAbsent, runPass(t, newFakeGraph(), &fakeModel{text: "unreached"}, Options{}, Target{Node: 1})},
+		{skipContentAbsent, runPass(t, newFakeGraph(proseNode(2, "   \n  ")), &fakeModel{text: "unreached"}, Options{}, Target{Node: 2})},
+		{skipSelfProduced, runPass(t, newFakeGraph(selfProduced), &fakeModel{text: "unreached"}, Options{}, Target{Node: 3})},
+		{skipNonProseContent, runPass(t, newFakeGraph(nonProse), &fakeModel{text: "unreached"}, Options{}, Target{Node: 4})},
+		{skipSubstancePresent, runPass(t, newFakeGraph(carrying), &fakeModel{text: "unreached"}, Options{}, Target{Node: 5})},
+		{skipContentMoved, runPass(t, moved, &fakeModel{text: strings.Repeat("b", 200)}, Options{}, Target{Node: 6})},
+		{skipEmptyCondensation, runPass(t, newFakeGraph(proseNode(7, content)), &fakeModel{text: ""}, Options{}, Target{Node: 7})},
+		{skipNotShorter, runPass(t, newFakeGraph(proseNode(8, content)), &fakeModel{text: strings.Repeat("b", 1000)}, Options{}, Target{Node: 8})},
+		{skipBelowFloor, runPass(t, newFakeGraph(proseNode(9, content)), &fakeModel{text: strings.Repeat("b", 49)}, Options{}, Target{Node: 9})},
+		{skipPreamble, runPass(t, newFakeGraph(proseNode(10, content)), &fakeModel{text: "Here is the condensation you asked for, set out below."}, Options{}, Target{Node: 10})},
+	}
+
+	for _, c := range cases {
+		if got := onlySkip(t, c.result).Reason; got != c.reason {
+			t.Fatalf("want skip reason %q, got %q", c.reason, got)
+		}
+		if c.result.OperationalFailures() != 0 {
+			t.Fatalf("%q is a rule the pass applied, not a failure of the pass, yet it counted %d", c.reason, c.result.OperationalFailures())
+		}
+	}
+}
+
+func TestEverySkipWhoseCauseIsThePassItselfIsCountedAsAnOperationalFailure(t *testing.T) {
+	content := strings.Repeat("a", 1000)
+
+	unreadable := newFakeGraph(proseNode(1, content))
+	unreadable.readErr = map[int64]error{1: errors.New("the graph refused the read")}
+	unwritable := newFakeGraph(proseNode(3, content))
+	unwritable.writeErr = map[int64]error{3: errors.New("the graph rejected the patch")}
+
+	cases := []struct {
+		reason string
+		result Result
+	}{
+		{skipReadFailed, runPass(t, unreadable, &fakeModel{text: strings.Repeat("b", 200)}, Options{}, Target{Node: 1})},
+		{skipModelFailed, runPass(t, newFakeGraph(proseNode(2, content)), &fakeModel{err: errors.New("the endpoint refused the call")}, Options{}, Target{Node: 2})},
+		{skipWriteFailed, runPass(t, unwritable, &fakeModel{text: strings.Repeat("b", 200)}, Options{}, Target{Node: 3})},
+		{skipTruncated, runPass(t, newFakeGraph(proseNode(4, content)), &fakeModel{text: strings.Repeat("b", 200), finishReason: "length"}, Options{}, Target{Node: 4})},
+	}
+
+	for _, c := range cases {
+		if got := onlySkip(t, c.result).Reason; got != c.reason {
+			t.Fatalf("want skip reason %q, got %q", c.reason, got)
+		}
+		if c.result.OperationalFailures() != 1 {
+			t.Fatalf("%q is the pass failing rather than a rule it applied, yet it counted %d", c.reason, c.result.OperationalFailures())
+		}
+	}
+}
+
+func TestTheOutputCeilingIsOneTokenPerInputTokenRatherThanHalfOfThem(t *testing.T) {
+	if got := maxOutputTokens(strings.Repeat("a", 100000)); got != 23810 {
+		t.Fatalf("want a ceiling of 23810 tokens for a 100000 byte node, got %d", got)
+	}
+	if got := maxOutputTokens(strings.Repeat("a", 100)); got != 2048 {
+		t.Fatalf("want the floor of 2048 tokens for a 100 byte node, got %d", got)
+	}
+}
+
+func TestTheCeilingHandedToTheModelIsTheOneTheNodesOwnSizeProduces(t *testing.T) {
+	model := &fakeModel{text: strings.Repeat("b", 200)}
+
+	runPass(t, newFakeGraph(proseNode(1, strings.Repeat("a", 100000))), model, Options{}, Target{Node: 1})
+
+	if len(model.maxTokens) != 1 || model.maxTokens[0] != 23810 {
+		t.Fatalf("want one call carrying a ceiling of 23810, got %v", model.maxTokens)
+	}
+}

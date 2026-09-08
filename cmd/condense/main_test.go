@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +13,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/telmengedar/processor/internal/boot"
 	"github.com/telmengedar/processor/internal/condense"
+	"github.com/telmengedar/processor/internal/loop"
 )
 
 const oneRowCorpus = `[
@@ -252,5 +255,169 @@ func TestBootConfigurationThatNamesTheGraphApiPathIsRejectedBeforeAnythingIsWrit
 	}
 	if recorder.count() != 0 {
 		t.Fatalf("want no write, got %d", recorder.count())
+	}
+}
+
+const (
+	openAICompatCondensation = `{"model":"ai/test-served","choices":[{"message":{"content":"The ruling binds Go on this repo."},"finish_reason":"stop"}]}`
+	ollamaCondensation       = `{"model":"ai/test-served","message":{"content":"The ruling binds Go on this repo."},"done":true,"done_reason":"stop"}`
+)
+
+type modelCall struct {
+	mu   sync.Mutex
+	path string
+	body string
+}
+
+func (c *modelCall) record(path, body string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.path, c.body = path, body
+}
+
+func (c *modelCall) read() (string, string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.path, c.body
+}
+
+func recordingModel(t *testing.T, response string) (*httptest.Server, *modelCall) {
+	t.Helper()
+
+	captured := &modelCall{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		captured.record(r.URL.Path, string(body))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, response)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, captured
+}
+
+func TestTheOllamaProtocolReachesTheNativeAdapterAndSuppressesItsReasoningStream(t *testing.T) {
+	t.Setenv("PROCESSOR_MODEL_PROTOCOL", "ollama")
+	model, captured := recordingModel(t, ollamaCondensation)
+	bootEnv(t, testGraph(t, &graphRecorder{}).URL, model.URL)
+	corpus := writeCorpus(t, oneRowCorpus)
+
+	code, result, _ := runCondense(t, "-corpus", corpus, "-dry-run")
+
+	path, body := captured.read()
+	if path != "/api/chat" {
+		t.Fatalf("want the native chat route, got %q", path)
+	}
+	if !strings.Contains(body, `"think":false`) {
+		t.Fatalf("want the native call to switch thinking off, got %s", body)
+	}
+	if code != 0 {
+		t.Fatalf("want exit 0, got %d", code)
+	}
+	if len(result.Provenance) != 1 {
+		t.Fatalf("want the native adapter to complete one condensation, got skips %+v", result.Skipped)
+	}
+	if result.Provenance[0].Model != "ai/test-served" {
+		t.Fatalf("want the served model carried out of the native adapter, got %q", result.Provenance[0].Model)
+	}
+	if result.Provenance[0].Sampling.MaxTokens != 2048 {
+		t.Fatalf("want the output ceiling carried out of the native adapter, got %d", result.Provenance[0].Sampling.MaxTokens)
+	}
+}
+
+func TestAnAbsentProtocolVariableStillReachesTheOpenAICompatibleAdapterAndSendsNoThinkKey(t *testing.T) {
+	model, captured := recordingModel(t, openAICompatCondensation)
+	bootEnv(t, testGraph(t, &graphRecorder{}).URL, model.URL)
+	corpus := writeCorpus(t, oneRowCorpus)
+
+	code, result, _ := runCondense(t, "-corpus", corpus, "-dry-run")
+
+	path, body := captured.read()
+	if path != "/chat/completions" {
+		t.Fatalf("want the chat-completions route, got %q", path)
+	}
+	if strings.Contains(body, "think") {
+		t.Fatalf("the OpenAI-compatible protocol has no think parameter, got %s", body)
+	}
+	if code != 0 {
+		t.Fatalf("want exit 0, got %d", code)
+	}
+	if len(result.Provenance) != 1 {
+		t.Fatalf("want the default adapter to complete one condensation, got skips %+v", result.Skipped)
+	}
+	if result.Provenance[0].Model != "ai/test-served" {
+		t.Fatalf("want the served model carried out of the default adapter, got %q", result.Provenance[0].Model)
+	}
+	if result.Provenance[0].Sampling.MaxTokens != 2048 {
+		t.Fatalf("want the output ceiling carried out of the default adapter, got %d", result.Provenance[0].Sampling.MaxTokens)
+	}
+}
+
+func TestAPassThatCondensedNothingBecauseItsOutputBudgetRanOutExitsNonZero(t *testing.T) {
+	recorder := &graphRecorder{}
+	truncating := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"model":"ai/test-served","choices":[{"message":{"content":"The ruling"},"finish_reason":"length"}]}`)
+	}))
+	t.Cleanup(truncating.Close)
+
+	bootEnv(t, testGraph(t, recorder).URL, truncating.URL)
+	corpus := writeCorpus(t, oneRowCorpus)
+
+	code, result, human := runCondense(t, "-corpus", corpus)
+
+	if code != exitError {
+		t.Fatalf("want exit %d when the pass produced nothing, got %d", exitError, code)
+	}
+	if recorder.count() != 0 {
+		t.Fatalf("a truncated condensation must produce no write, got %d", recorder.count())
+	}
+	if result.OperationalFailures() != 1 {
+		t.Fatalf("want one operational failure, got %d", result.OperationalFailures())
+	}
+	if !strings.Contains(human, "operational failures 1") {
+		t.Fatalf("want the report to say the pass failed, got:\n%s", human)
+	}
+}
+
+type countingTransport struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (t *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	t.mu.Lock()
+	t.calls++
+	t.mu.Unlock()
+	return http.DefaultTransport.RoundTrip(r)
+}
+
+func (t *countingTransport) count() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.calls
+}
+
+func TestEachProtocolsAdapterCarriesItsCallOnTheHTTPClientThePassBoundsRatherThanOneOfItsOwn(t *testing.T) {
+	responses := map[string]string{
+		boot.ProtocolOpenAICompat: openAICompatCondensation,
+		boot.ProtocolOllama:       ollamaCondensation,
+	}
+
+	for protocol, response := range responses {
+		endpoint, _ := recordingModel(t, response)
+		transport := &countingTransport{}
+
+		model, err := newModel(boot.ModelConfig{Protocol: protocol, URL: endpoint.URL, ID: "ai/test-requested"},
+			loop.Sampling{}, &http.Client{Transport: transport})
+		if err != nil {
+			t.Fatalf("protocol %q: building the adapter failed: %v", protocol, err)
+		}
+
+		if _, err := model.Condense(context.Background(), "condense this", 2048); err != nil {
+			t.Fatalf("protocol %q: the condensation call failed: %v", protocol, err)
+		}
+		if transport.count() != 1 {
+			t.Fatalf("protocol %q: want the call carried on the client the pass supplied, got %d requests through it", protocol, transport.count())
+		}
 	}
 }

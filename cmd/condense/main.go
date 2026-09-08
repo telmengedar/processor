@@ -18,6 +18,7 @@ import (
 	"github.com/telmengedar/processor/internal/divoid"
 	"github.com/telmengedar/processor/internal/eval"
 	"github.com/telmengedar/processor/internal/loop"
+	"github.com/telmengedar/processor/internal/ollama"
 	"github.com/telmengedar/processor/internal/openaicompat"
 )
 
@@ -67,8 +68,12 @@ func run(args []string, machine, human io.Writer) int {
 
 	graph := &graphAdapter{client: divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)}
 	sampling := loop.Sampling{Temperature: modelCfg.Temperature, TopP: modelCfg.TopP}
-	modelHTTP := &http.Client{Timeout: condenseTimeout}
-	model := &modelAdapter{client: openaicompat.NewClient(modelCfg.URL, modelCfg.ID, modelCfg.Key, sampling, modelHTTP)}
+
+	model, err := newModel(modelCfg, sampling, &http.Client{Timeout: condenseTimeout})
+	if err != nil {
+		logger.Error("boot configuration", "error", err)
+		return exitError
+	}
 
 	result := condense.Run(context.Background(), graph, model, targets,
 		condense.Options{Force: opts.force, DryRun: opts.dryRun}, time.Now)
@@ -82,6 +87,16 @@ func run(args []string, machine, human io.Writer) int {
 		return exitError
 	}
 	return 0
+}
+
+func newModel(cfg boot.ModelConfig, sampling loop.Sampling, httpClient *http.Client) (condense.ModelPort, error) {
+	switch cfg.Protocol {
+	case boot.ProtocolOpenAICompat:
+		return &openAICompatModel{client: openaicompat.NewClient(cfg.URL, cfg.ID, cfg.Key, sampling, httpClient)}, nil
+	case boot.ProtocolOllama:
+		return &ollamaModel{client: ollama.NewClient(cfg.URL, cfg.ID, cfg.Key, sampling, httpClient)}, nil
+	}
+	return nil, fmt.Errorf("model protocol %q has no adapter in this binary", cfg.Protocol)
 }
 
 func resolveTargets(opts options) ([]condense.Target, error) {
