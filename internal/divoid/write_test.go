@@ -21,6 +21,8 @@ const (
 	legContent = "content"
 	legLink    = "link"
 	legDiscard = "discard"
+
+	legSubstance = "substance"
 )
 
 type recordedCall struct {
@@ -60,6 +62,8 @@ func legOf(r *http.Request) string {
 	switch {
 	case r.Method == http.MethodDelete:
 		return legDiscard
+	case r.Method == http.MethodPatch:
+		return legSubstance
 	case strings.HasSuffix(r.URL.Path, "/content"):
 		return legContent
 	case strings.HasSuffix(r.URL.Path, "/links"):
@@ -118,7 +122,7 @@ func sampleRecord(subject int64) loop.Record {
 	return loop.Record{Input: "what changed", Subject: subject, Answer: "the answer"}
 }
 
-func TestWriteRunIssuesTheThreePOSTsInOrder(t *testing.T) {
+func TestWriteRunCreatesBodiesSummarisesThenLinksInThatOrder(t *testing.T) {
 	t.Parallel()
 
 	srv, calls := writeServer(t, 10525)
@@ -129,9 +133,9 @@ func TestWriteRunIssuesTheThreePOSTsInOrder(t *testing.T) {
 		t.Fatalf("receipt.NodeID = %d, want 10525 (the id the create call returned)", receipt.NodeID)
 	}
 
-	want := []string{"POST /api/nodes", "POST /api/nodes/10525/content", "POST /api/nodes/10525/links"}
+	want := []string{"POST /api/nodes", "POST /api/nodes/10525/content", "PATCH /api/nodes/10525", "POST /api/nodes/10525/links"}
 	if got := methodPaths(*calls); !slices.Equal(got, want) {
-		t.Fatalf("calls = %v, want %v", got, want)
+		t.Fatalf("calls = %v, want %v — the record's body, then its summary, then the edge to its subject, in that order", got, want)
 	}
 }
 
@@ -192,7 +196,7 @@ func TestWriteRunLinkBodyIsTheBareSubjectID(t *testing.T) {
 
 	c.WriteRun(context.Background(), sampleRecord(777))
 
-	linkBody := strings.TrimSpace(string((*calls)[2].Body))
+	linkBody := strings.TrimSpace(string((*calls)[3].Body))
 	if linkBody != "777" {
 		t.Fatalf("link POST body = %q, want the bare target id %q, not a wrapping object", linkBody, "777")
 	}
@@ -268,7 +272,7 @@ func TestRunNameTruncatesALongInputWithABoundedPrefix(t *testing.T) {
 	}
 }
 
-func TestWriteRunReportsStoredWithTheNodeIDWhenAllThreeCallsLand(t *testing.T) {
+func TestWriteRunReportsStoredWithTheNodeIDWhenEveryCallLands(t *testing.T) {
 	t.Parallel()
 
 	srv, calls := writeServer(t, 10525)
@@ -288,7 +292,7 @@ func TestWriteRunReportsStoredWithTheNodeIDWhenAllThreeCallsLand(t *testing.T) {
 			t.Fatalf("a DELETE was issued on the fully successful path: %s %s", c.Method, c.Path)
 		}
 	}
-	for _, unwanted := range []string{"repairable orphan", "uncollected shell", "write-back failed"} {
+	for _, unwanted := range []string{"repairable orphan", "uncollected shell", "write-back failed", "stored without its summary"} {
 		if strings.Contains(log.String(), unwanted) {
 			t.Fatalf("operator log carries %q on a fully successful write; log:\n%s", unwanted, log.String())
 		}
@@ -376,7 +380,7 @@ func TestWriteRunKeepsTheCompleteRecordAndReportsUnlinkedWhenTheLinkFails(t *tes
 	if receipt.NodeID != 10525 {
 		t.Fatalf("receipt.NodeID = %d, want 10525 — the node holding the complete record is named", receipt.NodeID)
 	}
-	want := []string{"POST /api/nodes", "POST /api/nodes/10525/content", "POST /api/nodes/10525/links"}
+	want := []string{"POST /api/nodes", "POST /api/nodes/10525/content", "PATCH /api/nodes/10525", "POST /api/nodes/10525/links"}
 	if got := methodPaths(*calls); !slices.Equal(got, want) {
 		t.Fatalf("calls = %v, want %v — a node holding the record is never discarded", got, want)
 	}
@@ -505,5 +509,108 @@ func TestWriteRunDiscardAuthenticatesWithBearer(t *testing.T) {
 	const want = "Bearer test-key"
 	if deleteAuth != want {
 		t.Fatalf("DELETE Authorization = %q, want %q — the discard is an authenticated call like every other", deleteAuth, want)
+	}
+}
+
+func substancePatchValue(t *testing.T, call recordedCall) string {
+	t.Helper()
+
+	if call.ContentType != jsonPatchContentType {
+		t.Fatalf("substance call Content-Type = %q, want %q", call.ContentType, jsonPatchContentType)
+	}
+
+	var ops []patchOperation
+	if err := json.Unmarshal(call.Body, &ops); err != nil {
+		t.Fatalf("decode substance body as a JSON patch: %v; body=%s", err, call.Body)
+	}
+	if len(ops) != 1 {
+		t.Fatalf("substance patch carries %d operations, want exactly 1; body=%s", len(ops), call.Body)
+	}
+	if ops[0].Op != substanceOp || ops[0].Path != substancePath {
+		t.Fatalf("substance patch operation = %+v, want a %q of %q", ops[0], substanceOp, substancePath)
+	}
+	return ops[0].Value
+}
+
+func TestWriteRunPatchesTheRenderedSummaryOntoTheNodeItJustBodied(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 10525)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	fixed := time.Date(2026, 9, 7, 15, 20, 1, 0, time.UTC)
+	c.clock = func() time.Time { return fixed }
+
+	record := sampleRecord(42)
+	c.WriteRun(context.Background(), record)
+
+	got := substancePatchValue(t, (*calls)[2])
+	if want := loop.RenderSummary(record, fixed); got != want {
+		t.Fatalf("substance = %q, want the record's own rendered summary %q", got, want)
+	}
+}
+
+func TestWriteRunSummaryTimestampIsTheOneTheNodeNameCarries(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 10525)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	reads := 0
+	c.clock = func() time.Time {
+		reads++
+		return time.Date(2026, 9, 7, 15, 0, 0, 0, time.UTC).Add(time.Duration(reads) * time.Hour)
+	}
+
+	c.WriteRun(context.Background(), sampleRecord(42))
+
+	var created createNodeRequest
+	if err := json.Unmarshal((*calls)[0].Body, &created); err != nil {
+		t.Fatalf("decode create body: %v", err)
+	}
+	nameStamp := strings.Fields(created.Name)[1]
+	summaryStamp := strings.Fields(strings.SplitN(substancePatchValue(t, (*calls)[2]), "\n", 2)[0])[2]
+
+	if nameStamp != summaryStamp {
+		t.Fatalf("node name is stamped %q and its summary %q; one run is one instant, and a second clock read makes the pair disagree", nameStamp, summaryStamp)
+	}
+}
+
+func TestWriteRunSummaryLeavesOutTheBlockTheStoredRecordKeeps(t *testing.T) {
+	t.Parallel()
+
+	const marker = "BLOCK-BODY-MARKER"
+
+	srv, calls := writeServer(t, 10525)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	record := sampleRecord(42)
+	record.Block = strings.Repeat(marker+" ", 4000)
+	c.WriteRun(context.Background(), record)
+
+	if !strings.Contains(string((*calls)[1].Body), marker) {
+		t.Fatalf("the stored record does not carry the block, so the summary's silence about it proves nothing; body=%s", (*calls)[1].Body)
+	}
+	if strings.Contains(substancePatchValue(t, (*calls)[2]), marker) {
+		t.Fatalf("the summary reproduces the block, which is the crowding these records exist to document")
+	}
+}
+
+func TestWriteRunStillLinksAndReportsStoredWhenTheSummaryPatchFails(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 10525, legSubstance)
+	logger, log := capturingLogger()
+	c := NewClient(srv.URL, "k", srv.Client(), logger)
+
+	receipt := c.WriteRun(context.Background(), sampleRecord(42))
+
+	if receipt.State != loop.Stored {
+		t.Fatalf("receipt.State = %q, want %q — the record itself landed and a missing summary does not unfile it", receipt.State, loop.Stored)
+	}
+	want := []string{"POST /api/nodes", "POST /api/nodes/10525/content", "PATCH /api/nodes/10525", "POST /api/nodes/10525/links"}
+	if got := methodPaths(*calls); !slices.Equal(got, want) {
+		t.Fatalf("calls = %v, want %v — the link is still attempted after the summary fails", got, want)
+	}
+	if !strings.Contains(log.String(), "run record stored without its summary") {
+		t.Fatalf("a failed summary write is silent in the operator log; log:\n%s", log.String())
 	}
 }

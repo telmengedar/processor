@@ -4,6 +4,7 @@ import (
 	"go/parser"
 	"go/token"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -43,12 +44,16 @@ func TestTheModelSeamTheTurnHoldsExposesJudgementAloneAndNoWayToGenerate(t *test
 	}
 }
 
-func TestTheGraphSeamTheTurnHoldsExposesNoSubstanceWrite(t *testing.T) {
+func TestTheGraphSeamTheTurnHoldsOffersTheseFourOperationsAndNoOtherTheTurnCouldAim(t *testing.T) {
 	port := reflect.TypeOf((*loop.GraphPort)(nil)).Elem()
 
-	for i := 0; i < port.NumMethod(); i++ {
-		if strings.Contains(port.Method(i).Name, "Substance") {
-			t.Fatalf("the turn's graph seam must expose no substance operation, found %s", port.Method(i).Name)
-		}
+	got := make([]string, port.NumMethod())
+	for i := range got {
+		got[i] = port.Method(i).Name
+	}
+
+	want := []string{"Neighbours", "Node", "Recall", "WriteRun"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("the turn's graph seam offers %v, want exactly %v; each of the four is scoped to the run in hand, and a fifth would be an operation the turn could aim at a node of its own choosing", got, want)
 	}
 }
