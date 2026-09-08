@@ -39,7 +39,7 @@ cannot — and shape is fixable. Provenance was never a reason. **This document 
 | **We shipped `substance` and never asked for it** | `candidateFields = "id,type,name,similarity,content"` (`internal/divoid/client.go:34`). `loop.Candidate` has no substance member. `assemble.go` renders `c.Content`, always. We asked DiVoid for the field (#11367), DiVoid shipped it (#11371), we designed admission around it (#12955) — and the loop has never requested it. **The listing route accepts `fields=…,substance` and returns it; verified live today.** |
 | **But the graph has almost no substance to give** | Sampled live: **1 of 500** random nodes, **6 of 500** documentation, **0 of 500** session-logs, **0 of 500** tasks. On the yardstick's own top-20, **1 of 20**. `cmd/condense` has only ever been pointed at the 25 required nodes of the eval corpus (#12984). **That is not a data gap — it is the absence of a behaviour** (§7.3), and it is what Unit 2 becomes. |
 | **Where it would pay is exactly where the crowding is** | The yardstick's seven real candidates total **106,829 B against a 60,000-byte budget** — they cannot all fit. Applying #12984's measured stratum ratios: **36,081 B in substance form, all seven fit, 23,919 B spare.** (One row is a real measurement: #13101, 11,961 B → 5,527 B, ratio 0.462.) |
-| **And the condenser cannot serve the class that needs it most** | `condense.go:283` skips `SelfProduced`; `:296`'s `isProse` refuses `application/json`. **But the gates turned out not to be the constraint** — #13242 removed both and the pass still refused every record at **84 KB**, then fabricated when forced through. The obstacle is shape, and the remedy is §9.3.2's template, not a gate deletion. |
+| **And the condenser cannot serve the class that needs it most** | `gate`'s `SelfProduced` arm skips them; `isProse` refuses `application/json` (`internal/condense/condense.go`). **But the gates turned out not to be the constraint** — #13242 removed both and the pass still refused every record at **84 KB**, then fabricated when forced through. The obstacle is shape, and the remedy is §9.3.2's template, not a gate deletion. |
 
 **The recommendation, in four lines.**
 
@@ -104,7 +104,7 @@ that is what #12984 measured at 23 PASS / 1 FAIL. **Run records get deterministi
 the record's own fields, no model at all** (§9.3.2). A template cannot fabricate a count, needs no F-1
 qualification, costs nothing, and closes Q3 and Q4 outright.
 
-**This crosses an invariant, and the crossing is the design's main claim.** `internal/condense/condense.go:1`
+**This crosses an invariant, and the crossing is the design's main claim.** The package doc comment on `internal/condense`
 says the pass *"is never reachable from a turn"*. Two things make moving it defensible.
 
 **What bounds a turn's spend is the cache, not a cap.** Substance is stored on the node, so **cost is
@@ -239,7 +239,7 @@ run-record exclusion from a provenance rule to a form rule. The node type run re
 | A4 | **The listing route accepts `substance` in `fields` and returns it**, omitting the key when unset — the same convention as `content` | Verified live 2026-09-08 on the exact route `Recall` uses; also `internal/divoid/substance.go:15`. Certain. **Not documented in #8** (Q6) |
 | A5 | Substance round-trips byte-exact; the write is a JSON-Patch on `PATCH /api/nodes/{id}` | #12984, "Verified against the live graph". Certain |
 | A6 | Re-posting byte-identical content **clears** an existing substance | #12984 (A10 re-confirmed live). Certain, and it is §10's staleness story |
-| A7 | `cmd/condense` skips `SelfProduced` (`internal/condense/condense.go:283`) and non-prose content types (`:296`, `:298` — `text/*` or empty) | Read from source. Certain |
+| A7 | `cmd/condense` skips `SelfProduced` (`gate`'s first arm) and non-prose content types (`isProse` — `text/*` or empty), both in `internal/condense/condense.go` | Read from source. Certain |
 | A8 | Run records are written type `session-log`, name prefix `processor-run`, content-type `application/json` | `internal/divoid/write.go:14`, `:17`, `:20`, `:80`, `:101`. Certain |
 | A9 | `Record.Block` is the entire assembled prompt block | `internal/loop/types.go:170`. Certain |
 | A10 | `CandidateLimit = 20`, `AssemblyByteBudget = 60_000`, `SupplementaryByteBudget = 20_000`, `MaxModelCalls = 6` | `internal/loop/turn.go:12-18`. Certain |
@@ -251,7 +251,7 @@ run-record exclusion from a provenance rule to a form rule. The node type run re
 | A16 | **Substance is derived state and is invalidated whenever content is written.** In every case observed on real work the content had genuinely changed, so the invalidation was **correct** | #12984 also measured the degenerate byte-identical case; nobody performs one, so it is a curiosity rather than an exposure (§7.4.5). Certain |
 | A17 | **MEASURED: `substance` does not participate in similarity ranking.** It is stored and served but **not embedded**, so writing one changes what assembly renders and never what retrieval returns | **#13241**, 2026-09-08. A probe carrying content about arctic terns and substance about quantum error correction: the content topic returns it at **rank 1, sim 0.7801** (next hit 0.5558); the substance topic does not return it at all, whole field at the ~0.57 noise floor. Run on `divoid_search` **and** on `GET /api/nodes?query=`, the exact route `Recall` builds — both agree. **Standing guard, not settled: re-run when the fill ships** (F-7) |
 | A18 | **The turn and the condenser share one model configuration.** `cmd/processor/main.go:41` and `cmd/condense/main.go:56` both call `boot.LoadModel()`, reading the same `PROCESSOR_MODEL_*` members | Read from source at `f774c37`. Certain. They differ today only because they are separate **processes** — #12984 ran `ai/gemma3` at `:12434`, #13091 ran `qwen3-coder:30b` at `:11434` |
-| A19 | **The condensation pass knows which model produced each substance and drops it at the graph boundary.** `Provenance` carries `Model` and `Sampling` (`internal/condense/condense.go:107-108`), but `SetSubstance` writes exactly one patch op — `/substance` (`internal/divoid/substance.go:67-81`) | Read from source at `f774c37`. Certain. **Recorded, no longer load-bearing:** it was checked while costing provenance-on-the-node, which §7.4.7 withdraws |
+| A19 | **The condensation pass knows which model produced each substance and drops it at the graph boundary.** `Provenance` carries `Model` and `Sampling` (`internal/condense/condense.go`), but `SetSubstance` writes exactly one patch op — `/substance` (`internal/divoid/substance.go:67-81`) | Read from source at `f774c37`. Certain. **Recorded, no longer load-bearing:** it was checked while costing provenance-on-the-node, which §7.4.7 withdraws |
 | A20 | **DiVoid has no field for substance provenance.** A node carries `substance` as an opaque string; `PATCH /api/nodes/{id}` exposes no provenance path | **#8** and the MCP patch surface. Certain. **Recorded, no longer load-bearing** — same reason as A19 |
 
 ---
@@ -326,8 +326,8 @@ eligible set from *does not fit* to *fits with room*. The exact bytes will diffe
 
 | gate | site | effect on a run record |
 |---|---|---|
-| `SelfProduced` | `internal/condense/condense.go:283` | skipped before any model call |
-| `isProse` — `text/*` or empty | `:296`, `:298` | `application/json` refused |
+| `SelfProduced` | `gate`, first arm (`internal/condense/condense.go`) | skipped before any model call |
+| `isProse` — `text/*` or empty | `isProse` (same file) | `application/json` refused |
 | **size** — measured, not designed | #12984 skips | #10926 at 195,448 B hit the output ceiling, returned `finish_reason: length`, and was **refused rather than stored truncated** |
 
 **So the class of node with the worst shape in the graph is the one class the condenser structurally cannot
@@ -565,7 +565,7 @@ Under a behaviour, coverage grows where retrieval actually goes and nowhere else
 never costs a condensation, and **Q1 dissolves — the retrievable corpus is whatever retrieval retrieves,
 discovered rather than declared.**
 
-**The invariant this crosses is ours, and `internal/condense/condense.go:1` states it in terms:** *"Package
+**The invariant this crosses is ours, and the package doc comment on `internal/condense` states it in terms:** *"Package
 condense is the offline pass that derives a node's substance from its content, and is never reachable from
 a turn."* §7.4 is what replaces it.
 
@@ -1446,7 +1446,7 @@ with the gates.**
 2. **Write its output as the record's `substance`** at write-back time. The template **reads fields and
    ignores `block`**, so it works whether or not `block` is still stored — it neither requires nor blocks
    §9.5's removal, and the two units are independent.
-3. **Only then reconsider the gates.** `condense.go:283` and `:296` keep run records off the *model* path,
+3. **Only then reconsider the gates.** `gate`'s `SelfProduced` arm and `isProse` keep run records off the *model* path,
    which after F-6 is where they should be. They are not obstacles to remove; they are the boundary between
    the two classes in §9.3.1 — and if the template writes the substance directly, the condenser never needs
    to see a run record at all.

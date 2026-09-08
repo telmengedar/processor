@@ -417,9 +417,10 @@ ten rule-side and four operational:
 | **Rule-side (10)** | node absent · content absent · substance present · self-produced · non-prose content type · condensation empty · condensation not shorter than content · condensation below the floor · condensation opens with a preamble · **content moved during condensation** | In every one the pass held a complete basis and the skip **is** the decision it took on it. The four quality reasons judge a *completed* condensation; `content moved` re-checks the premise before writing and **chooses not to write** |
 | **Operational (4)** | graph read failed · model call failed · **substance write failed** · **condensation truncated** | Each fails one of the two tests. `read`/`model` never yield a basis. **`substance write failed` fails test 2**: the decision was *write*, and the skip is what happened instead of it. `condensation truncated` fails test 1 |
 
-**The two write-step reasons are the pair that makes the principle earn its keep.** `content moved`
-(`internal/condense/condense.go:268`) and `substance write failed` (`:272`) sit **four lines apart, after a
-completed condensation, and land on opposite sides.** Nothing about *when* they occur separates them; what
+**The two write-step reasons are the pair that makes the principle earn its keep.** `content moved` and
+`substance write failed` are raised by **consecutive checks inside `condenseOne`**
+(`internal/condense/condense.go`), both **after a completed condensation**, and they land on opposite
+sides. Nothing about *when* they occur separates them; what
 separates them is **chose not to write** versus **was prevented from writing** — test 2, exactly.
 
 **Truncation is the case that tests the other clause.** It *looks* rule-side — output arrived and was
