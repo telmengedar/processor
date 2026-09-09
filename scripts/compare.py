@@ -76,7 +76,8 @@ PROBE_TIMEOUT_S = 60
 RUN_TIMEOUT_S = 11 * 60 + 30
 TRANSCRIPT_TIMEOUT_S = 5 * 60
 IDLE_GRACE_S = 15
-DRAIN_GRACE_S = 11 * 60
+SHUTDOWN_GRACE_S = 675  # mirrors internal/server/server.go's shutdownGrace
+DRAIN_GRACE_S = SHUTDOWN_GRACE_S + 30
 GRAPH_QUERY_TIMEOUT_S = 15
 GRAPH_QUERY_COUNT = 50
 
@@ -441,9 +442,10 @@ def stop_server(proc, log_path, run_in_flight):
     grace = DRAIN_GRACE_S if run_in_flight else IDLE_GRACE_S
     if run_in_flight:
         print(
-            f"server: a run may still be in flight -- waiting up to {grace // 60} minutes for its "
-            f"write-back rather than killing it. Interrupt again to kill; a kill landing between the "
-            f"run record's node and its body leaves a bodyless node in the graph."
+            f"server: a run may still be in flight -- waiting up to {grace // 60} minutes "
+            f"{grace % 60} seconds for its write-back rather than killing it. Interrupt again to "
+            f"kill; a kill landing between the run record's node and its body leaves a bodyless "
+            f"node in the graph."
         )
     if os.name == "nt":
         proc.send_signal(signal.CTRL_BREAK_EVENT)
