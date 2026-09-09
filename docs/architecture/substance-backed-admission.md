@@ -387,8 +387,8 @@ written before the partition below existed and nothing pointed at it, which is t
 
 **The pass reports a count of operational failures, and a binary's exit code turns on it.** So the rule
 deciding *did the pass fail, or did it correctly decline* is load-bearing, and until recently it existed
-nowhere in `docs/architecture/` — it survived only in two test names and their failure strings. This section
-is that rule, stated once, where the pass is designed.
+nowhere in `docs/architecture/` — it survived only in the names and failure strings of the tests that assert
+it. This section is that rule, stated once, where the pass is designed.
 
 > **A skip is *rule-side* when the skip *is* a decision the pass made on a complete basis.**
 > **Every other skip is *operational* — by definition, not by enumeration.**
@@ -461,6 +461,74 @@ reproduces it by construction.
 > that the falsifier was doing work than a principle nobody ever tested. The previous wording is quoted
 > above rather than deleted, so a reader meeting the old form elsewhere can recognise it.
 
+> **Correction, 2026-09-09 — two places stated the superseded principle as its first conjunct alone, and one
+> count was true only in this branch's own tree.** Both are recorded here; neither changes the partition
+> above, and neither is a defect in the pass.
+>
+> **(1) The lossy shorthand — already repaired, recorded so the repair is not re-litigated.** At `fb764d5`
+> two sites abbreviated the superseded principle to its first conjunct. The falsifier paragraph read:
+>
+> > *"**Falsifier for this section:** a skip reason exists whose side cannot be decided by asking* did the
+> > pass reach a decision about this node?*"*
+>
+> and the operational row's *why* cell read:
+>
+> > *"The pass was prevented from reaching a decision. The first three are plainly I/O. The fourth is the
+> > discriminating case"*
+>
+> — where *"the first three"* includes **`substance write failed`**. Applied to that reason the shorthand
+> alone returns **rule-side**, which is wrong; and the cell asserts a decision was never reached, which is
+> also wrong, because the pass decided that a substance **does** belong and was then prevented from
+> **recording** it. Only the **second** conjunct excludes it — the same conjunct that separates it from
+> `content moved`, where a condensation likewise completed and the decision reached was that no substance
+> belongs there *now*. Correcting only the falsifier would have been insufficient: a reader who avoided the
+> shorthand met the identical conflation one paragraph up, in the table's own justification cell.
+>
+> **Both sites were removed by `1c86239`**, the commit that replaced the principle with the
+> defined-side-plus-complement shape above. Neither string survives at the branch tip. Verified with
+> `git grep -n 'cannot be decided by' <ref> -- docs/architecture/substance-backed-admission.md` and
+> `git grep -n 'The first three are plainly I/O' <ref> -- docs/architecture/substance-backed-admission.md`,
+> run from this worktree over `main`, `fb764d5`, `1c86239` and `ee7651a`: both match at `fb764d5` only. The
+> defect was raised as **#13350** against `fb764d5` and reported against the tip, where it no longer applies.
+> **Both patterns also match inside this note from the commit that adds it onward**, where they are quoted as
+> a record and not asserted — so the command is written against pinned refs, and anyone re-running it on a
+> later ref must exclude this blockquote or read the hit as history.
+>
+> **What was never wrong is the partition.** The superseded rule-side conjunction sorts all fourteen reasons
+> exactly as the code does; no reason changed sides and no code was touched. The correction above repaired
+> the *shape of the statement*; this note records a defect in a *test* that dropped a conjunct. **The
+> implementer's judgement to proceed was correct** (#13347), and QA reached the same conclusion
+> independently (#13349). The direction *unclassified ⇒ operational* is untouched by either. A reader
+> meeting the quoted forms elsewhere should not read them as evidence that the boundary itself was ever in
+> doubt.
+>
+> **On the one point where the two readings differ, and why it argues for the current shape.** #13350 reads
+> the superseded second sentence as naming the complement, on which reading the statement classifies all
+> fourteen correctly and only the abbreviated test is defective. The correction above reads it as an
+> independent positive clause, on which reading `substance write failed` satisfies neither clause and the
+> statement is incomplete. **Both readings were available in that wording** — which is the strongest
+> available argument for what replaced it, because a defined side plus its complement admits only one.
+>
+> **(2) The count.** This section's opening paragraph read *"it survived only in **two** test names and their
+> failure strings."* Two is the figure in the code this branch carries, which sits at base `b021fdc`; on
+> `main` @ `28d2998` the same rule is named by seven. Three of the five were added by `c659909`, which
+> reclassified truncation as operational, and two by `aa2dbb2`, which derived the report's heading from the
+> classification it describes. Measured from this worktree with
+> `git grep -c -E '^func Test[A-Za-z]*(Operational|RuleSkip|RuleThePass|AllRules)' <ref> -- 'internal/condense/*_test.go' 'cmd/condense/*_test.go'`
+> — **2** at `ee7651a`, **7** at `main` @ `28d2998`. That command matches test *names*, not behaviour, so it
+> is a floor on the population rather than a classifier. **The quantifier is removed rather than re-fitted:**
+> this document merges into `main`, where the number it carried was already false, and any corrected number
+> is false again at the next test added. The sentence without a count is true at every ref.
+>
+> **Noted while measuring, because it decides which tree the table above describes.** The partition table —
+> four operational, truncation among them — is exact against `main` @ `28d2998`, where
+> `isOperationalFailure` returns true for `graph read failed`, `model call failed`, `substance write failed`
+> and `condensation truncated`, and where `cmd/condense/main.go` returns a non-zero exit on a non-zero count
+> — the last of several conditions in `run` that do, so the count is sufficient for a non-zero exit and not
+> necessary. The code copy this branch carries predates `c659909` and counts three. The table is right for the tree this
+> document merges into; this is recorded so a reader who checks the branch out and runs the pass is not
+> surprised by the difference.
+
 **Falsifier for this section, restated for the new shape.** A complement cannot leave a gap, so the
 falsifiable half is now the **defined** side: *a skip that satisfies both tests — the pass held a complete
 basis and the skip is the decision it took — yet ought to be reported as a failure of the pass.* If one
@@ -526,7 +594,7 @@ it requires exactly the fidelity evidence Unit A produces, and it is Unit E.
 |---|---|
 | **Input** | A node id and a substance string. |
 | **Semantics** | Replace the node's substance. Never touches content. Never creates or deletes nodes. |
-| **Invariants** | The caller has already verified the content hash it derived from is still live (§6.6). The empty string is never written — an empty condensation is a failure and is reported, not stored. |
+| **Invariants** | The caller has already verified the content hash it derived from is still live (§6.6). The empty string is never written — an empty condensation is reported and not stored. It is a failure of the *condensation*, not an operational failure of the *pass*: §6.7 puts `condensation empty` rule-side, and it does not move the exit code. |
 | **Failure** | Per-node, isolated, reported, non-fatal to the pass. |
 
 ### 8.3 Assembly → record
@@ -614,8 +682,28 @@ instrument is Unit E's prerequisite and this design does not claim it.
 | Substance absent | Pass 2 skips. Block is today's block. **This is the default state of the graph and must be the boring path.** |
 | Substance present but larger than content | Skipped in pass 2, recorded. A generation defect surfaced as data, not as a crash. |
 | Substance present but does not fit the leftover | Candidate stays cut, original reason preserved. |
-| Pass: model error / write rejection / content moved | Per-node skip, reported, pass continues. |
+| Pass: an **operational failure** (§6.7) | Per-node skip, reported, pass continues — and it counts toward `operational failures`, which is what the binary's exit code turns on. |
+| Pass: a **rule-side skip** (§6.7) | Per-node skip, reported, pass continues. Not a failure of the pass: it does not move the exit code. |
 | Graph returns 400 on the field projection | Startup-visible programming error (A2). |
+
+> **Correction, 2026-09-09 — this table restated §6.7's partition, and went stale where §6.6's sentence was
+> fixed.** The two rows above replace one row that read:
+>
+> > *`| Pass: model error / write rejection / content moved | Per-node skip, reported, pass continues. |`*
+>
+> It carried the same two defects `fb764d5` had already identified and corrected in §6.6's prose sentence.
+> It named **`content moved`** as a failure of the pass — §6.7 puts it **rule-side**, because the
+> condensation completed and the write was correctly declined once its premise had changed — and it
+> **omitted truncation**, §6.7's discriminating operational case. `fb764d5` fixed the prose sentence and not
+> this row, so the row stood three sections after §6.7's table asserting the opposite partition, in the same
+> document. Reported as **#13351**; measured verbatim and unchanged at `main` @ `28d2998`, at `fb764d5` and
+> at the branch tip `ee7651a`.
+>
+> **The old row is quoted rather than deleted because the defect was not its wording — it was that the row
+> restated the partition at all.** A second copy of an enumeration drifts from the first the moment either
+> is corrected, which is precisely what happened here. The replacement rows **cite §6.7 and enumerate
+> nothing**, so the boundary keeps one owner; they say only what is local to error handling, which is which
+> side moves the exit code.
 
 ### 9.4 Observability
 
