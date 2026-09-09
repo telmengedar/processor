@@ -17,6 +17,9 @@
 > directory, because `.claude/worktrees/` holds further full checkouts at other commits and a
 > recursive sweep reports their union (#9766, #8385). No count of them is given here on purpose: the
 > number changes between sessions, and it changed while this document was being written.
+> **Two refs appear below and every measurement names its own.** `28d2998` is the base the design was
+> written against; **`1b3f8f6`** is the implementation branch tip, and the dated corrections in §3.5,
+> §9 and §10 were measured there. Revision record: §17.
 
 ---
 
@@ -190,10 +193,23 @@ rather than inventing a new shape.
 
 ### 3.5 Neutrality, measured at `28d2998`
 
-| check, over `internal/loop/*.go` production files only | result |
-|---|---|
-| `git grep -E 'json\.RawMessage\|"type": *"object"\|"properties"\|"required"' 28d2998 -- 'internal/loop/*.go'` | **zero hits** |
-| `git grep 'write_file' 28d2998 -- 'internal/loop/*.go'` | **zero hits** |
+| check, over `internal/loop/*.go` — **test files included, deliberately** (§10 F-3) | `28d2998` | `1b3f8f6` |
+|---|---|---|
+| `git grep -E '"type": *"object"' <ref> -- 'internal/loop/*.go'` | **zero hits** | **zero hits** |
+| `git grep 'write_file' <ref> -- 'internal/loop/*.go'` | **zero hits** | **zero hits** |
+
+> **Correction, 2026-09-09 (`1b3f8f6`).** This table's header read *"over `internal/loop/*.go`
+> production files only"* and its first check read
+> `git grep -E 'json\.RawMessage|"type": *"object"|"properties"|"required"' …`. **Two defects, one of
+> them live.** *(a)* The header said **production** and the pathspec did not implement it — that scope
+> lived only in the `| grep -v _test` pipe the measurement was taken with and never reached the
+> document. *(b)* The pattern's first term is **not schema vocabulary at all**: `json.RawMessage` is
+> its sole contributor, at `internal/loop/attribution_test.go:162`, where it is the raw-body
+> key-absence assertion **#11034 P-19** mandates. Measured at both refs: `json.RawMessage` alone →
+> **1**; the three schema spellings alone → **0**. Retained rather than deleted because **the fix that
+> suggests itself is the wrong one**: excluding test files yields the right number by removing the
+> check's reach over exactly the files a migrated schema would bring with it. **Dropping the
+> non-schema term is the fix; narrowing the pathspec is not.**
 
 Both discriminate, and the second was chosen deliberately: the loop's own record spelling for the
 recall tool is `ToolRecall = "recall"`, which collides with the wire spelling, so a grep for `recall`
@@ -207,6 +223,28 @@ struct tags. Those are the **run record's** serialisation to the graph, not any 
 #10466's step 5 falsifier is scoped to *the provider's* vocabulary — field names, finish-reason
 strings, error shapes — and a sweep on the bare word `json` would report a false positive on every
 one of them.
+
+**Why `"type": "object"` alone carries the check.** Every JSON-Schema object opens with it; both tool
+schemas contain it at `28d2998` and at `1b3f8f6`, and #10466's archetype requires it. The two terms
+dropped alongside `json.RawMessage` — `"properties"` and `"required"` — detect nothing that this one
+misses, and both carry a live false-positive path: they are quoted spellings, so a future
+`json:"required"` struct tag on `Record` would match, and `types.go` already carries 58 such tags.
+**Strictly less false-positive surface for no loss of detection** is the whole trade.
+
+**An import-graph arm was considered and is measurably unusable — recorded so nobody re-proposes it.**
+*"`internal/loop`'s production code links no JSON codec"* would be a fact about the dependency graph
+rather than a spelling, which #1220 §9 rates the stronger instrument. It does not survive contact:
+`go list -deps ./internal/loop` **contains `encoding/json`**, pulled in transitively by `log/slog`,
+which `turn.go` imports for the run logger. No production file in `internal/loop` imports it directly,
+so the claim is true and **the command that would check it is not** — it fires on compliant code, for
+a reason with nothing to do with tool schemas. That is the defect this whole section is about, and it
+was found only by running the command instead of reasoning about it.
+
+**F-3 and F-4 are not #11034 P-36, and must not be read as restating it.** P-36 is the standing
+provider-neutrality check and is **production-scoped** by its own terms. F-3 and F-4 ask a narrower,
+change-specific question — *was §5.2's decision silently reversed?* — for which test files are **in
+scope on purpose**, because a schema that migrated into the loop would bring its test with it. Two
+checks, two scopes, deliberately.
 
 ### 3.6 The adapters already differ in ways nobody would want removed
 
@@ -446,9 +484,16 @@ constructor.
 
 **What this means in practice, said plainly so nobody re-discovers it as a finding:** a change to a
 tool description, a parameter schema or a wire tool name **must still be made twice.** It will redden
-the edited adapter's own test, so it will not be silent; it will not redden the sibling, so the
-divergence is not detected. That is accepted. The third adapter makes it three sites, and §11's step
-4a is what stops the *loop's* vocabulary joining them.
+the edited adapter's own test, so it will not be silent; it will not redden the sibling, so **the test
+suite does not detect the divergence.** That is accepted.
+
+**But *"the suite does not detect it"* is not *"nothing detects it"*, and the gap between those two
+sentences is the entire residual risk.** §10's **F-5** catches a one-sided description change at
+review time, and **G-5** reddens on the edited side. What is missing is not a detector but an
+*automatic* one: F-5 is a command a reviewer runs, and nothing runs it unprompted. **State a gap of
+this kind as manual-versus-automatic, never as present-versus-absent** — the second reads as an open
+hole and sends the next reader to build a guard that already exists. The third adapter makes it three
+sites, and §11's step 4a is what stops the *loop's* vocabulary joining them.
 
 ---
 
@@ -484,26 +529,48 @@ Reproduces §3.4's pair. Each row names a **test**, not a mechanism (#1220 §9).
 
 | # | Property | Guard | Why it discriminates |
 |---|---|---|---|
-| G-1 | The rendered layout is what the design says | a new `internal/loop/toolresult_test.go`, modelled on `usercontent_test.go`: one test per branch — recorded error, write receipt, empty recall, and one-and-two-candidate result blocks — each with the expected text written as a **literal** on the expected side | a literal expectation cannot move with the production function, so any change to the layout reddens it. This is the half neither adapter can hold |
-| G-2 | `internal/ollama` routes through the shared symbol | `internal/ollama/usercontent_test.go` gains a sibling asserting the captured request's tool-result message is byte-equal to `loop.RenderToolResult` of the same exchange — the shape of that file's existing line 41 | an adapter that composes its own string fails it. It **cannot** pin the layout — both sides move together — and is not asked to |
-| G-3 | `internal/openaicompat` routes through the shared symbol | the same test in `internal/openaicompat/usercontent_test.go` | as G-2 |
+| G-1 | The rendered layout is what the design says | `internal/loop/toolresult_test.go`, five tests, one per branch: `TestRenderToolResultRendersARecordedErrorBehindItsPrefix`, `TestRenderToolResultRendersAWriteRoundAsAReceiptNamingTheByteCountAndThePath`, `TestRenderToolResultRendersARecallThatFoundNothingAsOneSentenceRatherThanAnEmptyString`, `TestRenderToolResultRendersOneRecalledCandidateAsADelimitedSectionCarryingItsIdentityAndBody`, `TestRenderToolResultPutsExactlyOneNewlineBetweenTwoRecalledCandidatesSections` — each with the expected text as a **literal** on the expected side | a literal expectation cannot move with the production function, so any change to the layout reddens it. This is the half neither adapter can hold |
+| G-2 | `internal/ollama`'s **emitted** tool result equals the shared function's output for the same exchange | `internal/ollama/usercontent_test.go` — `TestJudgeSendsANativeToolResultByteEqualToRenderToolResultOfTheSameExchange` | it reddens on any adapter-side composition whose bytes **differ**, and on any change to the shared function that the adapter did not follow. It does **not** observe the *route*, and it cannot pin the layout — both sides move together. See the limit below, which is measured |
+| G-3 | `internal/openaicompat`'s **emitted** tool result equals the shared function's output for the same exchange | `internal/openaicompat/usercontent_test.go` — `TestJudgeSendsAToolResultByteEqualToRenderToolResultOfTheSameExchange` | as G-2 |
 | G-4 | The wire placement is still each adapter's own | the existing `TestJudgeReplaysPriorToolRoundsAsAssistantToolCallsAndNamedToolResults` (ollama) and `TestJudgeReconstructsPriorRecallRoundsAsAssistantAndToolMessages` / `TestJudgeReplaysAPriorWriteRoundAsTheWriteToolAndItsReceipt` (openaicompat), unchanged | they assert `tool_name` versus `tool_call_id` pairing, which is the wire's business and stays local. Named here so nobody deletes them as redundant with G-2/G-3 |
 | G-5 | The tool declarations are still guarded locally | the existing `TestJudgeNativeRequestCarriesModelSystemBlockInputAndBothTools` (ollama) and `TestJudgeRequestBodyCarriesModelSystemBlockInputAndBothTools` (openaicompat), unchanged | each restates both descriptions and both wire names as literals, so a one-sided edit reddens that adapter. This is the guard §7 relies on when it leaves them duplicated |
 
-> **No runnable falsifier is established for G-1, G-2 or G-3.** Those tests do not exist yet and no
-> mutation of them has been observed red by anyone. What is written above is a **specification**, not
-> a measurement (#1220 §5, 2026-09-05). The implementer discharges #10466's non-negotiable gate — *a
-> guard you have not seen fail is decoration* — by observing each red against a deliberate mutation
-> before the PR is opened, and quoting the observed output.
+> **Correction, 2026-09-09 (`1b3f8f6`) — this block said the guards were unmeasured, and prescribed a
+> mutation that cannot work.** It read: *"No runnable falsifier is established for G-1, G-2 or G-3…
+> for **G-2** and **G-3**, replace the adapter's call with an inline `fmt.Sprintf` producing the same
+> text."* The first half is merely superseded — the tests exist at `1b3f8f6` and QA exercised them.
+> **The second half was wrong when written**, and it is retained because the way it is wrong is the
+> lesson: *producing the same text* **cannot redden a byte-equality assertion**, by construction. A
+> reader following it literally observes green and concludes the guard is dead. **A prescribed
+> mutation that cannot produce its predicted result is worse than none** — it manufactures a false
+> negative in the hands of whoever trusts it.
 >
-> The mutations to use, one per row: for **G-1**, change one character of the empty-recall sentence in
-> `loop.RenderToolResult`; for **G-2** and **G-3**, replace the adapter's call with an inline
-> `fmt.Sprintf` producing the same text — a mutation which must redden that adapter's routing test and
-> **must not** redden G-1, and the pair of observations is what proves the two rows are measuring
-> different things.
+> **The corrected mutations.** For **G-1**, change one character of the empty-recall sentence in
+> `loop.RenderToolResult`. For **G-2** and **G-3**, replace the adapter's call with an inline
+> re-composition producing **different** text — which must redden that adapter's row and **must not**
+> redden G-1, the pair of observations being what proves the two rows measure different things.
 >
-> G-4 and G-5 exist at `28d2998` and are cited, not proposed. Their names were resolved against the
-> tree by `git grep '^func Test' 28d2998 -- 'internal/ollama/*_test.go' 'internal/openaicompat/*_test.go'`.
+> **The limit these guards have, stated so it stops being rediscovered.** A byte-equality pin observes
+> the **output**, never the **route**, and Go offers no seam to intercept a direct cross-package call.
+> QA measured it: re-adding the deleted function to `internal/ollama/wire.go` byte-identical and
+> routing to it is gofmt-clean and leaves the guard set green (her M8, across the seven guards her
+> harness runs). **The `RenderUserContent` pin this is modelled on has the identical hole**, so PR
+> #49's parity claim is weaker than its body read — a second, smaller instance of the defect #13337 is
+> about.
+>
+> **The clone is contained, and by two things that were measured — so this is a stated limit, not an
+> open hole.** *(1)* It survives only while it stays **behaviourally indistinguishable**: QA edited
+> `loop.RenderToolResult` by one character and **G-2 went red**, because the clone did not follow,
+> while G-3 stayed green because openaicompat did. A clone is therefore a **maintenance** hazard, not
+> a **divergence** hazard. *(2)* **§10's F-1 catches it structurally** — 1 hit on her M8 tree, 0 on the
+> delivered tree. The honest residual is that F-1 is a command a reviewer runs and nothing runs it
+> unprompted: **manual, not absent.** Closing that would mean detecting a call rather than an output,
+> which no assertion in this language can do; it is not filed as a task because there is nothing to
+> build.
+>
+> G-4 and G-5 predate this change and are cited, not proposed. **Every test name in this table was
+> resolved against `1b3f8f6`** by `git grep '^func Test' 1b3f8f6 -- 'internal/loop/toolresult_test.go'
+> 'internal/ollama/*_test.go' 'internal/openaicompat/*_test.go'` (#11034 P-41).
 
 **Topology check (#1220 §9, revision-3 rule).** Every row's guard sits in a package whose dependency
 closure reaches the code it tests: G-1's test is in `internal/loop` and calls the function directly;
@@ -525,11 +592,11 @@ Let `<ref>` be the branch tip under review.
 
 | # | Command | Expected | Baseline at `28d2998` | What a wrong result means |
 |---|---|---|---|---|
-| **F-1** | `git grep -n "no additional results found" <ref> -- internal/ollama internal/openaicompat` | **zero hits** | 2 hits (one per adapter) | the shared function was added and the copies were not deleted — the duplication survived the fix |
-| **F-2** | `git grep -n "RenderToolResult" <ref> -- internal/ollama internal/openaicompat` | **at least two hits per package** — a production call and a test reference | 0 | an adapter is not routing through the shared symbol. Honestly a spelling check, which is what a grep is for; the behavioural version is G-2/G-3 |
-| **F-3** | `git grep -nE 'json\.RawMessage\|"type": *"object"\|"properties"\|"required"' <ref> -- 'internal/loop/*.go'` | **zero hits** | zero | the parameter schema migrated into `internal/loop` — §5.2's decision was reversed without saying so |
-| **F-4** | `git grep -n "write_file" <ref> -- 'internal/loop/*.go'` | **zero hits** | zero | a wire tool spelling entered the loop. Chosen over `recall`, which collides with the loop's own `ToolRecall` value and would fire on compliant code |
-| **F-5** | `git grep -n "Search memory for something" <ref> -- internal/ollama internal/openaicompat` | **four hits** — two production, two test, unchanged in shape | 4 | the descriptions were extracted after all, or one adapter's literal test pin was deleted |
+| **F-1** | `git grep -n "no additional results found" <ref> -- internal/ollama internal/openaicompat` | **zero hits** | 2 hits (one per adapter) | the copies were not deleted — **or a byte-identical clone was re-added**, which §9's measured limit shows no assertion can see and this catches structurally (1 hit on QA's M8 tree, 0 on the delivered tree). **Test files are in scope on purpose:** after the move neither adapter has any reason to name the layout, and an adapter test that does is itself a finding, because pinning the layout is G-1's job at the loop level |
+| **F-2** | run it **once per package**: `git grep -c "RenderToolResult" <ref> -- internal/ollama`, then again for `internal/openaicompat` | **≥1 hit in that package's `wire.go` and ≥1 in its test file**, per package | 0 and 0 | an adapter is not naming the shared symbol. **The aggregated form was the defect:** the expectation is per-package and one invocation over both emits a joint list a reader must partition by hand, which is the same shape as F-5's. Honestly a spelling check, which is what a grep is for; the behavioural version is G-2/G-3 |
+| **F-3** | `git grep -nE '"type": *"object"' <ref> -- 'internal/loop/*.go'` | **zero hits** | zero | the parameter schema migrated into `internal/loop` — §5.2's decision was reversed without saying so. **Tests are in scope on purpose**, and this is **not** #11034 P-36, which is production-scoped and asks a different question. §3.5's correction records the two terms dropped from this pattern, why the pathspec is *not* the fix, and why the import-graph form was rejected on measurement |
+| **F-4** | `git grep -n "write_file" <ref> -- 'internal/loop/*.go'` | **zero hits** | zero | a wire tool spelling entered the loop. Chosen over `recall`, which collides with the loop's own `ToolRecall` value and would fire on compliant code. **Tests are in scope on purpose:** the loop's own spelling is `writeFile`, so a loop test naming `write_file` is itself the finding. This row carried F-3's stated-scope defect too — the header said production and the pathspec never did — and it was latent rather than live only because no loop test happens to name the wire spelling |
+| **F-5** | `git grep -c "Search memory for something" <ref> -- internal/ollama internal/openaicompat` | **exactly four files, one hit each**: both `wire.go` and both `client_test.go` | those four files | the descriptions were extracted after all, or one adapter's literal test pin was deleted. **`-c` rather than `-n` on purpose:** the previous form emitted four lines and asserted a two-production/two-test split *in prose* — a partition drawn over a count, which a change moving one literal into a test helper falsifies silently while the total stays 4. The per-file breakdown must be the command's **output**, not the row's claim |
 | **F-6** | `git diff --stat 28d2998..<ref>` | touches only `internal/loop/assemble.go`, a new `internal/loop/toolresult_test.go`, the two `wire.go` files, the two adapter test files, and `docs/architecture/what-the-adapters-may-share.md` | — | scope crept |
 | **F-7** | `divoid_get_content(id=10466)` contains the step **4a** text of §11.1 verbatim, the step-5 correction of §11.2, and the *Find me by* additions of §11.3 | present | absent | the preventive half did not ship, and #13337 is only half closed |
 | **F-8** | `go build ./... && go test ./...` in the container | green | green | — |
@@ -539,6 +606,24 @@ the module is **not** discriminating: it is 2 before the change (two production 
 (one production copy in `loop`, one literal in `loop`'s own test). Only the *location* separates the
 two states, which is why F-1 is scoped to the two adapter packages and asserts zero rather than
 counting the module.
+
+> **Correction, 2026-09-09 (`1b3f8f6`) — four of these eight rows stated a scope the command did not
+> implement, and the one that was live cried wolf on compliant code.** F-3 returned a hit at
+> `28d2998` on `internal/loop/attribution_test.go:162` and the property it tests was true throughout
+> (§3.5). F-4 carried the identical pathspec defect, latent. F-2 stated a per-package expectation and
+> emitted a joint list; F-5 asserted a production/test partition over a bare count. All four are
+> corrected above, and F-6, F-7 and F-8 were audited and are clean — F-6's expectation is a file set
+> and its output is a file set, F-7 is a manual node read, F-8's container qualifier is stated and
+> load-bearing.
+>
+> **The generalisation, now a briefing rule (#1220):** *the command you run and the command you
+> publish must be the same string.* F-3's scope existed in the `| grep -v _test` pipe it was measured
+> with and never reached the document; F-5's existed in a prose column; §9's routing claim existed as
+> an assertion over an output. **The tell is a falsifier whose expectation is a sentence and whose
+> output is a number** — the sentence is where an unimplemented scope hides, because nothing compares
+> the two. Seven of eight rows reproducing exactly is fully consistent with looseness that nothing has
+> yet triggered, which is why the audit was run on the seven that passed and not only on the one that
+> failed.
 
 ---
 
@@ -566,12 +651,17 @@ Exact text:
 >    #13337 — four functions byte-identical in the two existing adapters, because the second was
 >    written by reading the first and the guide never said not to.
 >
->    **Pin it from your side, and know what that pin can and cannot do.** Assert that the message your
->    adapter sends is byte-equal to the loop function's output for the same input — the shape
->    `usercontent_test.go` already uses in both adapters. That test proves **you routed through the
->    symbol**; it cannot pin the *layout*, because mutating the shared function moves both sides of
->    the comparison together. The layout is pinned once, with literals on the expected side, in
->    `internal/loop`'s own test. Both halves are needed and neither substitutes for the other.
+>    **Pin it from your side, and know exactly what that pin can and cannot do.** Assert that the
+>    message your adapter sends is byte-equal to the loop function's output for the same input — the
+>    shape `usercontent_test.go` already uses in both adapters. **That test proves your adapter's
+>    *output* equals the shared function's. It does not prove you called it:** a byte-identical inline
+>    re-implementation passes it, and no assertion in Go can tell the two apart, because there is no
+>    seam to intercept a direct cross-package call. It *does* catch any composition whose bytes differ,
+>    and any change to the shared function your copy failed to follow. It cannot pin the *layout*
+>    either, because mutating the shared function moves both sides of the comparison together — the
+>    layout is pinned once, with literals on the expected side, in `internal/loop`'s own test. Both
+>    halves are needed and neither substitutes for the other. The clone case is caught structurally
+>    instead, by the design's F-1.
 >
 >    **What you do *not* share is the tool declaration** — the envelope, the JSON parameter schema, the
 >    endpoint's spelling of the tool's name, and the description. All four are per-protocol and
@@ -769,3 +859,31 @@ re-measurement and both are recorded above rather than corrected silently:
    the wire names** (§3.3). Each adapter restates those literals in its own test, so a one-sided edit
    reddens locally. What is silent in every case is the **divergence from the sibling** — which is the
    claim the finding is actually making, and it holds.
+
+---
+
+## 17. Revision 2026-09-09 — three corrections from QA, at `1b3f8f6`
+
+The implementation shipped and QA reviewed it **APPROVED WITH WARNINGS**, with all three warnings
+against this document and none against the code. Corrected in place per #11034 P-43 — a design
+document is a dated record, so the superseded text is quoted rather than deleted wherever it carried a
+lesson.
+
+| # | Where | What was wrong |
+|---|---|---|
+| W-1 | §10 **F-3**, §3.5 | The command returned a hit on compliant code. Its stated scope (*production only*) was never implemented, and its first pattern term was not schema vocabulary. **Fixed by dropping the term, not by narrowing the pathspec** — QA's population measurement is what distinguished the two remedies |
+| W-2 | §9 blockquote | The prescribed G-2/G-3 mutation — *"producing the same text"* — cannot redden a byte-equality assertion, so a reader following it observes green and concludes the guard is dead |
+| W-3 | §9 G-2 column | *"an adapter that composes its own string fails it"* is measurably false for **byte-identical** composition. QA's M8 proved it; the over-claim was confined to this document, since the test names claim byte-equality rather than routing |
+
+**Three further rows were corrected that nobody reported** — F-4, F-2 and F-5 — found by auditing the
+seven falsifiers that *passed* rather than only the one that failed. F-4 carried W-1's defect
+identically and was latent; F-2 and F-5 stated expectations at a finer grain than their commands
+emitted. See §10's correction block for the rule this produced.
+
+**What QA independently reproduced and this revision does not restate:** §3.2's 17 declarations / 120
+lines at `28d2998` falling to 16 / 100 at `1b3f8f6`; the relocation byte-exact under her own
+instrument; §3.1's `renderToolResult` hash; provider neutrality clean on all fourteen wire terms.
+
+**Filed out of this revision, not fixed in it:** **#13356** — `internal/openaicompat` asserts the
+write receipt by substring where `internal/ollama` asserts it byte-exact, which is why §9's clone
+mutation reddens G-2 and not G-3.
