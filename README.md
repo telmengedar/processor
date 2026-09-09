@@ -170,7 +170,7 @@ constants, not configuration (`docs/architecture/run-record-fate.md` §8.4):
 | Constant | Value | What it bounds |
 |---|---|---|
 | Run bound | **10 minutes** | Everything from the handler's entry up to and including the answer. Exceeding it is `504 run_deadline_exceeded` |
-| Drain grace | **11 minutes** | How long `Shutdown` is willing to wait for connections to go idle: the run bound, plus **45 s** for a write-back of at most three graph calls at 15 s each, plus **15 s** of stated margin so the grace does not sit exactly on its own bound. A test asserts the literal against both parts separately — the 45 s is derived, the 15 s is not |
+| Drain grace | **11 min 15 s** | How long `Shutdown` is willing to wait for connections to go idle: the run bound, plus **60 s** for a write-back of at most four graph calls at 15 s each, plus **15 s** of stated margin — one whole per-call graph timeout, so a fifth graph call added to the write-back without re-deriving this number **exhausts the margin rather than overrunning the grace**: the worst case becomes 11 min 15 s against a grace of 11 min 15 s, which is zero headroom and the state the margin exists to prevent. A test asserts the literal against both parts separately, and it **measures** the four by running the graph adapter's write-back against a counting transport rather than restating the count, so a fifth call turns it red |
 
 An **idle** shutdown still returns immediately — the grace is a ceiling, not a wait — so the longer number
 costs nothing when there is no run to protect.
@@ -180,7 +180,7 @@ after **10 seconds** by default, which is long before the grace. A container exp
 needs the kill timeout raised to at least the grace:
 
 ```sh
-docker stop -t 660 <container>
+docker stop -t 675 <container>
 ```
 
 Without that, a run in flight at shutdown is still killed — the process offers the ceiling, the supervisor
@@ -378,7 +378,7 @@ flags it.
   receives the run node, and that the process exits `0` with the ordered shutdown records. **What it does
   not establish:** that the process survives `SIGKILL` (nothing can), that a container supervisor honours
   the grace (that is a deployment flag — see "Run" above), or the grace's *value* — the run it drives is
-  seconds long, and the 11-minute literal is pinned by the arithmetic assertion in
+  seconds long, and the 11 min 15 s literal is pinned by the arithmetic assertion in
   `internal/server/server_test.go` instead.
 - **The run's own ceiling is covered at the handler**: a request that carries no deadline of its own
   still reaches the loop on a context bounded at ten minutes, and that ceiling stops at the answer —

@@ -11,7 +11,7 @@ import (
 
 const (
 	runBound          = 10 * time.Minute
-	shutdownGrace     = 11 * time.Minute
+	shutdownGrace     = 11*time.Minute + 15*time.Second
 	readHeaderTimeout = 5 * time.Second
 )
 
