@@ -91,13 +91,13 @@ structural argument holds, and **coverage changes the block, never the candidate
 standing guard rather than a settled fact: nothing would announce it if DiVoid ever started embedding.
 
 **F-6 came back negative and corrects this document's own sequencing (#13242).** With both gates removed,
-`cmd/condense` refuses every run record at **84 KB** while reporting `operational failures 0`; with thinking
-disabled it produces a digest of *other nodes*, **fabricates a count** (ten where the record says twenty),
-and invents figures the prompt forbids rounding. **Dropping `block` was tested and does not fix it** — the
-remainder is a **data table**, and condensing a data table is transcription. An earlier revision billed
-*"remove the `SelfProduced` gate — one line"* as the cheap first experiment; **it is not, because a one-line
-change that converts a refusal into a plausible-looking wrong fact on a permanent node is not cheap.**
-**Shape first, gates last.**
+`cmd/condense` refuses every run record at **84 KB**, and at the time of measurement its report showed no
+failures (§9.3); with thinking disabled it produces a digest of *other nodes*, **fabricates a count** (ten
+where the record says twenty), and invents figures the prompt forbids rounding. **Dropping `block` was tested
+and does not fix it** — the remainder is a **data table**, and condensing a data table is transcription. An
+earlier revision billed *"remove the `SelfProduced` gate — one line"* as the cheap first experiment; **it is
+not, because a one-line change that converts a refusal into a plausible-looking wrong fact on a permanent node
+is not cheap.** **Shape first, gates last.**
 
 **So the fill splits by node class, and this is the round's main change.** Prose nodes keep the model fill —
 that is what #12984 measured at 23 PASS / 1 FAIL. **Run records get deterministic rendering: a template over
@@ -337,8 +337,8 @@ declined to run it on our own output, and then excluded our own output for being
 > **Corrected 2026-09-08 by F-6 (#13242), and the correction matters more than the original point.** An
 > earlier revision called the size row a *near-miss* — *"run records are 77–88 KB, in the same direction"*.
 > **It is not a near-miss and 195 KB is not an outlier: the pass refuses run records at 84 KB, across the
-> whole class**, and it does so while reporting `operational failures 0`. More importantly, the framing
-> above — *the gates are what stop us* — is **wrong**. Removing both gates changes the outcome from
+> whole class**, and at the time of measurement its report showed no failures (§9.3). More importantly, the
+> framing above — *the gates are what stop us* — is **wrong**. Removing both gates changes the outcome from
 > *refused* to *fabricated* (§9.3). The gates are a boundary between two node classes, not an obstacle;
 > §9.3.1 keeps run records off the model path deliberately.
 
@@ -977,7 +977,7 @@ records refused as `condensation truncated`, ratio 0.000, **while reporting `ope
 #12984's 195 KB refusal is not a size outlier: it happens at **84 KB**, across the whole class.
 
 *(The `operational failures 0` half is a dated reading, not current behaviour: `c659909` reclassified
-truncation as operational, so the same run would now report four failures rather than a clean pass. The
+truncation as operational, so the same run would now report three failures rather than a clean pass. The
 measurement stands as recorded — the refusals and the 84 KB threshold are unchanged — and the boundary that
 decides which side a skip falls on is now stated as a principle in `substance-backed-admission.md` §6.7.)* With
 thinking disabled and the pipeline replicated byte for byte, the pass does produce output — and the output
@@ -1001,6 +1001,56 @@ at candidate rank 11–13 of 20, never reaching `answer`, `toolCalls`, `stopReas
 `candidates` is 20 × (id, name, similarity, size, 64-char hash, cutReason, sources), and the prompt's own
 fidelity clause — *identifiers, paths and hashes survive verbatim* — **forbids compressing it**. Dropping
 `block` is necessary and nowhere near sufficient.
+
+> **Correction, 2026-09-09 — three sites stated this measurement's `operational failures 0` in the present
+> tense, where the parenthetical above dates it; and that parenthetical miscounted the failures.** Four
+> edits, none of which touches what was measured.
+>
+> **(1) Three present-tense sites.** The replaced fragments, verbatim and unrendered so the emphasis markers
+> are visible as they stood:
+>
+> ```
+> the F-6 summary near the top of this document:
+>   `cmd/condense` refuses every run record at **84 KB** while reporting `operational failures 0`;
+>
+> §4.4's dated correction blockquote:
+>   whole class**, and it does so while reporting `operational failures 0`. More importantly, the framing
+>
+> §11's F-6 row:
+>   ... refuses all three records at 84 KB while reporting `operational failures 0`; with thinking disabled
+> ```
+>
+> Each now states the observation in the past tense and **cites this section** instead: *"and at the time of
+> measurement its report showed no failures (§9.3)."*
+>
+> **The defect is not that the figure is wrong — it is that three sites read as current behaviour while two
+> others date it.** This document's declared baseline is `main` at `b021fdc`, which predates `c659909`; at
+> that tree the present tense is true. But §7.4.8's **D1** already records the fix in its own cell, and the
+> parenthetical above already calls the figure *"a dated reading, not current behaviour"* — so the document
+> has moved past its declared baseline for this one fact in two places and not in three. On `main` @
+> `28d2998` a re-run reports failures rather than a clean pass, and a reader taking the present tense at face
+> value is misled by three sentences out of five.
+>
+> **The old text is quoted rather than deleted because the fix is not the wording — it is that three sites
+> restated a fact that two other sites own.** Adding the caveat at each of them would have been a fourth and
+> fifth copy of it, and a second copy of anything drifts from the first the moment either is corrected. That
+> is exactly how the sibling defect arose: `substance-backed-admission.md` §6.6's prose sentence was
+> corrected on 2026-09-08 and §9.3's table row, which restated the same partition, was not — three sections
+> apart, in one document (#13351). **Prefer the citation; it travels, and a caveat 885 lines away does not.**
+>
+> **Where the number is kept, and why.** Two sites state it and both should: the *"What was measured"*
+> paragraph above is the measurement itself and must report what was observed, and §7.4.8's **D1** names the
+> defect and its fix **in the same cell**, which is the shape the other three now borrow by pointing here.
+>
+> **(2) The parenthetical's own arithmetic.** It read *"the same run would now report **four** failures
+> rather than a clean pass."* **Three.** #13242 records three run records, all three refused as
+> `condensation truncated`; under `c659909` three truncations are three operational failures. Corrected in
+> place. Recorded because it is the same class one layer up: the miscount was in the sentence written to date
+> the figure, not in the figure it was dating.
+>
+> **Re-derive rather than trusting this list.** `git grep -n 'operational failures 0' -- docs/architecture/what-goes-in-the-block.md`
+> returned six lines at `40e11d1` — five stating the figure and one, the parenthetical above, naming it in
+> order to date it. Run it again rather than assuming the five are still five.
 
 #### 9.3.1 The fill splits by node class, because F-6 tested only the hardest one
 
@@ -1277,7 +1327,7 @@ what the graph already holds.**
 | **F-3** | **The threshold curve.** Bytes reclaimed and rows admitted, as a function of the ratio threshold | Sets §8.1's dial. If the curve is flat, the stratum distinction is decoration and a single rule is simpler | Not run |
 | **F-4** | **Convergence, not coverage.** Run the same task twice against a cold area: run 1 fills, **run 2 must fire zero fills and reach the same or a better admitted set** | **Unit 2.** If run 2 still fills, the cache is not doing what §7.4.1 claims and the whole economic argument collapses to per-turn cost | Not run. **~0.3 % coverage today** (§4.1) |
 | **F-5** | **#13106 §8.3's three-arm differential** — opaque labels vs names-only vs name+substance | **Unit 4.** Ties against either weaker arm sink the catalogue's central claim | Not run; **requires Unit 2 for the twenty rows** |
-| **F-6** | **Run-record substance is worth reading.** Condense a run record and have a reader that did not write it judge whether the substance supports *what that run did and why* | **§9.2's form rule as applied to run records, and the sequencing of §9.3** | **ANSWERED, NEGATIVE — #13242.** With both gates removed the pass refuses all three records at 84 KB while reporting `operational failures 0`; with thinking disabled it yields a digest of *other nodes*, a fabricated count (10 where the record says 20), and invented figures where the prompt forbids rounding. Dropping `block` was tested and does not fix it — the remainder is a data table and the model transcribes it. **This does not sink the fill; it moves run records off the model path (§9.3.1) and re-sequences the gates last (§9.3)** |
+| **F-6** | **Run-record substance is worth reading.** Condense a run record and have a reader that did not write it judge whether the substance supports *what that run did and why* | **§9.2's form rule as applied to run records, and the sequencing of §9.3** | **ANSWERED, NEGATIVE — #13242.** With both gates removed the pass refuses all three records at 84 KB, and at the time of measurement its report showed no failures (§9.3); with thinking disabled it yields a digest of *other nodes*, a fabricated count (10 where the record says 20), and invented figures where the prompt forbids rounding. Dropping `block` was tested and does not fix it — the remainder is a data table and the model transcribes it. **This does not sink the fill; it moves run records off the model path (§9.3.1) and re-sequences the gates last (§9.3)** |
 | **F-7** | **Does `substance` participate in similarity ranking?** A probe node whose content and substance carry unrelated topics; query each topic in turn, on both instruments | **The fill, outright** — if ranking moved, retrieval would become path-dependent and §7.4.4's repair would be insufficient | **PASSED — #13241.** Content topic rank 1 / 0.7801; substance topic absent, field at the noise floor; `divoid_search` and `GET /api/nodes?query=` agree. **Now a standing guard rather than a gate: it is invalidated silently if DiVoid ever re-embeds on substance write, and nothing in the graph would announce that. Four calls; re-run when the fill ships** |
 | **F-8** | **The transition's real shape.** Instrument fills per turn and their wall clock over a cold working area | **G3's value, and §7.4.2's estimate.** If a first run fires far more than ~3 fills, or a fill costs far more than ~31 s, the ceiling is set wrong and the latency claim is wrong with it | Not run — the numbers in §7.4.2 are derived from #12984, not measured on this path |
 | **F-9** | **Does removing `block` make a record findable by its outcome?** Write (or construct) one record without `block`, then run §4.8.1's distinctive-outcome query against it | **§9.5's reason 4.** #13274 measures the *defect*; this measures the *fix*. If the record still does not return, the dump was not what displaced its identity and reason 4 is wrong — leaving only reasons 1–3 | Not run, **and it cannot be until a record is written after the change.** Reason 4 stands as inference until then |
