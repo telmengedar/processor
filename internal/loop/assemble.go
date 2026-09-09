@@ -78,6 +78,28 @@ func RenderUserContent(block, input string) string {
 	return b.String()
 }
 
+// RenderToolResult renders one completed tool round as the text the model is shown for it.
+func RenderToolResult(r ToolExchange) string {
+	if r.Error != "" {
+		return "error: " + r.Error
+	}
+	if r.Tool == ToolWriteFile {
+		return fmt.Sprintf("wrote %d bytes to %s", r.Bytes, r.Path)
+	}
+	if len(r.Results) == 0 {
+		return "no additional results found."
+	}
+
+	var b strings.Builder
+	for i, c := range r.Results {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "===== RESULT =====\nid: %d\ntype: %s\nname: %s\n\n%s\n", c.ID, c.Type, c.Name, c.Content)
+	}
+	return b.String()
+}
+
 // renderBlock renders the fixed layout of design §6.3: the anchor first
 // (the run's stable subject), then the admitted candidates ascending by
 // id (the volatile part).
