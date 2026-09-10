@@ -555,8 +555,9 @@ RETRIEVED_CUT_SUPPLEMENTARY = Stage(
     "assembly cut it there too -- the byte budget or the self-produced check; the per-node "
     "detail below names which. This is not the same cut as RETRIEVED_CUT: the budget in play "
     "here is the supplementary round's own SupplementaryByteBudget, a different number from the "
-    "initial round's assemblyByteBudget that describe_cut reports against, and the candidates "
-    "this was ranked among are the supplementary round's own results, not the initial round's",
+    "initial round's anchor-charged remaining budget that describe_cut reports against, and the "
+    "candidates this was ranked among are the supplementary round's own results, not the initial "
+    "round's",
 )
 
 ADMITTED_PRIMARY = Stage(
@@ -807,7 +808,19 @@ def task_stage(task, record):
     return NOT_RETRIEVED  # unreachable: STAGE_PRECEDENCE ends in NOT_RETRIEVED, the report's only other value
 
 
-def describe_cut(row, budget):
+def remaining_after_anchor(budget, anchor_size):
+    """The byte budget actually left for candidates once the anchor is charged against it --
+    internal/loop/assemble.go: remaining := budget - len(anchor.Content), floored at zero. The
+    anchor's bytes are spent before any candidate is considered, so this is the ceiling a
+    candidate faces, not the raw assemblyByteBudget. Returns None if either figure is unknown --
+    an unknown anchor size must not be silently treated as zero, which would hand back the raw
+    budget as if the anchor cost nothing."""
+    if budget is None or anchor_size is None:
+        return None
+    return max(budget - anchor_size, 0)
+
+
+def describe_cut(row, remaining_budget):
     """One line describing why a non-admitted candidate was cut, from its own cutReason -- never an
     inferred mechanism. internal/loop/assemble.go defines exactly two: self-produced and byte budget
     exceeded, and the latter covers both an individually oversized row and a cumulative overflow."""
@@ -820,22 +833,23 @@ def describe_cut(row, budget):
             f"assembly refuses it before the byte budget is even consulted"
         )
     if reason == CUT_BYTE_BUDGET:
-        if budget is None:
+        if remaining_budget is None:
             return (
                 f"CUT #{row.get('id')}: {size} bytes, cut for byte budget exceeded -- but this "
-                f"record carries no assemblyByteBudget, so whether it was oversized alone or only "
-                f"in combination with rows admitted ahead of it cannot be said from here"
+                f"record carries no assemblyByteBudget or no anchor size, so the budget actually "
+                f"left for candidates once the anchor is charged cannot be computed from here"
             )
-        if size > budget:
+        if size > remaining_budget:
             return (
-                f"CUT #{row.get('id')}: {size} bytes alone exceeds the {budget}-byte assembly "
-                f"budget, so no run can admit it regardless of rank"
+                f"CUT #{row.get('id')}: {size} bytes alone exceeds the {remaining_budget}-byte "
+                f"budget left for candidates once the anchor is charged against it, so no run can "
+                f"admit it regardless of rank"
             )
         return (
-            f"CUT #{row.get('id')}: {size} bytes fits the budget alone but not after the "
-            f"candidates admitted ahead of it -- a cumulative-budget cut. Admission skips a row "
-            f"that does not fit and keeps checking the ones behind it, so this does not stop "
-            f"anything ranked later from being admitted"
+            f"CUT #{row.get('id')}: {size} bytes fits the {remaining_budget}-byte budget left for "
+            f"candidates alone but not after the candidates admitted ahead of it -- a "
+            f"cumulative-budget cut. Admission skips a row that does not fit and keeps checking "
+            f"the ones behind it, so this does not stop anything ranked later from being admitted"
         )
     return f"CUT #{row.get('id')}: {reason}"
 
@@ -900,9 +914,10 @@ def print_task(task, record, transcript):
         )
 
     budget = (record.get("limits") or {}).get("assemblyByteBudget")
+    remaining_budget = remaining_after_anchor(budget, anchor.get("size"))
     for row in candidates(record):
         if not row.get("included"):
-            print(f"           {describe_cut(row, budget)}")
+            print(f"           {describe_cut(row, remaining_budget)}")
 
     limit = (record.get("limits") or {}).get("candidateLimit")
     print_displacement(candidates(record), "initial recall", limit)
