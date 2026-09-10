@@ -122,6 +122,8 @@ words; that document carries the argument.
 - `POST /runs` — assembles context for one input against one subject node, judges it against the
   configured model (dispatching the recall and file-write tools as needed), writes the run record to the
   graph, and returns the record (see "`POST /runs`" below).
+- `Dockerfile` — builds `cmd/processor` into a `gcr.io/distroless/static-debian12:nonroot` image; no
+  secret is ever baked in (see "Container" below).
 
 No third-party dependencies. Standard library only.
 
@@ -308,6 +310,147 @@ curl -s -X POST http://127.0.0.1:8080/runs \
   -H 'Content-Type: application/json' \
   -d '{"input":"what changed in the assembler","subject":10521}' | jq .
 ```
+
+## Container
+
+```sh
+docker build -t processor .
+```
+
+The build stage is `golang:1.27` (matching the version pinned everywhere else in this file); the
+final image is `gcr.io/distroless/static-debian12:nonroot` — no shell, no package manager, CA
+certificates present for the outbound HTTPS calls to the graph and the model endpoint, running as
+uid/gid 65532 rather than root. `go.mod` declares no external dependencies, so the build downloads
+nothing and needs no credential.
+
+**The image sets one default that bare-metal does not need:** `PROCESSOR_HTTP_ADDR=0.0.0.0:8080`.
+The service's own default (`127.0.0.1:8080`, see the configuration table above) is correct for a
+process sharing the host's network namespace and silently unreachable from outside a container — a
+loopback bind never sees traffic arriving on a published port. This is not a secret and is still
+overridable with `-e PROCESSOR_HTTP_ADDR=...` if the port itself needs to change.
+
+```sh
+# Linux / macOS
+docker volume create processor-workspace
+
+docker run -d --name processor \
+  -p 8080:8080 \
+  -e PROCESSOR_DIVOID_URL=https://divoid.example \
+  -e PROCESSOR_DIVOID_KEY=xxxxxxxx \
+  -e PROCESSOR_MODEL_URL=http://127.0.0.1:11434/v1 \
+  -e PROCESSOR_MODEL_ID=llama-3.1-8b-instruct \
+  -v processor-workspace:/data/workspace \
+  -e PROCESSOR_WORKSPACE_DIR=/data/workspace \
+  processor
+
+# PowerShell
+docker volume create processor-workspace
+
+docker run -d --name processor `
+  -p 8080:8080 `
+  -e PROCESSOR_DIVOID_URL=https://divoid.example `
+  -e PROCESSOR_DIVOID_KEY=xxxxxxxx `
+  -e PROCESSOR_MODEL_URL=http://127.0.0.1:11434/v1 `
+  -e PROCESSOR_MODEL_ID=llama-3.1-8b-instruct `
+  -v processor-workspace:/data/workspace `
+  -e PROCESSOR_WORKSPACE_DIR=/data/workspace `
+  processor
+
+# Git Bash
+docker volume create processor-workspace
+
+MSYS_NO_PATHCONV=1 docker run -d --name processor \
+  -p 8080:8080 \
+  -e PROCESSOR_DIVOID_URL=https://divoid.example \
+  -e PROCESSOR_DIVOID_KEY=xxxxxxxx \
+  -e PROCESSOR_MODEL_URL=http://127.0.0.1:11434/v1 \
+  -e PROCESSOR_MODEL_ID=llama-3.1-8b-instruct \
+  -v processor-workspace:/data/workspace \
+  -e PROCESSOR_WORKSPACE_DIR=/data/workspace \
+  processor
+```
+
+**On Windows, use the variant that matches your shell.** MSYS2's path conversion (the layer
+underneath Git Bash) rewrites any argument that looks like an absolute Unix path — including the
+`-e PROCESSOR_WORKSPACE_DIR=/data/workspace` value above — into a Windows path rooted at Git's own
+install directory, silently: the container starts, the request still returns `200`, and the file
+lands at a path like `/home/nonroot/C:/Program Files/Git/data/workspace/...` inside the container
+rather than on the named volume. `MSYS_NO_PATHCONV=1` disables that rewrite for the whole command —
+the same fix used for the same reason under "The Linux gate" below — or run the PowerShell variant
+instead, which is not subject to MSYS path conversion at all.
+
+**Neither secret goes in the image, in a layer, or in a default — both arrive at `docker run` time,
+exactly as above, and only that way.** `PROCESSOR_MODEL_KEY` is omitted deliberately, same as in the
+bare-metal example: no credential, no spend. If your `PROCESSOR_DIVOID_URL` comes from
+`~/.claude/secrets/.divoid-online`'s `Url=` line, strip its trailing `/api` first — that line is
+shaped for direct REST calls and the boot check above rejects it verbatim for the reason given
+there.
+
+**Set `PROCESSOR_WORKSPACE_DIR` without a matching `-v`, and the image's own `VOLUME` declaration
+still gives you a volume** — an anonymous one, named by hash rather than `processor-workspace`,
+which survives `docker rm` unless the container was run with `--rm -v` (or removed with
+`docker rm -v`) — so an omitted `-v` is *harder* to notice and recover from than it would be without
+the `VOLUME` instruction, not safer. Always pair the environment variable with an explicit `-v`
+naming a volume you can find again.
+
+**The workspace is a named volume, not a bind mount, because a bind mount's host path is resolved
+by whichever machine actually runs the Docker daemon, not by the machine issuing `docker run`** —
+if your `docker` CLI talks to a remote or SSH-based context (`docker context ls` shows more than
+`default`, or `DOCKER_HOST` is set), `-v "$(pwd)/workspace:/data/workspace"` names a path on *your*
+filesystem and Docker looks for it on the *daemon's* — measured on this project's own Docker
+context: it does not merely get the ownership wrong, the path does not exist at all. A named volume
+has no such ambiguity: it lives entirely inside Docker's own storage on whichever host the daemon
+runs, and `docker cp` (or a throwaway container) is how you look inside it regardless of where your
+shell is. **If your daemon and your shell are the same machine**, a bind mount to a directory you
+own is also fine and slightly more convenient to browse — just chown it to `65532:65532` first.
+
+The same client/daemon split applies to `-p 8080:8080` above: it publishes the port on the
+**daemon's** network interfaces, not the client's, so `curl http://127.0.0.1:8080/health` (the
+bare-metal example earlier in this file) only reaches the containerized service when your shell and
+the daemon are the same machine — against a remote or SSH `docker context`, curl the daemon host's
+own address instead, on the port you gave `-p`.
+
+The container still runs as uid/gid 65532, and a named volume Docker creates fresh (nothing by that
+name existed before) is seeded from the image's `/data/workspace` directory, ownership included —
+so a first-ever `docker volume create processor-workspace` above followed by `docker run` needs no
+further step; **verified**: a brand-new volume mounted over that path came up owned by 65532 and
+accepted a write from a `--user 65532:65532` container with no extra command. That seeding is
+one-time, though — it does **not** reach a volume that already exists, so if you (like Toni) already
+ran an earlier version of this image and have a `processor-workspace` volume that came up
+root-owned, fix that one existing volume once:
+
+```sh
+docker run --rm -v processor-workspace:/data/workspace busybox \
+  chown -R 65532:65532 /data/workspace
+```
+
+**Verified the other direction too**: re-mounting an already-existing, already-root-owned volume
+into the corrected image left it root-owned and still denied the write — chowning the image's own
+copy of the directory has no effect on a volume that already exists, only on one Docker is creating
+for the first time. The one-line fix above works either way (freshly created or already broken) and
+does not depend on that seeding behaviour at all, so it is the one command worth remembering; the
+seeding is a bonus for a clean start, not the mechanism to rely on.
+
+**The stop timeout must not contradict the drain grace above, and this file already restates that
+number more than once with nothing checking the copies agree (tracked as DiVoid #13432 — the
+Go-side mirror test that pins `shutdownGrace` covers `scripts/*.py`, not README's own prose).
+Rather than add a fourth copy here, this section reuses the one already given as a runnable example
+under "Run" two sections above, where the same 675-second figure appears in `docker stop -t 675
+<container>` —**
+
+```sh
+docker stop -t 675 <container>
+```
+
+**substituting your container's name.** There is no Dockerfile instruction that sets a default stop
+timeout — Docker has none — so every appearance of the number in this file is prose, not
+configuration — tracked together under #13432 rather than deduplicated here — including no
+`docker-compose.yml`: a compose file's own `stop_grace_period` would be a fifth, independently-editable
+copy of the same literal in a different syntax, which is the drift #13427 already named as costly.
+This repo ships no compose file for exactly that reason. A `docker stop` (or `docker compose stop`)
+issued without an explicit timeout defaults to 10 seconds and kills a run mid-write-back — the drain
+grace exists to prevent exactly that outcome, and a supervisor that does not honour it makes the
+guarantee moot regardless of what the process offers.
 
 ## Test
 
