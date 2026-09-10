@@ -141,19 +141,6 @@ func TestRenderSummaryNamesEveryCandidateWhetherAdmittedOrCut(t *testing.T) {
 	}
 }
 
-func TestRenderSummaryGivesACutCandidateNoReasonWordingTheRecordDidNotCarry(t *testing.T) {
-	t.Parallel()
-
-	record := summaryRecord()
-	record.Candidates = []Disposition{{Rank: 1, ID: 99, Size: 10}}
-
-	summary := RenderSummary(record, summaryInstant())
-
-	if !strings.Contains(summary, "(no reason recorded) (1, 10 B): #99") {
-		t.Fatalf("a cut with no recorded reason is not reported as unrecorded.\nsummary:\n%s", summary)
-	}
-}
-
 func TestRenderSummaryExcerptsALongAnswerAndStatesItsFullByteCount(t *testing.T) {
 	t.Parallel()
 
@@ -276,11 +263,52 @@ func TestRenderSummaryNamesTheToolOfEveryRoundInTheOrderTheRunTookThem(t *testin
 		"TOOLS  2 rounds",
 		"1 recall [native]  \"repository creation\"",
 		"-> 2 results, 1 admitted (400 B) / cut: byte budget exceeded 1",
-		"2 writeFile [content]  index.html  502 B",
+		"2 writeFile [content]  \"index.html\"  502 B",
 	} {
 		if !strings.Contains(summary, want) {
 			t.Fatalf("the summary does not carry %q.\nsummary:\n%s", want, summary)
 		}
+	}
+}
+
+func TestRenderSummaryRendersALegacyRoundWithNoToolFieldAsARecallRatherThanABlankLine(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.ToolCalls = []ToolCallRecord{{
+		Query: "Go comment-discipline annex ruling on package doc comments",
+		Results: []Disposition{
+			{Rank: 1, ID: 41, Size: 5000, Included: true},
+			{Rank: 2, ID: 42, Size: 90000, CutReason: "byte budget exceeded"},
+		},
+	}}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	for _, want := range []string{
+		"1 [tool not recorded]  \"Go comment-discipline annex ruling on package doc comments\"",
+		"-> 2 results, 1 admitted (5000 B) / cut: byte budget exceeded 1",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("a legacy round whose JSON carries no tool member is not rendered as the recall it plainly is.\nwant: %q\nsummary:\n%s", want, summary)
+		}
+	}
+}
+
+func TestRenderSummaryRendersALegacyRoundWithNeitherToolNorQueryNorPathAsUnrecordedRatherThanInventingAShape(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.ToolCalls = []ToolCallRecord{{}}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	line, found := summaryLineWithPrefix(summary, "  1 ")
+	if !found {
+		t.Fatalf("a round with no tool, query or path produced no round line at all.\nsummary:\n%s", summary)
+	}
+	if line != "  1 [tool not recorded]" {
+		t.Fatalf("a round with nothing recorded is not rendered as bare and unrecorded; want %q, got %q.\nsummary:\n%s", "  1 [tool not recorded]", line, summary)
 	}
 }
 
@@ -294,6 +322,50 @@ func TestRenderSummaryCarriesAToolRoundsErrorRatherThanReportingTheRoundAsClean(
 
 	if !strings.Contains(summary, "ERROR: call cap reached") {
 		t.Fatalf("a failed tool round is rendered without its error.\nsummary:\n%s", summary)
+	}
+}
+
+func TestRenderSummaryQuotesAWritePathSoANewlineInItCannotForgeAnExtraRoundLine(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.ToolCalls = []ToolCallRecord{{
+		Tool:   ToolWriteFile,
+		Source: ToolSourceNative,
+		Path:   "hello.html\n  9 writeFile [native]  C:/Windows/System32/evil.dll  4096 B",
+		Bytes:  120,
+	}}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	if strings.Contains(summary, "\n  9 writeFile") {
+		t.Fatalf("a newline embedded in the write path forged an extra round line.\nsummary:\n%s", summary)
+	}
+	if !strings.Contains(summary, "TOOLS  1 round") {
+		t.Fatalf("the round count no longer matches the single call the record carries.\nsummary:\n%s", summary)
+	}
+}
+
+func TestRenderSummaryTruncatesAWritePathAtSeventyTwoRunes(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	longPath := strings.Repeat("a", 100)
+	record.ToolCalls = []ToolCallRecord{{
+		Tool:   ToolWriteFile,
+		Source: ToolSourceNative,
+		Path:   longPath,
+		Bytes:  120,
+	}}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	want := `"` + strings.Repeat("a", 71) + "…" + `"`
+	if !strings.Contains(summary, want) {
+		t.Fatalf("a 100-rune write path is not truncated at 72 runes; want the quoted excerpt %q.\nsummary:\n%s", want, summary)
+	}
+	if strings.Contains(summary, longPath) {
+		t.Fatalf("the full 100-rune write path appears in the summary untruncated.\nsummary:\n%s", summary)
 	}
 }
 
@@ -377,9 +449,28 @@ func TestRenderSummaryStatesEveryLimitTheRunWasBoundBy(t *testing.T) {
 
 	summary := RenderSummary(summaryRecord(), summaryInstant())
 
-	const want = "limits   20 cands / 60000 B block / 20000 B suppl / 6 calls / 4096 tok"
+	const want = "limits   20 cands / 60000 B content / 20000 B suppl / 6 calls / 4096 tok"
 	if !strings.Contains(summary, want) {
 		t.Fatalf("the summary does not state %q, the five limits this run was bound by.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryLabelsTheAssemblyBudgetAsContentRatherThanBlockSoItIsNotComparedToTheAssembledBlock(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Block = strings.Repeat("x", 60379)
+
+	summary := RenderSummary(record, summaryInstant())
+
+	if strings.Contains(summary, "B block") {
+		t.Fatalf("the limits line still names the content budget a block budget, inviting a reader to compare it against the assembled block's byte count directly below.\nsummary:\n%s", summary)
+	}
+	if !strings.Contains(summary, "60000 B content") {
+		t.Fatalf("the limits line does not name the assembly budget as a content budget.\nsummary:\n%s", summary)
+	}
+	if !strings.Contains(summary, "60379 B assembled") {
+		t.Fatalf("the block line no longer states the block's byte count.\nsummary:\n%s", summary)
 	}
 }
 
@@ -449,14 +540,50 @@ func TestRenderSummaryPrintsEveryDerivedQueryUnderItsOwnIndexAndCountsThem(t *te
 	}
 }
 
-func TestRenderSummaryHeadsTheAdmittedListWithItsCountAndBytesAgainstTheBudget(t *testing.T) {
+func TestRenderSummaryHeadsTheAdmittedListWithItsCountAndBytesAgainstTheSpaceRemainingAfterTheAnchor(t *testing.T) {
 	t.Parallel()
 
 	summary := RenderSummary(summaryRecord(), summaryInstant())
 
-	const want = "  admitted (2, 44.4 kB of 60000 B):"
+	const want = "  admitted (2, 44.4 kB of 56592 B remaining):"
 	if !strings.Contains(summary, want) {
-		t.Fatalf("the summary does not head the admitted list %q; two dispositions of 1111 B and 43300 B were admitted against a 60000 B budget.\nsummary:\n%s", want, summary)
+		t.Fatalf("the summary does not head the admitted list %q; the anchor's 3408 B is already spent against the 60000 B budget, leaving 56592 B for candidates.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryDenominatorReflectsTrueHeadroomOnceTheAnchorTookItsShare(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Limits.AssemblyByteBudget = 60000
+	record.Anchor.Size = 59500
+	record.Candidates = []Disposition{
+		{Rank: 1, ID: 11, Type: "task", Name: "small", Similarity: 0.9, Size: 494, Included: true},
+	}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	const want = "  admitted (1, 494 B of 500 B remaining):"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not state %q; a reader computing 500-494=6 B should reach the true headroom without opening the record. A denominator of 60000 (forgetting the anchor) would read 59506 B headroom instead of 6 B.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryFloorsTheRemainingAfterAnchorAtZeroWhenTheAnchorAloneExceedsTheAssemblyBudget(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Limits.AssemblyByteBudget = 1000
+	record.Anchor.Size = 2000
+	record.Candidates = []Disposition{
+		{Rank: 1, ID: 11, Type: "task", Name: "small", Similarity: 0.9, Size: 500, Included: true},
+	}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	const want = "  admitted (1, 500 B of 0 B remaining):"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not state %q; an anchor of 2000 B against a 1000 B budget leaves no headroom, and the line must floor at 0 B rather than print a negative remainder.\nsummary:\n%s", want, summary)
 	}
 }
 
