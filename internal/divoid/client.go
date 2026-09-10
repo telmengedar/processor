@@ -31,7 +31,7 @@ var _ loop.GraphPort = (*Client)(nil)
 // not serialize bytes nobody reads.
 const (
 	nodeFields      = "id,type,name,contentType,content"
-	candidateFields = "id,type,name,similarity,content"
+	candidateFields = "id,type,name,similarity,content,substance"
 )
 
 const (
@@ -181,6 +181,7 @@ func (c *Client) Recall(ctx context.Context, query string, limit int, scope []in
 			Name:         r.Name,
 			Similarity:   r.Similarity,
 			Content:      r.Content,
+			Substance:    r.Substance,
 			SelfProduced: IsRunRecord(r.Type, r.Name),
 		}
 	}

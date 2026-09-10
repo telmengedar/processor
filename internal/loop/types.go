@@ -18,6 +18,9 @@ type Candidate struct {
 	Similarity float64
 	Content    string
 
+	// Substance is the node's condensed form, empty when none has been generated.
+	Substance string
+
 	// SelfProduced is true when this row is a record this system wrote; the graph adapter sets it.
 	SelfProduced bool
 
@@ -59,6 +62,12 @@ type Disposition struct {
 	Included    bool     `json:"included"`
 	CutReason   string   `json:"cutReason,omitempty"`
 	Sources     []Source `json:"sources,omitempty"`
+
+	// SubstanceAvailable is true when this candidate carried a substance at recall time.
+	SubstanceAvailable bool `json:"substanceAvailable"`
+
+	// SubstanceSize is that substance's byte length, zero when SubstanceAvailable is false.
+	SubstanceSize int `json:"substanceSize"`
 }
 
 // TerminalReason is the loop's own closed set of ways a judgement step can end.
