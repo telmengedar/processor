@@ -203,6 +203,23 @@ func TestEverySkipIsListedUnderTheHeadingThatMatchesHowTheResultCountsIt(t *test
 	}
 }
 
+func TestASkipReasonNoConstantNamesIsAnnouncedToTheOperatorAsAFailureOfThePass(t *testing.T) {
+	unclassified := "an unclassified skip reason"
+	result := Result{TargetCount: 2, Skipped: []Skip{
+		{Node: 700, Reason: unclassified},
+		{Node: 800, Reason: skipSubstancePresent},
+	}}
+
+	_, human := renderedPass(t, result)
+
+	if got := headingOver(t, human, unclassified); got != failureSkipHeading {
+		t.Fatalf("a reason nothing has classified must be announced as a failure of the pass, yet the report files it under %q", got)
+	}
+	if got := headingOver(t, human, skipSubstancePresent); got != ruleSkipHeading {
+		t.Fatalf("want the named rule beside it under %q, got %q", ruleSkipHeading, got)
+	}
+}
+
 func TestAPassWhoseSkipsAreAllRulesPrintsNoHeadingClaimingAFailureOfThePass(t *testing.T) {
 	result := Result{TargetCount: 1, Skipped: []Skip{{Node: 200, Reason: skipSubstancePresent}}}
 
