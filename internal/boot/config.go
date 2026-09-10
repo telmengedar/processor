@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/telmengedar/processor/internal/redacturl"
 )
 
 const (
@@ -143,7 +145,7 @@ func rejectAPIBase(divoidURL string) error {
 
 	return fmt.Errorf(
 		"%s is %q, which already includes the graph API path (%q); the client appends %q itself, so requests would go to %q — set it to the origin only, e.g. %q",
-		envDivoidURL, parsed.Redacted(), badSuffix, nodesPathSuffix, wouldRequest.Redacted(), corrected.Redacted(),
+		envDivoidURL, redacturl.URL(parsed.String()), badSuffix, nodesPathSuffix, redacturl.URL(wouldRequest.String()), redacturl.URL(corrected.String()),
 	)
 }
 

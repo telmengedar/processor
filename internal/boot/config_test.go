@@ -339,6 +339,26 @@ func TestLoadGraphRejectAPIBaseErrorOmitsAUserinfoPasswordFromEveryRendering(t *
 	}
 }
 
+func TestLoadGraphRejectAPIBaseErrorOmitsABareUsernameCredentialToo(t *testing.T) {
+	t.Parallel()
+
+	const username = "sk-secretkey"
+	env := validEnv(map[string]string{
+		"PROCESSOR_DIVOID_URL": "https://" + username + "@graph.example/api",
+	})
+
+	_, err := loadGraph(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadGraph returned nil error, want an error rejecting the /api trap")
+	}
+	if strings.Contains(err.Error(), username) {
+		t.Fatalf("error = %q, must not contain the userinfo username %q", err.Error(), username)
+	}
+	if !strings.Contains(err.Error(), "graph.example") {
+		t.Fatalf("error = %q, lost the host", err.Error())
+	}
+}
+
 func TestLoadGraphErrorsWhenDivoidKeyAbsent(t *testing.T) {
 	t.Parallel()
 

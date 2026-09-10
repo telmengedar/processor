@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/telmengedar/processor/internal/loop"
+	"github.com/telmengedar/processor/internal/redacturl"
 )
 
 // DefaultTimeout bounds a graph read when the caller does not supply its
@@ -237,14 +238,14 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return fmt.Errorf("divoid: build request: %w", err)
+		return fmt.Errorf("divoid: build request: %w", redacturl.Error(err))
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return fmt.Errorf("divoid: request failed: %w", err)
+		return fmt.Errorf("divoid: request failed: %w", redacturl.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -262,7 +263,7 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 func (c *Client) post(ctx context.Context, path, contentType string, body []byte, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("divoid: build request: %w", err)
+		return fmt.Errorf("divoid: build request: %w", redacturl.Error(err))
 	}
 	req.Header.Set("Content-Type", contentType)
 	return c.send(req, out)
@@ -271,7 +272,7 @@ func (c *Client) post(ctx context.Context, path, contentType string, body []byte
 func (c *Client) remove(ctx context.Context, path string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, nil)
 	if err != nil {
-		return fmt.Errorf("divoid: build request: %w", err)
+		return fmt.Errorf("divoid: build request: %w", redacturl.Error(err))
 	}
 	return c.send(req, nil)
 }
@@ -282,7 +283,7 @@ func (c *Client) send(req *http.Request, out any) error {
 
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return fmt.Errorf("divoid: request failed: %w", err)
+		return fmt.Errorf("divoid: request failed: %w", redacturl.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

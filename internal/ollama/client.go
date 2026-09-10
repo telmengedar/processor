@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/telmengedar/processor/internal/loop"
+	"github.com/telmengedar/processor/internal/redacturl"
 )
 
 // DefaultTimeout bounds the model call when the caller supplies no *http.Client.
@@ -118,7 +119,7 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 
 	result := translate(wire)
 	result.Sampling = c.sampling
-	result.Provider = loop.Provider{Adapter: adapterName, Endpoint: endpoint}
+	result.Provider = loop.Provider{Adapter: adapterName, Endpoint: redacturl.URL(endpoint)}
 	return result, nil
 }
 
