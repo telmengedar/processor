@@ -142,8 +142,8 @@ func TestJudgeReplaysAPriorWriteRoundAsTheWriteToolAndItsReceipt(t *testing.T) {
 	if tool.Role != "tool" || tool.ToolCallID != assistant.ToolCalls[0].ID {
 		t.Fatalf("messages[3] = %+v, want a tool message whose tool_call_id matches messages[2]'s call id", tool)
 	}
-	if !contains(tool.Content, "11") || !contains(tool.Content, "index.html") {
-		t.Fatalf("messages[3].Content = %q, want the byte count and the path reported back", tool.Content)
+	if tool.Content != "wrote 11 bytes to index.html" {
+		t.Fatalf("messages[3].Content = %q, want the write receipt", tool.Content)
 	}
 }
 
