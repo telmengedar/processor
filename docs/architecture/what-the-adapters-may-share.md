@@ -17,9 +17,10 @@
 > directory, because `.claude/worktrees/` holds further full checkouts at other commits and a
 > recursive sweep reports their union (#9766, #8385). No count of them is given here on purpose: the
 > number changes between sessions, and it changed while this document was being written.
-> **Two refs appear below and every measurement names its own.** `28d2998` is the base the design was
-> written against; **`1b3f8f6`** is the implementation branch tip, and the dated corrections in §3.5,
-> §9 and §10 were measured there. Revision record: §17.
+> **Three measurement refs appear below and every measurement names its own.** `28d2998` is the base
+> the design was written against; **`1b3f8f6`** is the implementation branch tip, and the dated
+> corrections in §3.5, §9 and §10 were measured there; **`860c0e7`** is `main` at the 2026-09-10
+> revision, and §18's sweep was measured there. Revision records: §17, §18.
 
 ---
 
@@ -184,12 +185,25 @@ pins. The finding's remedy and the coverage gap point at the same function, from
 | test | pins | what mutation reddens it |
 |---|---|---|
 | `internal/loop/usercontent_test.go` — `TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy` (and its sibling) | **the layout**, against `"===== INPUT ====="` written as a literal on the expected side (`:18-20`) | changing the shared function's output |
-| `internal/ollama/usercontent_test.go:41` and `internal/openaicompat/usercontent_test.go:41` — `… ByteEqualToRenderUserContentOfTheSameBlockAndInput` | **that the adapter routed through the shared symbol**, by comparing the captured request body against `loop.RenderUserContent(block, input)` | the adapter composing its own string |
+| `internal/ollama/usercontent_test.go:41` and `internal/openaicompat/usercontent_test.go:41` — `… ByteEqualToRenderUserContentOfTheSameBlockAndInput` | **that the adapter's emitted bytes equal the shared function's output** for the same input, by comparing the captured request body against `loop.RenderUserContent(block, input)` | any adapter-side composition whose bytes **differ** — and **not** a byte-identical one, which is the correction below |
 
 The adapter-side test **cannot** pin the layout — mutating the shared function moves both sides of its
 comparison together — and is not meant to. This division is exactly #10466's *"use literals on the
 expected side"* rule, applied across a package boundary, and §9 reproduces it for `RenderToolResult`
 rather than inventing a new shape.
+
+> **Correction, 2026-09-10 (`860c0e7`) — the second row said the adapter-side test pins the *route*,
+> and it does not.** The cell read: *"**that the adapter routed through the shared symbol**"*, with
+> *"the adapter composing its own string"* as the mutation that reddens it. **A byte-equality
+> assertion observes the output, never the route** — a byte-identical inline re-implementation passes
+> it, and Go offers no seam to intercept a direct cross-package call. §9's own correction block
+> measured this on the successor guard and says in terms that **this precedent has the identical
+> hole**; what it did not do is come back and correct the precedent's own row, which is the row the
+> later correction was reasoning from. **Nothing about the division of labour changes** — the
+> adapter-side test still cannot pin the layout, the pairing is still the design, and §9 still
+> reproduces it correctly. Only the claim about what the adapter-side half *proves* was too strong.
+> **This row is not a measurement and carries no ref**; the measurements in §3 stand at `28d2998`
+> untouched. See §18.
 
 ### 3.5 Neutrality, measured at `28d2998`
 
@@ -513,7 +527,9 @@ sites, and §11's step 4a is what stops the *loop's* vocabulary joining them.
 
 Each adapter calls it once per prior tool round while building its request, and places the returned
 string in whatever field its protocol uses for a tool result. **An adapter that composes that text
-itself is in breach**, and §9's routing test is what detects it.
+itself is in breach.** §9's G-2 and G-3 detect that breach **only when the composed bytes differ**;
+a byte-identical re-implementation is a breach no assertion in this language can see, and §10's F-1
+is what catches that one — structurally, and at review time rather than automatically. See §18.
 
 ### 8.3 Unchanged
 
@@ -766,10 +782,13 @@ One unit, one PR. Ordered so that each step's guard exists before the step it gu
    four branches and the two-candidate separator. **Observe it red** by mutating one character of the
    empty-recall sentence, and quote the output.
 3. **Delete both adapters' copies** and call `loop.RenderToolResult` from each `buildMessages`.
-4. **Add the routing test to each adapter** (G-2, G-3), in the shape of that package's existing
-   `usercontent_test.go:41`. **Observe each red** by inlining an equivalent `fmt.Sprintf` at the call
-   site, and confirm in the same run that G-1 stays green — the pair of observations is the evidence
-   that the two guards measure different things.
+4. **Add the byte-equality test to each adapter** (G-2, G-3), in the shape of that package's existing
+   `usercontent_test.go:41`. **Observe each red** by inlining a `fmt.Sprintf` at the call site that
+   produces **different** text. **Not an equivalent one:** *producing the same text cannot redden a
+   byte-equality assertion*, by construction, so an equivalent inline copy is observed green and reads
+   as a dead guard. That is §9's corrected mutation; this step prescribed the version §9 retired,
+   and §18 records what it said. Confirm in the same run that G-1 stays green — the pair of
+   observations is the evidence that the two guards measure different things.
 5. **Run the falsifier table in §10 in full**, including F-6's diff scope, and quote each result.
 6. **Run the suite in the container** (#10466: five GOOS-constrained tests are invisible on a Windows
    host), and the `=== RUN` gap tripwire while you are there.
@@ -887,3 +906,141 @@ instrument; §3.1's `renderToolResult` hash; provider neutrality clean on all fo
 **Filed out of this revision, not fixed in it:** **#13356** — `internal/openaicompat` asserts the
 write receipt by substring where `internal/ollama` asserts it byte-exact, which is why §9's clone
 mutation reddens G-2 and not G-3.
+
+> **Correction, 2026-09-10 (`f86e1ce`) — the scope note above was true when written and is not true
+> now.** #13356 was fixed forty-eight hours after it was filed, by **PR #56**, merged as `f86e1ce`:
+> `internal/openaicompat/write_test.go`, +2/−2, replacing `contains("11")` and `contains("index.html")`
+> in `TestJudgeReplaysAPriorWriteRoundAsTheWriteToolAndItsReceipt` with a single literal assertion of
+> the whole receipt, in the shape `internal/ollama/client_test.go:370` already used. **#13356 is
+> closed**, and the cross-adapter obligation it named — *mutating `loop.RenderToolResult` must redden
+> at least one test in each adapter package* — now holds symmetrically rather than strongly on one
+> side and weakly on the other.
+>
+> **The superseded sentence is retained rather than rewritten** (#11228 Lesson 3). This section is the
+> revision record — the section a later reader consults to learn what a revision did and deliberately
+> did not do — and a scope note that is silently repaired stops being a record of what was believed
+> and when. What made it worth correcting at all is the opposite hazard: *"filed, not fixed"* is the
+> shape that gets cited as evidence a gap is still open, two days after a merged PR closed it.
+>
+> **§3.3's row stating the same fact is deliberately left standing.** It is a measurement pinned at
+> `28d2998`, the base this design was written against, and it was **true there**. A sweep correcting
+> every occurrence of the claim would falsify a correctly-dated measurement — the opposite failure and
+> the more expensive one, because it destroys the record of what was true when. The rule the two
+> halves make together: **a §3 row is read against its own ref and goes stale by design; a §17 scope
+> note is read as current and must be corrected when it stops being so.**
+>
+> **`f86e1ce` is cited here as provenance for a closure, not as a measurement ref.** Every measurement
+> in §3, §9 and §10 stays at `28d2998` and `1b3f8f6`, the refs the header names for them.
+
+> **Second correction, 2026-09-10 (`860c0e7`) — the retained sentence's closing clause was wrong
+> when it was written, and independently of the fact corrected above.** It ends: *"…which is why §9's
+> clone mutation reddens G-2 and not G-3."* §9's clone mutation is the **ollama-side** experiment —
+> re-add `renderToolResult` to `internal/ollama/wire.go` byte-identical, route to it, then edit
+> `loop.RenderToolResult` by one character. **G-2 reddens because the clone did not follow the edit;
+> G-3 stays green because `internal/openaicompat` did follow it**, which is correct behaviour and not
+> a weak assertion. The substring-versus-literal asymmetry #13356 names lives in `write_test.go`, a
+> **G-4**-class test, and bears on neither row. #13356's own body frames it against a different
+> obligation entirely: *mutating `loop.RenderToolResult` must redden at least one test in each adapter
+> package.* **The clause is retained rather than struck** for the same reason the sentence above it is:
+> a revision record that quietly loses a bad inference stops being evidence of how the inference was
+> made. Two facts were joined by *"which is why"* because both concerned the same pair of adapters,
+> and adjacency was mistaken for causation.
+
+---
+
+## 18. Revision 2026-09-10 — the routing claim, swept rather than patched, at `860c0e7`
+
+Opened for §17's one-section correction (#13442) and found two live defects; filed as **#13518** before
+this revision widened, so what stayed out of the narrow task is on record ahead of the fix rather than
+behind it. **The sweep was run for the claim, not for the two sentences #13518 names**, and it found a
+third asserting site that neither #13518 nor the 2026-09-09 revision had.
+
+### 18.1 The claim, and every site of it
+
+The retired claim is: **a byte-equality assertion detects that the adapter *called* the shared
+function.** It does not. It observes the adapter's **output**; a byte-identical inline
+re-implementation passes it, and Go offers no seam to intercept a direct cross-package call. QA
+measured this on 2026-09-09 (her M8) and §9 was corrected for it. **Three further sites asserted the
+same claim and were not.**
+
+| site | what it said | what it says now |
+|---|---|---|
+| **§3.4**, the second table row | *"**that the adapter routed through the shared symbol**"*, reddened by *"the adapter composing its own string"* | the emitted bytes equal the shared function's output; reddened by any composition whose bytes **differ**, and not by a byte-identical one. Dated note beneath the table |
+| **§8.2** | *"An adapter that composes that text itself is in breach, and §9's **routing test** is what detects it."* | the breach is detected **only when the composed bytes differ**; the byte-identical breach is caught by §10's F-1, structurally and at review time |
+| **§14 step 4** | *"**Add the routing test** to each adapter — **Observe each red** by inlining an **equivalent** `fmt.Sprintf` at the call site."* | *Add the byte-equality test* — observe each red by inlining one that produces **different** text, with the reason an equivalent one cannot |
+
+**§14 step 4 is why this revision did not wait.** The other two are assertions a reader may believe;
+step 4 is a **procedure that hands the reader a false negative**. Following it, they inline an
+equivalent call, observe green, and conclude the guard is dead — which is the precise failure §9's W-2
+correction exists to prevent, re-issued as the method. An instruction that cannot produce its
+predicted result is worse than no instruction, and it was live on `main`.
+
+**§3.4 is the site that explains the other two.** It is the *precedent's* row — the pair of tests
+`RenderUserContent` is pinned by — and §9 says it *reproduces* that pairing rather than inventing a
+new shape. §9's own correction block states that **this precedent has the identical hole**, then does
+not come back and correct the precedent's row. So the corrected successor was left modelled on an
+uncorrected source, and every restatement downstream inherited the source's wording. **A correction
+that names a defect in the thing it was modelled on has not finished until it corrects that thing
+too.**
+
+### 18.2 The sweep, with its zeros
+
+#11228 Lesson 1: enumerate the paraphrases a claim can take, grep each, and **report every count
+including the zeros** — a zero reported is evidence, a zero unreported is an assumption. Run over the
+document at `860c0e7` plus §17's #13442 note.
+
+| pattern | hits | asserting the claim | denying, prescribing correctly, or quoting a superseded form |
+|---|---|---|---|
+| stem `rout*`, case-insensitive **and markup-tolerant** | 8 | **3** — `:187` (§3.4), `:516` (§8.2), `:769` (§14 step 4) | 5 — `:533`, `:554`, `:556` (§9, all denying), `:621` (§10, naming it retired), `:876` (§17 W-3, quoting) |
+| `equivalent` | 1 | **1** — `:770`, the mutation prescription | 0 |
+| `producing the same` / `same text` | 5 | 0 | 5 — `:540`, `:543` (§9, the superseded prescription under its own correction), `:875` (§17 W-2) |
+| `composes its own` / `composing its own` / `compose their own` / `compose its own` | 4 | **1** — `:187`, already counted above | 3 — `:80` (a statement about #10466's *missing step*, not about detection), `:821` (§15, see below), `:876` (quoting) |
+| `proves you` / `does not prove` | 2 | 0 | 2 — `:656-657`, §11.1's step 4a, which already states the limit correctly |
+| `identical text` | **0** | — | — |
+| `proves the adapter` | **0** | — | — |
+| `calls the shared` | **0** | — | — |
+
+**The line numbers above are the pre-revision ones** — they resolve against the state the sweep was
+run on, not against this file, because correcting three of them shifted everything below. A sweep's
+citations name the tree it measured, exactly as a §3 row names its ref.
+
+**Surviving sites after this revision: zero.** Stated as a number because a retraction reported
+without a count is untested (#11228, the check to run before calling one done). Re-run after the
+edits, the `rout*` stem still returns its hits and **none of them asserts** — each is a denial, a
+correction, or a quotation of a superseded form inside a dated record.
+
+**The markup lesson, worth one line because it nearly cost the sweep.** `grep -i 'the route'` returns
+**0** on this document while `**route**` and `*route*` both occur, because the emphasis markers sit
+inside the phrase. **Sweep by stem, not by phrase, in any document whose prose is marked up** — the
+first form reports a clean zero that means only that the writer used bold.
+
+### 18.3 Checked and deliberately left
+
+- **`:821`, §15's *can it be deleted?* row** — *"G-1 without G-2/G-3 leaves the adapters free to
+  compose their own text"*. This is a **different claim** and it is true: without G-2/G-3 an adapter
+  may compose text whose bytes differ and nothing objects. It makes no claim about detecting a
+  byte-identical copy. Left as written.
+- **`:80`, §1.1** — *"no step requiring a new adapter to call `loop.RenderUserContent` rather than
+  compose its own user content"*. A statement about what the **guide** lacked, not about what a test
+  proves. True, and it is the finding §11 closes. Left as written.
+- **§12's byte-drift risk row** cites only `internal/ollama/client_test.go:370` as its mitigation.
+  Since `f86e1ce` the openaicompat side carries an equivalent literal pin, so the cell **under-sells**
+  its own mitigation. A cell that under-claims misleads nobody; left as written.
+
+### 18.4 What this revision did not touch, and why
+
+**§3's measurements stand at `28d2998`.** The `28d2998` pin in §3.3's write-receipt row — the one
+§17's first correction declined to sweep — is untouched here for the same reason: it is a
+correctly-dated measurement and it was true at its ref. **The distinction this revision runs on:** a
+row that *measures the tree at a ref* goes stale by design and is read against its ref; a sentence
+that *claims what a test proves* was either true or false the day it was written, carries no ref, and
+is corrected wherever it appears. §3.4's row is the second kind sitting inside a section full of the
+first, which is most of why three sweeps walked past it.
+
+**Every edit inside §3 is additive or confined to the non-measurement cells of one row.** No command,
+no hash, no count and no ref in §3 changed.
+
+### 18.5 Parity
+
+The repo file and node **#13345** were republished together and compared byte-for-byte in both
+directions, before and after (P-40). An edit to one is not finished until the other matches it.
