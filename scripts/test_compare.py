@@ -428,33 +428,34 @@ class ArrivedTests(unittest.TestCase):
 
 class DescribeCutTests(unittest.TestCase):
     def test_missing_assembly_byte_budget(self):
-        """N.B. this record carries no limits.assemblyByteBudget at all (budget=None) -- describe_cut
-        must say it cannot tell an individually-oversized row from a cumulative-overflow one,
-        rather than guessing either."""
+        """N.B. describe_cut is called with remaining_budget=None -- the caller could not compute
+        remaining_after_anchor because either the record's own assemblyByteBudget or the anchor's
+        size was missing. describe_cut must say it cannot tell an individually-oversized row from
+        a cumulative-overflow one, rather than guessing either."""
         row = {"id": 900, "size": 4096, "cutReason": compare.CUT_BYTE_BUDGET}
         message = compare.describe_cut(row, None)
         self.assertIn("carries no assemblyByteBudget", message)
-        self.assertIn("cannot be said from here", message)
+        self.assertIn("cannot be computed from here", message)
 
     def test_individually_oversized(self):
         row = {"id": 901, "size": 5000, "cutReason": compare.CUT_BYTE_BUDGET}
         message = compare.describe_cut(row, 4000)
-        self.assertIn("exceeds the 4000-byte assembly budget", message)
+        self.assertIn("exceeds the 4000-byte budget left for candidates", message)
         self.assertIn("regardless of rank", message)
 
     def test_cumulative_cut(self):
         row = {"id": 902, "size": 100, "cutReason": compare.CUT_BYTE_BUDGET}
         message = compare.describe_cut(row, 4000)
-        self.assertIn("fits the budget alone but not after", message)
+        self.assertIn("fits the 4000-byte budget left for candidates alone but not after", message)
 
     def test_boundary_size_equals_budget_is_not_oversized(self):
         """Survivor from QA's round-four mutation sweep: mutating the strict '>' to '>=' in
-        describe_cut survived every existing test. size == budget fits the budget alone -- a
-        strict inequality is required to call a row individually oversized -- so this must land
-        in the cumulative-cut branch, not the oversized one."""
+        describe_cut survived every existing test. size == remaining_budget fits the budget alone
+        -- a strict inequality is required to call a row individually oversized -- so this must
+        land in the cumulative-cut branch, not the oversized one."""
         row = {"id": 904, "size": 4000, "cutReason": compare.CUT_BYTE_BUDGET}
         message = compare.describe_cut(row, 4000)
-        self.assertIn("fits the budget alone but not after", message)
+        self.assertIn("fits the 4000-byte budget left for candidates alone but not after", message)
         self.assertNotIn("exceeds the", message)
 
     def test_self_produced(self):
@@ -462,6 +463,53 @@ class DescribeCutTests(unittest.TestCase):
         message = compare.describe_cut(row, 4000)
         self.assertIn("self-produced", message)
         self.assertIn("before the byte budget is even consulted", message)
+
+
+class RemainingAfterAnchorTests(unittest.TestCase):
+    """remaining_after_anchor mirrors internal/loop/assemble.go's `remaining := budget -
+    len(anchor.Content)`, floored at zero -- the anchor's bytes are spent before any candidate is
+    considered, so the raw assemblyByteBudget overstates what a candidate actually faces."""
+
+    def test_subtracts_anchor_from_budget(self):
+        self.assertEqual(compare.remaining_after_anchor(60000, 18208), 41792)
+
+    def test_floors_at_zero_when_anchor_exceeds_budget(self):
+        self.assertEqual(compare.remaining_after_anchor(60000, 70660), 0)
+
+    def test_none_when_budget_unknown(self):
+        self.assertIsNone(compare.remaining_after_anchor(None, 18208))
+
+    def test_none_when_anchor_size_unknown(self):
+        self.assertIsNone(compare.remaining_after_anchor(60000, None))
+
+
+class DescribeCutReclassifiesAgainstRemainingBudgetTests(unittest.TestCase):
+    """The straddle this fix exists for, demonstrated on two real run records rather than a
+    constructed one: DiVoid #12981 and #12985 both carry anchor #10850 (size 18208) against
+    assemblyByteBudget 60000 (remaining_after_anchor = 41792), and both rank candidate #6375
+    (43273 bytes, cutReason byte budget exceeded) among their cuts. 43273 sits BETWEEN the two
+    ceilings: under the raw 60000-byte budget it reads as a cumulative-budget cut (fits alone,
+    displaced by earlier admissions); against the 41792-byte remaining budget it is individually
+    oversized and could never have been admitted regardless of rank. Same row, same cutReason,
+    opposite verdict -- the reclassification this fix delivers."""
+
+    ANCHOR_SIZE = 18208
+    ASSEMBLY_BYTE_BUDGET = 60000
+    CANDIDATE_6375 = {
+        "id": 6375, "size": 43273, "cutReason": compare.CUT_BYTE_BUDGET,
+    }
+
+    def test_against_raw_budget_reads_as_cumulative_cut(self):
+        message = compare.describe_cut(self.CANDIDATE_6375, self.ASSEMBLY_BYTE_BUDGET)
+        self.assertIn("fits the 60000-byte budget left for candidates alone but not after", message)
+
+    def test_against_remaining_budget_reads_as_individually_oversized(self):
+        remaining = compare.remaining_after_anchor(self.ASSEMBLY_BYTE_BUDGET, self.ANCHOR_SIZE)
+        self.assertEqual(remaining, 41792)
+        message = compare.describe_cut(self.CANDIDATE_6375, remaining)
+        self.assertIn("exceeds the 41792-byte budget left for candidates", message)
+        self.assertIn("regardless of rank", message)
+        self.assertNotIn("fits the", message)
 
 
 class SupplementaryByIdTests(unittest.TestCase):
@@ -660,6 +708,33 @@ class PrintTaskOutputTests(unittest.TestCase):
         self.assertIn(self.COMPLETION, out)
         self.assertIn("none of them was admitted by retrieval", out)
         self.assertNotIn("an admitted node that the answer ignores indicts the prompt", out)
+
+    def test_call_site_charges_anchor_before_describe_cut(self):
+        """M8: print_task's own describe_cut call must pass the anchor-charged remaining budget,
+        not the raw assemblyByteBudget -- the exact defect #13483 names, and the one thing none of
+        the pure-function DescribeCut*/RemainingAfterAnchor tests above can pin, since they call
+        describe_cut and remaining_after_anchor directly rather than through print_task's wiring.
+        Reuses the real straddle from DiVoid #12981/#12985 that DescribeCutReclassifies...Tests
+        already exercises at the function level: anchor #10850 at 18208 bytes, assemblyByteBudget
+        60000, candidate #6375 at 43273 bytes. remaining_after_anchor charges the anchor down to a
+        41792-byte ceiling, under which #6375 alone is oversized; against the raw 60000-byte
+        budget the same row reads as a merely-cumulative cut. If the call site regresses to the
+        raw budget, this row renders with the wrong verdict and this test reddens."""
+        rec = record(
+            anchor_id=10850,
+            candidates=[
+                {"id": 6375, "size": 43273, "cutReason": compare.CUT_BYTE_BUDGET, "rank": 1, "included": False},
+            ],
+            limits={"assemblyByteBudget": 60000},
+        )
+        rec["anchor"]["size"] = 18208
+        out = self._run(task([]), rec)
+        self.assertIn(
+            "CUT #6375: 43273 bytes alone exceeds the 41792-byte budget left for candidates", out
+        )
+        self.assertNotIn(
+            "fits the 60000-byte budget left for candidates alone but not after", out
+        )
 
 
 class PrintTableOutputTests(unittest.TestCase):
