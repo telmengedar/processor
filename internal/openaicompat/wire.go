@@ -138,7 +138,7 @@ func buildMessages(in loop.JudgeInput) []wireMessage {
 			wireMessage{
 				Role:       "tool",
 				ToolCallID: callID,
-				Content:    renderToolResult(r),
+				Content:    loop.RenderToolResult(r),
 			},
 		)
 	}
@@ -160,27 +160,6 @@ func toolArguments(r loop.ToolExchange) string {
 	}
 	encoded, _ := json.Marshal(recallToolArguments{Query: r.Query})
 	return string(encoded)
-}
-
-func renderToolResult(r loop.ToolExchange) string {
-	if r.Error != "" {
-		return "error: " + r.Error
-	}
-	if r.Tool == loop.ToolWriteFile {
-		return fmt.Sprintf("wrote %d bytes to %s", r.Bytes, r.Path)
-	}
-	if len(r.Results) == 0 {
-		return "no additional results found."
-	}
-
-	var b strings.Builder
-	for i, c := range r.Results {
-		if i > 0 {
-			b.WriteString("\n")
-		}
-		fmt.Fprintf(&b, "===== RESULT =====\nid: %d\ntype: %s\nname: %s\n\n%s\n", c.ID, c.Type, c.Name, c.Content)
-	}
-	return b.String()
 }
 
 func translate(wire chatResponse) (loop.JudgeResult, error) {
