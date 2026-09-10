@@ -324,6 +324,63 @@ func TestRecallDecodesSimilarityAndContent(t *testing.T) {
 	}
 }
 
+func TestRecallRequestsSubstanceInTheFieldsProjection(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	if _, err := c.Recall(context.Background(), "q", 20, nil); err != nil {
+		t.Fatalf("Recall: %v", err)
+	}
+
+	q, err := url.ParseQuery(gotQuery)
+	if err != nil {
+		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+	}
+	fields := strings.Split(q.Get("fields"), ",")
+	if !slices.Contains(fields, "substance") {
+		t.Fatalf("fields = %q, want it to include %q — a candidate that never requests substance can never carry one", q.Get("fields"), "substance")
+	}
+}
+
+func TestRecallDecodesSubstanceWhenPresentAndLeavesItEmptyWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"result": []map[string]any{
+				{"id": 1, "type": "t", "name": "carries one", "content": "full body one", "substance": "the condensed form"},
+				{"id": 2, "type": "t", "name": "carries none", "content": "full body two"},
+			},
+			"total": 2,
+		})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	got, err := c.Recall(context.Background(), "q", 20, nil)
+	if err != nil {
+		t.Fatalf("Recall: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d candidates, want 2", len(got))
+	}
+	if got[0].Substance != "the condensed form" {
+		t.Fatalf("candidate[0].Substance = %q, want the value the graph sent", got[0].Substance)
+	}
+	if got[1].Substance != "" {
+		t.Fatalf("candidate[1].Substance = %q, want the zero value for a row that omitted the key entirely, not an error and not a placeholder", got[1].Substance)
+	}
+}
+
 func TestRecallOnNon200ReturnsAnError(t *testing.T) {
 	t.Parallel()
 

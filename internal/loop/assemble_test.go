@@ -3,6 +3,8 @@ package loop
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -485,6 +487,144 @@ func TestAssembleSelfProducedCutReasonHasTheExactWording(t *testing.T) {
 	const want = "self-produced"
 	if dispositions[0].CutReason != want {
 		t.Fatalf("CutReason = %q, want %q", dispositions[0].CutReason, want)
+	}
+}
+
+func TestAssembleRecordsSubstanceAvailableAndSizeWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	candidates := []Candidate{
+		{ID: 10, Content: "a body", Substance: "condensed"},
+		{ID: 20, Content: "b body", Substance: "x"},
+	}
+
+	_, dispositions := Assemble(anchor, candidates, 60_000)
+
+	if !dispositions[0].SubstanceAvailable {
+		t.Fatal("SubstanceAvailable = false for a candidate that carried a substance, want true")
+	}
+	if dispositions[0].SubstanceSize != len("condensed") {
+		t.Fatalf("SubstanceSize = %d, want %d — the substance's own byte length, not the content's", dispositions[0].SubstanceSize, len("condensed"))
+	}
+	if !dispositions[1].SubstanceAvailable {
+		t.Fatal("SubstanceAvailable = false for a candidate whose substance is a single byte, want true — presence is non-empty, not a length threshold")
+	}
+	if dispositions[1].SubstanceSize != len("x") {
+		t.Fatalf("SubstanceSize = %d, want %d for a one-byte substance", dispositions[1].SubstanceSize, len("x"))
+	}
+}
+
+func TestAssembleRecordsSubstanceAbsentAsTheZeroValueNotAnError(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	candidates := []Candidate{{ID: 10, Content: "a body"}}
+
+	_, dispositions := Assemble(anchor, candidates, 60_000)
+
+	if dispositions[0].SubstanceAvailable {
+		t.Fatal("SubstanceAvailable = true for a candidate with no Substance, want false")
+	}
+	if dispositions[0].SubstanceSize != 0 {
+		t.Fatalf("SubstanceSize = %d for a candidate with no Substance, want 0", dispositions[0].SubstanceSize)
+	}
+}
+
+func TestAssembleRecordsSubstanceForACutCandidateToo(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	candidates := []Candidate{
+		{ID: 10, Content: strings.Repeat("x", 200)},
+		{ID: 20, Content: strings.Repeat("y", 80), Substance: "condensed form"},
+	}
+	const budget = 50
+
+	if len(candidates[0].Content) <= budget || len(candidates[1].Content) <= budget {
+		t.Fatalf("test setup error: candidates are %d and %d bytes against budget %d; both must exceed it for the second to be cut", len(candidates[0].Content), len(candidates[1].Content), budget)
+	}
+
+	_, dispositions := Assemble(anchor, candidates, budget)
+
+	cut := dispositions[1]
+	if cut.Included {
+		t.Fatal("candidate 20 was included, want it recorded as cut")
+	}
+	if !cut.SubstanceAvailable {
+		t.Fatal("a cut candidate's SubstanceAvailable is false although it carried a substance, want it recorded regardless of the admit-or-cut outcome")
+	}
+	if cut.SubstanceSize != len("condensed form") {
+		t.Fatalf("cut candidate SubstanceSize = %d, want %d", cut.SubstanceSize, len("condensed form"))
+	}
+}
+
+func TestAssembleAdmissionChargesOnlyContentBytesNeverSubstanceBytes(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	candidates := []Candidate{
+		{ID: 10, Content: strings.Repeat("x", 40), Substance: strings.Repeat("s", 10_000)},
+		{ID: 20, Content: strings.Repeat("y", 40)},
+	}
+	const budget = 100
+
+	if len(candidates[0].Content)+len(candidates[1].Content) > budget {
+		t.Fatalf("test setup error: budget %d must fit both 40-byte contents", budget)
+	}
+	if len(candidates[0].Content)+len(candidates[0].Substance) <= budget {
+		t.Fatalf("test setup error: content+substance combined is %d bytes, want it over budget %d, or this test cannot distinguish charging substance from not", len(candidates[0].Content)+len(candidates[0].Substance), budget)
+	}
+
+	_, dispositions := Assemble(anchor, candidates, budget)
+
+	for i := range dispositions {
+		if !dispositions[i].Included {
+			t.Fatalf("dispositions[%d] (id %d) was cut although its content fits the budget; admission must charge Content bytes, never Substance bytes", i, dispositions[i].ID)
+		}
+	}
+}
+
+func TestAssembleRendersIdenticalBlockRegardlessOfSubstance(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1, Type: "t", Name: "a", Content: "anchor body"}
+
+	for _, content := range []string{"bravo body", ""} {
+		t.Run(fmt.Sprintf("content=%q", content), func(t *testing.T) {
+			withoutSubstance := []Candidate{
+				{ID: 10, Type: "documentation", Name: "Bravo", Content: content},
+			}
+			withSubstance := []Candidate{
+				{ID: 10, Type: "documentation", Name: "Bravo", Content: content, Substance: strings.Repeat("condensed", 50)},
+			}
+
+			blockWithout, _ := Assemble(anchor, withoutSubstance, 60_000)
+			blockWith, _ := Assemble(anchor, withSubstance, 60_000)
+
+			if blockWith != blockWithout {
+				t.Fatalf("block changed when a candidate carried a substance:\nwithout=%q\nwith=%q", blockWithout, blockWith)
+			}
+		})
+	}
+}
+
+func TestDispositionSubstanceFieldsSerializeEvenAtTheZeroValue(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	candidates := []Candidate{{ID: 10, Content: "a body"}}
+
+	_, dispositions := Assemble(anchor, candidates, 60_000)
+
+	encoded, err := json.Marshal(dispositions[0])
+	if err != nil {
+		t.Fatalf("marshal disposition: %v", err)
+	}
+	for _, want := range []string{`"substanceAvailable":false`, `"substanceSize":0`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("disposition JSON = %s, want it to contain %q", encoded, want)
+		}
 	}
 }
 

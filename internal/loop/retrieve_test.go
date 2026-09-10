@@ -535,3 +535,27 @@ func TestACandidateCarriesEveryRecallThatReturnedItSoAScopeReserveArrivalIsNotRe
 		t.Fatalf("node 990 carries %+v, want %+v: it reached the candidate set on a reserved slot and no whole-graph ranking returned it at all, which is the one distinction the reserve exists to make and the one a rank column alone cannot show", sources[990], wantReserve)
 	}
 }
+
+func TestACandidateCarriesItsSubstanceThroughRetrieveUnchanged(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists: map[string][]Candidate{
+			"only": {{ID: 300, Substance: "the condensed form"}, {ID: 400}},
+		},
+	}
+
+	got := mustRetrieveCandidates(t, graph, []string{"only"}, 6, 0)
+
+	substance := make(map[int64]string, len(got))
+	for _, candidate := range got {
+		substance[candidate.ID] = candidate.Substance
+	}
+
+	if substance[300] != "the condensed form" {
+		t.Fatalf("node 300 carries Substance %q, want %q to survive Retrieve unchanged", substance[300], "the condensed form")
+	}
+	if substance[400] != "" {
+		t.Fatalf("node 400 carries Substance %q, want the zero value for a candidate that never had one", substance[400])
+	}
+}
