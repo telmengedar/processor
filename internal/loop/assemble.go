@@ -36,14 +36,16 @@ func admit(candidates []Candidate, budget int) (admitted []Candidate, dispositio
 		size := len(c.Content)
 
 		d := Disposition{
-			Rank:        i + 1,
-			ID:          c.ID,
-			Type:        c.Type,
-			Name:        c.Name,
-			Similarity:  c.Similarity,
-			Size:        size,
-			ContentHash: contentHash(c.Content),
-			Sources:     c.Sources,
+			Rank:               i + 1,
+			ID:                 c.ID,
+			Type:               c.Type,
+			Name:               c.Name,
+			Similarity:         c.Similarity,
+			Size:               size,
+			ContentHash:        contentHash(c.Content),
+			Sources:            c.Sources,
+			SubstanceAvailable: c.Substance != "",
+			SubstanceSize:      len(c.Substance),
 		}
 
 		switch {
