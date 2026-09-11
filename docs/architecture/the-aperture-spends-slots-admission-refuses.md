@@ -479,7 +479,7 @@ caller's own words inside the neighbourhood.
   the new constant gets **no** doc comment — its **name** carries the meaning, which is why §18 step 1
   specifies a name that reads as a multiplier. Measured in `internal/loop` at `0df5c14`: **0 of the
   package's unexported constants carry one**, `fusionRankConstant` included. Exported godoc is a
-  different row (*one tight line*), and §18 step 4 gives `Retrieve`'s the length bound W-4 asked for.
+  different row (*one tight line*), and §18 step 4 gives `Retrieve`'s the length bound **#13607 W-4** asked for.
   #1380 makes a violation bouncing-grade.
 - **Observability.** **One WARN is added**, beside the existing shutout WARN at `internal/loop/turn.go:189`
   and guarded by the same shape: `len(record.Candidates) < record.Limits.CandidateLimit`. It is the
@@ -727,7 +727,11 @@ were.** #13585 §16 Unit 1 edits `turn.go`, `derivations.go`, both adapters and 
 **That is a bound on #13585's implementer, not on every unit**, and an earlier revision read it as the
 latter — asserting *"nothing in this design reaches anything on #13585's Do-not list"*, which is **false
 against this document's own TL;DR**: the two edits are in `Retrieve` and `fuse`, the first two items on
-that list. It sat three lines from the correctly-stated half of its own sentence. What actually holds is the half that matters: **nothing in #13585 reaches
+that list. It sat **one** line from the correctly-stated half of its own sentence — *"and nothing in #13585 reaches
+`retrieve.go`"*, the next line at revision 2's L670. **Three** lines is the distance to the `turn.go` half
+at L672, which is a different sentence and is where §16.1's later use of the figure is correct. An earlier
+revision attached the right number to the wrong referent: **a locator is a measurement** (#11034 P-51), and
+this one was checkable against `4a0daeb`, which still carries revision 2. What actually holds is the half that matters: **nothing in #13585 reaches
 `retrieve.go`** — its six steps move `MergeQueries`, `DerivationPrompt`/`ParseDerivation`,
 `ModelPort.Derive`, `DeriveQueries`, `Run` and the timeout, and its G-2 *cites* `retrieve.go:31` without
 editing it (§16.1 point 4). **Neither unit changes anything the other depends on.**
@@ -872,10 +876,10 @@ No interaction. This design introduces no second copy of any ceiling and reads n
 
 | step | what | acceptance |
 |---|---|---|
-| 1 | **One unexported const in `internal/loop/retrieve.go`:** the over-fetch multiplier, value **5**, named `recallOverfetchFactor`. **No doc comment** — #10861's table gives unexported identifiers *"default none"*, and the name is therefore the whole carrier: it must read as a **multiplier**, which is why `recallOverfetchFactor` alone is not the name (it reads as plausibly additive) | It is `const`, unexported, **comment-free**, and lives beside `fusionRankConstant`, which also carries none. No config variable, no env read, no `Limits` field. **Falsifier:** `grep -B2 -n "recallOverfetchFactor" internal/loop/retrieve.go` shows no `//` line above the declaration |
+| 1 | **One unexported const in `internal/loop/retrieve.go`:** the over-fetch multiplier, value **5**, named `recallOverfetchFactor`. **No doc comment** — #10861's table gives unexported identifiers *"default none"*, so the name is the whole carrier and must read as a **multiplier rather than an addend**; the `Factor` suffix is what carries that, and it is not decoration. *(An earlier revision made this point by contrasting the suffixed name against the unsuffixed one — and a global rename then rewrote the contrast term into the recommended term, leaving the cell asserting that its own chosen name was not the name. The repair states the requirement positively, so there is no second identifier for a rename to swallow: **P-44**, check one hop out from what you rewrote.)* | It is `const`, unexported, **comment-free**, and lives beside `fusionRankConstant`, which also carries none. No config variable, no env read, no `Limits` field. **Falsifier:** `grep -B2 -n "recallOverfetchFactor" internal/loop/retrieve.go` shows no `//` line above the declaration |
 | 2 | **`Retrieve` computes the fetch count once and passes it to every recall it issues** — the `len(queries)` unscoped calls **and** the scoped call. `limit` continues to bound `fuse` | **G-2.** Assert the count on *every* recorded call, the scoped one included. The scoped one is the easy miss and §2.4 measures it as the most record-dense pool |
 | 3 | **`appendUnseen` rejects a self-produced candidate**, beside the anchor check it already performs. Nothing else in `fuse` changes — not the three passes, not the `len(out)` fill conditions, not `fuseByReciprocalRank` | **G-1, G-3, G-6.** Do **not** pre-filter the lists (R-H): that changes RRF ranks |
-| 4 | **Update `Retrieve`'s godoc** to say it never returns a row this system wrote, and that it asks for more rows than it returns. **It stays one line and must not grow**: measured at `0df5c14` it is **167 chars** (`retrieve.go:11`) and **the longest one-line godoc in the package**; the next is `Source` (`types.go:31`) at 165, and the one-line exported godocs span **36–167**. *(Re-measured here rather than taken from QA #13607, which reports the same range, the same maximum and the same runner-up from a different extractor but counts 55 exported doc blocks where this one counts 63 — 57 one-line and 6 multi-line. The disagreement is in the denominator and not in any figure this step depends on.)* So the two new properties are added by **trimming what is already there**, not by appending — the scope reserve and the fusion are documented in `fuse` and in §7, and the godoc does not owe them | The sentence names both new properties **and is ≤ 167 chars**. A godoc that names only the exclusion describes R-A; one that grows past 167 makes the package's longest godoc longer, which is what #10861's *one tight line* and #1219's *"markedly longer than the untouched members around it"* between them forbid |
+| 4 | **Update `Retrieve`'s godoc** to say it never returns a row this system wrote, and that it asks for more rows than it returns. **It stays one line and must not grow**: measured at `0df5c14` it is **167 chars** (`retrieve.go:11`) and **the longest one-line godoc in the package**; the next is `Source` (`types.go:31`) at 165, and the one-line exported godocs span **36–167**. **The class the counts range over, stated because two rounds disagreed on a number without either side defining it:** an *exported declaration with a doc block* here means a `func`, `type`, `const` or `var` declaration, or a struct field, carrying a contiguous `//` group immediately above it — **excluding interface methods and excluding the package doc comment**, which #10861 gives its own table row. On that class: **63** exported doc blocks, **57** one-line, **6** multi-line, **2** unexported. **Include** interface methods (`internal/loop` has 7 — 6 one-line, 1 multi-line, across `GraphPort`, `FilePort`, `ModelPort`) and it is **70 / 63 / 7**; add the package doc at `types.go:1` and the unexported count is **3**. Both classings are defensible and the arithmetic between them is exact, which is why naming the class closes it and quoting two totals did not (**#13609 W-9**). **Every figure step 4 depends on is invariant across all three classings** — the 36–167 range, `Retrieve` at 167 as the maximum, `Source` at 165, and **0** unexported constants. *(Citations here name the **doc-block** line, not the declaration line: `Retrieve`'s block opens at `retrieve.go:11` and declares at `:12`. A claim about a doc block's length should point at the block.)* So the two new properties are added by **trimming what is already there**, not by appending — the scope reserve and the fusion are documented in `fuse` and in §7, and the godoc does not owe them | The sentence names both new properties **and is ≤ 167 chars**. A godoc that names only the exclusion describes R-A; one that grows past 167 makes the package's longest godoc longer, which is what #10861's *one tight line* and #1219's *"markedly longer than the untouched members around it"* between them forbid |
 | 5 | **Make the property in §15 true across the tree**, not the list of sites in §15. Sweep for it; §15's table is a search result, not a specification | **The pass is mechanical.** Extract every `file:line` and node-id citation on every file the branch touches — not only the files edited — and resolve each against `0df5c14` and against its node |
 | 6 | **Amend, as a Unit 1 deliverable rather than a follow-up:** `anchor-grounded-recall.md`'s **Q3** (answered and reversed), `m1-skeleton-loop.md`'s **R13** surviving-risk clause, and **#13585 §17 row 3**. Each amendment states the property that is now true and what survives of the old claim for the *supplementary* aperture | No amendment may say "self-produced rows no longer consume candidate slots" without the qualifier, because `dispatchRecall` still spends them (§2.5) |
 | 7 | **One WARN in `turn.go`'s run-summary block**, guarded by `len(record.Candidates) < record.Limits.CandidateLimit`, placed beside the existing shutout WARN at `turn.go:189`. It is the emitter for §14's detector. Its message says the aperture under-delivered and carries both numbers; it says nothing about the answer | **G-7.** The fixture is the **empty**-aperture arm specifically — the existing shutout WARN's `> 0` guard keeps it silent there, so a test asserting merely that "a warning fired" would pass against the old one |
@@ -931,46 +935,100 @@ another day — the graph is live and unversioned."*
 happened when it ran — #13599's dispositions still say 17 of 20 however the corpus grows. What it is not
 is a *control* for a change measured later. §2.2's figures stand; they are history, not a baseline.
 
-### What each arm asserts — three relations, decidable against the only graph there is
+### What each arm asserts — two relations that must hold, and one measurement that is reported
+
+> **Label note.** These are **AC-**numbered because §6 already owns `A1`–`A6` for *assumptions*, and this
+> section cites §6’s **A5**. An earlier revision numbered the acceptance relations `A1`–`A3`, which put two
+> meanings of `A1` in one document — found by sweeping this document’s own label namespace rather than by
+> review.
 
 Both arms are run against the container on a real graph, not a fixture, and both use the **verbatim**
-inputs read out of the records' own `input` field. **The same three relations are asserted on both arms**;
-what differs is their magnitude, and **the gap between the magnitudes is the measurement.**
+inputs read out of the records' own `input` field.
 
-| # | relation | why it is decidable and corpus-proof |
+| # | must hold | status |
 |---|---|---|
-| **A1** | `baseline` minus `after`, as id sets, is **exactly** the baseline's `cutReason: self-produced` ids | Asserts both directions — every ineligible row gone, **and nothing else lost.** Its truth does not depend on how many records the graph holds |
-| **A2** | `len(after.candidates) == CandidateLimit` | The same expression as §14's exhaustion detector, under A5's premise |
-| **A3** | `after`'s admitted id set **contains** the baseline's admitted id set | A non-regression claim about the product, not about the mechanism |
+| **AC-1** | `baseline` minus `after`, as **candidate** id sets, is **exactly** the baseline's `cutReason: self-produced` ids | **Provable, and proven.** Both directions — every ineligible row gone, **and nothing else lost.** Truth independent of how many records the graph holds |
+| **AC-2** | `len(after.candidates) == CandidateLimit` | **Provable** under **A5** (§6). The same expression as §14's exhaustion detector |
 
-**A3 is guaranteed rather than hoped, and the argument is short enough to check.** `admit` charges a
-self-produced row nothing (`internal/loop/assemble.go:51-60`: the `switch` short-circuits before
-`cumulative += size`). Removing those rows therefore leaves the cumulative byte arithmetic over every
-surviving row **identical**, and the survivors' relative order is unchanged — dropping rows from a ranked
-list cannot demote a row that remains, and R-1's proof covers the over-fetch half. So every row admitted
-in the baseline is admitted after, and the freed slots are filled at the tail where they can only add.
-**A3 can fail only if something else moved**, which is why it is worth asserting.
+**Why AC-1 holds, at the aperture.** Removing rows from a ranked list cannot demote a row that remains, so
+every eligible baseline candidate is still within the top `limit` of a pool that only got easier to rank
+in; and the reserve pass increments `reserved` only on `appendUnseen`'s true return, so a skipped
+self-produced scoped row does not consume a reserved slot an eligible one would have taken. QA
+constructed the pass-1 / pass-2 / pass-3 cases against `0df5c14` and could not make a non-self-produced
+baseline row disappear.
 
-| arm | input | expected magnitude of A1 | expected magnitude of A3 |
-|---|---|---|---|
-| **Ill-matched** — the graph has least to offer | #13599's input verbatim | **large**: 17 in the stored record, 19 in §2.4's live probe | **large**: the baseline admitted 3 rows / 17,404 B against a 56,592 B ceiling, leaving **39,188 B unused**, so the new tail rows have room |
-| **Well-matched** — the graph answers it | #13598's input verbatim | **small**: **2** today | **small or zero**: the baseline admitted 11 rows / 55,812 B of 56,592 B, leaving **780 B**, so two tail rows will mostly not fit |
+### The admitted set is reported, not gated — and the withdrawn claim is worth reading
 
-**These are expectations with their premises, not acceptance thresholds.** The acceptance is A1–A3. An
-earlier revision required *"admitted well above 3"*, which is not adjudicable — A3 replaces it with a
-relation that is (W-5).
+An earlier revision asserted a third relation: *"`after`'s admitted id set **contains** the baseline's"*,
+and called it **guaranteed**. **It is not, and the error was not where the argument looked.**
 
-### What the relations rule out, which is why there are three
+The `admit` half of that argument is sound and survives: `cumulative` is incremented only in the
+`case cumulative+size <= budget` arm and the `case c.SelfProduced` arm precedes it
+(`internal/loop/assemble.go:51-60`), so **removing self-produced rows alone would leave every survivor's
+arithmetic identical.** The two clauses that actually carried the conclusion were both about `fuse`, and
+both were false:
 
-| implementation | A1 | A2 | A3 |
-|---|---|---|---|
-| no change | **fails** — the difference is empty while the baseline has self-produced rows | passes (20) | passes trivially |
-| **filter only, no over-fetch (R-A)** | passes | **fails** — 5 or 6, re-derived in §13.3 | passes |
-| **back-fills with records rather than returning short (G-6's shape)** | **fails** | passes | passes |
-| **filter + over-fetch (this design)** | passes | passes | passes |
+| the claim | what the code does |
+|---|---|
+| *"the freed slots are filled at the tail"* | **They are filled at the head.** `fuse` pass 1 fills positions **1–17** from `fused` in rank order and pass 2 appends the reserve at **18–20** (`internal/loop/retrieve.go:93-108`). A skipped row makes pass 1 walk deeper into `fused` and append the replacement **into positions 1–17**, ahead of the reserve rows |
+| *"where they can only add"* | **`cumulative` is one shared accumulator.** A row admitted at an earlier position subtracts its own size from the headroom at every later position. There is no per-row budget |
 
-**A2 is the clause that separates this design from R-A**, and it is the same expression as §14's
-detector. A1 is what separates it from doing nothing and from the defensive back-fill.
+**And the same section already contradicted it.** The well-matched magnitude cell computed **780 B** of
+remaining budget. A binding budget and *"can only add"* cannot both be true.
+
+**The worked consequence on the ill-matched arm.** #13599's baseline candidate positions **1–17 are the
+seventeen records, every one charged nothing**; its **entire admitted set** is at positions **18, 19, 20**
+— ids 12988 (12,559 B), 13542 (3,286 B), 11358 (1,559 B). After the change those seventeen positions hold
+**seventeen real rows that cost bytes**: at the measured mean of **~7,154 B/row** (#13598's 20 rows /
+143,089 B) that is **~121,600 B of demand against 39,188 B of slack**. Skip semantics leave residual gaps
+rather than certain failure — which is exactly why it is not a proof. 12988 is least exposed (pass 1
+picks it up third among eligible rows, at low cumulative); **13542 and 11358 are the exposed pair.**
+
+> **Extending the finding rather than only accepting it: that relation would have failed on the
+> *well-matched* arm too, and by more than the 780 B figure suggests.** That arm's budget is already
+> **saturated** — the stored run admitted **55,812 B of 56,592**. The two records at candidate positions
+> 2–3 charge nothing today; after the change those positions hold real rows, inserting of order
+> **14,300 B** of new demand (two rows at the same measured mean — and their true sizes are
+> **unmeasured**, being ranks 21–22 of that fetch) **ahead of** most of the baseline's admissions,
+> against **780 B** of slack. **So containment is expected to fail on both arms**, including the one
+> where nothing was wrong. It was not a marginal overclaim; it was false in both directions it was
+> asserted over.
+
+**So the admitted set is a reported measurement, not an acceptance gate:**
+
+| # | reported on both arms, baseline and after | expected direction, with its premise |
+|---|---|---|
+| **M1** | the admitted **id sets** | **Composition shifts on both arms.** A row admitted only because free riders sat ahead of it can be displaced |
+| **M2** | the admitted **byte totals** and row counts | **Ill-matched: up, substantially** — 39,188 B of slack was going unused because the aperture had only three eligible rows to offer. **Well-matched: flat** — the budget was already 98.6 % spent, so nothing can improve there, and the row count may fall while bytes hold |
+
+**Nothing is gated on M1 or M2**, and that is the point: an implementer who meets a displaced admission
+**reports it rather than weakening the arm.** This also closes **#13607 W-5** properly — *"admitted well above 3"*
+was unadjudicable, and the remedy is that the admitted figure was never an acceptance clause, not that it
+needed a sharper threshold.
+
+**Where a displaced admission belongs, and it is not here.** When twenty real rows contend for 56,592 B
+at a measured mean of ~7,154 B/row, **roughly eight fit and twelve are cut on size** (56,592 / 7,154 =
+7.9). **That is #13594's subject** — oversize
+candidates against the byte budget — surfacing where the aperture previously hid it behind seventeen
+free riders. **This change converts an aperture defect into a budget defect on the ill-matched arm, and
+the budget defect already has an owner.** Stating the interaction and stopping (§16.2).
+
+### What the relations rule out — and the withdrawn one discriminated nothing
+
+| implementation | AC-1 | AC-2 |
+|---|---|---|
+| no change | **fails** — the difference is empty while the baseline has self-produced rows | passes (20) |
+| **filter only, no over-fetch (R-A)** | passes | **fails** — 5 or 6, re-derived in §13.3 |
+| **back-fills with records rather than returning short (G-6's shape)** | **fails** | passes |
+| **filter + over-fetch (this design)** | passes | passes |
+
+**AC-1 and AC-2 alone separate this design from all three wrong implementations** — AC-2 from R-A,
+AC-1 from doing nothing and from the defensive back-fill. **The withdrawn relation passed in every row of that
+table**, including the three that are wrong: it was simultaneously the only overclaimed relation and the
+only one that discriminated nothing. **Worth carrying: a relation that cannot fail against any candidate
+implementation is not carrying acceptance, whatever else it is doing** — which is §14's own falsifier
+rule (*a row that cannot discriminate is a wish*) arriving in the acceptance table, where nobody had
+thought to run it.
 
 **Re-measure the corpus figures before running.** §2.4's numbers are a property of the graph on
 2026-09-11 and the corpus grows daily; the count of `processor-run` nodes is one call.
@@ -1019,3 +1077,24 @@ change, and one of them changed this document.
    **And it is what §13.2's universal was missing.** A claim with a stated expiry needs something that
    fires when it expires; without it the multiplier can silently become insufficient and the only symptom
    is a quieter aperture that still looks like a full run.
+
+---
+
+## 21. A note on how this document records its own corrections
+
+Three revisions have each left dated *"an earlier revision…"* markers at the sites they corrected, and
+that practice is worth one rule, because a round of this document got the rule wrong about itself.
+
+> **"Left visible" is a claim about the document's current text, and it needs the same grep as any other
+> claim about the text.**
+
+A fix round reported three self-found defects as *left visible*. Checked against the shipped revision:
+one was (the doc-block count, with both figures and the other extractor named); one had been **silently
+corrected** before anyone could see it, which costs nothing but is not visibility; and one was **present
+and unmarked**, which is the only shape of the three that costs a reader anything — it read as a
+confident measurement with nothing flagging it. **One label was applied to three different states.**
+
+So: a site is *visible* only if the current text says something happened there. Where a correction is
+worth recording, it carries its marker; where it is not, it is simply fixed and not claimed. Both are
+fine, and **the claim has to match which one was done.**
+
