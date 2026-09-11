@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/telmengedar/processor/internal/redacturl"
 )
 
 const (
@@ -101,7 +103,7 @@ func (c *Client) projectedRow(ctx context.Context, id int64, fields string) (row
 func (c *Client) patch(ctx context.Context, path, contentType string, body []byte) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("divoid: build request: %w", err)
+		return fmt.Errorf("divoid: build request: %w", redacturl.Error(err))
 	}
 	req.Header.Set("Content-Type", contentType)
 	return c.send(req, nil)
