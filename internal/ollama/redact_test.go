@@ -29,6 +29,8 @@ func TestOllamaJudgeRedactsUserinfoFromProviderEndpointOnTheSuccessPath(t *testi
 	}
 }
 
+const nativeChatRoute = "/api/chat"
+
 const (
 	credentialSentinel   = "sk-secretkey"
 	unreachableBase      = "http://" + credentialSentinel + "@127.0.0.1:1/v1"
@@ -85,7 +87,7 @@ func TestOllamaJudgeRedactsTheCredentialFromTheBuildRequestError(t *testing.T) {
 
 	c := NewClient(unparseableBase, "model-x", "", loop.Sampling{}, refusingClient())
 	_, err := c.Judge(context.Background(), judgeInput())
-	assertCredentialRedacted(t, err, unparseableBase+chatRoute, unparseableAuthority)
+	assertCredentialRedacted(t, err, unparseableBase+nativeChatRoute, unparseableAuthority)
 }
 
 func TestOllamaJudgeRedactsTheCredentialFromTheRequestFailedError(t *testing.T) {
@@ -93,7 +95,7 @@ func TestOllamaJudgeRedactsTheCredentialFromTheRequestFailedError(t *testing.T) 
 
 	c := NewClient(unreachableBase, "model-x", "", loop.Sampling{}, refusingClient())
 	_, err := c.Judge(context.Background(), judgeInput())
-	assertCredentialRedacted(t, err, unreachableBase+chatRoute, unreachableAuthority)
+	assertCredentialRedacted(t, err, unreachableBase+nativeChatRoute, unreachableAuthority)
 }
 
 func TestOllamaCondenseRedactsTheCredentialFromTheBuildRequestError(t *testing.T) {
@@ -101,7 +103,7 @@ func TestOllamaCondenseRedactsTheCredentialFromTheBuildRequestError(t *testing.T
 
 	c := NewClient(unparseableBase, "model-x", "", loop.Sampling{}, refusingClient())
 	_, err := c.Condense(context.Background(), "prompt", 64)
-	assertCredentialRedacted(t, err, unparseableBase+chatRoute, unparseableAuthority)
+	assertCredentialRedacted(t, err, unparseableBase+nativeChatRoute, unparseableAuthority)
 }
 
 func TestOllamaCondenseRedactsTheCredentialFromTheRequestFailedError(t *testing.T) {
@@ -109,7 +111,7 @@ func TestOllamaCondenseRedactsTheCredentialFromTheRequestFailedError(t *testing.
 
 	c := NewClient(unreachableBase, "model-x", "", loop.Sampling{}, refusingClient())
 	_, err := c.Condense(context.Background(), "prompt", 64)
-	assertCredentialRedacted(t, err, unreachableBase+chatRoute, unreachableAuthority)
+	assertCredentialRedacted(t, err, unreachableBase+nativeChatRoute, unreachableAuthority)
 }
 
 var endpointsCarryingNoUserinfo = []string{
@@ -133,11 +135,11 @@ var endpointsCarryingNoUserinfo = []string{
 	"https://sub.domain-with-dash.example:443/a/b/c?x=1&y=2",
 }
 
-func TestOllamaErrorPathsLeaveAnEndpointCarryingNoUserinfoByteForByteUnchanged(t *testing.T) {
+func TestOllamaRedactionIsANoOpOnTheErrorTextOfAnEndpointCarryingNoUserinfo(t *testing.T) {
 	t.Parallel()
 
 	for _, base := range endpointsCarryingNoUserinfo {
-		composed := strings.TrimRight(base, "/") + chatRoute
+		composed := strings.TrimRight(base, "/") + nativeChatRoute
 		want := "ollama: " + unredactedReference(t, composed)
 		c := NewClient(base, "model-x", "", loop.Sampling{}, refusingClient())
 

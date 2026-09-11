@@ -138,7 +138,7 @@ var endpointsCarryingNoUserinfo = []string{
 	"https://sub.domain-with-dash.example:443/a/b/c?x=1&y=2",
 }
 
-func TestOpenAICompatErrorPathsLeaveAnEndpointCarryingNoUserinfoByteForByteUnchanged(t *testing.T) {
+func TestOpenAICompatRedactionIsANoOpOnTheErrorTextOfAnEndpointCarryingNoUserinfo(t *testing.T) {
 	t.Parallel()
 
 	for _, base := range endpointsCarryingNoUserinfo {
