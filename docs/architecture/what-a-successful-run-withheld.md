@@ -304,8 +304,14 @@ Nothing is added to the turn. Two existing render/report sites learn to say one 
                                                                           └── UNIT 2: the empty branch reads
                                                                               Dispositions, so it can tell
                                                                               "found nothing" from
-                                                                              "found rows, none fit"
+                                                                              "found rows, none included"
 ```
+
+> **Corrected 2026-09-11 during Unit 2's implementation (QA #13697 CF-1).** The last line of the diagram
+> read *"found rows, none fit"*. The branch is reason-neutral by construction — `admit` cuts on **two**
+> reasons, and the self-produced one charges no bytes at all — so *"none fit"* names only one of them
+> and is false on the other. Corrected here and at §14's G-6 row; the rendered sentence is
+> `"results were found, but none were included."`
 
 **The whole design is that the two sites which already hold the fact start saying it.** No new
 component, no new port, no new type, no new constant, no new persisted field.
@@ -491,9 +497,29 @@ inventory.**
 | **G-3** | I-3 | `TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasCutAsSelfProduced` | `admit` reaches its self-produced arm **before** the budget arm (`assemble.go:52` precedes `:54`), so a rank-1 record carries the self-produced reason and no size was ever charged. An implementation keyed on `!Included` rather than on the reason string (`assemble.go:12-13`) reddens. | **No runnable falsifier established.** |
 | **G-4** | I-4 | `TestTurnRunRaisesBothTheShutoutAndTheDroppedTopCandidateRecordsWhenNothingWasAdmitted` | Every candidate oversize: the shutout condition and the rank-1 condition are **both** true. An implementation that treats the new record as an `else` branch of the shutout reddens. | **No runnable falsifier established.** |
 | **G-5** | I-5 | `TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped` | Compares the record and block against the pre-change golden for the same fixture. **This is the guard that makes "zero cost" checkable** rather than asserted. | **No runnable falsifier established.** |
-| **G-6** | I-6 | `TestRenderToolResultSaysResultsWereFoundAndNoneFitWhenAdmissionCutThemAll` | The exchange carries **empty `Results` and non-empty `Dispositions`** — the `turn.go:359-360` shape. A renderer reading only `Results` cannot tell this from the empty case and reddens. | **Live, and its output is quoted:** at `872156e`, `git grep -n "no additional results found" -- 'internal/**'` returns `internal/loop/assemble.go:92` and `internal/loop/toolresult_test.go:34`. G-6 requires a third site to exist and the `assemble.go:92` branch to be conditional. |
+| **G-6** | I-6 | `TestRenderToolResultSaysResultsWereFoundAndNoneWereIncludedWhenAdmissionCutThemAll` | The exchange carries **empty `Results` and non-empty `Dispositions`** — the `turn.go:359-360` shape. A renderer reading only `Results` cannot tell this from the empty case and reddens. | **Live, and its output is quoted:** at `872156e`, `git grep -n "no additional results found" -- 'internal/**'` returns `internal/loop/assemble.go:92` and `internal/loop/toolresult_test.go:34`. G-6 requires a third site to exist and the `assemble.go:92` branch to be conditional. |
 | **G-7** | I-6 | `TestRenderToolResultRendersARecallThatFoundNothingAsOneSentenceRatherThanAnEmptyString` — **exists**, `toolresult_test.go:29` | It constructs a `ToolExchange` with **no dispositions at all**, so it distinguishes *fix the empty branch* from *replace the empty branch*. **Must stay green unmodified.** | **Live:** it is in the tree today and passes; a fix that rewrites the genuinely-empty message reddens it. |
 | **G-8** | I-7 | `TestRenderToolResultNamesNoUnadmittedNodeInTheAllCutSentence` | C3: the model cannot fetch by id, so an id in that sentence is budget spent on an unusable fact. A renderer that lists the cut rows reddens. | **No runnable falsifier established.** |
+
+> **Corrected 2026-09-11 during Unit 2's implementation (QA #13697 CF-1).** G-6's name above read
+> `TestRenderToolResultSaysResultsWereFoundAndNoneFitWhenAdmissionCutThemAll`. **A name-to-create is a
+> claim, and that one was false.** The sentence the guard asserts is reason-neutral —
+> `"results were found, but none were included."` — while *"none fit"* is budget-specific language for a
+> branch that also fires when every row was cut as **self-produced**. `admit` reaches the self-produced
+> arm (`assemble.go:52-53`) **before** the byte-budget arm (`:58-59`), and the supplementary path is the
+> only one that can reach it: `dispatchRecall` calls `Graph.Recall` directly at `turn.go:357` and hands
+> the rows to `admit` at `:363`, bypassing `Retrieve`, whose `fuse` drops self-produced rows outright.
+> So an all-self-produced cut set admits nothing while nothing was ever charged for bytes, and *"none
+> fit"* would be **an affirmative falsehood on a reachable success path** — the exact class this unit
+> exists to remove. Renamed to match the wording `RenderToolResult` actually produces; §18's acceptance
+> for Unit 2 is satisfied by the renamed guard.
+>
+> **Two guards not listed above were added, under this section's own re-derivation rule** (*"do not
+> treat the table as the inventory"*): an all-self-produced fixture, which is the only guard that makes
+> the reason-neutrality discriminate, and a genuinely-empty fixture carrying a **non-nil, zero-length**
+> `Dispositions` slice — the shape `admit:31`'s `make(...)` actually delivers, which `r.Dispositions !=
+> nil` would pass while breaking production silently. The second of those is what satisfies G-6's
+> falsifier: it supplies the third `"no additional results found"` site the column requires.
 
 **Structural fact usable as a pre-submit check, stated with the command exactly as it was run.**
 

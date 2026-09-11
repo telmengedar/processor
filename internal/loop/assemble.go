@@ -89,6 +89,9 @@ func RenderToolResult(r ToolExchange) string {
 		return fmt.Sprintf("wrote %d bytes to %s", r.Bytes, r.Path)
 	}
 	if len(r.Results) == 0 {
+		if len(r.Dispositions) > 0 {
+			return "results were found, but none were included."
+		}
 		return "no additional results found."
 	}
 

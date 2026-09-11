@@ -1,6 +1,9 @@
 package loop
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRenderToolResultRendersARecordedErrorBehindItsPrefix(t *testing.T) {
 	t.Parallel()
@@ -72,5 +75,93 @@ func TestRenderToolResultPutsExactlyOneNewlineBetweenTwoRecalledCandidatesSectio
 
 	if got != want {
 		t.Fatalf("tool result =\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestRenderToolResultSaysResultsWereFoundAndNoneWereIncludedWhenAdmissionCutThemAll(t *testing.T) {
+	t.Parallel()
+
+	got := RenderToolResult(ToolExchange{
+		Tool:  ToolRecall,
+		Query: "the query",
+		Dispositions: []Disposition{
+			{Rank: 1, ID: 987654321, Type: "documentation", Name: "Vermilion Ledger Of Tides", Size: 67312, CutReason: cutReasonByteBudget},
+			{Rank: 2, ID: 987654322, Type: "documentation", Name: "Cobalt Almanac Of Hedges", Size: 96555, CutReason: cutReasonByteBudget},
+		},
+	})
+
+	want := "results were found, but none were included."
+
+	if got != want {
+		t.Fatalf("tool result = %q, want %q", got, want)
+	}
+}
+
+func TestRenderToolResultSaysResultsWereFoundWhenEveryRowWasCutAsSelfProducedRatherThanForBytes(t *testing.T) {
+	t.Parallel()
+
+	got := RenderToolResult(ToolExchange{
+		Tool:  ToolRecall,
+		Query: "the query",
+		Dispositions: []Disposition{
+			{Rank: 1, ID: 987654323, Type: "run-record", Name: "Amber Transcript Of Gates", Size: 2200, CutReason: cutReasonSelfProduced},
+			{Rank: 2, ID: 987654324, Type: "run-record", Name: "Slate Transcript Of Gates", Size: 2400, CutReason: cutReasonSelfProduced},
+		},
+	})
+
+	want := "results were found, but none were included."
+
+	if got != want {
+		t.Fatalf("tool result = %q, want %q", got, want)
+	}
+}
+
+func TestRenderToolResultNamesNoUnadmittedNodeInTheAllCutSentence(t *testing.T) {
+	t.Parallel()
+
+	got := RenderToolResult(ToolExchange{
+		Tool:  ToolRecall,
+		Query: "the query",
+		Dispositions: []Disposition{
+			{Rank: 1, ID: 987654321, Type: "documentation", Name: "Vermilion Ledger Of Tides", Size: 67312, CutReason: cutReasonByteBudget},
+		},
+	})
+
+	if strings.Contains(got, "987654321") {
+		t.Fatalf("tool result %q names the id of a row the model cannot fetch", got)
+	}
+	if strings.Contains(got, "Vermilion Ledger Of Tides") {
+		t.Fatalf("tool result %q names the name of a row the model cannot fetch", got)
+	}
+}
+
+func TestRenderToolResultSaysNothingWasFoundWhenAnEmptyRecallCarriedAnEmptyDispositionSliceRatherThanNil(t *testing.T) {
+	t.Parallel()
+
+	got := RenderToolResult(ToolExchange{Tool: ToolRecall, Query: "nothing matches this", Dispositions: []Disposition{}})
+
+	want := "no additional results found."
+
+	if got != want {
+		t.Fatalf("tool result = %q, want %q", got, want)
+	}
+}
+
+func TestRenderToolResultRendersTheErrorRatherThanTheAllCutSentenceWhenTheExchangeCarriesBoth(t *testing.T) {
+	t.Parallel()
+
+	got := RenderToolResult(ToolExchange{
+		Tool:  ToolRecall,
+		Query: "the query",
+		Error: "supplementary recall failed",
+		Dispositions: []Disposition{
+			{Rank: 1, ID: 987654321, Type: "documentation", Name: "Vermilion Ledger Of Tides", Size: 67312, CutReason: cutReasonByteBudget},
+		},
+	})
+
+	want := "error: supplementary recall failed"
+
+	if got != want {
+		t.Fatalf("tool result = %q, want %q", got, want)
 	}
 }
