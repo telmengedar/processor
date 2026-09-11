@@ -35,9 +35,10 @@ count and the aperture stop being the same number.
 **Not a judgement about run records.** The predicate is *inherited from `admit`*, which already rejects
 them unconditionally before any test of content. Nothing here says self-produced memory is worth less.
 
-**Cost.** On an ill-matched input, ~2.8 MB of candidate bodies per recall against 1.085 MB measured
-today; unchanged on a well-matched one. No new type, no new record field, no change to `admit`, the
-budget or the block. **One WARN** in `turn.go` fires when the multiplier was not enough — the detector
+**Cost.** The fetch rises from 20 to 100 rows on **every** arm. Bodies per recall: ~2.8 MB predicted on
+an ill-matched input against **1,085,093 B measured** today; on a well-matched one, **143,089 B measured**
+over 20 rows (~7,154 B/row), so of order 700 KB — the per-row figure is measured, the extrapolation to
+ranks 21–100 is not. No new type, no new record field, no change to `admit`, the budget or the block. **One WARN** in `turn.go` fires when the multiplier was not enough — the detector
 for the one claim here that has an expiry.
 
 **Rejected.** Excluding at the graph query — `type=` is include-only, and the nearest approximation
@@ -321,7 +322,7 @@ block."* It is a fair observation and the remedy does not follow from it. Reject
 | A2 | The graph's semantic ranking is reproducible run to run | measured — #13598/#13600 shared 19 of 20 candidates and the same top hit to four decimals (#13592). **This is the premise the whole two-armed acceptance rests on**; without it a before/after delta is not attributable |
 | A3 | `Recall`'s `count` accepts values well above 20 | documented cap is **500** (DiVoid #8); this design uses 100 |
 | A4 | A record's `SelfProduced` flag is set from type **and** name prefix, so a foreign `session-log` is never excluded | `internal/divoid/write.go:33-34`; pinned by the existing `TestSweepCountsOnlyRunRecordsAsSelfProducedAndNotOtherSessionLogs` |
-| A5 | The graph holds far more than 100 nodes, so an unscoped recall at `count=100` always returns 100 rows | measured: 11,140 nodes. **This is the premise that makes §14's exhaustion detector exact** |
+| A5 | The graph holds far more than 100 nodes, so an unscoped recall at `count=100` always returns 100 rows | **11,140** when this was written, **11,146** when QA re-measured hours later, **11,148** on re-check. **The figure moves; the premise does not** — and the drift is the same mechanism §18's baseline rule is about. This is what makes §14's exhaustion detector exact |
 | A6 | The record corpus grows by one node per run and shrinks never | `internal/divoid/write.go:87`; no deletion path exists |
 
 **Constraint that is a ruling, not a preference:** §4. **Constraint that is a contract:** #114 §4 via
@@ -414,7 +415,7 @@ One turn, unchanged in shape, with the two numbers separated:
    site is byte-identical**; `Retrieve` derives the fetch count from `limit` internally, so no caller
    passes a new argument and `cmd/eval/sweep.go` inherits the behaviour unchanged. The only edit to
    `turn.go` is the WARN, far downstream in the run-summary block.
-2. `Retrieve` computes `fetch = limit * recallOverfetch` and issues one unscoped `Recall(query, fetch, nil)`
+2. `Retrieve` computes `fetch = limit * recallOverfetchFactor` and issues one unscoped `Recall(query, fetch, nil)`
    per query, then builds the scope, then one `Recall(queries[0], fetch, scope)`. **The over-fetch applies
    to the scoped recall too** — §2.4 measures the scope seed as the most record-dense pool available, and
    the reserve is only three slots wide.
@@ -473,8 +474,12 @@ caller's own words inside the neighbourhood.
   for 20 rows; at 100 rows the record share saturates at the whole corpus (37 x ~65 KB, about 2.4 MB)
   plus ~63 real rows. With #13585's six-query fan-out this is held across seven lists. **Bounded,
   quantified in §14 R-2, and not measured against a wall-clock figure that does not exist.**
-- **Comments.** #114 §4 via #10861: the change is one clause and one expression. Neither takes a comment;
-  `Retrieve`'s existing one-line godoc gains the exclusion, and the new constant gets one line.
+- **Comments.** #114 §4 via #10861, whose table has a row for each identifier class rather than one
+  length cap. **Doc comments on unexported identifiers: *"Default none, same as any other code."*** So
+  the new constant gets **no** doc comment — its **name** carries the meaning, which is why §18 step 1
+  specifies a name that reads as a multiplier. Measured in `internal/loop` at `0df5c14`: **0 of the
+  package's unexported constants carry one**, `fusionRankConstant` included. Exported godoc is a
+  different row (*one tight line*), and §18 step 4 gives `Retrieve`'s the length bound W-4 asked for.
   #1380 makes a violation bouncing-grade.
 - **Observability.** **One WARN is added**, beside the existing shutout WARN at `internal/loop/turn.go:189`
   and guarded by the same shape: `len(record.Candidates) < record.Limits.CandidateLimit`. It is the
@@ -499,18 +504,54 @@ That is why §14's exhaustion condition is a tuning signal and not an incident.
 
 ### 13.2 The over-fetch factor, and the honest statement of its lifetime
 
-**`recallOverfetch = 5`, so `fetch = 100`.** Basis, all measured in §2.4:
+**`recallOverfetchFactor = 5`, so `fetch = 100`.** Basis, all measured in §2.4:
 
 - On the worst arm available, the 20th non-record row sits at **rank 44**. `fetch = 100` clears it by 56
   ranks.
 - **37 records exist in total**, so at `fetch = 100` the headroom (80) exceeds the entire corpus: today
   the aperture cannot be starved by this cause on *any* input.
-- On the well-matched arm the extra 80 rows are never reached by `fuse` and change nothing (§14 R-1).
+- On the well-matched arm the extra 80 rows are never reached by `fuse`, so **the over-fetch** changes
+  nothing there (§14 R-1). **The filter does**, and by a measured amount: that input's top 20 holds
+  **2** run records today (§2.4), so the aperture loses two ineligible rows and gains two deeper
+  eligible ones. **The arm is a control on regression, not on identity** — §18 states what it asserts
+  instead, and why identity was the wrong thing to ask for.
 
 **And the claim's falsifier, stated because it is a universal (#1220 §5):** *an input for which more than
-80 of the graph's top 100 rows are `processor-run` records.* That requires **at least 81 records**. At the
-observed rate — roughly fifteen runs on 2026-09-10 alone — **that is weeks, not years**, and at a busy
-week's rate it is days.
+80 of the graph's top 100 rows are `processor-run` records.* That requires **at least 81 records**, i.e.
+**44 more than exist.**
+
+**How long that is, measured rather than estimated.** An earlier revision said *"roughly fifteen runs on
+2026-09-10 alone — that is weeks, not years"*. **Both halves were wrong**, and it was the one graph figure
+in this document published without its command. **Published as run:**
+
+```
+divoid_list(type=["session-log"], name=["processor-run%"], count=50, fields=["id","name","created"])
+```
+
+`total: 37`, all 37 rows returned, counted by `created` date:
+
+| date | run records |
+|---|---|
+| 2026-09-02 | 2 |
+| 2026-09-05 | 3 |
+| 2026-09-06 | 3 |
+| 2026-09-07 | 9 |
+| **2026-09-10** | **20** |
+
+| basis | rate | time to 44 more |
+|---|---|---|
+| the measured peak day — **2026-09-10, 20 runs, not fifteen** | 20/day | **2.2 days** |
+| mean over the **5 days that had any runs** | 7.4/day | **5.9 days** |
+| mean over the **9-day calendar span** | 4.1/day | **10.7 days** |
+
+**So the honest range is 2.2 to 10.7 days, and no basis yields "weeks".** The peak is the one a safety
+margin is sized against, because runs arrive in bursts — **four of the nine days carry none**, and one
+day carries more than half the corpus.
+
+**A five-fold overstatement of a bridge's remaining life is the figure that gets quoted into a follow-up
+brief**, and the direction being safe for the decision is not a mitigation when the section is titled
+*the honest statement of its lifetime.* **It also strengthens the case for the WARN rather than weakening
+it:** a bridge with days of life needs its expiry detector more than one with weeks.
 
 **A claim with an expiry needs something that fires when it expires.** Left alone, the multiplier can
 become insufficient and the only symptom is a quieter aperture that still looks like a full run. The
@@ -533,14 +574,14 @@ this task.
 | **R-E** | **Adaptive re-fetch** — fetch `limit`, count the records, re-issue wider if short | Converges only by luck in one step, because the widened band is also crowded; a loop needs a bound and the bound is the same magic number, chosen worse. It adds a round trip exactly on the crowded runs, which are the slow ones |
 | **R-F** | **Two-phase fetch** — rank on a body-less projection at a large count, filter, then hydrate exactly `limit` rows by id | **The right answer to a different problem**, and the successor named in §13.2. `IsRunRecord` needs only `type` and `name`, both of which a cheap projection carries, so headroom would become nearly free and today's wire cost would *fall*. Rejected now on three grounds: it makes `Candidate` a two-state object that is a footgun in `admit` (an unhydrated row has `len(Content) == 0` and is admitted for free); it adds a port method and a round trip; and **the cost it optimises is unmeasured** — no retrieval-latency figure exists for this system, and #13534 §3 is a standing ruling against optimising a quantity whose input has not been measured. Filed in §19 with its trigger |
 | **R-G** | **A byte-denominated aperture** | §5.2 |
-| **R-H** | **Pre-filter the lists before `fuseByReciprocalRank`** rather than at `appendUnseen` | Removing rows before scoring compacts every surviving row's rank, which changes RRF scores. #13585 §17 row 5 already records that every retrieval constant is untested under live fusion; adding a second uncontrolled ranking variable in the same window is how a measurement stops being attributable. Filtering at selection changes *which rows are taken* and nothing about *how they are ranked* |
+| **R-H** | **Pre-filter the lists before `fuseByReciprocalRank`** rather than at `appendUnseen` | Removing rows before scoring compacts every surviving row's rank, which changes RRF scores. #13585 §17 row 5 already records that every retrieval constant is untested under live fusion; adding a second uncontrolled ranking variable in the same window is how a measurement stops being attributable. Filtering at selection changes *which rows are taken* and nothing about *how they are ranked*. **This prohibition has its own guard, G-8** — an earlier revision stated it with nothing that fires on its violation, which is the shape §13.2 itself argues against |
 
 ### 13.4 KISS accounting (#1136 §4)
 
 | element | can it be deleted? | can it be merged? | can it be inlined? |
 |---|---|---|---|
 | the `appendUnseen` clause | no — it is the fix | it *is* the merge: it joins the anchor exclusion already there | it is one clause |
-| `recallOverfetch` | no — without it the aperture under-delivers (R-A) | no | it is one const; #1136 §3 keeps it a `const`, not config: no operator tunes it, no environment differs, it is not a secret |
+| `recallOverfetchFactor` | no — without it the aperture under-delivers (R-A) | no | it is one const; #1136 §3 keeps it a `const`, not config: no operator tunes it, no environment differs, it is not a secret |
 | the WARN (§14) | **no** — it is the detector §13.2's universal needs, and the *only* signal in the empty-aperture case, where the existing shutout WARN's `> 0` guard keeps it silent | it **is** the merge: one more guarded line in the run-summary block that already holds the shutout WARN, not a new observability surface | it is one guarded line |
 | a `RetrievalStats` return | **yes** — deleted | — | — |
 | a `Limits.recallFetchCount` | **yes** — deleted, 1 int x 5 sites | — | — |
@@ -558,10 +599,10 @@ this task.
 
 | # | Risk | Mitigation | Falsifier — **predicted, not yet observed** |
 |---|---|---|---|
-| **R-1** | **The well-matched arm moves.** If over-fetching changed which rows emerge on inputs that already work, the change would trade one regression for another | Read out of `fuseByReciprocalRank`: each id's score depends only on its own rank in each list, and `SortStableFunc` places new low-scoring ids below. **With a single query the top prefix is provably unchanged.** G-5 pins it as a dual-arm relation | Re-run #13598's verbatim input: the candidate id set must be **identical**. A differing set falsifies the claim |
+| **R-1** | **The over-fetch reorders the well-matched arm.** If widening the fetch changed which rows emerge on inputs that already work, the change would trade one regression for another. **Scoped to the over-fetch alone** — the filter moves that set by design, and an earlier revision conflated the two, which is what made this row's falsifier unsatisfiable | Read out of `fuseByReciprocalRank` (`internal/loop/retrieve.go:120-141`): each id's score depends only on its own rank in each list, and `SortStableFunc` places new low-scoring ids below. **With a single query the top prefix is provably unchanged.** G-5 pins it as a dual-arm relation over the *fetch width only*, holding the filter constant | **G-5's two arms must return equal ids.** A differing set falsifies *this* claim. It is **not** falsified by the whole change moving the candidate set — that is the filter working, and §18's relations are what test it |
 | **R-2** | **Bytes and memory grow.** 1,085,093 B of candidate bodies measured on one recall today; ~2.8 MB predicted at `fetch=100`, held across `N+1` lists | Bounded by the corpus, not the fetch (§2.4). Quantified rather than hidden. **Not** optimised, because no latency figure exists (#13534 §3) | A measured turn wall-clock regression attributable to retrieval. **None exists today in either direction** — stated as unmeasured, not as safe |
 | **R-3** | **With #13585's fan-out the fused order *can* change.** With N>1 a deeper list adds cross-query agreement a shallower one did not carry, so R-1's proof does **not** extend past a single query | Stated rather than claimed away. It is plausibly an improvement — more agreement evidence — but it is a behaviour change and must not be reported as neutral | G-5 is explicitly scoped to N=1 and says so. If a future arm asserts neutrality at N>1, that assertion is false by construction |
-| **R-4** | **The predicates drift.** `fuse` and `admit` each read `c.SelfProduced`; if one changes, the other is silently wrong in whichever direction | **G-4** | — |
+| **R-4** | **The predicates drift.** `fuse` and `admit` each read `c.SelfProduced`; if one changes, the other is silently wrong in whichever direction | **G-4** | **Named, and it is not reachable from this change.** Both sites read the same boolean, so G-4 holds by construction for **every** implementation this design can produce — a green here is not a result (#11034 P-27; #10466's *"a guard you have not seen fail is decoration"*). The mutation that establishes it is **alter `admit`'s own predicate** — e.g. make it admit a self-produced row below some size — **and assert G-4 reddens.** That mutation is outside this design's diff and is the one #13602 will actually make, which is the whole point of the tripwire. **Run it as a throwaway mutation in this round** so the guard is witnessed once rather than trusted forever |
 | **R-5** | **The headroom expires** (§13.2) | The detector below, and three filed successors | — |
 
 ### The exhaustion detector, and the premise that makes it exact
@@ -576,8 +617,17 @@ headroom failed.
 `len(record.Candidates) > 0 && cut == len(record.Candidates)` — *we had candidates and admitted none.*
 This one says *we could not fill the aperture.* Both can be true, and **in the degenerate case they come
 apart in the direction that matters**: when every fetched row is self-produced the candidate set is
-**empty**, so the shutout WARN's `> 0` guard keeps it silent and this WARN is the **only** signal that
-anything happened. That case is G-6's, and today it would pass in total silence.
+**empty** after this change, so the shutout WARN's `> 0` guard keeps it silent and this WARN is the
+**only** signal that anything happened.
+
+> **And that is the argument, which is stronger than the one an earlier revision made.** It read *"today
+> it would pass in total silence"*, and **that is false.** Walked at `0df5c14`: `fuse` returns 20
+> records, `admit` cuts all 20, and `turn.go:188`'s guard reads `len(record.Candidates) > 0 && cut ==
+> len(record.Candidates)` — `20 > 0` and `20 == 20`, so **the shutout WARN fires today.** What Unit 1
+> does is **remove an existing WARN-level signal** on that arm, by emptying the candidate set the guard
+> tests. **G-7 restores it.** *"Nobody would notice today"* and *"this change would stop anyone
+> noticing"* are different justifications and only the second is true — a negative claim about current
+> behaviour, of exactly the class that has to be walked against the code rather than reasoned about.
 
 **Not reached by `cmd/eval`**, which calls `Retrieve` directly and never enters `Run` — the sweep's
 equivalent is `RowResult.CandidateCount` against `Limits.CandidateLimit`, already recorded
@@ -597,21 +647,29 @@ would also fire on a small graph**, and the reading would be wrong rather than m
 | **G-3** | `TestASelfProducedRowDoesNotSpendAReservedSlot` — scoped list `[record, real, real, real]`, `reserve = 3`; assert three real rows reserved | `reserved` increments only on `appendUnseen`'s true return. An implementation that filtered *after* the reserve loop would reserve two and pass every other guard |
 | **G-4** | `TestFuseExcludesExactlyWhatAdmitWouldCutAsSelfProduced` — over one candidate set, assert the ids `fuse` drops equal the ids `admit` marks `cutReasonSelfProduced` | The two predicates live at two sites and **nothing else couples them** — not the compiler, not a diff, not any other test. It is the guard for R-4 and for §4's second consequence: when `admit` stops refusing, this test is what forces `fuse` to stop excluding in the same change |
 | **G-5** | `TestTheFusedPrefixDoesNotMoveWhenOneQueryReturnsMoreRows` — dual-arm: the same 20-row list, and that list followed by 40 further rows; assert equal returned ids. **Single query only** | It asserts a **relation between two arms of one implementation**, so it cannot be satisfied by a hard-coded expectation. Scoped to N=1 deliberately: R-3 makes it false at N>1, and a guard that quietly claimed otherwise would fire on compliant code once #13585 lands |
-| **G-6** | `TestTheApertureIsShortRatherThanPollutedWhenEveryFetchedRowIsSelfProduced` — every fetched row is a record; assert an **empty** candidate set | Pins the graceful-degradation choice against the tempting defensive implementation that back-fills with records rather than return nothing. That implementation passes G-1 through G-5 |
-
+| **G-6** | `TestTheApertureIsEmptyRatherThanBackfilledWhenEveryFetchedRowIsSelfProduced` — every fetched row is a record; assert an **empty** candidate set | Pins the graceful-degradation choice against the tempting defensive implementation that back-fills with records rather than return nothing. That implementation passes G-1 through G-5. **The name states what the guard pins and predicates nothing of the excluded rows** — an earlier revision called the alternative *polluted*, which is §4's forbidden judgement in the one channel that ships: under #10861 a Go test name is the sole carrier of intent, and #13602 would have had to rename it |
 | **G-7** | `TestAShortApertureIsWarnedEvenWhenNothingWasCutBecauseNothingWasFetched` — a turn whose fetched rows are all self-produced; assert the WARN fires | **The existing shutout WARN cannot cover this case**, because its guard requires `len(record.Candidates) > 0` and the degenerate aperture is empty. A test that asserted "some warning fired" would pass against the pre-existing WARN on a *non*-empty shutout and never exercise the new one; the fixture has to be the empty-aperture arm specifically |
+| **G-8** | `TestTheExclusionLeavesFusionRanksAsTheGraphReportedThemAcrossTwoQueries` — dual-arm over **two** lists: exclude at `appendUnseen` (correct) versus pre-filter the lists before scoring (R-H's shape); assert the returned order differs, and that the correct arm matches the graph's reported ranks | **This is R-H's detector, and G-5 cannot be it.** With **one** list, scores are strictly decreasing in rank, so removing rows preserves the survivors' order and the two arms return **identical** ids — R-H is behaviourally undetectable at N=1, which is why G-5 is scoped there and why an earlier revision left this prohibition with nothing that fires on it. With **two** lists a row's score is the sum over lists of `1/(10+rank+1)`, and pre-filtering compacts ranks **in one list only**, so scores rise by different amounts and the fused order can flip. **Worked fixture:** `p` at 0-based rank 3 of list A behind three excluded rows scores `1/14 = 0.0714`; `q` at rank 2 of list B scores `1/13 = 0.0769`, so `q` outranks `p`. Pre-filtering lifts `p` to rank 0 (`1/11 = 0.0909`) and **`p` overtakes `q`**. `fuse` takes `lists [][]Candidate`, so this is writable today — `cmd/eval/sweep.go` already exercises N>1 (#11259) — and it does **not** wait on #13585 |
 
 **Falsifier for this table itself:** *any row whose named guard would still pass against an
-implementation lacking the claimed property.* G-2 exists because G-1 fails that test — a fake that
-ignores `limit` cannot see the fetch — and G-6 exists because none of G-1..G-5 sees the degenerate arm.
+implementation lacking the claimed property.* **Three rows exist only because an earlier row failed it:**
+G-2, because a fake that ignores `limit` cannot see the fetch, so no assertion over G-1's returned set
+reaches it; G-6, because none of G-1..G-5 sees the degenerate arm; and **G-8, because R-H was a
+prohibition with nothing that fires on its violation** — found by running this falsifier over the
+*prohibitions* rather than only over the guards, which is the pass that had not been run.
+
+**And one row is honest about not being reachable from here:** **G-4** holds by construction for every
+implementation this design can produce, so its own falsifier lives outside this diff and §14 R-4 names
+the mutation rather than leaving the cell empty. A green there is not a result until that mutation has
+been seen to redden it.
 
 **Mechanical pre-submit check, to be run and its output recorded, not asserted:**
 
 ```
-grep -rn "TestARunRecordDoesNotSpend\|TestRetrieveAsksTheGraph\|TestASelfProducedRowDoesNotSpend\|TestFuseExcludesExactly\|TestTheFusedPrefixDoesNotMove\|TestTheApertureIsShortRather\|TestAShortApertureIsWarned" internal/loop/
+grep -rn "TestARunRecordDoesNotSpend\|TestRetrieveAsksTheGraph\|TestASelfProducedRowDoesNotSpend\|TestFuseExcludesExactly\|TestTheFusedPrefixDoesNotMove\|TestTheApertureIsEmptyRather\|TestAShortApertureIsWarned\|TestTheExclusionLeavesFusionRanks" internal/loop/
 ```
 
-**Seven** names, seven hits, all in `internal/loop`. A name in this document's body is a claim; scope the
+**Eight** names, eight hits, all in `internal/loop`. A name in this document's body is a claim; scope the
 extraction to the body, because a name in a revision history is a record. **Re-run this after the
 implementation round, not before** — a resolution claim is not durable across a rename the document itself
 asked for.
@@ -666,19 +724,42 @@ list of sections this author happened to find (#1220, 2026-09-10):
 **The substance is disjoint; the files are not, and an earlier revision of this section claimed they
 were.** #13585 §16 Unit 1 edits `turn.go`, `derivations.go`, both adapters and `internal/eval`; it states
 *"Not one line inside [`Retrieve`] changes"* and its Do-not list names `Retrieve`, `fuse` and `admit`.
-That half holds in both directions: **nothing in this design reaches anything on #13585's Do-not list,
-and nothing in #13585 reaches `retrieve.go`.**
+**That is a bound on #13585's implementer, not on every unit**, and an earlier revision read it as the
+latter — asserting *"nothing in this design reaches anything on #13585's Do-not list"*, which is **false
+against this document's own TL;DR**: the two edits are in `Retrieve` and `fuse`, the first two items on
+that list. It sat three lines from the correctly-stated half of its own sentence. What actually holds is the half that matters: **nothing in #13585 reaches
+`retrieve.go`** — its six steps move `MergeQueries`, `DerivationPrompt`/`ParseDerivation`,
+`ModelPort.Derive`, `DeriveQueries`, `Run` and the timeout, and its G-2 *cites* `retrieve.go:31` without
+editing it (§16.1 point 4). **Neither unit changes anything the other depends on.**
 
 **But both edit `turn.go`**, so whichever lands second rebases. The overlap is small and locatable:
 #13585 adds its derivation call, its `Info`/`Warn` pair and a summary line; this design adds **one
-guarded log line in `Run`'s run-summary block**, beside the existing shutout WARN at `turn.go:189` —
-which is below everything #13585 inserts. **A merge conflict is possible; a semantic conflict is not.**
+guarded log line in `Run`'s run-summary block**, beside the existing shutout WARN at `turn.go:189`.
+**Whether the two land in the same function is not decidable from #13585 as written** — its step 5
+specifies *"one `Info` on success and one `Warn` … one summary line"* without saying where the summary
+line goes, and if it lands in `logFinished`'s `attrs` slice (`turn.go:170-186`) the two changes edit the
+same function rather than merely the same file. **A merge conflict is possible either way; a semantic
+conflict is not**, and the consequence does not change with the answer.
 
-Recorded rather than repaired silently, because the sentence it replaces was true when written and was
+Recorded rather than repaired silently, because the sentence it replaced was true when written and was
 falsified by the ruling that added the WARN — **a correction round's own new prose is where this class of
-defect lands** (#1220 §5, 2026-09-01), and the sweep that found it ran over the bare term `turn.go`
-across the whole document rather than over the two sections the change obviously touched. It found
-**six** sites asserting `turn.go` was unedited; two were obvious and four were not.
+defect lands** (#1220 §5, 2026-09-01). The repair was made by sweeping the bare term `turn.go` across the
+whole document rather than the sections the change obviously reached.
+
+> **Unverifiable claim, kept and labelled.** That sweep was reported as finding *"six sites, two obvious
+> and four not."* **Revision 1 is not reachable from any ref** — the branch carries a single commit whose
+> content is revision 2, and the node holds the current revision — so the pre-correction text cannot be
+> re-read and **the count is unverified rather than disputed.** QA's own sweep of revision 2 returns 14
+> lines / 15 occurrences, none asserting `turn.go` is unedited, which confirms the repair was complete
+> without corroborating the count. Left in place with its status named, rather than defended or deleted.
+
+> **And the same correction was owed one section over and was not made.** The `turn.go` half was repaired
+> completely; the Do-not-list half, three lines above it, stayed inverted until QA found it. **The remedy
+> went to the term the finding named rather than to the claim the finding was about** — #11034 **P-52**,
+> and the second instance of this shape in two days (#13564 §17 records three more in one arc). The
+> operational form P-52 prescribes is *write the row before the list*: the row here is **every statement
+> asserting which files or symbols this change does not reach**, and a sweep built from that row reaches
+> the Do-not-list sentence, which a sweep built from the term `turn.go` cannot.
 
 Four semantic interactions, all one-directional:
 
@@ -765,7 +846,7 @@ No interaction. This design introduces no second copy of any ceiling and reads n
 - No field justified by "an existing reader projects it".
 
 **Configurability**
-- `recallOverfetch` stays a `const`. No operator tunes it, no environment differs, it is not a secret
+- `recallOverfetchFactor` stays a `const`. No operator tunes it, no environment differs, it is not a secret
   (#1136 §3's concrete rule). It is not paired with an audit column — §13.3 R-D deletes exactly that
   compound.
 
@@ -791,14 +872,14 @@ No interaction. This design introduces no second copy of any ceiling and reads n
 
 | step | what | acceptance |
 |---|---|---|
-| 1 | **One unexported const in `internal/loop/retrieve.go`:** the over-fetch multiplier, value **5**. One line of godoc saying what it is for; #114 §4 via #10861 forbids more | It is `const`, unexported, and lives beside `fusionRankConstant`. No config variable, no env read, no `Limits` field |
+| 1 | **One unexported const in `internal/loop/retrieve.go`:** the over-fetch multiplier, value **5**, named `recallOverfetchFactor`. **No doc comment** — #10861's table gives unexported identifiers *"default none"*, and the name is therefore the whole carrier: it must read as a **multiplier**, which is why `recallOverfetchFactor` alone is not the name (it reads as plausibly additive) | It is `const`, unexported, **comment-free**, and lives beside `fusionRankConstant`, which also carries none. No config variable, no env read, no `Limits` field. **Falsifier:** `grep -B2 -n "recallOverfetchFactor" internal/loop/retrieve.go` shows no `//` line above the declaration |
 | 2 | **`Retrieve` computes the fetch count once and passes it to every recall it issues** — the `len(queries)` unscoped calls **and** the scoped call. `limit` continues to bound `fuse` | **G-2.** Assert the count on *every* recorded call, the scoped one included. The scoped one is the easy miss and §2.4 measures it as the most record-dense pool |
 | 3 | **`appendUnseen` rejects a self-produced candidate**, beside the anchor check it already performs. Nothing else in `fuse` changes — not the three passes, not the `len(out)` fill conditions, not `fuseByReciprocalRank` | **G-1, G-3, G-6.** Do **not** pre-filter the lists (R-H): that changes RRF ranks |
-| 4 | **Update `Retrieve`'s godoc** to say it never returns a row this system wrote, and that it asks for more rows than it returns | The sentence names both properties. A godoc that names only the exclusion describes R-A |
+| 4 | **Update `Retrieve`'s godoc** to say it never returns a row this system wrote, and that it asks for more rows than it returns. **It stays one line and must not grow**: measured at `0df5c14` it is **167 chars** (`retrieve.go:11`) and **the longest one-line godoc in the package**; the next is `Source` (`types.go:31`) at 165, and the one-line exported godocs span **36–167**. *(Re-measured here rather than taken from QA #13607, which reports the same range, the same maximum and the same runner-up from a different extractor but counts 55 exported doc blocks where this one counts 63 — 57 one-line and 6 multi-line. The disagreement is in the denominator and not in any figure this step depends on.)* So the two new properties are added by **trimming what is already there**, not by appending — the scope reserve and the fusion are documented in `fuse` and in §7, and the godoc does not owe them | The sentence names both new properties **and is ≤ 167 chars**. A godoc that names only the exclusion describes R-A; one that grows past 167 makes the package's longest godoc longer, which is what #10861's *one tight line* and #1219's *"markedly longer than the untouched members around it"* between them forbid |
 | 5 | **Make the property in §15 true across the tree**, not the list of sites in §15. Sweep for it; §15's table is a search result, not a specification | **The pass is mechanical.** Extract every `file:line` and node-id citation on every file the branch touches — not only the files edited — and resolve each against `0df5c14` and against its node |
 | 6 | **Amend, as a Unit 1 deliverable rather than a follow-up:** `anchor-grounded-recall.md`'s **Q3** (answered and reversed), `m1-skeleton-loop.md`'s **R13** surviving-risk clause, and **#13585 §17 row 3**. Each amendment states the property that is now true and what survives of the old claim for the *supplementary* aperture | No amendment may say "self-produced rows no longer consume candidate slots" without the qualifier, because `dispatchRecall` still spends them (§2.5) |
 | 7 | **One WARN in `turn.go`'s run-summary block**, guarded by `len(record.Candidates) < record.Limits.CandidateLimit`, placed beside the existing shutout WARN at `turn.go:189`. It is the emitter for §14's detector. Its message says the aperture under-delivered and carries both numbers; it says nothing about the answer | **G-7.** The fixture is the **empty**-aperture arm specifically — the existing shutout WARN's `> 0` guard keeps it silent there, so a test asserting merely that "a warning fired" would pass against the old one |
-| 8 | **Run every predicted falsifier in §14 and record its observed output in the PR.** Any that cannot be made to redden is reported as *"no runnable falsifier established"* rather than as passing | §14's preamble. A predicted mutation is not evidence |
+| 8 | **Run every predicted falsifier in §14 and record its observed output in the PR** — **including R-4's, which requires temporarily altering `admit`'s own predicate and reverting it**, because G-4 cannot redden against anything this diff contains. Any that cannot be made to redden is reported as *"no runnable falsifier established"* rather than as passing | §14's preamble. A predicted mutation is not evidence |
 
 **Do not:** edit anything in `turn.go` except the one WARN in its run-summary block — not the constants,
 not the `Retrieve` call site, not `dispatchRecall`. Do not edit
@@ -822,28 +903,74 @@ its own diff. It must be revised against the tree Unit 1 produced, not against t
 (#13592). That is what makes a before/after delta attributable to the change rather than to noise.
 **Without it there is no measurement here, only two numbers.**
 
+### The baseline is a same-session run, never a stored record
+
+**An earlier revision used #13598's and #13599's stored records as the "before" and asked the
+well-matched arm for an unchanged candidate id set. Both halves were wrong, and they were wrong for one
+reason.**
+
+> **Running the product mutates the corpus its own measurements are taken against.** Every completed run
+> files a record and links it to the subject, so the graph a measurement is taken against is not the graph
+> the previous measurement was taken against (#13592).
+
+#13598's stored record shows **0 self-produced** candidates because at the time it ran, neither its own
+record nor #13600's existed. Both exist now, and both rank in that input's top 20 — **measured 2 in
+§2.4 and re-derived by QA at ranks 2 and 3, similarities 0.7500 and 0.7449.** So an identity criterion
+against that record was satisfiable only on a graph that no longer exists, and **unsatisfiable in
+principle** on any graph containing the input's own prior runs — a set that grows with use.
+
+Selecting the one of three observations that had no record in its top 20 is also the exact sampling
+error #13592 and #13534 §11 warn about, **applied to the control arm instead of the treatment arm.**
+
+**So the baseline is taken in the same session, immediately before the change**, on `main`, against the
+same graph. That is this project's established rule, not a new one: #13585 Unit 1 step 1 requires *"the
+same rates as a sweep taken immediately before the change, in the same session. Not against a rate from
+another day — the graph is live and unversioned."*
+
+**And the stored records keep a different job.** A stored record is the reproducible *instrument* for what
+happened when it ran — #13599's dispositions still say 17 of 20 however the corpus grows. What it is not
+is a *control* for a change measured later. §2.2's figures stand; they are history, not a baseline.
+
+### What each arm asserts — three relations, decidable against the only graph there is
+
 Both arms are run against the container on a real graph, not a fixture, and both use the **verbatim**
-inputs read out of the records' own `input` field:
+inputs read out of the records' own `input` field. **The same three relations are asserted on both arms**;
+what differs is their magnitude, and **the gap between the magnitudes is the measurement.**
 
-| arm | input | before (stored) | after — required |
+| # | relation | why it is decidable and corpus-proof |
+|---|---|---|
+| **A1** | `baseline` minus `after`, as id sets, is **exactly** the baseline's `cutReason: self-produced` ids | Asserts both directions — every ineligible row gone, **and nothing else lost.** Its truth does not depend on how many records the graph holds |
+| **A2** | `len(after.candidates) == CandidateLimit` | The same expression as §14's exhaustion detector, under A5's premise |
+| **A3** | `after`'s admitted id set **contains** the baseline's admitted id set | A non-regression claim about the product, not about the mechanism |
+
+**A3 is guaranteed rather than hoped, and the argument is short enough to check.** `admit` charges a
+self-produced row nothing (`internal/loop/assemble.go:51-60`: the `switch` short-circuits before
+`cumulative += size`). Removing those rows therefore leaves the cumulative byte arithmetic over every
+surviving row **identical**, and the survivors' relative order is unchanged — dropping rows from a ranked
+list cannot demote a row that remains, and R-1's proof covers the over-fetch half. So every row admitted
+in the baseline is admitted after, and the freed slots are filled at the tail where they can only add.
+**A3 can fail only if something else moved**, which is why it is worth asserting.
+
+| arm | input | expected magnitude of A1 | expected magnitude of A3 |
 |---|---|---|---|
-| **Ill-matched** — the graph has least to offer | #13599's input verbatim | 20 candidates, **17 self-produced**, 0 cut on size, **3 admitted** | **20 candidates**, **0 self-produced**, **admitted well above 3** |
-| **Well-matched** — the graph answers it | #13598's input verbatim | 20 candidates, 0 self-produced, 9 cut on size, **11 admitted** | **the candidate id set is unchanged** |
+| **Ill-matched** — the graph has least to offer | #13599's input verbatim | **large**: 17 in the stored record, 19 in §2.4's live probe | **large**: the baseline admitted 3 rows / 17,404 B against a 56,592 B ceiling, leaving **39,188 B unused**, so the new tail rows have room |
+| **Well-matched** — the graph answers it | #13598's input verbatim | **small**: **2** today | **small or zero**: the baseline admitted 11 rows / 55,812 B of 56,592 B, leaving **780 B**, so two tail rows will mostly not fit |
 
-**The gap between the arms is the measurement; neither number alone is** — a benchmark built from
-well-matched inputs reports this defect as absent (#13592, #13534 §11).
+**These are expectations with their premises, not acceptance thresholds.** The acceptance is A1–A3. An
+earlier revision required *"admitted well above 3"*, which is not adjudicable — A3 replaces it with a
+relation that is (W-5).
 
-**And the ill-matched arm's assertion is three-part on purpose, because each part rules out a different
-wrong implementation:**
+### What the relations rule out, which is why there are three
 
-| implementation | self-produced | `len(candidates)` | admitted |
+| implementation | A1 | A2 | A3 |
 |---|---|---|---|
-| no change | 17 | 20 | 3 |
-| **filter only, no over-fetch (R-A)** | **0** | **~6** | ~6 |
-| **filter + over-fetch (this design)** | **0** | **20** | well above 3 |
+| no change | **fails** — the difference is empty while the baseline has self-produced rows | passes (20) | passes trivially |
+| **filter only, no over-fetch (R-A)** | passes | **fails** — 5 or 6, re-derived in §13.3 | passes |
+| **back-fills with records rather than returning short (G-6's shape)** | **fails** | passes | passes |
+| **filter + over-fetch (this design)** | passes | passes | passes |
 
-A two-part assertion on *self-produced = 0* and *admitted improved* passes R-A. `len(candidates) == 20`
-is the clause that discriminates, and it is the same expression as §14's exhaustion detector.
+**A2 is the clause that separates this design from R-A**, and it is the same expression as §14's
+detector. A1 is what separates it from doing nothing and from the defensive back-fill.
 
 **Re-measure the corpus figures before running.** §2.4's numbers are a property of the graph on
 2026-09-11 and the corpus grows daily; the count of `processor-run` nodes is one call.
@@ -855,11 +982,11 @@ is the clause that discriminates, and it is the same expression as §14's exhaus
 | # | Not fixed | Filed as |
 |---|---|---|
 | 1 | **What a run record should be**, given it is a first-class competitor in its own graph: 37,163–77,554 B of JSON per run, ranking 0.7500 against its own input, growing with what its run admitted — **so a successful run writes a larger competitor than an unsuccessful one.** Per §4's ruling, if these are memory worth having then the defect is that `admit` refuses them; if they are not, they should not be produced in that shape. Either answer is a design. **Note for whoever takes it:** #13594 records that the two oversize *designs* cut on #13591 carried no substance, while the run records in the same set carried ~2.2–2.4 KB of it — so run records are the one class that already has a cheaper form, and nothing reads it | **#13602** |
-| 2 | **The supplementary aperture** (§2.5). `dispatchRecall` spends `CandidateLimit` slots the same way and does not pass through `fuse`; **observed twice on #13598**. Fixing it means a second predicate site — which would make three places that must agree where this design just reduced it to two — or routing through `Retrieve`, which #11263 ruled against | **#13603** |
+| 2 | **The supplementary aperture** (§2.5). `dispatchRecall` spends `CandidateLimit` slots the same way and does not pass through `fuse`; **observed twice on #13598**. Fixing it means a second predicate site — which would make **three** places that must agree where this design **raises it from one to two** (§11, §13.4) — or routing through `Retrieve`, which #11263 ruled against | **#13603** |
 | 3 | **A negation predicate on the graph's listing route.** The only shape whose cost does not grow with the record corpus, and the one that would let `count = limit` be correct again. DiVoid-side, another repo. It also carries a finding of its own: **DiVoid #8 documents neither `query=`, nor the `similarity` it returns, nor `substance` in `fields`**, all three of which this product uses in production | **#13604** |
 | 4 | **The two-phase fetch** (R-F). Its trigger is a *measured* retrieval-latency or memory figure — most likely after #13585's fan-out multiplies §14 R-2 by `N+1`. **Take the measurement before taking the task** | **#13605** |
 | 5 | **Oversize candidates and the undisclosed cut** | **#13594** |
-| 6 | **Every retrieval constant is untested under live fusion** — #13585 §17 row 5. `recallOverfetch` joins `CandidateLimit`, `RecallScopeReserve` and the budget in that set, and §14 R-3 is its specific hazard | #13585 §17 row 5 |
+| 6 | **Every retrieval constant is untested under live fusion** — #13585 §17 row 5. `recallOverfetchFactor` joins `CandidateLimit`, `RecallScopeReserve` and the budget in that set, and §14 R-3 is its specific hazard | #13585 §17 row 5 |
 
 ---
 
