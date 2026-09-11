@@ -43,9 +43,11 @@ words; that document carries the argument.
   OS signals, constructs the graph adapter, the model adapter the configured protocol selects, and
   the loop, owns the exit code.
 - `cmd/eval` — the retrieval sweep: loads a corpus file (`-corpus`) and, optionally, a sidecar of
-  pinned per-row queries (`-derivations`), and per row does exactly what a real run's first six steps
-  do — fetch the anchor, call the loop's own `Retrieve`, `Assemble` — then stops before the model, so a
-  full sweep costs no model call at all, on either arm. Without the sidecar every row is swept on its
+  pinned per-row queries (`-derivations`), and per row does what a real run does from the anchor
+  onwards — fetch the anchor, merge the row's input with its pinned queries through the same
+  `loop.MergeQueries` the turn uses, call the loop's own `Retrieve`, `Assemble` — then stops before the
+  model. It reads its query set from the sidecar rather than deriving one, so a full sweep costs no model
+  call at all, on either arm. Without the sidecar every row is swept on its
   own input alone; the result names the arm it ran and the sha256 of the sidecar it read, so two
   readings taken minutes apart can be told apart. Writes the measurement as JSON to stdout and the
   human summary to stderr, and exits non-zero when retrieval could not be verified against the control
@@ -229,10 +231,13 @@ Request:
 {"input": "free text", "subject": 12345}
 ```
 
-`input` must be non-empty; `subject` is the id of the node the run is about. The queries sent to the
-graph are `input`, verbatim — no rewriting, no expansion, no model. A turn issues it twice: once ranked
-against the whole graph, and once ranked inside the subject's own two-hop neighbourhood, which costs one
-extra read of the subject's edges. The whole-graph lists are fused by reciprocal rank; the last three of
+`input` must be non-empty; `subject` is the id of the node the run is about. Before it reads the graph
+the turn asks the model once, under its own 30-second bound, for up to five further queries derived from
+`input`; that call is not charged to the run's six-call judgement budget, and any outcome which is not a
+usable query set leaves the run asking `input` alone and records why on the record's `derivationError`.
+`input` is always the first query. Each query is ranked against the whole graph, and `input` is ranked
+once more inside the subject's own two-hop neighbourhood, which costs one extra read of the subject's
+edges. The whole-graph lists are fused by reciprocal rank; the last three of
 the twenty candidate slots are held for the neighbourhood list, so a node the whole graph ranks past the
 cap can still arrive while the nodes already at the top keep the ranks they had.
 

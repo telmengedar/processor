@@ -82,6 +82,10 @@ func renderSummaryAssembly(b *strings.Builder, record Record) {
 		fmt.Fprintf(b, "  q%d: %s\n", i, summaryTrunc(query, summaryQueryRunes))
 	}
 
+	if record.DerivationError != "" {
+		fmt.Fprintf(b, "  derivation: %s\n", summaryTrunc(record.DerivationError, summaryErrorRunes))
+	}
+
 	fmt.Fprintf(b, "  admitted (%d, %s of %d B remaining):\n",
 		len(admitted), summaryBytes(sumDispositionSizes(admitted)), summaryRemainingAfterAnchor(record.Limits, record.Anchor.Size))
 	for _, d := range admitted {

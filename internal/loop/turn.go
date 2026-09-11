@@ -80,6 +80,9 @@ type FilePort interface {
 type ModelPort interface {
 	// Judge runs one judgement step. One attempt; no retry.
 	Judge(ctx context.Context, in JudgeInput) (JudgeResult, error)
+
+	// Derive runs one query-derivation call, returning the completion text alone.
+	Derive(ctx context.Context, prompt string, maxOutputTokens int) (string, error)
 }
 
 // Turn is one run: anchor, recall, assemble, judge, write back.
@@ -124,7 +127,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		return t.failed(subject, started, ErrSubjectNotFound)
 	}
 
-	queries := []string{input}
+	queries, derivationError := t.derive(ctx, input, subject)
 
 	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, CandidateLimit, RecallScopeReserve)
 	if err != nil {
@@ -134,13 +137,14 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget)
 
 	record := Record{
-		Input:      input,
-		Subject:    subject,
-		Query:      input,
-		Queries:    queries,
-		Anchor:     summarizeAnchor(anchor),
-		Candidates: dispositions,
-		Block:      block,
+		Input:           input,
+		Subject:         subject,
+		Query:           input,
+		Queries:         queries,
+		DerivationError: derivationError,
+		Anchor:          summarizeAnchor(anchor),
+		Candidates:      dispositions,
+		Block:           block,
 		Limits: Limits{
 			CandidateLimit:          CandidateLimit,
 			AssemblyByteBudget:      AssemblyByteBudget,
@@ -171,6 +175,21 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 	t.logFinished(record, receipt, time.Since(started))
 
 	return record, receipt, nil
+}
+
+func (t *Turn) derive(ctx context.Context, input string, subject int64) ([]string, string) {
+	started := time.Now()
+	derived, err := DeriveQueries(ctx, t.Model, input)
+	elapsed := time.Since(started)
+
+	if err != nil {
+		t.log().Warn("the query set fell back to the raw input alone", "subject", subject, "elapsed", elapsed, "error", err)
+		return []string{input}, BoundCause(err.Error())
+	}
+
+	queries := MergeQueries(input, derived)
+	t.log().Info("queries derived", "subject", subject, "derived", len(derived), "queries", len(queries), "elapsed", elapsed)
+	return queries, ""
 }
 
 func (t *Turn) failed(subject int64, started time.Time, err error) (Record, WriteReceipt, error) {

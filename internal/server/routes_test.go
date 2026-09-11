@@ -74,7 +74,14 @@ type stubModel struct {
 	results []loop.JudgeResult
 	err     error
 
+	derivedText string
+	deriveErr   error
+
 	calls int
+}
+
+func (s *stubModel) Derive(context.Context, string, int) (string, error) {
+	return s.derivedText, s.deriveErr
 }
 
 func (s *stubModel) Judge(context.Context, loop.JudgeInput) (loop.JudgeResult, error) {
@@ -214,10 +221,12 @@ func (g *blockingGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt
 // tags is what actually pins the wire shape, the same pattern already
 // used for the error envelope in assertErrorCode below.
 type runRecordWire struct {
-	Input   string `json:"input"`
-	Subject int64  `json:"subject"`
-	Query   string `json:"query"`
-	Anchor  struct {
+	Input           string   `json:"input"`
+	Subject         int64    `json:"subject"`
+	Query           string   `json:"query"`
+	Queries         []string `json:"queries"`
+	DerivationError string   `json:"derivationError"`
+	Anchor          struct {
 		ID          int64  `json:"id"`
 		Type        string `json:"type"`
 		Name        string `json:"name"`
@@ -990,5 +999,51 @@ func TestRunsCeilingStopsAtTheAnswerAndDoesNotReachTheWriteBack(t *testing.T) {
 	}
 	if graph.writeBounded {
 		t.Fatal("the write-back inherited the run's ceiling; design §8.4 bounds everything up to and including the answer, and the filing comes after it")
+	}
+}
+
+func TestRunsReturns200AndNamesTheDerivationCauseOnTheRecordWhenTheQuerySetFellBack(t *testing.T) {
+	t.Parallel()
+
+	const cause = "openaicompat: unexpected status 503: model is loading"
+
+	model := &stubModel{deriveErr: errors.New(cause)}
+	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, "system text", "test-model", testLogger())
+
+	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: a degraded query set is not a failed run, and a non-2xx here would add a sixth code to the five this route maintains; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var got runRecordWire
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, rec.Body.String())
+	}
+	if !strings.Contains(got.DerivationError, cause) {
+		t.Fatalf("record.derivationError = %q under the literal JSON tag, want the endpoint's own sentence %q", got.DerivationError, cause)
+	}
+	if want := []string{"what is going on"}; !slices.Equal(got.Queries, want) {
+		t.Fatalf("record.queries = %q, want %q", got.Queries, want)
+	}
+}
+
+func TestRunsCarriesEveryDerivedQueryOntoTheWireAndLeavesTheCauseOffWhenThereIsNone(t *testing.T) {
+	t.Parallel()
+
+	model := &stubModel{derivedText: "a derived angle?\nanother derived angle?"}
+	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, "system text", "test-model", testLogger())
+
+	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
+
+	var got runRecordWire
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, rec.Body.String())
+	}
+	if want := []string{"what is going on", "a derived angle?", "another derived angle?"}; !slices.Equal(got.Queries, want) {
+		t.Fatalf("record.queries = %q, want %q: the reader of a record can only tell which questions the graph was asked if every one of them is on the wire", got.Queries, want)
+	}
+	if got.DerivationError != "" {
+		t.Fatalf("record.derivationError = %q on a run that derived; an empty string is what a dropped field decodes to, so this is the assertion that discriminates", got.DerivationError)
 	}
 }

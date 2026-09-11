@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/telmengedar/processor/internal/loop"
@@ -180,5 +181,49 @@ func TestTheJudgementCallStillCarriesItsToolsSoTheCondensationPathChangedNothing
 	}
 	if _, present := body["frequency_penalty"]; present {
 		t.Fatalf("the turn's judgement call must not have gained the condensation penalties, got %s", *captured)
+	}
+}
+
+func TestOpenAICompatDeriveReturnsTheCompletionTextAloneOverTheCondenseRequest(t *testing.T) {
+	t.Parallel()
+
+	srv, captured := condenseServer(t, condenseOK)
+	c := NewClient(srv.URL, "ai/gemma3", "", loop.Sampling{}, srv.Client())
+
+	text, err := c.Derive(context.Background(), "derive from this", 512)
+	if err != nil {
+		t.Fatalf("Derive: %v", err)
+	}
+	if text != "the condensation" {
+		t.Fatalf("Derive returned %q, want the completion text alone", text)
+	}
+
+	body := sentBody(t, *captured)
+	if _, hasTools := body["tools"]; hasTools {
+		t.Fatalf("the derivation request carried tools; a derivation is one user message and nothing the model can call")
+	}
+	if body["frequency_penalty"] != 0.0 || body["presence_penalty"] != 0.0 {
+		t.Fatalf("the derivation request carried repetition penalties %v/%v, want both pinned to zero as the condensation request pins them", body["frequency_penalty"], body["presence_penalty"])
+	}
+	if body["max_tokens"] != float64(512) {
+		t.Fatalf("the derivation request asked for %v output tokens, want the 512 the caller bounded it at", body["max_tokens"])
+	}
+}
+
+func TestOpenAICompatDeriveReportsTheEndpointsOwnFailureRatherThanEmptyText(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, "model is loading")
+	}))
+	t.Cleanup(srv.Close)
+
+	text, err := NewClient(srv.URL, "ai/gemma3", "", loop.Sampling{}, srv.Client()).Derive(context.Background(), "derive from this", 512)
+	if err == nil {
+		t.Fatalf("Derive returned %q and no error for a 503; a non-2xx read as empty text is a fallback with no cause", text)
+	}
+	if !strings.Contains(err.Error(), "model is loading") {
+		t.Fatalf("Derive reported %q, which drops the endpoint's own sentence", err)
 	}
 }

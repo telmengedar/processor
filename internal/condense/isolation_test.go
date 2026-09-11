@@ -33,14 +33,17 @@ func TestTheLoopPackageImportsNothingFromTheOfflineCondensationPass(t *testing.T
 	}
 }
 
-func TestTheModelSeamTheTurnHoldsExposesJudgementAloneAndNoWayToGenerate(t *testing.T) {
+func TestTheModelSeamTheTurnHoldsOffersJudgementAndQueryDerivationAndNoOtherWayToGenerate(t *testing.T) {
 	port := reflect.TypeOf((*loop.ModelPort)(nil)).Elem()
 
-	if port.NumMethod() != 1 {
-		t.Fatalf("want exactly one method on the turn's model seam, got %d", port.NumMethod())
+	got := make([]string, port.NumMethod())
+	for i := range got {
+		got[i] = port.Method(i).Name
 	}
-	if got := port.Method(0).Name; got != "Judge" {
-		t.Fatalf("want the turn's only model method to be Judge, got %s", got)
+
+	want := []string{"Derive", "Judge"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("the turn's model seam offers %v, want exactly %v; Derive returns text the loop parses into queries and Judge returns the answer, so neither can name a node, and a third would be generation the turn could aim wherever it liked", got, want)
 	}
 }
 

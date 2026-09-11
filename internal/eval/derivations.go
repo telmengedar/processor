@@ -9,6 +9,8 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"github.com/telmengedar/processor/internal/loop"
 )
 
 // ArmRawInput is the arm name a sweep carries when no derivation sidecar was supplied.
@@ -88,16 +90,9 @@ func (d Derivations) Unpinned(corpus Corpus) []string {
 	return unpinned
 }
 
-// QueriesFor is the row's own input followed by whatever the sidecar pinned for it, without repeats.
+// QueriesFor is the row's own input followed by whatever the sidecar pinned for it, merged by the product's own rule.
 func (d Derivations) QueriesFor(row Row) []string {
-	queries := []string{row.Input}
-	for _, query := range d.Queries[row.ID] {
-		if slices.Contains(queries, query) {
-			continue
-		}
-		queries = append(queries, query)
-	}
-	return queries
+	return loop.MergeQueries(row.Input, d.Queries[row.ID])
 }
 
 // LoadDerivations reads, decodes and validates the sidecar at path against corpus.

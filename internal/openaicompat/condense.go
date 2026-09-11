@@ -107,6 +107,15 @@ func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens in
 	return result, nil
 }
 
+// Derive runs one query-derivation call, returning the completion text alone.
+func (c *Client) Derive(ctx context.Context, prompt string, maxOutputTokens int) (string, error) {
+	result, err := c.Condense(ctx, prompt, maxOutputTokens)
+	if err != nil {
+		return "", err
+	}
+	return result.Text, nil
+}
+
 func decodeSentSampling(body []byte) (SentSampling, error) {
 	var sent condenseRequest
 	if err := json.Unmarshal(body, &sent); err != nil {

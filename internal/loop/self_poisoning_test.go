@@ -63,6 +63,8 @@ func (answeringModel) Judge(context.Context, loop.JudgeInput) (loop.JudgeResult,
 	return loop.JudgeResult{Answer: "an answer", Reason: loop.Answered, RawReason: "stop"}, nil
 }
 
+func (answeringModel) Derive(context.Context, string, int) (string, error) { return "", nil }
+
 func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 	t.Parallel()
 

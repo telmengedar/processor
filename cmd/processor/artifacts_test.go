@@ -30,6 +30,8 @@ func (answeringModel) Judge(context.Context, loop.JudgeInput) (loop.JudgeResult,
 	}, nil
 }
 
+func (answeringModel) Derive(context.Context, string, int) (string, error) { return "", nil }
+
 type storedBody struct {
 	mu   sync.Mutex
 	body []byte

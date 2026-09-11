@@ -3,6 +3,7 @@ package ollama
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -280,5 +281,44 @@ func TestTheNativeCondensationCallSendsAuthorizationBearerWhenAKeyIsConfigured(t
 
 	if captured.Auth != "Bearer a-key" {
 		t.Fatalf("Authorization = %q, want %q", captured.Auth, "Bearer a-key")
+	}
+}
+
+func TestTheNativeDerivationCallReturnsTheCompletionTextAloneOverTheCondenseRequest(t *testing.T) {
+	t.Parallel()
+
+	srv, captured := capturingServer(t, nativeCondenseOK)
+	c := NewClient(srv.URL, "ai/gemma4", "", loop.Sampling{}, srv.Client())
+
+	text, err := c.Derive(context.Background(), "derive from this", 512)
+	if err != nil {
+		t.Fatalf("Derive: %v", err)
+	}
+	if text != "the condensation" {
+		t.Fatalf("Derive returned %q, want the completion text alone", text)
+	}
+	if captured.Path != "/api/chat" {
+		t.Fatalf("the derivation posted to %q, want the chat route the condensation call already uses; a third request builder is not warranted for a call this one already sends", captured.Path)
+	}
+	if _, present := topLevelKeys(t, captured.Body)["tools"]; present {
+		t.Fatalf("the derivation request carried tools; a derivation is one user message and nothing the model can call")
+	}
+}
+
+func TestTheNativeDerivationCallReportsTheEndpointsOwnFailureRatherThanEmptyText(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = io.WriteString(w, "model is loading")
+	}))
+	t.Cleanup(srv.Close)
+
+	text, err := NewClient(srv.URL, "ai/gemma4", "", loop.Sampling{}, srv.Client()).Derive(context.Background(), "derive from this", 512)
+	if err == nil {
+		t.Fatalf("Derive returned %q and no error for a 503; a non-2xx read as empty text is a fallback with no cause", text)
+	}
+	if !strings.Contains(err.Error(), "model is loading") {
+		t.Fatalf("Derive reported %q, which drops the endpoint's own sentence", err)
 	}
 }
