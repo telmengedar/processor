@@ -791,6 +791,25 @@ dropped candidate; it was never a candidate, exactly as the anchor is not. **So 
 candidates cut on size, which is its actual subject**, and one of its two cut classes disappears rather
 than needing disclosure.
 
+> **The class narrows and the volume rises, and a #13594 owner needs both numbers here rather than one
+> section away.** On #13599's arm, predicted from the measured figures in §18:
+>
+> | | before (measured) | after (predicted) |
+> |---|---|---|
+> | candidates | 20 | 20 |
+> | cut as **self-produced** | **17** | **0** |
+> | cut **on size** | **0** | **~12** |
+> | admitted | **3** | **~8** |
+> | total unusable | **17** | **12** |
+>
+> **It is a relocation plus a net gain, not a new cost.** The twelve rows now cut on size were **never
+> fetched before** — they enter the aperture only because the over-fetch put them there; **no
+> previously-admitted row is lost to the byte budget** (§18's condition: the replacements land ahead of
+> the admitted set on this arm, and the admitted set grows anyway); admitted rises **3 → ~8**; and total
+> unusable **falls 17 → 12**. **But part B's disclosure volume goes from zero size-cuts to about twelve**,
+> on the arm where the operator has least other signal — which is the number that sizes the work, and it
+> did not exist before this change.
+
 The two changes are independent in code and can land in either order.
 
 ### The WARN is not #13594's part B, and the distinction is the reason both exist
@@ -984,15 +1003,44 @@ seventeen records, every one charged nothing**; its **entire admitted set** is a
 rather than certain failure — which is exactly why it is not a proof. 12988 is least exposed (pass 1
 picks it up third among eligible rows, at low cumulative); **13542 and 11358 are the exposed pair.**
 
-> **Extending the finding rather than only accepting it: that relation would have failed on the
-> *well-matched* arm too, and by more than the 780 B figure suggests.** That arm's budget is already
-> **saturated** — the stored run admitted **55,812 B of 56,592**. The two records at candidate positions
-> 2–3 charge nothing today; after the change those positions hold real rows, inserting of order
-> **14,300 B** of new demand (two rows at the same measured mean — and their true sizes are
-> **unmeasured**, being ranks 21–22 of that fetch) **ahead of** most of the baseline's admissions,
-> against **780 B** of slack. **So containment is expected to fail on both arms**, including the one
-> where nothing was wrong. It was not a marginal overclaim; it was false in both directions it was
-> asserted over.
+> **Correction, round 3 (#13616 CF-9): an earlier revision extended this finding to the well-matched arm
+> and the extension was wrong.** It claimed the two records sit at candidate positions 2–3 so their
+> replacements insert demand *"ahead of most of the baseline's admissions"*, and concluded containment was
+> *"expected to fail on both arms"*. **Both halves are false, and the second was self-defeating on its own
+> figure.**
+>
+> **Where the new rows actually land: positions 16–17, not 2–3.** `fuse` pass 1 fills positions 1–17 from
+> `fused` **in rank order** (`internal/loop/retrieve.go:93-98`). Skipping two records makes it walk two
+> ranks deeper, so **positions 1–15 hold the same rows in the same order** as the baseline's positions 1,
+> 4…17, and the two genuinely new rows — fused ranks 18 and 19 — enter at **16 and 17**, ahead of only the
+> three scoped-reserve rows. And because the removed records charged nothing, **`cumulative` at position 16
+> after the change equals the baseline's `cumulative` after position 17.**
+>
+> **The figure argued against the conclusion.** `admit`'s `default` arm sets `CutReason` without touching
+> `cumulative` (`internal/loop/assemble.go:58-59`) and there is no latch, so **a row cut on size charges
+> zero and displaces nothing.** Two rows of ~7,154 B against 780 B of slack are *cut*, not admitted — so
+> the very number the argument rested on is the case where its conclusion does not follow. **An estimate
+> was doing a proof's work one layer above where the hedge had been placed.**
+>
+> **And the split QA recorded as unmeasured is measurable from the stored run.** Computed from #13598's
+> `candidates[]`: **all 55,812 admitted bytes sit at positions 1–13**; positions 14–20 admit **nothing**,
+> and every row there is already cut on size (2,381 / 1,496 / 1,502 / 2,365 / 4,860 / 32,449 / 3,492 B —
+> each above the 780 B that remains). So on this arm the insertion point sits **strictly behind every
+> admission**, nothing admitted lies behind it to displace, and **containment holds.** Not *undetermined*
+> — measured, for this input.
+
+**The condition that decides it, which is what the withdrawal should have named all along:**
+
+> **Containment fails exactly when the aperture's replacement rows land *ahead* of rows the baseline
+> admitted.** Measured **true** on the ill-matched arm — seventeen replacements at positions 1–17 ahead of
+> an admitted set that lives entirely at 18–20 — and measured **false** on the well-matched arm, where two
+> replacements at 16–17 sit behind an admitted set that ends at position 13.
+
+**The withdrawal stands, and on firmer ground than the blanket claim it replaces.** It rests on the
+ill-matched arm alone: 17 × 7,154 = **121,618 B** of demand against **39,188 B** of slack, with the early
+replacements genuinely admitted at low cumulative. A relation that is measured to fail on one arm and hold
+on the other is not an acceptance relation — and stating the *condition* is worth more than asserting the
+failure, because it tells an implementer which arm to look at.
 
 **So the admitted set is a reported measurement, not an acceptance gate:**
 
@@ -1003,8 +1051,11 @@ picks it up third among eligible rows, at low cumulative); **13542 and 11358 are
 
 **Nothing is gated on M1 or M2**, and that is the point: an implementer who meets a displaced admission
 **reports it rather than weakening the arm.** This also closes **#13607 W-5** properly — *"admitted well above 3"*
-was unadjudicable, and the remedy is that the admitted figure was never an acceptance clause, not that it
-needed a sharper threshold.
+was unadjudicable, and the remedy was to move the admitted figure **out of acceptance** rather than to
+invent a threshold for it. *(Precision, because an earlier revision put this wrongly: the figure **was** an
+acceptance clause in revision 2 — it sat in a column headed "after — required", which is exactly what made
+W-5 a finding rather than a preference. Saying it "was never one" is right about where it belongs and false
+about where it was.)*
 
 **Where a displaced admission belongs, and it is not here.** When twenty real rows contend for 56,592 B
 at a measured mean of ~7,154 B/row, **roughly eight fit and twelve are cut on size** (56,592 / 7,154 =
@@ -1013,22 +1064,56 @@ candidates against the byte budget — surfacing where the aperture previously h
 free riders. **This change converts an aperture defect into a budget defect on the ill-matched arm, and
 the budget defect already has an owner.** Stating the interaction and stopping (§16.2).
 
-### What the relations rule out — and the withdrawn one discriminated nothing
+### What the relations rule out — evaluated in the arms they are declared in
 
-| implementation | AC-1 | AC-2 |
-|---|---|---|
-| no change | **fails** — the difference is empty while the baseline has self-produced rows | passes (20) |
-| **filter only, no over-fetch (R-A)** | passes | **fails** — 5 or 6, re-derived in §13.3 |
-| **back-fills with records rather than returning short (G-6's shape)** | **fails** | passes |
-| **filter + over-fetch (this design)** | passes | passes |
+**The table below is evaluated on the two acceptance arms, because that is where AC-1 and AC-2 are
+asserted.** An earlier revision evaluated it as a property of the implementations in the abstract, which
+made one cell claim coverage the arms cannot deliver (#13616 CF-8).
 
-**AC-1 and AC-2 alone separate this design from all three wrong implementations** — AC-2 from R-A,
-AC-1 from doing nothing and from the defensive back-fill. **The withdrawn relation passed in every row of that
-table**, including the three that are wrong: it was simultaneously the only overclaimed relation and the
-only one that discriminated nothing. **Worth carrying: a relation that cannot fail against any candidate
-implementation is not carrying acceptance, whatever else it is doing** — which is §14's own falsifier
-rule (*a row that cannot discriminate is a wish*) arriving in the acceptance table, where nobody had
-thought to run it.
+| implementation | AC-1 | AC-2 | separated by |
+|---|---|---|---|
+| no change | **fails** — the difference is empty while the baseline has self-produced rows | passes (20) | **the arms** |
+| **filter only, no over-fetch (R-A)** | passes | **fails** — 5 or 6, re-derived in §13.3 | **the arms** |
+| **back-fills with records rather than returning short (G-6's shape)** | **passes** | **passes** | **G-6, a unit guard — not the arms** |
+| **filter + over-fetch (this design)** | passes | passes | — |
+
+**Why the back-fill shape is invisible to both arms, and it is arithmetic rather than judgement.** That
+implementation is defined by its *shortfall remedy*: it back-fills with records only when the eligible pool
+cannot fill `limit`. At `fetch = 100`, with at most **37** records in the whole graph and one anchor, the
+eligible pool is **at least 100 − 37 − 1 = 62** against a `limit` of **20** — and `fuse`'s pass 3 runs only
+`if len(out) < limit` after pass 2 (`internal/loop/retrieve.go:110-115`). **The back-fill branch is dead
+code on both arms**, so that implementation is observationally identical to the correct one there: AC-1
+passes, AC-2 passes. It is separated on the **degenerate** arm — every fetched row self-produced — which is
+**G-6's unit fixture, not an acceptance arm.**
+
+**So the honest division of labour:** the two integration relations separate two of the three wrong
+implementations; the third is separated by a unit guard, and §14 is where that coverage lives. **The design
+is not under-guarded** — what was wrong was the acceptance section claiming coverage that belongs to §14.
+
+> **The shape this was:** an inherited table cell that became load-bearing when a new claim was hung on it.
+> The cell had read *"fails"* since the table was written; revision 4 promoted it into the sentence
+> establishing that withdrawing containment cost no coverage, and nobody read the result column back
+> against the mechanism. **#1219's §6 addendum of 2026-09-07 states it exactly:** *"A coverage table has
+> two columns and P-41 audits one of them. The guard's **name** is greppable, so it gets checked. The
+> guard's **result** is a measurement you already took, and nothing prompts you to read your own matrix
+> back against it."* This document runs P-41 over its guard names (§14) and had never run anything over
+> its acceptance table's result column.
+
+**And the withdrawn relation was worse than non-discriminating — it was anti-discriminating.** Evaluated
+against the code rather than as the table recorded it:
+
+| implementation | containment |
+|---|---|
+| no change | **passes** — `after` equals `baseline` |
+| filter only (R-A) | **passes** — ~6 candidates, ~20 KB, all three baseline admissions fit under 56,592 B |
+| back-fill shape | **not guaranteed** — identical to this design on both arms |
+| **filter + over-fetch (this design)** | **not guaranteed** — #13609 CF-7 |
+
+**It would have reddened on the correct implementation and stayed green on doing nothing.** That is a
+considerably stronger argument for withdrawing it than *"it discriminated nothing"*, and it is the one to
+carry: a relation can fail to discriminate, or it can discriminate **backwards**, and only the second one
+actively rewards the wrong change. §14's falsifier rule (*a row that cannot discriminate is a wish*) has no
+cell for the backwards case, and this is the instance that says it should.
 
 **Re-measure the corpus figures before running.** §2.4's numbers are a property of the graph on
 2026-09-11 and the corpus grows daily; the count of `processor-run` nodes is one call.
