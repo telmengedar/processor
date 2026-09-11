@@ -144,6 +144,9 @@ func TestOllamaRedactionIsANoOpOnTheErrorTextOfAnEndpointCarryingNoUserinfo(t *t
 		c := NewClient(base, "model-x", "", loop.Sampling{}, refusingClient())
 
 		_, judgeErr := c.Judge(context.Background(), judgeInput())
+		if got := preambleFields(t, judgeErr)[2]; got != composed {
+			t.Fatalf("the preamble names endpoint %q for base %q, want the composed endpoint %q carried unchanged", got, base, composed)
+		}
 		carried := errors.Unwrap(judgeErr)
 		if carried == nil {
 			t.Fatalf("Judge against %q returned %q, which wraps no cause at all", base, judgeErr)

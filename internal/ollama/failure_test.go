@@ -57,7 +57,7 @@ func judgeFailure(t *testing.T, c *Client) error {
 	return err
 }
 
-var ollamaPreamble = regexp.MustCompile(`^ollama: model=([^ ]*) endpoint=(\S+) request=(\d+) B elapsed=(\S+) \(client bound ([^)]*)\): `)
+var ollamaPreamble = regexp.MustCompile(`^ollama: model=([^ ]*) endpoint=(.*) request=(\d+) B elapsed=(\S+) \(client bound ([^)]*)\): `)
 
 func preambleFields(t *testing.T, err error) []string {
 	t.Helper()

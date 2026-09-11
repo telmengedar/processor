@@ -337,3 +337,62 @@ func TestTheCarriedCauseBoundIsFiveHundredAndTwelveRunes(t *testing.T) {
 		t.Fatalf("a 512-rune cause was not carried whole, so the bound is below 512")
 	}
 }
+
+func writeRoundLog(t *testing.T, writeErr, openErr error) string {
+	t.Helper()
+
+	var buf strings.Builder
+	files := &fakeFiles{dir: "/runs/run-1", writeErr: writeErr, openErr: openErr}
+	model := &fakeModel{results: []JudgeResult{wantsWriteOf("index.html", "x"), answered("done")}}
+	turn := NewTurn(baseGraph(), model, files, "system", "test-model", slog.New(slog.NewTextHandler(&buf, nil)))
+
+	if _, _, err := turn.Run(context.Background(), "make a page", 42); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return buf.String()
+}
+
+func TestTurnRunLeavesARejectedWriteOutOfTheOperatorsErrorLogWhileLoggingAnUnrecognisedOne(t *testing.T) {
+	t.Parallel()
+
+	const reason = "path must not leave the working directory"
+	rejected := writeRoundLog(t, fmt.Errorf("%w: %s", ErrWriteRejected, reason), nil)
+	unrecognised := writeRoundLog(t, errors.New("no space left on device"), nil)
+
+	if !strings.Contains(unrecognised, `msg="file write failed"`) {
+		t.Fatalf("an unrecognised write failure logged no operator error, so this guard cannot discriminate; log:\n%s", unrecognised)
+	}
+	if strings.Contains(rejected, `msg="file write failed"`) {
+		t.Fatalf("a write the workspace refused was logged as an operator-level failure; a refusal is the model's to correct and never fails the run; log:\n%s", rejected)
+	}
+}
+
+func TestTurnRunLogsTheCauseWhenOpeningTheWorkingDirectoryFails(t *testing.T) {
+	t.Parallel()
+
+	const cause = "mkdir /data/runs/run-4149672001: permission denied"
+	logged := writeRoundLog(t, nil, errors.New(cause))
+
+	if !strings.Contains(logged, `msg="opening the run working directory failed"`) {
+		t.Fatalf("a failed working-directory open logged no operator error; log:\n%s", logged)
+	}
+	if !strings.Contains(logged, cause) {
+		t.Fatalf("the operator log names no cause for the failed working-directory open; log:\n%s", logged)
+	}
+}
+
+func TestTurnRunLogsARunFailedRecordWhenTheSubjectResolvesToNothing(t *testing.T) {
+	t.Parallel()
+
+	var buf strings.Builder
+	turn := NewTurn(&fakeGraph{nodeFound: false}, &fakeModel{}, nil, "system", "test-model",
+		slog.New(slog.NewTextHandler(&buf, nil)))
+
+	line := runFailedLog(t, turn, &buf)
+	if line == "" {
+		t.Fatalf("a run whose subject resolved to nothing ended without a run-failed record; log:\n%s", buf.String())
+	}
+	if !strings.Contains(line, ErrSubjectNotFound.Error()) {
+		t.Fatalf("the run-failed record does not name why the run ended: %s", line)
+	}
+}

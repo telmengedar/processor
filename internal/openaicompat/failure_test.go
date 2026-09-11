@@ -57,7 +57,7 @@ func judgeFailure(t *testing.T, c *Client) error {
 	return err
 }
 
-var openAICompatPreamble = regexp.MustCompile(`^openaicompat: model=([^ ]*) endpoint=(\S+) request=(\d+) B elapsed=(\S+) \(client bound ([^)]*)\): `)
+var openAICompatPreamble = regexp.MustCompile(`^openaicompat: model=([^ ]*) endpoint=(.*) request=(\d+) B elapsed=(\S+) \(client bound ([^)]*)\): `)
 
 func preambleFields(t *testing.T, err error) []string {
 	t.Helper()
@@ -85,7 +85,7 @@ func TestOpenAICompatJudgeAttachesTheFailurePreambleToEveryFailureMode(t *testin
 		{"transport", NewClient("http://host.example", "model-x", "", loop.Sampling{}, refusingClient()), "request failed: "},
 		{"non-2xx", NewClient(rejecting.URL, "model-x", "", loop.Sampling{}, rejecting.Client()), "unexpected status 500: "},
 		{"decode", NewClient(badJSON.URL, "model-x", "", loop.Sampling{}, badJSON.Client()), "decode response: "},
-		{"translate", NewClient(choiceless.URL, "model-x", "", loop.Sampling{}, choiceless.Client()), "openaicompat: response has no choices"},
+		{"translate", NewClient(choiceless.URL, "model-x", "", loop.Sampling{}, choiceless.Client()), "response has no choices"},
 	}
 
 	for _, mode := range modes {
@@ -132,7 +132,7 @@ func TestOpenAICompatJudgeFailurePreambleNamesTheRouteBeneathTheBaseURL(t *testi
 
 	c := NewClient("http://host.example/v1", "model-x", "", loop.Sampling{}, refusingClient())
 
-	want := "http://host.example/v1" + chatCompletionsRoute
+	want := "http://host.example/v1" + completionsRouteUnderTest
 	if got := preambleFields(t, judgeFailure(t, c))[2]; got != want {
 		t.Fatalf("the preamble names endpoint %q, want the composed endpoint %q", got, want)
 	}

@@ -32,6 +32,8 @@ func TestOpenAICompatJudgeRedactsUserinfoFromProviderEndpointOnTheSuccessPath(t 
 	}
 }
 
+const completionsRouteUnderTest = "/chat/completions"
+
 const (
 	credentialSentinel   = "sk-secretkey"
 	unreachableBase      = "http://" + credentialSentinel + "@127.0.0.1:1/v1"
@@ -88,7 +90,7 @@ func TestOpenAICompatJudgeRedactsTheCredentialFromTheBuildRequestError(t *testin
 
 	c := NewClient(unparseableBase, "model-x", "", loop.Sampling{}, refusingClient())
 	_, err := c.Judge(context.Background(), judgeInput())
-	assertCredentialRedacted(t, err, unparseableBase+chatCompletionsRoute, unparseableAuthority)
+	assertCredentialRedacted(t, err, unparseableBase+completionsRouteUnderTest, unparseableAuthority)
 }
 
 func TestOpenAICompatJudgeRedactsTheCredentialFromTheRequestFailedError(t *testing.T) {
@@ -96,7 +98,7 @@ func TestOpenAICompatJudgeRedactsTheCredentialFromTheRequestFailedError(t *testi
 
 	c := NewClient(unreachableBase, "model-x", "", loop.Sampling{}, refusingClient())
 	_, err := c.Judge(context.Background(), judgeInput())
-	assertCredentialRedacted(t, err, unreachableBase+chatCompletionsRoute, unreachableAuthority)
+	assertCredentialRedacted(t, err, unreachableBase+completionsRouteUnderTest, unreachableAuthority)
 }
 
 func TestOpenAICompatCondenseRedactsTheCredentialFromTheBuildRequestError(t *testing.T) {
@@ -104,7 +106,7 @@ func TestOpenAICompatCondenseRedactsTheCredentialFromTheBuildRequestError(t *tes
 
 	c := NewClient(unparseableBase, "model-x", "", loop.Sampling{}, refusingClient())
 	_, err := c.Condense(context.Background(), "prompt", 64)
-	assertCredentialRedacted(t, err, unparseableBase+chatCompletionsRoute, unparseableAuthority)
+	assertCredentialRedacted(t, err, unparseableBase+completionsRouteUnderTest, unparseableAuthority)
 }
 
 func TestOpenAICompatCondenseRedactsTheCredentialFromTheRequestFailedError(t *testing.T) {
@@ -112,7 +114,7 @@ func TestOpenAICompatCondenseRedactsTheCredentialFromTheRequestFailedError(t *te
 
 	c := NewClient(unreachableBase, "model-x", "", loop.Sampling{}, refusingClient())
 	_, err := c.Condense(context.Background(), "prompt", 64)
-	assertCredentialRedacted(t, err, unreachableBase+chatCompletionsRoute, unreachableAuthority)
+	assertCredentialRedacted(t, err, unreachableBase+completionsRouteUnderTest, unreachableAuthority)
 }
 
 var endpointsCarryingNoUserinfo = []string{
@@ -140,11 +142,14 @@ func TestOpenAICompatRedactionIsANoOpOnTheErrorTextOfAnEndpointCarryingNoUserinf
 	t.Parallel()
 
 	for _, base := range endpointsCarryingNoUserinfo {
-		composed := strings.TrimRight(base, "/") + chatCompletionsRoute
+		composed := strings.TrimRight(base, "/") + completionsRouteUnderTest
 		want := unredactedReference(t, composed)
 		c := NewClient(base, "model-x", "", loop.Sampling{}, refusingClient())
 
 		_, judgeErr := c.Judge(context.Background(), judgeInput())
+		if got := preambleFields(t, judgeErr)[2]; got != composed {
+			t.Fatalf("the preamble names endpoint %q for base %q, want the composed endpoint %q carried unchanged", got, base, composed)
+		}
 		carried := errors.Unwrap(judgeErr)
 		if carried == nil {
 			t.Fatalf("Judge against %q returned %q, which wraps no cause at all", base, judgeErr)
