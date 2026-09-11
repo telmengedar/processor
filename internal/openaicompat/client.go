@@ -81,7 +81,7 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: build request: %w", err)
+		return loop.JudgeResult{}, fmt.Errorf("openaicompat: build request: %w", redacturl.Error(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -91,7 +91,7 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: request failed: %w", err)
+		return loop.JudgeResult{}, fmt.Errorf("openaicompat: request failed: %w", redacturl.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 

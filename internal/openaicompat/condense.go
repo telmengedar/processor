@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/telmengedar/processor/internal/redacturl"
 )
 
 const (
@@ -67,7 +69,7 @@ func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens in
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return CondenseResult{}, fmt.Errorf("openaicompat: build request: %w", err)
+		return CondenseResult{}, fmt.Errorf("openaicompat: build request: %w", redacturl.Error(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -77,7 +79,7 @@ func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens in
 
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return CondenseResult{}, fmt.Errorf("openaicompat: request failed: %w", err)
+		return CondenseResult{}, fmt.Errorf("openaicompat: request failed: %w", redacturl.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
