@@ -189,6 +189,10 @@ func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Dur
 		t.log().Warn("assembly admitted no candidate: the block carried the anchor alone", "subject", record.Subject, "candidates", len(record.Candidates))
 	}
 
+	if len(record.Candidates) < record.Limits.CandidateLimit {
+		t.log().Warn("the candidate aperture under-delivered: retrieval returned fewer rows than the limit holds", "subject", record.Subject, "candidates", len(record.Candidates), "candidateLimit", record.Limits.CandidateLimit)
+	}
+
 	t.log().Info("run finished", attrs...)
 }
 

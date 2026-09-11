@@ -165,7 +165,7 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 	}
 }
 
-func TestSweepRecallsWithTheRawInputVerbatimAndTheCandidateLimitTheLoopShips(t *testing.T) {
+func TestSweepRecallsWithTheRawInputVerbatimAtTheCountRetrievalIssuesRatherThanOneOfItsOwn(t *testing.T) {
 	t.Parallel()
 
 	graph := newFakeGraph(t)
@@ -177,12 +177,25 @@ func TestSweepRecallsWithTheRawInputVerbatimAndTheCandidateLimitTheLoopShips(t *
 	if graph.recallCalls[0].Query != row.Input {
 		t.Fatalf("recall query = %q, want the row input verbatim %q", graph.recallCalls[0].Query, row.Input)
 	}
-	if graph.recallCalls[0].Limit != loop.CandidateLimit {
-		t.Fatalf("recall limit = %d, want the candidate limit the loop ships %d", graph.recallCalls[0].Limit, loop.CandidateLimit)
+	if want := fetchCountRetrievalIssues(t); graph.recallCalls[0].Limit != want {
+		t.Fatalf("recall limit = %d, want %d — the count loop.Retrieve issues for the same candidate limit: the sweep exists to measure what a turn does, so a sweep that picks its own recall count ranks a different number of rows than the loop it stands in for", graph.recallCalls[0].Limit, want)
 	}
 	if len(graph.recallCalls[0].Scope) != 0 {
 		t.Fatalf("the row's first recall carried scope %v, want none: the fused order is built from whole-graph rankings, and confining them to the subject's neighbourhood is the arm the reserve exists to add on top rather than to replace them with", graph.recallCalls[0].Scope)
 	}
+}
+
+func fetchCountRetrievalIssues(t *testing.T) int {
+	t.Helper()
+
+	graph := newFakeGraph(t)
+	if _, err := loop.Retrieve(context.Background(), graph, loop.Anchor{ID: 100}, []string{"a probe query"}, loop.CandidateLimit, loop.RecallScopeReserve); err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if len(graph.recallCalls) == 0 {
+		t.Fatal("Retrieve issued no recall, so there is no count to compare the sweep's against")
+	}
+	return graph.recallCalls[0].Limit
 }
 
 func TestSweepRanksTheRawInputASecondTimeInsideTheSubjectsScopeSoTheReserveHasAListToDrawOn(t *testing.T) {

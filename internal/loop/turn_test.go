@@ -233,7 +233,7 @@ func TestTurnRunPassesInputVerbatimAsTheRecallQuery(t *testing.T) {
 	}
 }
 
-func TestTurnRunUsesTheCandidateLimitConstant(t *testing.T) {
+func TestTurnRunShipsTheCandidateLimitIntoRetrievalRatherThanACountOfItsOwn(t *testing.T) {
 	t.Parallel()
 
 	graph := &fakeGraph{node: Anchor{ID: 42}, nodeFound: true}
@@ -242,8 +242,8 @@ func TestTurnRunUsesTheCandidateLimitConstant(t *testing.T) {
 	if _, _, err := turn.Run(context.Background(), "q", 42); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if graph.recallLimit != CandidateLimit {
-		t.Fatalf("recall limit = %d, want CandidateLimit (%d)", graph.recallLimit, CandidateLimit)
+	if graph.recallLimit != 100 {
+		t.Fatalf("recall limit = %d, want 100: the turn hands retrieval its candidate limit of twenty and retrieval alone decides how many rows to ask the graph for, so either a turn that recalls at a count of its own or a retrieval that asks for exactly the aperture arrives at the graph on some other number", graph.recallLimit)
 	}
 }
 
@@ -1288,6 +1288,72 @@ func TestTurnRunWarnsWhenTheAnchorAloneConsumesTheWholeBudget(t *testing.T) {
 func shutoutLogLine(log string) string {
 	for _, line := range strings.Split(log, "\n") {
 		if strings.Contains(line, `msg="assembly admitted no candidate`) {
+			return line
+		}
+	}
+	return ""
+}
+
+func TestAShortApertureIsWarnedEvenWhenNothingWasCutBecauseNothingWasFetched(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{
+		{ID: 901, Type: "session-log", Name: "a record this run wrote", Similarity: 0.9, Content: "a record body", SelfProduced: true},
+		{ID: 902, Type: "session-log", Name: "another record this run wrote", Similarity: 0.8, Content: "another record body", SelfProduced: true},
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(record.Candidates) != 0 {
+		t.Fatalf("test setup error: the candidate set holds %d rows, want it empty — this alarm has to be exercised on the arm where the shutout alarm cannot sound in its place", len(record.Candidates))
+	}
+	if warning := shutoutLogLine(logBuf.String()); warning != "" {
+		t.Fatalf("test setup error: the shutout alarm sounded on an empty candidate set, so an assertion that merely some warning was raised would pass without the one under test existing:\n%s", warning)
+	}
+
+	if underDeliveryLogLine(logBuf.String()) == "" {
+		t.Fatalf("a run that filled none of its %d candidate slots raised no alarm: the shutout alarm needs a candidate to have been cut and there was none to cut, so this run is silent on the operator log while its block carries the anchor and nothing else; log:\n%s", CandidateLimit, logBuf.String())
+	}
+}
+
+func TestAFullApertureRaisesNoUnderDeliveryAlarm(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.candidates = make([]Candidate, 0, CandidateLimit)
+	for i := range CandidateLimit {
+		graph.candidates = append(graph.candidates, Candidate{ID: int64(700 + i), Type: "documentation", Name: "A real document", Similarity: 0.9, Content: "a small body"})
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(record.Candidates) != CandidateLimit {
+		t.Fatalf("test setup error: the candidate set holds %d rows against a limit of %d, so this arm is not the full aperture it claims to be", len(record.Candidates), CandidateLimit)
+	}
+
+	if warning := underDeliveryLogLine(logBuf.String()); warning != "" {
+		t.Fatalf("a run that filled every one of its %d candidate slots was reported as under-delivering:\n%s", CandidateLimit, warning)
+	}
+}
+
+func underDeliveryLogLine(log string) string {
+	for _, line := range strings.Split(log, "\n") {
+		if strings.Contains(line, `msg="the candidate aperture under-delivered`) {
 			return line
 		}
 	}

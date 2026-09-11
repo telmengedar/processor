@@ -357,7 +357,7 @@ mechanism by which this change could quietly harm a row, and F2 is where it woul
 | **R1** | **r10 loses its answer.** #10943 demotes 1 → 4 (measured) and is 32,105 B; at rank 4 behind three predecessors it may not fit. This is the exact trade that killed the size bound. | Pre-registered as the **hard falsifier** F2. Not mitigated away — if it fires, the change is reverted or restricted. |
 | **R2** | **A wrong anchor now steers half the fan-out**, where today it costs only three reserve slots. | Partly intended: A2 says the anchor is chosen deliberately. Bounded by retaining the raw arm — a wrong anchor loses fusion mass, it does not replace the list. Recorded as a genuine increase in sensitivity, not argued away. |
 | **R3** | **Anchor names that are long, generic, or uninformative.** A generic name is a no-op; a very long one could swamp the input's signal. | Only identity text is used, never the body. Q1 asks for the name-length distribution across the graph before this is called bounded in general rather than in the anchors measured. |
-| **R4** | **Self-poisoning compounds.** A run record of this input already ranks 6th on t1's own recall and has joined the anchor's neighbourhood (#11141, live in §3). A grounded query names the anchor, and run-record names embed the input — so grounded queries may match run records *more* strongly. | The self-produced cut already exists at admission. **But it is a cut, not a rank exclusion**, so poisoned rows still consume candidate slots. Flagged as Q3; not solved here. |
+| **R4** | **Self-poisoning compounds.** A run record of this input already ranks 6th on t1's own recall and has joined the anchor's neighbourhood (#11141, live in §3). A grounded query names the anchor, and run-record names embed the input — so grounded queries may match run records *more* strongly. | The self-produced cut already exists at admission. ~~**But it is a cut, not a rank exclusion**, so poisoned rows still consume candidate slots. Flagged as Q3; not solved here.~~ **CORRECTED 2026-09-11 (`docs/architecture/the-aperture-spends-slots-admission-refuses.md`, #13601): it is now a selection exclusion as well as a cut.** `fuse` skips a self-produced row on all three of its fill passes and `Retrieve` fetches deeper so the freed slots are filled, so such a row no longer consumes a candidate slot in an initial assembly. The row's own concern — a grounded query matching run records *more* strongly — is therefore bounded at the aperture rather than only at admission. **It still holds of the supplementary aperture**, which does not pass through `fuse`. Q3 is answered and reversed. |
 | **R5** | **The sweep's baselines are superseded.** Both callers change ranking, so 11/23 retrieved and 9/23 admitted stop being the comparison point. | Intended — the instrument should measure the product (#11142). Both arms must be re-run and the new baseline recorded in the same session, not inferred. |
 | **R6** | **Design-document parity.** This adds a row to the combiner table in M3 §4.2 and changes §4.1's shape diagram and §4.3's placement table. | M3 is `docs/architecture/m3-derived-recall.md`, graph node **#11235**. M1 (#10532) is touched only descriptively. **Q4: is M3 under the same P-40 parity rule as M1?** If so this needs a parity publish. |
 
@@ -479,7 +479,7 @@ after this one:
 |---|---|---|---|
 | **Q1** | ~~What is the distribution of node-name lengths across the graph?~~ | **Answered 2026-09-05, §16.6:** 11–256 characters across the 25 corpus anchors, median 98. The long tail exists. A bound was measured and is **not** shipped — §16.6 records why. | Answered. |
 | **Q2** | ~~Should the anchor's **type** be composed in alongside its name?~~ | **Answered by measurement, 2026-09-05, §16.7: no.** Composing the type loses t1 — the task this design was written for — from admitted to cut, while leaving the 23-row rates unchanged. The name alone is what shipped. | Answered. |
-| **Q3** | Should self-produced run records be excluded from the **ranking** rather than cut at **admission**? | They currently consume candidate slots before being cut (R4), and grounded queries may match them more strongly because run-record names embed the input. | No, but it should be a task. |
+| **Q3** | ~~Should self-produced run records be excluded from the **ranking** rather than cut at **admission**?~~ | ~~They currently consume candidate slots before being cut (R4), and grounded queries may match them more strongly because run-record names embed the input.~~ **Answered and REVERSED 2026-09-11 (`docs/architecture/the-aperture-spends-slots-admission-refuses.md`, #13601): yes — at selection, and not at ranking.** The rows are still ranked exactly as the graph reported them; what changed is that `fuse` will not *take* one, on any of its three fill passes, and `Retrieve` asks the graph for more rows than it returns so the skipped slots are refilled. The predicate is inherited from `admit`, which already refused these rows unconditionally, so nothing here judges what a run record is worth. **The answer holds for the initial aperture only** — the supplementary aperture does not pass through `fuse`. | ~~No, but it should be a task.~~ **Answered; the task was #13593.** |
 | **Q4** | ~~Is `docs/architecture/m3-derived-recall.md` (#11235) under the same P-40 parity rule as M1 (#10532)?~~ | **Answered by the operator, 2026-09-05: yes.** M3 §4.1, §4.2 and §4.3 are edited by this change and the operator publishes and verifies both sides. | Answered. |
 | **Q5** | Does the operator want the sweep's pinned derivation sidecar re-pinned after this lands? | The grounded query is composed inside the retrieval step, so it is *not* a sidecar entry — but the sweep's arm identity and reported hashes change. | No — but the new baseline must be recorded, per R5. |
 
@@ -990,8 +990,10 @@ budget, which already exists and which #11364 makes the product, so no constant 
 doing and it is **explicitly not the fix for r02** (§17.2(c)); filing it as one would put a false causal claim
 into the graph. Belongs with #11308.
 
-**Unresolved and carried forward:** Q3 (self-produced run records consume candidate slots before being cut at
-admission — R4, and unaffected by this ruling); §9.4's near-duplicate collapse, still deferred; §14's Unit 3,
+**Unresolved and carried forward:** ~~Q3 (self-produced run records consume candidate slots before being cut at
+admission — R4, and unaffected by this ruling)~~ **Q3 is ANSWERED AND REVERSED as of 2026-09-11, in
+`docs/architecture/the-aperture-spends-slots-admission-refuses.md` (#13601) — see the Q3 row itself, which
+carries the answer and the qualifier that the supplementary aperture keeps the old behaviour**; §9.4's near-duplicate collapse, still deferred; §14's Unit 3,
 hub pruning in the anchor scope, whose measured motivation — t2's 362-node two-hop scope reaching every project
 through `person Toni` — is untouched by anything measured here and remains the best-evidenced retrieval unit
 the project has not yet built.
@@ -1341,7 +1343,8 @@ that round and is exactly why this rule is about **commissioning** rather than a
   > un-falsified.** Unit 3 is **retired with a stated reopening condition**, not deferred. The sentence above
   > is left legible because it is the record of what was directed before the pre-test returned; **it is not an
   > instruction and must not be read as one.**
-- **Carried forward unresolved:** Q3 (self-produced run records consuming candidate slots), §9.4's
+- **Carried forward unresolved:** ~~Q3 (self-produced run records consuming candidate slots)~~ **Q3 was
+  answered and reversed on 2026-09-11 — see the Q3 row**, §9.4's
   near-duplicate collapse, and Q4's M3 parity question — none touched by this ruling.
 
 ### 18.8 What this round bought

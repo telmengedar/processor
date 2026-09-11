@@ -6,17 +6,22 @@ import (
 	"slices"
 )
 
-const fusionRankConstant = 10
+const (
+	fusionRankConstant    = 10
+	recallOverfetchFactor = 5
+)
 
-// Retrieve fuses one unscoped recall per query with a recall ranked inside the anchor's two-hop scope, returning at most limit candidates and never the anchor itself.
+// Retrieve asks the graph for more rows than it returns, fusing them into at most limit candidates, never the anchor and never a row this system wrote.
 func Retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []string, limit, reserve int) ([]Candidate, error) {
 	if len(queries) == 0 {
 		return nil, nil
 	}
 
+	fetch := limit * recallOverfetchFactor
+
 	lists := make([][]Candidate, 0, len(queries))
 	for _, query := range queries {
-		list, err := graph.Recall(ctx, query, limit, nil)
+		list, err := graph.Recall(ctx, query, fetch, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -28,7 +33,7 @@ func Retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []str
 		return nil, err
 	}
 
-	scoped, err := graph.Recall(ctx, queries[0], limit, scope)
+	scoped, err := graph.Recall(ctx, queries[0], fetch, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +87,7 @@ func fuse(lists [][]Candidate, scoped []Candidate, anchor int64, limit, reserve 
 	out := make([]Candidate, 0, limit)
 
 	appendUnseen := func(candidate Candidate) bool {
-		if taken[candidate.ID] {
+		if taken[candidate.ID] || candidate.SelfProduced {
 			return false
 		}
 		taken[candidate.ID] = true

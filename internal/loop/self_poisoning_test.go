@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -98,41 +99,24 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 		t.Fatalf("turn 2: %v", err)
 	}
 
-	if second.Candidates[0].ID != recordID {
-		t.Fatalf("test setup error: turn 2's rank-1 candidate is #%d, want turn 1's record #%d", second.Candidates[0].ID, recordID)
+	ids := dispositionIDs(second.Candidates)
+	if slices.Contains(ids, recordID) {
+		t.Fatalf("turn 2's candidate set is %v and still carries #%d, the record turn 1 wrote: the graph ranks it first, admission refuses it before reading a byte of it, and a slot spent on it is a slot no row the run could have read ever reached", ids, recordID)
 	}
-	if admittedCount(second.Candidates) == 0 {
-		t.Fatalf("turn 2 admitted nothing from %d candidates: the run record at rank 1 cut everything behind it", len(second.Candidates))
+	if want := []int64{7, 8}; !slices.Equal(ids, want) {
+		t.Fatalf("turn 2's candidate set is %v, want %v: dropping the record must leave the rows ranked behind it standing, in the order the graph reported them — and #8 is a session log another agent wrote, carrying the record's own node type, so a predicate that keys on the type alone loses it from this set too", ids, want)
 	}
 	if got, want := admittedCount(second.Candidates), 2; got != want {
-		t.Fatalf("turn 2 admitted %d of %d candidates, want %d — both real rows behind the record", got, len(second.Candidates), want)
-	}
-	if second.Candidates[0].Included {
-		t.Fatal("turn 2 admitted its own previous run record")
-	}
-	if !second.Candidates[2].Included {
-		t.Fatalf("turn 2 cut #%d, a session log another agent wrote: the record's own type must not be what excludes it", second.Candidates[2].ID)
-	}
-
-	self, budget := cutReasons(t)
-	if second.Candidates[0].CutReason != self {
-		t.Fatalf("turn 2's rank-1 record was cut with reason %q, want %q — the row this loop wrote must be cut by the self-produced rule, not merely as one more oversized candidate", second.Candidates[0].CutReason, self)
-	}
-	if self == budget {
-		t.Fatal("test setup error: the two cut reasons are the same string, so this assertion cannot discriminate")
+		t.Fatalf("turn 2 admitted %d of %d candidates, want %d — both real rows", got, len(second.Candidates), want)
 	}
 }
 
-func cutReasons(t *testing.T) (selfProduced, byteBudget string) {
-	t.Helper()
-
-	_, self := loop.Assemble(loop.Anchor{ID: 1}, []loop.Candidate{{ID: 1, Content: "x", SelfProduced: true}}, 100)
-	_, over := loop.Assemble(loop.Anchor{ID: 1}, []loop.Candidate{{ID: 1, Content: strings.Repeat("x", 200)}}, 100)
-
-	if self[0].CutReason == "" || over[0].CutReason == "" {
-		t.Fatalf("a reference cut produced no reason: self-produced %q, oversized %q", self[0].CutReason, over[0].CutReason)
+func dispositionIDs(dispositions []loop.Disposition) []int64 {
+	ids := make([]int64, len(dispositions))
+	for i, d := range dispositions {
+		ids[i] = d.ID
 	}
-	return self[0].CutReason, over[0].CutReason
+	return ids
 }
 
 func admittedCount(dispositions []loop.Disposition) int {

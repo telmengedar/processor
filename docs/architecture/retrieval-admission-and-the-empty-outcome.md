@@ -333,13 +333,13 @@ produces an empty block without a designed destination for it converts a wrong a
 
 | Component | Owns | Does **not** own |
 |---|---|---|
-| **Retrieve** (`internal/loop/retrieve.go`) | Forming the candidate set: fusion across queries, the scoped reserve, exclusion of the anchor. | Any admission decision. It reports what the graph returned, in the graph's order. |
+| **Retrieve** (`internal/loop/retrieve.go`) | Forming the candidate set: fusion across queries, the scoped reserve, exclusion of the anchor **and, since 2026-09-11, of any row this system wrote**. How many rows to ask the graph for, which is no longer the same number as the limit it returns. | ~~Any admission decision. It reports what the graph returned, in the graph's order.~~ **AMENDED 2026-09-11 (`docs/architecture/the-aperture-spends-slots-admission-refuses.md`, #13601): any *budgeted* decision.** One rule crossed this boundary deliberately — the self-produced rule, on the ground that it is an *eligibility* rule rather than an admission one, and that the anchor, which this same row already assigns to `Retrieve`, is its exact structural twin. The remaining rules below are untouched and stay where this document puts them. |
 | **Admission policy** (new, extracted from `assemble.go`) | The *ordered* rule set above, and a reason for every cut. It is a pure function of (candidates, exclusion set, budget, floor, size cap). | Fetching anything. Deciding what to do when it admits nothing. |
 | **Assemble** | Rendering the block from what the policy admitted. | Deciding what is admitted. |
 | **Supplementary recall** (`dispatchRecall`) | Running the model's own query and applying **the same admission policy**, with the exclusion set seeded from what is already in the block. | Having its own, second, weaker set of rules. This is the defect. |
 | **Exhaustion handler** (new, Unit 2) | Deciding, when admission yields nothing, whether to re-query mechanically or to terminate as `NeedsClarification`. Bounded and recorded. | Writing the clarification text. That is the model's. |
 | **Catalogue** (new, Unit 3) | Presenting `id / type / name / similarity / substance` rows and accepting a fetch-by-id request. | Choosing which rows matter — that is the model's job, and the whole point of the unit. Generating substance; that is the condensation pass's, run offline (Q5). |
-| **Run record** | Carrying every candidate the query returned, its score, its size and its disposition — **including everything cut** — so that recall@k stays computable retroactively. | Judging. |
+| **Run record** | Carrying every candidate the query returned, its score, its size and its disposition — **including everything cut** — so that recall@k stays computable retroactively. **Amended 2026-09-11 (#13601): every candidate the *aperture offered admission*. A row that was never eligible is not carried, exactly as the anchor has never been carried.** | Judging. |
 
 The invariant that ties them together: **there is exactly one admission policy, and both the initial
 assembly and every supplementary recall go through it.** Today there are effectively two, and the second one
@@ -601,7 +601,10 @@ pays off independently (see *Worth alone*).
 
 **Ordering is a contract, not an implementation detail.** The admission rules are ordered and the order is
 load-bearing: self-produced before floor (or run records at 0.72–0.74 pass a 0.70 floor and consume the
-window), floor before size cap (no point measuring the size of noise), size cap before greedy byte
+window) — **amended 2026-09-11 (`docs/architecture/the-aperture-spends-slots-admission-refuses.md`,
+#13601): that first constraint is moot for the initial assembly, where no run record reaches the floor
+because none reaches admission at all, and it stays live for the supplementary aperture, which does not
+pass through `fuse`** — floor before size cap (no point measuring the size of noise), size cap before greedy byte
 admission (or one oversized document sets the boundary, as `#6375` did). This ordering belongs in the
 policy's contract and in its tests.
 

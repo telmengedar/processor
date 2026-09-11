@@ -44,7 +44,7 @@ other three do not survive a failed call at all).
 **How.** No new error kind, no taxonomy, no structured failure object, no failure record. The change
 is *one wrap and four un-discards*: each model adapter wraps its judgement call once at its outermost
 point, attaching the four facts; and the four sites that today overwrite a cause with a constant
-(`turn.go:326`, `turn.go:339`, `turn.go:356`, `routes.go:88`+`:90`) carry the bounded cause instead.
+(`turn.go:330`, `turn.go:343`, `turn.go:360`, `routes.go:88`+`:90`) carry the bounded cause instead.
 Three constants stay exactly as they are, because at those sites the loop is genuinely the author of
 the failure.
 
@@ -113,11 +113,11 @@ response and the container's stderr can name the remedy without querying the mod
 
 | # | site | what the log gets | what the caller / record gets |
 |---|---|---|---|
-| A | `turn.go:334-336` — a write the workspace **rejected** (`ErrWriteRejected`) | *nothing* | `err.Error()` — **the real message** |
-| B | `turn.go:323-327` — `OpenRun` failed | the real error | `errFileWriteFailed`, a constant |
-| C | `turn.go:338-340` — `Write` failed, unrecognised | the real error | `errFileWriteFailed`, a constant |
-| D | `turn.go:355-356` — supplementary recall failed | the real error | `errSupplementaryRecallFailed`, a constant |
-| E | `turn.go:243` → `turn.go:143-146` → `routes.go:88` — the model call failed | **nothing at all** | `model_unavailable` + a constant |
+| A | `turn.go:338-340` — a write the workspace **rejected** (`ErrWriteRejected`) | *nothing* | `err.Error()` — **the real message** |
+| B | `turn.go:327-331` — `OpenRun` failed | the real error | `errFileWriteFailed`, a constant |
+| C | `turn.go:342-344` — `Write` failed, unrecognised | the real error | `errFileWriteFailed`, a constant |
+| D | `turn.go:359-360` — supplementary recall failed | the real error | `errSupplementaryRecallFailed`, a constant |
+| E | `turn.go:247` → `turn.go:143-146` → `routes.go:88` — the model call failed | **nothing at all** | `model_unavailable` + a constant |
 
 Row A is the only row that preserves a cause, and it is the row whose message the loop **already
 knows**: `internal/workspace/workspace.go` authors all eight `ErrWriteRejected` reasons itself, from a
@@ -138,7 +138,7 @@ carrying an errno and is then the only row whose text is thrown away. Nothing el
 needed to be argued once that was read; the rest follows.
 
 Row E is worse than rows B–D, and worse than the framing this design was briefed with: `judge()`
-wraps with `fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)` at `turn.go:243` and **no site logs it**;
+wraps with `fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)` at `turn.go:247` and **no site logs it**;
 `Run` returns at `turn.go:143-146`, before `logFinished`, so the run emits `run started` and then
 silence. At the model site the cause is not merely discarded from the record — **it is discarded
 everywhere.**
@@ -400,7 +400,7 @@ why Step 2 is gated on it.
 **Three of the four facts are adapter-only, and three is what forces the relocation.** Endpoint,
 request bytes and elapsed-against-the-adapter's-own-client-bound exist nowhere else at the moment of
 failure: `Provider` travels on `JudgeResult`, which is zero-valued when `Judge` returns an error
-(`turn.go:250` assigns `judged.provider` **after** the error return at `:243`), and `routes.go:19`
+(`turn.go:254` assigns `judged.provider` **after** the error return at `:247`), and `routes.go:19`
 hands the server nothing but the `*loop.Turn` — no config, no adapter, no base URL. **The model id is
 the exception** and revision 1's *"and nowhere else"* was wrong about it: `Turn.ModelID`
 (`turn.go:87`) holds it and survives a failed call, which is how `record.Model` is fed at
@@ -533,7 +533,7 @@ cheaply reversed element in the document** and is flagged as such in §13.
 **"No exemptions" is a correction, and it resolves a disagreement revision 1 shipped.** Revision 1's
 §7.5 said *"each tool-error assignment"* while its §15 Step 3 said *"rows B, C, D and at the HTTP
 boundary"* — two different sets, because there are three further assignments neither list named: the
-`result.ToolError` pass-throughs at `turn.go:285`, `:314` and `:350`. Those are **already** carried
+`result.ToolError` pass-throughs at `turn.go:289`, `:318` and `:354`. Those are **already** carried
 causes, not discards, so they need no un-discarding; and they are demonstrably short — three fixed
 strings plus one `fmt.Sprintf` over a `json.Unmarshal` error, which does not echo the payload
 (`ollama/wire.go`, `openaicompat/wire.go`). **The bound is applied there too**, where it is a no-op on
@@ -808,7 +808,7 @@ on exported identifiers, none on unexported, no body or trailing comments.
 > | step | what it promotes | into | #13565 half it needs |
 > |---|---|---|---|
 > | **2** | `PROCESSOR_MODEL_URL` via the endpoint in the failure preamble | the HTTP response | **model** |
-> | **3** | `PROCESSOR_DIVOID_URL` via row D's `*url.Error` (`turn.go:355-356`) | the record, the substance, **the model** | **graph** |
+> | **3** | `PROCESSOR_DIVOID_URL` via row D's `*url.Error` (`turn.go:359-360`) | the record, the substance, **the model** | **graph** |
 > | **4** | `PROCESSOR_DIVOID_URL` via the `default:` arm's message (`routes.go:89-90`) | the HTTP response | **graph** |
 >
 > **Steps 3 and 4 are independent and neither implies the other.** `routes.go:82-92` has **no `case`
@@ -843,7 +843,7 @@ five and looks correct.
 
 **Step 3 — the bounding step, and the four un-discards.** One named
 length, applied at rows B, C and D, at the HTTP boundary, and at the three `result.ToolError`
-pass-throughs (`turn.go:285`, `:314`, `:350`) where it is a no-op — no exemptions, per §7.5. The three
+pass-throughs (`turn.go:289`, `:318`, `:354`) where it is a no-op — no exemptions, per §7.5. The three
 constants of §7.5 are left alone. *Witness:* the discriminating
 fixture is the **pair** — a rejected write (row A) must still render its own reason, and an
 unrecognised write (row C) must now render the OS cause. A change that makes both carry the same
