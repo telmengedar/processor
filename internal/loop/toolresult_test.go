@@ -78,7 +78,7 @@ func TestRenderToolResultPutsExactlyOneNewlineBetweenTwoRecalledCandidatesSectio
 	}
 }
 
-func TestRenderToolResultSaysResultsWereFoundAndNoneFitWhenAdmissionCutThemAll(t *testing.T) {
+func TestRenderToolResultSaysResultsWereFoundAndNoneWereIncludedWhenAdmissionCutThemAll(t *testing.T) {
 	t.Parallel()
 
 	got := RenderToolResult(ToolExchange{
