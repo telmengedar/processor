@@ -936,7 +936,7 @@ unacceptable, the two levers are `MaxDerivedQueries` and parallel recalls, both 
 | # | risk | mitigation | falsifier |
 |---|---|---|---|
 | **F-1** | **§4.2's class-1 refutation is a tokenizer artifact** | The categorical result (0 of 25 subsets) rests on words the input never spells, not on decimals | §4.2's differential pair, **both arms executed with their output quoted at #13590 §1**: stemmed re-run over all 25 (0/25 survives under Porter and under an aggressive suffix-strip), plus **two** controls — A (stopword strip) proving the subset predicate, and **B (stopword strip + one inflectional variant) proving the stemmer is engaged**, subset under the stemmed run and not under the plain one. **A alone passes even when the stemmer never ran**, which is why B is the arm that matters. |
-| **F-2** | **A live model's derivations are worse than the pinned ones** — #11235 R1, still the largest open risk in the line | `Record.Queries` records what was actually asked, verbatim, so a bad derivation is readable rather than inferred | **Unit 2 discharges it**: generate a second sidecar with the product's own `Derive` against the product's own configured model, sweep it and the pinned one in **one session**, and compare arm to arm — never against a rate recorded on another day, because the graph is live and unversioned (#11235 §9.1). Falsified if the live-derived arm does not beat the raw-input arm taken in the same session. **The branch where this detector is silent: Unit 2 not built** — see the note under F-5, which owns the trigger for both. **It is *not* exposed to the admission confound §12 records from record #13591**, because it is a *sweep* measurement and on the sweep corpus twelve of fourteen misses never reach the candidate set at all (#11365 §2). |
+| **F-2** | **A live model's derivations are worse than the pinned ones** — #11235 R1, still the largest open risk in the line | `Record.Queries` records what was actually asked, verbatim, so a bad derivation is readable rather than inferred | **Unit 2 discharges it**: generate a second sidecar with the product's own `Derive` against the product's own configured model, sweep it and the pinned one at **one graph state**, bracketed by #11235 §9.1a's A-B-A control, and compare arm to arm — never against a rate recorded on another day, because the graph is live and unversioned (#11235 §9.1). Falsified if the live-derived arm does not beat the raw-input arm taken at the same graph state — *(corrected 2026-09-11, #13703: this read "in the same session", which decides nothing; #11235 §9.1a.)* **The branch where this detector is silent: Unit 2 not built** — see the note under F-5, which owns the trigger for both. **It is *not* exposed to the admission confound §12 records from record #13591**, because it is a *sweep* measurement and on the sweep corpus twelve of fourteen misses never reach the candidate set at all (#11365 §2). |
 | **F-3** | **The latency claim is built from two figures neither of which measured this code** (A6) | Named as a hedge in every sentence that uses them | **Split, because one clock cannot answer both halves.** *(a) Does the derivation step cost what is claimed?* — Unit 1 logs the step's own wall clock on **both** paths (§16 step 5), so the first run that carries it answers this; the cost section is wrong if it exceeds ~5 s on a healthy host. *(b) Do the five extra recalls cost more than the model call?* — **not answerable by that clock**, and Unit 1 does not add the second one. It needs `Retrieve` timed separately, which is Q3's instrumentation and is not in this unit. **Stating (b) as though (a) answered it was the defect; the honest position is that (b) is unmeasured and named.** Either way the levers are `MaxDerivedQueries` and parallel recalls. |
 | **F-4** | **The 30 s bound silently converts the derived arm into the raw arm under load** | The cause is recorded and **names the bound by identity** (§7.4) rather than by `ctx.Err()`, which cannot distinguish it from `runBound` | Any run whose `derivationError` names the derivation bound. It is a measurement, not a defect, and it says the host is slow — the distinction #13534 §8 insists on. **The premise that makes this discriminate:** the derivation timeout carries its own named cause, so a run whose *ten-minute* bound expired mid-derivation reports `runBound`, not this one. **Without that, the detector fires on the wrong bound and reads a dying run as a slow step** — and it fires under load, which is the only condition it exists for. |
 | **F-5** | **The prompt drifts between Go and Python** between Unit 1 and Unit 2 | §7.1 states the DRY math, names Unit 2 as the discharge, and gives the fallback a **trigger (10 merges) and an owner (a filed task)** | A regenerated sidecar whose shape differs from the product's output for a reason nobody can name. **This detector can only fire if Unit 2 is built** — and Unit 2 is instrument work that #13534 §5 demotes, so it is silent in exactly the branch that threatens the claim. **That is why the fallback carries a trigger instead of a condition:** the trigger fires on merge count whether or not anyone decides anything, and it is the only thing standing in this branch. |
@@ -957,7 +957,7 @@ unacceptable, the two levers are `MaxDerivedQueries` and parallel recalls, both 
 | **Q4** | Add a feedback pass on top of derivation? | **No.** §4.3. | R-2. | **Low, additive.** |
 | **Q5** | Deprecate `Record.Query`? | **No**, unchanged from #11235 §12 q4. It is the raw input, it is what `queries[0]` is by invariant, and removing it is a deletion with a reader inventory owed. **Now genuinely redundant** and a deletion candidate for a later pass with a real inventory in hand. | Delete it in this unit. | **Low**, but it is a second feature and belongs in its own PR. |
 | **Q6** | Rename `Condense` to something neutral now that two callers use it? | **No.** It touches two adapters, `internal/condense`, `cmd/condense` and their tests for a naming improvement, in a PR whose feature is elsewhere. | Fold the rename in. | **Trivial**, and it stays trivial. |
-| **Q7** | `MaxDerivedQueries = 5`? | **Yes, and 5 is inherited rather than fitted — say so.** It is `QUERIES_PER_ROW = 5` at `scripts/generate_derivations.py:80`, a constant **chosen** in the generator; all 25 sidecar rows carry that shape because the generator was told to. What follows is weaker than "measured" and is the actual reason: **5 is the only value for which an arm-versus-arm figure exists at all**, because the pinned sidecar is the only derived arm this project has swept. Matching it is what keeps §12's comparison a comparison. | 3, or 4. | **Trivial, and free to settle by measurement:** truncate the sidecar's query lists to *k* and sweep. Zero model calls, one session, and #11235 §12 q2 already ruled this a measurement rather than a decision. |
+| **Q7** | `MaxDerivedQueries = 5`? | **Yes, and 5 is inherited rather than fitted — say so.** It is `QUERIES_PER_ROW = 5` at `scripts/generate_derivations.py:80`, a constant **chosen** in the generator; all 25 sidecar rows carry that shape because the generator was told to. What follows is weaker than "measured" and is the actual reason: **5 is the only value for which an arm-versus-arm figure exists at all**, because the pinned sidecar is the only derived arm this project has swept. Matching it is what keeps §12's comparison a comparison. | 3, or 4. | **Trivial, and free to settle by measurement:** truncate the sidecar's query lists to *k* and sweep. Zero model calls, one graph state under §9.1a's control *(was "one session" — corrected 2026-09-11, #13703)*, and #11235 §12 q2 already ruled this a measurement rather than a decision. |
 | **Q8** | Does a failed derivation change the HTTP status? | **No.** The run succeeds; the response is 200 and carries `derivationError` on the record. A degraded query set is not a failed run. | Return a warning header or a non-2xx. | **Trivial**, and it would break the closed set of five codes `routes.go:37-43` maintains. |
 
 ---
@@ -1068,12 +1068,73 @@ unacceptable, the two levers are `MaxDerivedQueries` and parallel recalls, both 
 
 | step | what | acceptance |
 |---|---|---|
-| 1 | **Extract the merge rule.** `loop.MergeQueries(input string, derived []string) []string` — input first, then each derived query not already present, compared exactly as `derivations.go:92-101` compares today. Re-point `eval.Derivations.QueriesFor` at it. | **Zero-delta:** a sweep of `internal/eval/derivations.json` returns **the same rates as a sweep taken immediately before the change, in the same session.** Not against a rate from another day — the graph is live and unversioned (#11235 §9.1). |
-| 2 | **`loop.DerivationPrompt` and `loop.ParseDerivation`**, both pure, no `ctx`, no port — `Assemble`'s discipline. The prompt is transcribed from `scripts/generate_derivations.py`'s `SYSTEM_PROMPT` + `FEW_SHOT`; the parse is its `parse_lines` + `dedupe_against`, capped at `MaxDerivedQueries = 5`. **Do not re-author either.** | Table tests over the twelve `blind-generated` sidecar rows' raw shapes; `ParseDerivation` of a text whose every line is blank returns an empty slice, not nil-vs-empty ambiguity. |
+| 1 | **Extract the merge rule.** `loop.MergeQueries(input string, derived []string) []string` — input first, then each derived query not already present, compared exactly as `derivations.go:92-101` compares today. Re-point `eval.Derivations.QueriesFor` at it. | **Zero-delta, decided by an A-B-A triple — see the block under this table.** Sweep `internal/eval/derivations.json` on the **pre-change** binary (**A**), on the **post-change** binary (**B**), then on the **pre-change** binary again (**C**), back to back, same corpus and sidecar files. **Accept when B == A and C == A**, each on every JSON field except `sweptAt`. ~~the same rates as a sweep taken immediately before the change, in the same session~~ *(corrected 2026-09-11, #13703 — "same session" is a clock bound and decides nothing; the graph moved under an unchanged binary inside one session. #11235 §9.1a is canonical.)* |
+| 2 | **`loop.DerivationPrompt` and `loop.ParseDerivation`**, both pure, no `ctx`, no port — `Assemble`'s discipline. The prompt is transcribed from `scripts/generate_derivations.py`'s `SYSTEM_PROMPT` + `FEW_SHOT`; the parse is its `parse_lines` + `dedupe_against`, capped at `MaxDerivedQueries = 5`. **Do not re-author either.** | ~~Table tests over the twelve `blind-generated` sidecar rows' raw shapes~~ — **ambiguous, and one reading was unsatisfiable; resolved 2026-09-11 (#13703, from #13702 W-1).** The generator's raw model output **is not persisted**: `scripts/generate_derivations.py:307` computes `raw_text` and `:308` immediately reduces it to `candidates`, and the sidecar's only keys across all 25 rows are `row`, `queries`, `source` (both measured at `962ac3a`). So "the twelve rows' raw shapes" **do not exist in the artefact the criterion named**. **The property the criterion is for:** `ParseDerivation` reproduces `parse_lines` + `dedupe_against` on every shape either can meet. **Three populations are specified below, and the list is known-not-exhaustive** — the parse's other guards at `0f011b5` (echo-dropping, repeat-dropping, the cap) satisfy the same property and are not excluded by their absence here. Guards resolved at `0f011b5`: (a) **decoration stripping**, over hand-built texts carrying the shapes `parse_lines` must strip — `TestParseDerivationStripsListDecorationSurroundingQuotesAndReasoningArtifacts`; (b) **idempotency over the twelve `blind-generated` rows**, their pinned lines joined by `\n` parsing back unchanged — this is what the sidecar can support and it is **not** a parse-the-model's-output test — `TestParseDerivationReturnsTheSidecarsOwnBlindGeneratedSetFromTheTextThatWouldHaveProducedIt`; (c) **the empty case**, an all-blank text returning an empty slice and not nil — `TestParseDerivationOfATextWhoseEveryLineIsBlankReturnsAnEmptySliceAndNotNil`. **Stated limit:** no guard here sees the transcription against a *real* model's output, because that output is discarded at generation time. |
 | 3 | **`loop.ModelPort.Derive(ctx, prompt string, maxOutputTokens int) (string, error)`**; both adapters delegate to their existing `Condense` and return `.Text`. Every test fake implementing `ModelPort` needs the method — that is the bulk of the diff and it is mechanical. | `var _ loop.ModelPort = (*Client)(nil)` still compiles in both adapter packages. |
 | 4 | **`loop.DeriveQueries(ctx, model, input)`** — prompt, one bounded port call, parse. The 30 s bound is applied **here with `context.WithTimeout`**, never in the adapter. | The bound fires against a fake that blocks, and the returned cause names the bound and the elapsed time. |
 | 5 | **`Run` calls it**, merges, and records. `Record.derivationError` declared **between `Queries` and `Anchor`**. One `Info` on success and one `Warn` with the whole cause on fallback, **both carrying the derivation step's own elapsed** — F-3(a) is answerable only if the success path is timed too, and it is one value the step already holds. One summary line. | §8's six failure modes each produce **the same candidate set as a raw-only run** — assert set equality, never non-nil (#11235 G-3's premise). |
 | 6 | **The 30 s bound identifies itself.** Apply it as a timeout carrying its **own named cause** and attribute the fallback from that cause, never from `ctx.Err()` — §7.4 shows why the two live deadlines are indistinguishable by error value. | A fixture whose *parent* context expires during a blocked derivation records the **run** bound, and one whose parent is healthy records the **derivation** bound. **Two fixtures, because one passes under the defect.** |
+
+#### Step 1's zero-delta, as a procedure that can be run *(corrected 2026-09-11; #13703)*
+
+**Why the old wording was replaced.** It asked for *"the same rates as a sweep taken immediately before the
+change, in the same session"*. **Measured 2026-09-11: the same pre-change binary read `admitted 8/23` at
+`18:33:10Z` and `9/23` at `19:38:16Z` — unchanged code, changed answer, inside one session** (#13702 §1,
+#13703). *"Same session"* was written against a baseline that moved **overnight** (#11235 §9.1 item 2) and
+was never a bound on movement *within* a session, so the criterion rested on an implication that is false.
+**The rationale is #11235 §9.1a and is not restated here; only the procedure is, because only the procedure
+has to be runnable in place.**
+
+**The triple.** Three sweeps, back to back, same corpus and sidecar files:
+
+| | binary | what it is |
+|---|---|---|
+| **A** | pre-change | the baseline reading |
+| **B** | post-change | the reading under test |
+| **C** | pre-change | **the control** — it is what makes A-versus-B mean anything |
+
+**Accept when `B == A` and `C == A`**, each on every JSON field except `sweptAt`. **`C != A` voids the
+triple rather than failing the change**: it says the graph moved under the window, so nothing was measured.
+Re-take it.
+
+**The comparison, published as the exact string that was run** (#1220, 2026-09-09):
+
+```
+python -c "import json,sys
+def body(p):
+    d=json.load(open(p)); d.pop('sweptAt',None)
+    return json.dumps(d,sort_keys=True)
+print('identical' if body(sys.argv[1])==body(sys.argv[2]) else 'DIFFER')" A.json B.json
+```
+
+It ignores `sweptAt` and key order and nothing else; **run against two files differing in one candidate id
+it prints `DIFFER`**, which is the positive control that keeps it from degrading into a tautology.
+**This string has been run** — on two sweeps of the `962ac3a` binary 6m06s apart (`sweptAt 20:12:08Z` and
+`20:18:15Z`, 2026-09-11) it printed `identical`, and both readings were
+`labelled retrieved 11/23 (0.48) admitted 9/23 (0.39)`.
+
+**Why the control is sound here, with the guard rather than the argument:**
+
+- **The sweep never writes to the graph** — `TestSweepReadsTheGraphAndNeverWritesToIt`,
+  `cmd/eval/sweep_test.go:382` at `962ac3a`, whose fake fatals with *"the sweep called WriteRun; the
+  instrument must not mutate the substrate it measures"*. Without this, A and C would differ by
+  construction and could bracket nothing. **Note it is not a type-level guarantee:** `loop.GraphPort`
+  **does** carry `WriteRun` (`internal/loop/turn.go:67` at `962ac3a` — above the `:177` insertion point, so
+  PR #74 does not move it), so the property is held by that test and not by the signature.
+- **The sweep is deterministic given graph state** — `anchor-grounded-recall.md` **A6**, measured as 0 of 25
+  candidate lists changing across two same-binary sweeps 9m52s apart (#13702 §1).
+
+**What it costs, and the honest limit.** One extra sweep. **Two 25-row sweeps measured on this host took
+4m20s and 5m47s** (2026-09-11; a range over n=2, quoted with its set per #13592), so the triple spans
+roughly **13–18 minutes** — and movement was observed somewhere inside the **65m06s** between `18:33:10Z`
+and `19:38:16Z`.
+**So the triple is not a window narrow enough to be safe; it is a window wide enough to be audited.** If C
+keeps disagreeing with A, the remedy is not a faster sweep — it is #13592's rule, which is *do not run tasks
+while a measurement is in flight*, and it belongs to whoever is exercising the product.
+
+**Falsified by:** a B differing from A on any field but `sweptAt`, on a triple whose C equals A.
+**Not** falsified by a rate differing from one recorded earlier — an earlier rate is a reading of a graph
+state that no longer exists (#11235 §9.1).
 
 **Guards, each stating the premise that makes it discriminate (#11034 P-42):**
 
@@ -1113,7 +1174,8 @@ model-facing value is constructed.
 
 **What Unit 2 buys, and it is the reason it exists:** it discharges **F-2 / #11235 R1** — the largest open
 risk in this line — by turning *"does a real model derive as well as the pinned set?"* from a live-turn
-experiment into a 25-call batch followed by two sweeps in one session. It also ends §7.1's prompt
+experiment into a 25-call batch followed by two sweeps at one graph state, bracketed by #11235 §9.1a's
+control *(was "in one session" — corrected 2026-09-11, #13703)*. It also ends §7.1's prompt
 duplication, and it collapses **Q1's** reversal cost to that same batch.
 
 #### Unit 2 carries three deferrals, and the ordering rule works against it — so it needs a trigger, not a hope

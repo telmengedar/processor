@@ -926,7 +926,7 @@ its own diff. It must be revised against the tree Unit 1 produced, not against t
 (#13592). That is what makes a before/after delta attributable to the change rather than to noise.
 **Without it there is no measurement here, only two numbers.**
 
-### The baseline is a same-session run, never a stored record
+### The baseline is a freshly-taken run, never a stored record — and the two arms do *not* share a graph state
 
 **An earlier revision used #13598's and #13599's stored records as the "before" and asked the
 well-matched arm for an unchanged candidate id set. Both halves were wrong, and they were wrong for one
@@ -945,10 +945,38 @@ principle** on any graph containing the input's own prior runs — a set that gr
 Selecting the one of three observations that had no record in its top 20 is also the exact sampling
 error #13592 and #13534 §11 warn about, **applied to the control arm instead of the treatment arm.**
 
-**So the baseline is taken in the same session, immediately before the change**, on `main`, against the
-same graph. That is this project's established rule, not a new one: #13585 Unit 1 step 1 requires *"the
-same rates as a sweep taken immediately before the change, in the same session. Not against a rate from
-another day — the graph is live and unversioned."*
+**So the baseline is taken fresh, back to back with the after arm**, on `main`.
+
+> ~~**So the baseline is taken in the same session, immediately before the change**, on `main`, against the
+> same graph. That is this project's established rule, not a new one: #13585 Unit 1 step 1 requires *"the
+> same rates as a sweep taken immediately before the change, in the same session. Not against a rate from
+> another day — the graph is live and unversioned."*~~
+>
+> **Corrected 2026-09-11 (#13703, from #13702 W-3). Two things were wrong, and the second is the one that
+> matters here.**
+>
+> **First, the borrowed rule was itself defective.** *"Same session"* was written in #11235 §9.1 against a
+> baseline that moved **overnight**, and it bounds cross-day comparison only. Measured 2026-09-11: an
+> unchanged binary read `admitted 8/23` at `18:33:10Z` and `9/23` at `19:38:16Z` — **inside one session**.
+> #13585 has been corrected and **#11235 §9.1a is now the canonical statement**; this document points at it
+> and does not restate it (#11034 P-52 — restating is how the defect arrived here).
+>
+> **Second, and specific to this document: the conclusion contradicted this subsection's own opening
+> premise.** That block quote — *"Running the product mutates the corpus its own measurements are taken
+> against … the graph a measurement is taken against is not the graph the previous measurement was taken
+> against"* — says consecutive measurements do **not** share a graph. **"Against the same graph" is
+> precisely what it rules out.** These two arms are **runs of the product**, not sweeps, so each one writes — and unlike
+> #13585's sweeps they cannot be bracketed by a repeat, because the repeat would write again. **#13585's
+> A-B-A control is unavailable here, and no amount of clock discipline substitutes for it.**
+
+**What this section can claim instead, and it is enough.** The two arms are **known** to see different
+graph states, differing by the records the arms themselves file — #13592 measured the size of that effect
+at **19 of 20 candidates shared** for an identical input, the single delta being the new record displacing
+one row. **So the acceptance relations must be invariant under that mutation rather than assume it away**,
+and AC-1 and AC-2 below are stated as relations between the arms for exactly that reason. **AC-1's basis is
+argued under the headings "Why AC-1 holds, at the aperture" and "Why AC-1 survives the arms not sharing a
+graph state"; the second is load-bearing, not a remark, and it names the one residual this does not
+close.**
 
 **And the stored records keep a different job.** A stored record is the reproducible *instrument* for what
 happened when it ran — #13599's dispositions still say 17 of 20 however the corpus grows. What it is not
@@ -975,6 +1003,30 @@ in; and the reserve pass increments `reserved` only on `appendUnseen`'s true ret
 self-produced scoped row does not consume a reserved slot an eligible one would have taken. QA
 constructed the pass-1 / pass-2 / pass-3 cases against `0df5c14` and could not make a non-self-produced
 baseline row disappear.
+
+**Why AC-1 survives the arms not sharing a graph state** *(added 2026-09-11, #13703 — this was previously
+carried by the false claim that the arms ran "against the same graph")*. The known mutation between the
+arms is **the baseline arm's own record**, and a `processor-run` record is **self-produced by
+construction**. The `after` arm skips self-produced rows on all three of `fuse`'s fill passes, so that new
+record **cannot enter `after`'s candidate list and therefore cannot displace an eligible row from it.** The
+arms differ by a row that one arm was always going to exclude — which is why AC-1's status column reads
+*"truth independent of how many records the graph holds"*, and that line is now doing work rather than
+reassuring.
+
+**The residual this does not close, stated rather than argued away.** `Retrieve` over-fetches and `fuse`
+filters, so an extra self-produced row in the graph shifts every eligible row **one position deeper in the
+raw recall**. An eligible row sitting exactly at the fetch boundary could therefore fall out of `after`'s
+pool without being self-produced, which would put it in `baseline − after` and **fail AC-1**. **Bounded,
+not eliminated:** §13.2's headroom is the margin — at `fetch = 100` with **37** records in the whole graph
+(the figure and the `divoid_list` query that produced it are quoted in §2.4), the eligible pool is at
+least 62 against a `limit` of 20, so the boundary sits far from any eligible row the arms care about. **This is the same
+headroom the WARN in §14 watches**, and if that WARN ever fires, AC-1 is no longer safe either — which is
+the one coupling between the expiry detector and the acceptance relations, and it was not previously
+stated.
+
+**Falsified by:** an AC-1 failure whose missing row is **not** `cutReason: self-produced` in the baseline
+and **not** at the fetch boundary. That would mean the mutation between the arms is something other than
+the arms' own records, and this section's whole basis is wrong.
 
 ### The admitted set is reported, not gated — and the withdrawn claim is worth reading
 
