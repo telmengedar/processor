@@ -559,3 +559,200 @@ func TestACandidateCarriesItsSubstanceThroughRetrieveUnchanged(t *testing.T) {
 		t.Fatalf("node 400 carries Substance %q, want the zero value for a candidate that never had one", substance[400])
 	}
 }
+
+func TestARunRecordDoesNotSpendACandidateSlotItCanNeverUse(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{lists: map[string][]Candidate{"input": {
+		{ID: 901, SelfProduced: true},
+		{ID: 902, SelfProduced: true},
+		{ID: 903, SelfProduced: true},
+		{ID: 810}, {ID: 220}, {ID: 640},
+	}}}
+
+	got := mustRetrieve(t, graph, []string{"input"}, 3, 0)
+
+	want := []int64{810, 220, 640}
+	if !slices.Equal(got, want) {
+		t.Fatalf("retrieval returned %v, want %v: the three rows this system wrote head the ranking and assembly refuses them before it reads a byte of them, so an aperture that carries them arrives at admission holding three rows it can never use and leaves the three it could behind", got, want)
+	}
+}
+
+func TestRetrieveAsksTheGraphForMoreRowsThanTheApertureHolds(t *testing.T) {
+	t.Parallel()
+
+	const limit, reserve = 6, 2
+	wantFetch := limit * 5
+
+	graph := &fusionGraph{
+		lists:      map[string][]Candidate{"the input": ranked(810), "derived one": ranked(220)},
+		neighbours: []int64{7},
+	}
+
+	mustRetrieve(t, graph, []string{"the input", "derived one"}, limit, reserve)
+
+	if len(graph.calls) != 3 {
+		t.Fatalf("Recall was called %d times for two queries, want 3: one whole-graph ranking per query and one ranked inside the anchor's scope, and a count short of that leaves the loop below reading fewer calls than were issued", len(graph.calls))
+	}
+	for i, call := range graph.calls {
+		if call.Limit != wantFetch {
+			t.Fatalf("recall %d (scoped=%t) asked the graph for %d rows, want %d: the fetch and the aperture are two quantities that happen to share a number, and while they share it every row discarded between the graph and admission shrinks the aperture below its own constant", i, len(call.Scope) > 0, call.Limit, wantFetch)
+		}
+	}
+}
+
+func TestASelfProducedRowDoesNotSpendAReservedSlot(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists: map[string][]Candidate{"input": ranked(810, 220, 640)},
+		scoped: []Candidate{
+			{ID: 901, SelfProduced: true},
+			{ID: 990}, {ID: 880}, {ID: 770},
+		},
+	}
+
+	got := mustRetrieve(t, graph, []string{"input"}, 6, 3)
+
+	want := []int64{810, 220, 640, 990, 880, 770}
+	if !slices.Equal(got, want) {
+		t.Fatalf("retrieval returned %v, want %v: the scope reserve holds three slots and the neighbourhood's top row is one this system wrote, so an exclusion applied after the reserve loop has already counted that row hands back two reserved rows where three were held", got, want)
+	}
+}
+
+func TestFuseExcludesExactlyWhatAdmitWouldCutAsSelfProduced(t *testing.T) {
+	t.Parallel()
+
+	candidates := []Candidate{
+		{ID: 810},
+		{ID: 901, SelfProduced: true},
+		{ID: 220},
+		{ID: 902, SelfProduced: true},
+		{ID: 640},
+	}
+
+	kept := candidateIDs(fuse([][]Candidate{candidates}, nil, 0, len(candidates), 0))
+	excluded := make([]int64, 0, len(candidates))
+	for _, c := range candidates {
+		if !slices.Contains(kept, c.ID) {
+			excluded = append(excluded, c.ID)
+		}
+	}
+
+	_, dispositions := admit(candidates, AssemblyByteBudget)
+	refused := make([]int64, 0, len(dispositions))
+	for _, d := range dispositions {
+		if d.CutReason == cutReasonSelfProduced {
+			refused = append(refused, d.ID)
+		}
+	}
+
+	if len(refused) == 0 {
+		t.Fatal("test setup error: admission refused none of the fixture, so the comparison below holds between two empty sets and separates nothing")
+	}
+
+	slices.Sort(excluded)
+	slices.Sort(refused)
+	if !slices.Equal(excluded, refused) {
+		t.Fatalf("retrieval excluded %v and admission refuses %v: the two sites read one rule at two places and nothing in the compiler, in a diff or in any other test couples them, so the day admission stops refusing these rows is the day the aperture goes on excluding rows the block would then accept", excluded, refused)
+	}
+}
+
+func TestTheFusedPrefixDoesNotMoveWhenOneQueryReturnsMoreRows(t *testing.T) {
+	t.Parallel()
+
+	short := make([]Candidate, 0, 20)
+	for id := int64(1); id <= 20; id++ {
+		short = append(short, Candidate{ID: id * 10})
+	}
+	long := make([]Candidate, 0, 60)
+	long = append(long, short...)
+	for id := int64(21); id <= 60; id++ {
+		long = append(long, Candidate{ID: id * 10})
+	}
+
+	narrow := mustRetrieve(t, &fusionGraph{lists: map[string][]Candidate{"input": short}}, []string{"input"}, 20, 0)
+	wide := mustRetrieve(t, &fusionGraph{lists: map[string][]Candidate{"input": long}}, []string{"input"}, 20, 0)
+
+	if len(narrow) != 20 {
+		t.Fatalf("test setup error: the narrow arm returned %d candidates for a cap of 20, so the two arms are compared over a prefix that was never full", len(narrow))
+	}
+	if !slices.Equal(narrow, wide) {
+		t.Fatalf("one query returned %v against a twenty-row list and %v against the same list with forty rows behind it: asking the graph for more rows than the aperture holds is safe only while the deeper rows cannot displace the ones already there, which holds exactly because a single ranking scores each row on its own rank alone", narrow, wide)
+	}
+}
+
+func TestTheApertureIsEmptyRatherThanBackfilledWhenEveryFetchedRowIsSelfProduced(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists: map[string][]Candidate{"input": {
+			{ID: 901, SelfProduced: true},
+			{ID: 902, SelfProduced: true},
+			{ID: 903, SelfProduced: true},
+			{ID: 904, SelfProduced: true},
+		}},
+		scoped: []Candidate{{ID: 905, SelfProduced: true}},
+	}
+
+	got := mustRetrieve(t, graph, []string{"input"}, 6, 2)
+
+	if len(got) != 0 {
+		t.Fatalf("retrieval returned %v for a fetch holding nothing else, want no candidates at all: a short aperture is what this case is, and filling the empty slots back up with the rows that were skipped hands admission a set it refuses whole while every count in the record reads as a full retrieval", got)
+	}
+}
+
+func TestTheExclusionLeavesFusionRanksAsTheGraphReportedThemAcrossTwoQueries(t *testing.T) {
+	t.Parallel()
+
+	first := []Candidate{
+		{ID: 901, SelfProduced: true},
+		{ID: 902, SelfProduced: true},
+		{ID: 903, SelfProduced: true},
+		{ID: 310},
+	}
+	second := ranked(810, 220, 640)
+
+	atSelection := candidateIDs(fuse([][]Candidate{first, second}, nil, 0, 10, 0))
+	beforeScoring := candidateIDs(fuse([][]Candidate{eligibleOnly(first), eligibleOnly(second)}, nil, 0, 10, 0))
+
+	if slices.Equal(atSelection, beforeScoring) {
+		t.Fatalf("excluding at selection and excluding before scoring both returned %v: dropping the rows ahead of node 310 lifts it three ranks in one list and in neither of the others, so its fused score rises while its competitors' do not and the order the graph reported stops being the order that comes back", atSelection)
+	}
+
+	want := []int64{810, 220, 640, 310}
+	if !slices.Equal(atSelection, want) {
+		t.Fatalf("retrieval returned %v, want %v: node 310 stands fourth in the first ranking and node 640 third in the second, so the reciprocal ranks the graph reported put 640 ahead of 310, and every survivor keeps the place that ranking gave it", atSelection, want)
+	}
+
+	wantCompacted := []int64{310, 810, 220, 640}
+	if !slices.Equal(beforeScoring, wantCompacted) {
+		t.Fatalf("removing the three rows before scoring returned %v, want %v: this arm exists to carry what the rejected shape does, and once it stops lifting node 310 onto the head of its own list the arms above have stopped being separated by the thing that separates them", beforeScoring, wantCompacted)
+	}
+}
+
+func eligibleOnly(list []Candidate) []Candidate {
+	out := make([]Candidate, 0, len(list))
+	for _, c := range list {
+		if !c.SelfProduced {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func TestACandidateSetHoldingNoRowThisSystemWroteIsReturnedExactlyAsTheGraphRankedIt(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists:  map[string][]Candidate{"input": ranked(810, 220, 640, 130, 970, 350)},
+		scoped: ranked(990, 880),
+	}
+
+	got := mustRetrieve(t, graph, []string{"input"}, 6, 2)
+
+	want := []int64{810, 220, 640, 130, 990, 880}
+	if !slices.Equal(got, want) {
+		t.Fatalf("retrieval returned %v, want %v: nothing in this fixture is a row this system wrote, so an exclusion that reaches any of them is refusing rows on something other than the rule admission applies, and the aperture it hands back is narrower than the one that was measured", got, want)
+	}
+}

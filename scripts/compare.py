@@ -855,14 +855,7 @@ def describe_cut(row, remaining_budget):
 
 
 def print_displacement(rows, label, limit):
-    """Report retrieval-slot displacement for one recall round's result rows.
-
-    dispatchRecall calls Recall with the same fixed CandidateLimit for a supplementary round as for
-    the initial one, and assembly cuts a self-produced row there exactly the same way -- so a
-    supplementary round can suffer the same tail displacement as the initial round, silently, if
-    this is only ever checked on the initial round's candidates (N3, DiVoid #11141 follow-up).
-    Called once per round; prints nothing when that round admits no self-produced rows.
-    """
+    """Report retrieval-slot displacement for one recall round's result rows."""
     mine = [c for c in rows if c.get("cutReason") == CUT_SELF_PRODUCED]
     if not mine:
         return
@@ -877,7 +870,8 @@ def print_displacement(rows, label, limit):
         f"{cuts} as self-produced -- that check runs before the byte budget, so the product "
         f"never reads its own history back -- but occupying {slot} in a fixed-size recall list "
         f"means a real candidate that would otherwise have been retrieved fell off the tail "
-        f"instead. That is the defect, not a self-read."
+        f"instead. That is the defect, not a self-read. The initial aperture no longer spends "
+        f"slots this way; a round reported here is one that does not pass through it."
     )
 
 
@@ -1065,12 +1059,13 @@ def print_records_written(receipts):
     print(
         "       Nothing was deleted. Each record embeds its task text verbatim, so a later query -- "
         "a repeat of this text, or an unrelated task whose vocabulary overlaps -- can rank it among "
-        "the top rows recall returns. Assembly always cuts it (cutReason 'self-produced', checked "
-        "before the byte budget), but recall returns a fixed number of rows, so a self-produced row "
-        "occupying one of them displaces a real row that would otherwise have been retrieved -- "
-        "retrieval-slot displacement, not an admission effect (DiVoid #11141, #11133). Leaving them "
-        "in place changes what the next invocation of this tool retrieves and can move a corpus "
-        "row's retrieval in the baseline sweep. Delete them by hand."
+        "the top rows recall returns. The initial aperture now skips such a row before it becomes a "
+        "candidate and fetches deeper to replace it, so it no longer displaces a real row there. A "
+        "supplementary recall round does not pass through that aperture: it still returns a fixed "
+        "number of rows and assembly still cuts the row (cutReason 'self-produced', checked before "
+        "the byte budget), so a row occupying one of those slots still displaces a real one. "
+        "Leaving them in place also changes which rows the deeper fetch reaches and can move a "
+        "corpus row's retrieval in the baseline sweep. Delete them by hand."
     )
 
 
