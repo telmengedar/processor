@@ -164,7 +164,7 @@ func toolArguments(r loop.ToolExchange) string {
 
 func translate(wire chatResponse) (loop.JudgeResult, error) {
 	if len(wire.Choices) == 0 {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: response has no choices")
+		return loop.JudgeResult{}, fmt.Errorf("response has no choices")
 	}
 	choice := wire.Choices[0]
 

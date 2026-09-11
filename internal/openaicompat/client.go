@@ -20,6 +20,8 @@ const DefaultTimeout = 5 * time.Minute
 
 const adapterName = "openai-compat"
 
+const chatCompletionsRoute = "/chat/completions"
+
 const (
 	recallToolName    = "recall"
 	writeFileToolName = "write_file"
@@ -63,6 +65,19 @@ func (c *Client) client() *http.Client {
 
 // Judge runs one judgement step against the endpoint.
 func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
+	started := time.Now()
+	endpoint := c.baseURL + chatCompletionsRoute
+
+	result, requestBytes, err := c.judge(ctx, in, endpoint)
+	if err != nil {
+		return loop.JudgeResult{}, fmt.Errorf("openaicompat: model=%s endpoint=%s request=%d B elapsed=%s (client bound %s): %w",
+			c.modelID, redacturl.URL(endpoint), requestBytes,
+			time.Since(started).Round(time.Millisecond), c.client().Timeout, err)
+	}
+	return result, nil
+}
+
+func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string) (loop.JudgeResult, int, error) {
 	reqBody := chatRequest{
 		Model:       c.modelID,
 		Messages:    buildMessages(in),
@@ -74,14 +89,12 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: encode request: %w", err)
+		return loop.JudgeResult{}, 0, fmt.Errorf("encode request: %w", err)
 	}
-
-	endpoint := c.baseURL + "/chat/completions"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: build request: %w", redacturl.Error(err))
+		return loop.JudgeResult{}, len(body), fmt.Errorf("build request: %w", redacturl.Error(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -91,26 +104,26 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: request failed: %w", redacturl.Error(err))
+		return loop.JudgeResult{}, len(body), fmt.Errorf("request failed: %w", redacturl.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: unexpected status %d: %s", resp.StatusCode, readUpstreamMessage(resp.Body))
+		return loop.JudgeResult{}, len(body), fmt.Errorf("unexpected status %d: %s", resp.StatusCode, readUpstreamMessage(resp.Body))
 	}
 
 	var wire chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
-		return loop.JudgeResult{}, fmt.Errorf("openaicompat: decode response: %w", err)
+		return loop.JudgeResult{}, len(body), fmt.Errorf("decode response: %w", err)
 	}
 
 	result, err := translate(wire)
 	if err != nil {
-		return loop.JudgeResult{}, err
+		return loop.JudgeResult{}, len(body), err
 	}
 	result.Sampling = c.sampling
 	result.Provider = loop.Provider{Adapter: adapterName, Endpoint: redacturl.URL(endpoint)}
-	return result, nil
+	return result, len(body), nil
 }
 
 func readUpstreamMessage(r io.Reader) string {

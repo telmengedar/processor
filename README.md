@@ -96,10 +96,11 @@ words; that document carries the argument.
   report success. Because the resolution and the write are one confined operation, there is no
   inspect-then-write window for the filesystem to change under: the code contains no separate
   inspection step to race. A refusal is returned to the model as the tool's result so it can correct
-  itself, and never fails the run; a filesystem failure is scrubbed to a generic sentence on that
-  surface and named in full in the operator's log. The two are told apart structurally — a
+  itself, and never fails the run; a filesystem failure carries its own cause onto that surface too,
+  bounded, and is named in full in the operator's log. The two are still told apart structurally — a
   confinement refusal is not a `syscall.Errno` and every real filesystem failure is — so the split
-  does not depend on matching an error message. The guard is exercised on **both** host platforms:
+  does not depend on matching an error message; what differs is which sentence each carries, not
+  whether one of them carries a sentence at all. The guard is exercised on **both** host platforms:
   `link_windows_test.go` plants a junction, `symlink_linux_test.go` plants a symlink, and each
   asserts the escape is refused *and* that nothing appeared outside.
 - `internal/divoid` — the graph adapter: reads the subject node, the semantic recall query and the
@@ -295,14 +296,17 @@ A write-back failure does not fail the request: the record already carries every
 receipt names what happened. The receipt carries no reason string — every `notStored` cause produces the
 same caller decision, and the diagnosis goes to stderr.
 
-Errors use a small closed envelope, `{"error":{"code":"...","message":"..."}}`:
+Errors use a small closed envelope, `{"error":{"code":"...","message":"..."}}`. `code` is the stable
+machine-readable classifier and keeps its meaning below. `message` is prose: for the two 502 codes it
+is the class sentence followed by the cause the failure was handed — the endpoint's own sentence, or
+the operating system's — bounded to 512 runes. The operator's log carries the same cause unbounded.
 
 | Code | Status | Meaning |
 |---|---|---|
 | `invalid_request` | 400 | Body unparseable, or `input`/`subject` missing or empty |
 | `subject_not_found` | 404 | The subject id resolves to nothing |
-| `graph_unavailable` | 502 | The graph could not be read |
-| `model_unavailable` | 502 | The model call did not complete (transport failure, non-2xx status, or an undecodable response) |
+| `graph_unavailable` | 502 | The graph could not be read, or a failure the service does not classify; `message` names the cause |
+| `model_unavailable` | 502 | The model call did not complete (transport failure, non-2xx status, or an undecodable response). `message` names the model, the endpoint, the assembled request's size in bytes, the elapsed time against the client bound that was in force, and then the cause |
 | `run_deadline_exceeded` | 504 | The run did not produce an answer within the service's own ceiling. Retrying unchanged hits the same ceiling — something must change (a faster endpoint, a smaller subject, a different input) |
 
 ```sh

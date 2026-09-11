@@ -791,3 +791,90 @@ func summaryLineWithPrefix(summary, prefix string) (string, bool) {
 	}
 	return "", false
 }
+
+func summaryWithToolError(cause string) string {
+	record := Record{ToolCalls: []ToolCallRecord{{Tool: ToolRecall, Query: "q", Error: cause}}}
+	return RenderSummary(record, summaryInstant())
+}
+
+func TestRenderSummaryCarriesAnEightyNineRuneCauseWholeWhereTheOldWidthCutIt(t *testing.T) {
+	t.Parallel()
+
+	cause := strings.Repeat("x", 89)
+	if got := summaryWithToolError(cause); !strings.Contains(got, "ERROR: "+cause+"\n") {
+		t.Fatalf("the summary cut an 89-rune cause that the widened error line must carry whole; summary:\n%s", got)
+	}
+}
+
+func TestRenderSummaryCarriesACauseOfExactlyTheErrorWidthWhole(t *testing.T) {
+	t.Parallel()
+
+	cause := strings.Repeat("x", summaryErrorRunes)
+	if got := summaryWithToolError(cause); !strings.Contains(got, "ERROR: "+cause+"\n") {
+		t.Fatalf("the summary cut a cause of exactly the %d-rune error width; summary:\n%s", summaryErrorRunes, got)
+	}
+}
+
+func TestRenderSummaryTruncatesACauseOneRunePastTheErrorWidth(t *testing.T) {
+	t.Parallel()
+
+	cause := strings.Repeat("x", summaryErrorRunes+1)
+	summary := summaryWithToolError(cause)
+
+	line := ""
+	for _, candidate := range strings.Split(summary, "\n") {
+		if strings.Contains(candidate, "ERROR: ") {
+			line = strings.TrimPrefix(strings.TrimSpace(candidate), "ERROR: ")
+		}
+	}
+	if line == "" {
+		t.Fatalf("the summary rendered no error line at all; summary:\n%s", summary)
+	}
+	if n := len([]rune(line)); n != summaryErrorRunes {
+		t.Fatalf("the summary rendered %d runes of a cause one rune past the error width, want %d", n, summaryErrorRunes)
+	}
+}
+
+func TestRenderSummaryKeepsTheQueryExcerptAtItsOwnNarrowerWidth(t *testing.T) {
+	t.Parallel()
+
+	query := strings.Repeat("q", summaryQueryRunes+1)
+	summary := RenderSummary(Record{Queries: []string{query}}, summaryInstant())
+
+	line := ""
+	for _, candidate := range strings.Split(summary, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(candidate), "q0: ") {
+			line = strings.TrimPrefix(strings.TrimSpace(candidate), "q0: ")
+		}
+	}
+	if line == "" {
+		t.Fatalf("the summary rendered no query line at all; summary:\n%s", summary)
+	}
+	if n := len([]rune(line)); n != summaryQueryRunes {
+		t.Fatalf("the summary rendered %d runes of a query one rune past the query width, want %d — the error line's widening reached the query excerpt too", n, summaryQueryRunes)
+	}
+}
+
+func TestTheSummarysErrorWidthIsTwoHundredRunes(t *testing.T) {
+	t.Parallel()
+
+	if got := summaryWithToolError(strings.Repeat("x", 200)); !strings.Contains(got, "ERROR: "+strings.Repeat("x", 200)+"\n") {
+		t.Fatalf("a 200-rune cause did not render whole, so the summary's error width is below the 200 the design derives; summary:\n%s", got)
+	}
+	if got := summaryWithToolError(strings.Repeat("x", 201)); strings.Contains(got, "ERROR: "+strings.Repeat("x", 201)+"\n") {
+		t.Fatalf("a 201-rune cause rendered whole, so the summary's error width is above 200; summary:\n%s", got)
+	}
+}
+
+func TestTheSummarysQueryWidthStaysAtEightyEightRunes(t *testing.T) {
+	t.Parallel()
+
+	summary := RenderSummary(Record{Queries: []string{strings.Repeat("q", 88)}}, summaryInstant())
+	if !strings.Contains(summary, "q0: "+strings.Repeat("q", 88)+"\n") {
+		t.Fatalf("an 88-rune query did not render whole, so the query width dropped below 88; summary:\n%s", summary)
+	}
+	wider := RenderSummary(Record{Queries: []string{strings.Repeat("q", 89)}}, summaryInstant())
+	if strings.Contains(wider, "q0: "+strings.Repeat("q", 89)+"\n") {
+		t.Fatalf("an 89-rune query rendered whole, so the error line's widening reached the query excerpt; summary:\n%s", wider)
+	}
+}
