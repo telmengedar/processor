@@ -1017,9 +1017,20 @@ reassuring.
 filters, so an extra self-produced row in the graph shifts every eligible row **one position deeper in the
 raw recall**. An eligible row sitting exactly at the fetch boundary could therefore fall out of `after`'s
 pool without being self-produced, which would put it in `baseline − after` and **fail AC-1**. **Bounded,
-not eliminated:** §13.2's headroom is the margin — at `fetch = 100` with **37** records in the whole graph
-(the figure and the `divoid_list` query that produced it are quoted in §2.4), the eligible pool is at
-least 62 against a `limit` of 20, so the boundary sits far from any eligible row the arms care about. **This is the same
+not eliminated, and the margin is the one already derived in this document** *(figure corrected 2026-09-11
+round 2, #13705 W-4 — an earlier revision called it "§13.2's headroom", which is a different quantity)*.
+The two quantities an earlier revision merged are distinct, and the boundary argument needs the second:
+
+| quantity | value | where it comes from |
+|---|---|---|
+| §13.2's **headroom** | **80** | `fetch − limit` = `100 − 20` (`…:511`) |
+| the **eligible pool** the boundary argument needs | **at least 62** | `fetch − records − anchor` = `100 − 37 − 1`, the derivation already stated at the back-fill passage below |
+
+`fetch = 100` from `recallOverfetchFactor = 5` (`internal/loop/retrieve.go:11`, `:20`) and
+`CandidateLimit = 20` (`internal/loop/turn.go:12`); **37** records with the `divoid_list` query that
+produced it in §2.4; the **anchor** excluded by `taken := map[int64]bool{anchor: true}`
+(`internal/loop/retrieve.go:86`) — all at `962ac3a`. **At least 62 eligible rows against a `limit` of 20**,
+so the boundary sits far from any eligible row the arms care about. **This is the same
 headroom the WARN in §14 watches**, and if that WARN ever fires, AC-1 is no longer safe either — which is
 the one coupling between the expiry detector and the acceptance relations, and it was not previously
 stated.

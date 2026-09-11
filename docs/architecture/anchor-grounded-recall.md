@@ -380,7 +380,11 @@ in the candidate order handed to admission** and its **admit/cut disposition**.
 
 ### 11.2 F2 — the harm guard. The existing sweep corpus, used for the one thing it is good at.
 
-Run the 23-row sweep on both arms at one graph state, in one session.
+Run the 23-row sweep on both arms at one graph state, established by `m3-derived-recall.md` §9.1a's
+A-B-A control. ~~in one session~~ *(corrected 2026-09-11, #13703 round 2, from #13705 W-3: the target
+— "at one graph state" — was already right here; what followed it was the discredited proxy and no way to
+establish the target. **This is an *arms* comparison, so §9.1a's stated scope limit applies**: the bracket
+repeats one arm and certifies stillness only for the queries that arm issues.)*
 
 - **Prediction:** `admitted` does not fall below **9/23**, and specifically **r01 and r10 both keep their
   required node admitted.**
