@@ -85,9 +85,9 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			case errors.Is(err, loop.ErrSubjectNotFound):
 				writeError(w, http.StatusNotFound, codeSubjectNotFound, "the subject node was not found")
 			case errors.Is(err, loop.ErrModelUnavailable):
-				writeError(w, http.StatusBadGateway, codeModelUnavailable, "the model call did not complete")
+				writeError(w, http.StatusBadGateway, codeModelUnavailable, withCause("the model call did not complete", err, loop.ErrModelUnavailable))
 			default:
-				writeError(w, http.StatusBadGateway, codeGraphUnavailable, "the graph could not be read")
+				writeError(w, http.StatusBadGateway, codeGraphUnavailable, withCause("the graph could not be read", err, loop.ErrGraphUnavailable))
 			}
 			return
 		}
@@ -105,6 +105,14 @@ type errorEnvelope struct {
 type errorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+func withCause(class string, err, sentinel error) string {
+	text := err.Error()
+	if text == sentinel.Error() {
+		return class
+	}
+	return class + ": " + loop.BoundCause(strings.TrimPrefix(text, sentinel.Error()+": "))
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

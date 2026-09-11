@@ -3,6 +3,7 @@ package ollama_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -41,9 +42,16 @@ func TestOllamaClientBuiltByAnExternalKeyedLiteralSurvivesTheNilHTTPClientBranch
 	if err == nil {
 		t.Fatal("Judge on a zero-value Client returned no error, want a transport error")
 	}
-	const wantPrefix = "ollama: request failed:"
-	if !strings.HasPrefix(err.Error(), wantPrefix) {
-		t.Fatalf("Judge on a zero-value Client failed with %q, want a %q error — any other prefix means it never reached the guarded call", err, wantPrefix)
+	const wantCausePrefix = "request failed:"
+	carried := errors.Unwrap(err)
+	if carried == nil {
+		t.Fatalf("Judge on a zero-value Client failed with %q, which wraps no cause at all", err)
+	}
+	if !strings.HasPrefix(carried.Error(), wantCausePrefix) {
+		t.Fatalf("Judge on a zero-value Client carried the cause %q, want a %q cause — any other means it never reached the guarded call", carried, wantCausePrefix)
+	}
+	if !strings.HasPrefix(err.Error(), "ollama: model=") {
+		t.Fatalf("Judge on a zero-value Client failed with %q, want the adapter's failure preamble in front of the cause", err)
 	}
 	if result.Reason != "" || result.Answer != "" {
 		t.Fatalf("Judge on a zero-value Client returned %+v, want the zero result alongside its error", result)

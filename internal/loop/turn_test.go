@@ -575,45 +575,17 @@ func TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch(t *test
 	}
 }
 
-func TestTurnRunDoesNotLeakTheGraphErrorDetailIntoTheSupplementaryRecallRound(t *testing.T) {
-	t.Parallel()
-
-	graph := baseGraph()
-	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
-		{Err: errors.New("literal: dial tcp 10.0.0.55:443: connect: connection refused")},
-	}
-	model := &fakeModel{results: []JudgeResult{
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
-		{Answer: "answered anyway", Reason: Answered, RawReason: "stop"},
-	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
-
-	record, _, err := turn.Run(context.Background(), "hello", 42)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(record.ToolCalls) != 1 {
-		t.Fatalf("record.ToolCalls has %d entries, want 1", len(record.ToolCalls))
-	}
-	if strings.Contains(record.ToolCalls[0].Error, "10.0.0.55") {
-		t.Fatalf("record.ToolCalls[0].Error = %q, want no internal address disclosed", record.ToolCalls[0].Error)
-	}
-	if record.ToolCalls[0].Error == "" {
-		t.Fatal("record.ToolCalls[0].Error is empty, want the failure still flagged")
-	}
-}
-
-func TestTurnRunLogsTheDetailedRecallErrorWhileTheRecordStaysGeneric(t *testing.T) {
+func TestTurnRunCarriesTheSupplementaryRecallCauseIntoTheRoundAndLogsItWhole(t *testing.T) {
 	t.Parallel()
 
 	var logBuf strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
+	const cause = "literal: dial tcp 10.0.0.55:443: connect: connection refused"
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
-		{Err: errors.New("literal: dial tcp 10.0.0.55:443: connect: connection refused")},
+		{Err: errors.New(cause)},
 	}
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
@@ -625,12 +597,44 @@ func TestTurnRunLogsTheDetailedRecallErrorWhileTheRecordStaysGeneric(t *testing.
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	const wantGenericRecallError = "supplementary recall failed"
-	if record.ToolCalls[0].Error != wantGenericRecallError {
-		t.Fatalf("record.ToolCalls[0].Error = %q, want the generic sentence %q", record.ToolCalls[0].Error, wantGenericRecallError)
+	if len(record.ToolCalls) != 1 {
+		t.Fatalf("record.ToolCalls has %d entries, want 1", len(record.ToolCalls))
 	}
-	if !strings.Contains(logBuf.String(), "10.0.0.55") {
-		t.Fatalf("operator log = %q, want it to carry the detailed error (including the address) that the record and prompt must not", logBuf.String())
+	if record.ToolCalls[0].Error != cause {
+		t.Fatalf("record.ToolCalls[0].Error = %q, want the recall's own cause %q", record.ToolCalls[0].Error, cause)
+	}
+	if !strings.Contains(logBuf.String(), cause) {
+		t.Fatalf("operator log = %q, want it to carry the cause whole", logBuf.String())
+	}
+}
+
+func TestTurnRunReplaysTheSupplementaryRecallCauseToTheModelOnTheNextCall(t *testing.T) {
+	t.Parallel()
+
+	const cause = "literal: 503 from graph: upstream is draining"
+	graph := baseGraph()
+	graph.recallQueue = []recallResponse{
+		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Err: errors.New(cause)},
+	}
+	model := &fakeModel{results: []JudgeResult{
+		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+		{Answer: "answered anyway", Reason: Answered, RawReason: "stop"},
+	}}
+	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+
+	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(model.calls) != 2 {
+		t.Fatalf("the model was called %d times, want 2", len(model.calls))
+	}
+	prior := model.calls[1].PriorTools
+	if len(prior) != 1 {
+		t.Fatalf("second call's PriorTools has %d entries, want 1", len(prior))
+	}
+	if got := RenderToolResult(prior[0]); got != "error: "+cause {
+		t.Fatalf("the model was shown %q, want the recall's own cause %q", got, "error: "+cause)
 	}
 }
 

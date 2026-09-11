@@ -489,8 +489,8 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	if got.ToolCalls[0].Query != "the missing budget row" {
 		t.Fatalf("record.toolCalls[0].query = %q, want %q", got.ToolCalls[0].Query, "the missing budget row")
 	}
-	if got.ToolCalls[0].Error != "supplementary recall failed" {
-		t.Fatalf("record.toolCalls[0].error = %q, want the generic sentence %q — not the raw transport error", got.ToolCalls[0].Error, "supplementary recall failed")
+	if got.ToolCalls[0].Error != "literal: 500 from graph" {
+		t.Fatalf("record.toolCalls[0].error = %q, want the recall's own cause %q", got.ToolCalls[0].Error, "literal: 500 from graph")
 	}
 	if got.ToolCalls[1].Error != "tool arguments could not be parsed: unexpected token" {
 		t.Fatalf("record.toolCalls[1].error = %q, want %q", got.ToolCalls[1].Error, "tool arguments could not be parsed: unexpected token")

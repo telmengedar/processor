@@ -182,7 +182,7 @@ func TestTurnRunShowsTheWriteRejectionReasonToTheModelOnTheFollowingCall(t *test
 	}
 }
 
-func TestTurnRunReplacesANonRejectionWriteFailureWithAGenericSentenceAndLogsTheDetail(t *testing.T) {
+func TestTurnRunCarriesAnUnrecognisedWriteFailuresCauseIntoTheRoundAndLogsItWhole(t *testing.T) {
 	t.Parallel()
 
 	var logged bytes.Buffer
@@ -200,15 +200,15 @@ func TestTurnRunReplacesANonRejectionWriteFailureWithAGenericSentenceAndLogsTheD
 		t.Fatalf("Run: %v", err)
 	}
 
-	const wantGeneric = "file write failed"
-	if len(record.ToolCalls) != 1 || record.ToolCalls[0].Error != wantGeneric {
-		t.Fatalf("record.ToolCalls = %+v, want the generic sentence %q", record.ToolCalls, wantGeneric)
+	if len(record.ToolCalls) != 1 {
+		t.Fatalf("record.ToolCalls has %d entries, want 1", len(record.ToolCalls))
 	}
-	if strings.Contains(record.ToolCalls[0].Error, "no space left on device") {
-		t.Fatal("the record carries the underlying filesystem error, want it kept off this surface")
+	const wantCause = "no space left on device"
+	if record.ToolCalls[0].Error != wantCause {
+		t.Fatalf("record.ToolCalls[0].Error = %q, want the filesystem's own cause %q", record.ToolCalls[0].Error, wantCause)
 	}
-	if !strings.Contains(logged.String(), "no space left on device") {
-		t.Fatalf("operator log = %q, want the underlying filesystem error named there", logged.String())
+	if !strings.Contains(logged.String(), wantCause) {
+		t.Fatalf("operator log = %q, want the cause named there whole too", logged.String())
 	}
 }
 

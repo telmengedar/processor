@@ -67,7 +67,7 @@ func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens in
 		return CondenseResult{}, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+chatCompletionsRoute, bytes.NewReader(body))
 	if err != nil {
 		return CondenseResult{}, fmt.Errorf("openaicompat: build request: %w", redacturl.Error(err))
 	}

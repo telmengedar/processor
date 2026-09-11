@@ -16,6 +16,7 @@ const (
 	summaryNameRunes   = 46
 	summaryAnswerRunes = 180
 	summaryLineRunes   = 96
+	summaryErrorRunes  = 200
 )
 
 const (
@@ -146,7 +147,7 @@ func renderSummaryTools(b *strings.Builder, record Record) {
 		}
 
 		if call.Error != "" {
-			fmt.Fprintf(b, "      ERROR: %s\n", summaryTrunc(call.Error, summaryQueryRunes))
+			fmt.Fprintf(b, "      ERROR: %s\n", summaryTrunc(call.Error, summaryErrorRunes))
 		}
 	}
 }

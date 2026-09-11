@@ -32,8 +32,6 @@ func TestOpenAICompatJudgeRedactsUserinfoFromProviderEndpointOnTheSuccessPath(t 
 	}
 }
 
-const chatCompletionsRoute = "/chat/completions"
-
 const (
 	credentialSentinel   = "sk-secretkey"
 	unreachableBase      = "http://" + credentialSentinel + "@127.0.0.1:1/v1"
@@ -143,17 +141,21 @@ func TestOpenAICompatRedactionIsANoOpOnTheErrorTextOfAnEndpointCarryingNoUserinf
 
 	for _, base := range endpointsCarryingNoUserinfo {
 		composed := strings.TrimRight(base, "/") + chatCompletionsRoute
-		want := "openaicompat: " + unredactedReference(t, composed)
+		want := unredactedReference(t, composed)
 		c := NewClient(base, "model-x", "", loop.Sampling{}, refusingClient())
 
 		_, judgeErr := c.Judge(context.Background(), judgeInput())
-		if judgeErr.Error() != want {
-			t.Fatalf("Judge against %q returned %q, want the unredacted text %q", base, judgeErr.Error(), want)
+		carried := errors.Unwrap(judgeErr)
+		if carried == nil {
+			t.Fatalf("Judge against %q returned %q, which wraps no cause at all", base, judgeErr)
+		}
+		if carried.Error() != want {
+			t.Fatalf("Judge against %q carried the cause %q, want the unredacted text %q", base, carried.Error(), want)
 		}
 
 		_, condenseErr := c.Condense(context.Background(), "prompt", 64)
-		if condenseErr.Error() != want {
-			t.Fatalf("Condense against %q returned %q, want the unredacted text %q", base, condenseErr.Error(), want)
+		if condenseErr.Error() != "openaicompat: "+want {
+			t.Fatalf("Condense against %q returned %q, want the unredacted text %q", base, condenseErr.Error(), "openaicompat: "+want)
 		}
 	}
 }

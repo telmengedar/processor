@@ -140,17 +140,21 @@ func TestOllamaRedactionIsANoOpOnTheErrorTextOfAnEndpointCarryingNoUserinfo(t *t
 
 	for _, base := range endpointsCarryingNoUserinfo {
 		composed := strings.TrimRight(base, "/") + nativeChatRoute
-		want := "ollama: " + unredactedReference(t, composed)
+		want := unredactedReference(t, composed)
 		c := NewClient(base, "model-x", "", loop.Sampling{}, refusingClient())
 
 		_, judgeErr := c.Judge(context.Background(), judgeInput())
-		if judgeErr.Error() != want {
-			t.Fatalf("Judge against %q returned %q, want the unredacted text %q", base, judgeErr.Error(), want)
+		carried := errors.Unwrap(judgeErr)
+		if carried == nil {
+			t.Fatalf("Judge against %q returned %q, which wraps no cause at all", base, judgeErr)
+		}
+		if carried.Error() != want {
+			t.Fatalf("Judge against %q carried the cause %q, want the unredacted text %q", base, carried.Error(), want)
 		}
 
 		_, condenseErr := c.Condense(context.Background(), "prompt", 64)
-		if condenseErr.Error() != want {
-			t.Fatalf("Condense against %q returned %q, want the unredacted text %q", base, condenseErr.Error(), want)
+		if condenseErr.Error() != "ollama: "+want {
+			t.Fatalf("Condense against %q returned %q, want the unredacted text %q", base, condenseErr.Error(), "ollama: "+want)
 		}
 	}
 }

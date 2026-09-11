@@ -20,11 +20,21 @@ const (
 )
 
 const (
-	errSupplementaryRecallFailed = "supplementary recall failed"
-	errCallCapReached            = "call cap reached"
-	errFileWriteFailed           = "file write failed"
-	errNoWorkingDirectory        = "no working directory is configured"
+	errCallCapReached     = "call cap reached"
+	errNoWorkingDirectory = "no working directory is configured"
 )
+
+// CarriedCauseRunes bounds a cause carried to a durable, shared or prompt-bearing destination.
+const CarriedCauseRunes = 512
+
+// BoundCause returns cause bounded to CarriedCauseRunes, the whole of it when it already fits.
+func BoundCause(cause string) string {
+	runes := []rune(cause)
+	if len(runes) <= CarriedCauseRunes {
+		return cause
+	}
+	return string(runes[:CarriedCauseRunes-1]) + "…"
+}
 
 // ErrSubjectNotFound is returned when the subject id resolves to nothing —
 // the graph's empty-result shape (design C30), not a transport error.
@@ -108,17 +118,17 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 
 	anchor, found, err := t.Graph.Node(ctx, subject)
 	if err != nil {
-		return Record{}, WriteReceipt{}, fmt.Errorf("%w: %v", ErrGraphUnavailable, err)
+		return t.failed(subject, started, fmt.Errorf("%w: %v", ErrGraphUnavailable, err))
 	}
 	if !found {
-		return Record{}, WriteReceipt{}, ErrSubjectNotFound
+		return t.failed(subject, started, ErrSubjectNotFound)
 	}
 
 	queries := []string{input}
 
 	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, CandidateLimit, RecallScopeReserve)
 	if err != nil {
-		return Record{}, WriteReceipt{}, fmt.Errorf("%w: %v", ErrGraphUnavailable, err)
+		return t.failed(subject, started, fmt.Errorf("%w: %v", ErrGraphUnavailable, err))
 	}
 
 	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget)
@@ -142,7 +152,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 
 	judged, err := t.judge(ctx, block, input)
 	if err != nil {
-		return Record{}, WriteReceipt{}, err
+		return t.failed(subject, started, err)
 	}
 
 	record.Answer = judged.answer
@@ -161,6 +171,11 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 	t.logFinished(record, receipt, time.Since(started))
 
 	return record, receipt, nil
+}
+
+func (t *Turn) failed(subject int64, started time.Time, err error) (Record, WriteReceipt, error) {
+	t.log().Error("run failed", "subject", subject, "elapsed", time.Since(started), "error", err)
+	return Record{}, WriteReceipt{}, err
 }
 
 func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Duration) {
@@ -282,7 +297,7 @@ func toolFor(reason TerminalReason) string {
 
 func cappedExchange(result JudgeResult) ToolExchange {
 	if result.ToolError != "" {
-		return ToolExchange{Tool: toolFor(result.Reason), Error: result.ToolError}
+		return ToolExchange{Tool: toolFor(result.Reason), Error: BoundCause(result.ToolError)}
 	}
 	return ToolExchange{
 		Tool:    toolFor(result.Reason),
@@ -311,7 +326,7 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 	}
 
 	if result.ToolError != "" {
-		exchange.Error = result.ToolError
+		exchange.Error = BoundCause(result.ToolError)
 		return exchange
 	}
 	if t.Files == nil {
@@ -323,7 +338,7 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 		dir, err := t.Files.OpenRun(ctx)
 		if err != nil {
 			t.log().Error("opening the run working directory failed", "error", err)
-			exchange.Error = errFileWriteFailed
+			exchange.Error = BoundCause(err.Error())
 			return exchange
 		}
 		*workspace = dir
@@ -332,11 +347,11 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 	written, err := t.Files.Write(ctx, *workspace, result.WritePath, result.WriteContent)
 	if err != nil {
 		if errors.Is(err, ErrWriteRejected) {
-			exchange.Error = err.Error()
+			exchange.Error = BoundCause(err.Error())
 			return exchange
 		}
 		t.log().Error("file write failed", "path", result.WritePath, "error", err)
-		exchange.Error = errFileWriteFailed
+		exchange.Error = BoundCause(err.Error())
 		return exchange
 	}
 
@@ -347,13 +362,13 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 
 func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult) ToolExchange {
 	if result.ToolError != "" {
-		return ToolExchange{Tool: ToolRecall, Error: result.ToolError, Dispositions: []Disposition{}}
+		return ToolExchange{Tool: ToolRecall, Error: BoundCause(result.ToolError), Dispositions: []Disposition{}}
 	}
 
 	candidates, err := t.Graph.Recall(ctx, result.RecallQuery, CandidateLimit, nil)
 	if err != nil {
 		t.log().Error("supplementary recall failed", "query", result.RecallQuery, "error", err)
-		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errSupplementaryRecallFailed, Dispositions: []Disposition{}}
+		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}
 	}
 
 	admitted, dispositions := admit(candidates, SupplementaryByteBudget)
