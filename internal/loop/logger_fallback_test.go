@@ -29,10 +29,14 @@ func (g *probeGraph) WriteRun(ctx context.Context, r loop.Record) loop.WriteRece
 	return loop.WriteReceipt{State: loop.Stored, NodeID: 1}
 }
 
-type probeModel struct{ n int }
+type probeModel struct {
+	n     int
+	calls []loop.JudgeInput
+}
 
 func (m *probeModel) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
 	m.n++
+	m.calls = append(m.calls, in)
 	if m.n == 1 {
 		return loop.JudgeResult{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "q"}, nil
 	}
@@ -55,5 +59,25 @@ func TestTurnBuiltByAnExternalKeyedLiteralSurvivesTheNilLoggerBranch(t *testing.
 	}
 	if receipt.State != loop.Stored {
 		t.Fatalf("receipt.State = %q, want %q — the per-run log pair must not panic on the nil-logger path either", receipt.State, loop.Stored)
+	}
+}
+
+func TestATurnBuiltByAnExternalKeyedLiteralStatesARealInstantRatherThanTheZeroTime(t *testing.T) {
+	t.Parallel()
+
+	model := &probeModel{}
+	turn := loop.Turn{Graph: &probeGraph{}, Model: model, System: "sys", ModelID: "m"}
+
+	if _, _, err := turn.Run(context.Background(), "what changed today", 42); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(model.calls) == 0 {
+		t.Fatalf("the turn made no judgement call, so there is no prompt to inspect")
+	}
+	for i, call := range model.calls {
+		if call.Now.IsZero() {
+			t.Fatalf("judgement call %d states no instant: a Turn built without the constructor must still reach a wall clock", i+1)
+		}
 	}
 }

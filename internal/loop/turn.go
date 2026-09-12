@@ -99,12 +99,14 @@ type Turn struct {
 	// ModelID is the model id sent with every judgement step, echoed into Record.Model.
 	ModelID string
 
+	clock func() time.Time
+
 	logger *slog.Logger
 }
 
 // NewTurn builds a Turn over graph, model and files, judging with system and modelID.
 func NewTurn(graph GraphPort, model ModelPort, files FilePort, system, modelID string, logger *slog.Logger) *Turn {
-	return &Turn{Graph: graph, Model: model, Files: files, System: system, ModelID: modelID, logger: logger}
+	return &Turn{Graph: graph, Model: model, Files: files, System: system, ModelID: modelID, clock: time.Now, logger: logger}
 }
 
 func (t *Turn) log() *slog.Logger {
@@ -112,6 +114,13 @@ func (t *Turn) log() *slog.Logger {
 		return slog.New(slog.DiscardHandler)
 	}
 	return t.logger
+}
+
+func (t *Turn) now() time.Time {
+	if t.clock == nil {
+		return time.Now()
+	}
+	return t.clock()
 }
 
 // Run executes one turn for input against subject, returning the record and where it was filed.
@@ -136,9 +145,12 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 
 	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget)
 
+	now := t.now().UTC()
+
 	record := Record{
 		Input:           input,
 		Subject:         subject,
+		Now:             now,
 		Query:           input,
 		Queries:         queries,
 		DerivationError: derivationError,
@@ -154,7 +166,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		},
 	}
 
-	judged, err := t.judge(ctx, block, input)
+	judged, err := t.judge(ctx, block, input, now)
 	if err != nil {
 		return t.failed(subject, started, err)
 	}
@@ -264,7 +276,7 @@ type judgement struct {
 	provider   Provider
 }
 
-func (t *Turn) judge(ctx context.Context, block, input string) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, block, input string, now time.Time) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -276,6 +288,7 @@ func (t *Turn) judge(ctx context.Context, block, input string) (judgement, error
 			Block:      block,
 			Input:      input,
 			PriorTools: exchanges,
+			Now:        now,
 		})
 		if jerr != nil {
 			return judgement{}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
