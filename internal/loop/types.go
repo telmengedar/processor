@@ -172,8 +172,12 @@ type Sampling struct {
 
 // Record is the outcome of one run.
 type Record struct {
-	Input   string   `json:"input"`
-	Subject int64    `json:"subject"`
+	Input   string `json:"input"`
+	Subject int64  `json:"subject"`
+
+	// Now is the instant the assembled prompt states, in UTC; absent when the prompt states none.
+	Now time.Time `json:"now,omitzero"`
+
 	Query   string   `json:"query"`
 	Queries []string `json:"queries"`
 	// DerivationError is why the query set is the raw input alone, empty when queries were derived.

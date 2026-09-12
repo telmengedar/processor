@@ -145,9 +145,12 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 
 	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget)
 
+	now := t.now().UTC()
+
 	record := Record{
 		Input:           input,
 		Subject:         subject,
+		Now:             now,
 		Query:           input,
 		Queries:         queries,
 		DerivationError: derivationError,
@@ -163,7 +166,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		},
 	}
 
-	judged, err := t.judge(ctx, block, input)
+	judged, err := t.judge(ctx, block, input, now)
 	if err != nil {
 		return t.failed(subject, started, err)
 	}
@@ -273,11 +276,9 @@ type judgement struct {
 	provider   Provider
 }
 
-func (t *Turn) judge(ctx context.Context, block, input string) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, block, input string, now time.Time) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
-
-	now := t.now()
 
 	for {
 		judged.modelCalls++
