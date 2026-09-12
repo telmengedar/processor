@@ -173,6 +173,11 @@ func TestParseDerivationStripsListDecorationSurroundingQuotesAndReasoningArtifac
 			want: []string{"first question?", "dense keyword line"},
 		},
 		{
+			name: "reasoning block removed whole whatever case its tags carry",
+			text: "<THINK>\nthe user wants queries about splitting\n</Think>\nfirst question?\ndense keyword line",
+			want: []string{"first question?", "dense keyword line"},
+		},
+		{
 			name: "blank lines between queries",
 			text: "first question?\n\n   \n\nsecond question?",
 			want: []string{"first question?", "second question?"},
@@ -313,6 +318,23 @@ func TestDeriveQueriesBoundsTheCallAtThirtySecondsAndNotAtTheAdaptersOwnTimeout(
 	}
 	if remaining := time.Until(model.deadline); remaining <= 29*time.Second || remaining > 30*time.Second {
 		t.Fatalf("the derivation call carried %s of deadline, want just under 30s: a step whose failure is free must be bounded well below the step whose failure is not", remaining)
+	}
+}
+
+func TestDeriveQueriesWithinCarriesTheCallersOwnBoundRatherThanTheTurnsThirtySeconds(t *testing.T) {
+	t.Parallel()
+
+	model := &deriveFake{text: "first derived?"}
+
+	if _, err := DeriveQueriesWithin(context.Background(), model, "what did the split change", time.Hour); err != nil {
+		t.Fatalf("DeriveQueriesWithin returned %v", err)
+	}
+
+	if model.deadline.IsZero() {
+		t.Fatalf("the derivation call carried no deadline, so an offline batch has nothing bounding a hung endpoint")
+	}
+	if remaining := time.Until(model.deadline); remaining <= 59*time.Minute {
+		t.Fatalf("the derivation call carried %s of deadline, want just under the hour the caller asked for: a batch that is not a turn must not inherit the turn's bound", remaining)
 	}
 }
 

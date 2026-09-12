@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/telmengedar/processor/internal/boot"
@@ -66,7 +67,7 @@ func run(args []string, machine, human io.Writer) int {
 	targets, err := selectTargets(blindRows(corpus), baseline, opts.only, opts.force)
 	if err != nil {
 		logger.Error("targets", "error", err)
-		return exitError
+		return exitUsage
 	}
 	if len(targets) == 0 {
 		logger.Info("nothing to generate", "rows", 0, "reason", "every requested row is already pinned by the baseline")
@@ -79,23 +80,23 @@ func run(args []string, machine, human io.Writer) int {
 		return exitError
 	}
 
-	generated, err := generate(context.Background(), model, targets, opts.timeout, logger)
+	generated, short, err := generate(context.Background(), model, targets, opts.timeout, logger)
 	if err != nil {
 		logger.Error("generate", "error", err)
 		return exitError
 	}
 
-	return emit(opts, mergeSidecar(baseline, generated, corpus), len(generated), machine, logger)
+	return emit(opts, mergeSidecar(baseline, generated, corpus), len(generated), short, machine, logger)
 }
 
-func emit(opts options, merged []eval.Derivation, generated int, machine io.Writer, logger *slog.Logger) int {
+func emit(opts options, merged []eval.Derivation, generated int, short []string, machine io.Writer, logger *slog.Logger) int {
 	if opts.dryRun {
 		if err := encodeSidecar(machine, merged); err != nil {
 			logger.Error("encode", "error", err)
 			return exitError
 		}
 		logger.Info("dry run", "written", false, "rows", len(merged), "generated", generated)
-		return 0
+		return shortRowExit(short, logger)
 	}
 
 	if err := writeSidecar(opts.outPath, merged); err != nil {
@@ -103,7 +104,16 @@ func emit(opts options, merged []eval.Derivation, generated int, machine io.Writ
 		return exitError
 	}
 	logger.Info("sidecar written", "path", opts.outPath, "rows", len(merged), "generated", generated)
-	return 0
+	return shortRowExit(short, logger)
+}
+
+func shortRowExit(short []string, logger *slog.Logger) int {
+	if len(short) == 0 {
+		return 0
+	}
+	logger.Error("rows narrower than the cap", "rows", strings.Join(short, ","), "want", loop.MaxDerivedQueries,
+		"effect", "an arm-versus-arm figure taken against this sidecar compares query sets of different widths")
+	return exitError
 }
 
 func bootModel() (loop.ModelPort, error) {

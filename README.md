@@ -54,19 +54,27 @@ words; that document carries the argument.
   stratum. A control node the byte budget merely cut exits zero under a named budget alarm — that is the
   assembler being measured, not the instrument failing. Needs the graph half of the boot configuration
   only.
-- `cmd/derive` — the sidecar generator: regenerates a corpus row's pinned query set by running the
-  product's own derivation — `loop.DerivationPrompt`, the configured model adapter's `Derive`, and
-  `loop.ParseDerivation` — so a sweep of the result measures the query set the turn would actually
-  ask, rather than one an offline script invented. It reads `{id, input}` off a corpus row and
+- `cmd/derive` — the sidecar generator: regenerates a corpus row's pinned query set by calling the
+  turn's own derivation step, `loop.DeriveQueriesWithin` — the same prompt, the same port call and the
+  same parse the turn runs, under a bound the batch chooses rather than the turn's thirty seconds — so a
+  sweep of the result measures the query set the turn would actually ask, rather than one an offline
+  script invented. It reads `{id, input}` off a corpus row and
   nothing else: the answer key (`required`, `subject`, `why`, the anchor title) is discarded before
   any model-facing value is built, because a derivation that has seen the answer cannot be scored
   against it. **It writes a new file (`-out`) and never the baseline it read (`-derivations`)** — the
   baseline is the query set every arm-versus-arm figure in this repo was measured against, so an
-  `-out` resolving to the same file is refused. `-only` names rows; naming a row the baseline
-  already pins takes `-force`. `-derivations ""` means there is no baseline, so every corpus row is
-  a target. `-dry-run` writes the sidecar to stdout instead. One model call per row, no retry — the
-  turn makes one call too, and an instrument that retries stops measuring the turn. Needs the model
-  half of the boot configuration only.
+  `-out` naming the same file is refused, and the check is `os.SameFile` rather than a string
+  comparison, so a spelling that differs from `-derivations` byte for byte and still resolves to the
+  same file is refused as well — pinned with a path built so it reaches the comparison uncleaned. `-only` names
+  rows; naming a row the baseline already pins is refused as usage, and takes `-force`. A regenerated
+  row replaces the baseline's pin for that row and is re-stamped `blind-generated`. `-derivations ""`
+  means there is no baseline, so every corpus row is a target. `-dry-run` writes the sidecar to stdout
+  instead. One model call per row, no retry — the turn makes one call too, and an instrument that
+  retries stops measuring the turn. **A row that comes back narrower than `loop.MaxDerivedQueries`
+  is written and then exits non-zero**: the file is still worth keeping, but an arm-versus-arm figure
+  taken against a sidecar of mixed widths is not a comparison, and a log line alone is not a marker an
+  overnight batch's operator will see. A failing row aborts the batch and writes nothing, so recovery
+  is to re-run it whole. Needs the model half of the boot configuration only.
 - `scripts/smoke.py` — the live smoke run, and the opposite instrument to the sweep: `python
   scripts/smoke.py` builds `cmd/processor`, starts it on a free port and posts the **same input twice**,
   printing per turn how many candidates were admitted out of how many, the block that was actually sent
@@ -637,9 +645,13 @@ flags it.
 - **The sidecar generator (`cmd/derive`):** the blindness is pinned as a byte comparison, not as an
   absence — two corpora differing in subject, stratum, anchor title and required set but agreeing on
   `{id, input}` must put **identical bytes** on the wire, so any field that leaked would move them
-  apart. The refusals are pinned in both directions: `-only` on a pinned row red without `-force` and
-  green with it, `-out` resolving to the baseline refused while a sibling path in the same directory
-  is accepted, and the baseline's bytes asserted unchanged across a successful run. The pinned set is
+  apart. The refusals are pinned in both directions **and at the flag, not only at the function**:
+  `-only` on a pinned row red without `-force` and green with it, driven through the command line so
+  a flag that stopped being read would redden; `-out` resolving to the baseline refused while a
+  sibling path in the same directory is accepted, with the refused spelling built by concatenation so
+  it reaches `os.SameFile` instead of being cleaned into a string match; and the baseline's bytes
+  asserted unchanged across a successful run. A row both pinned and regenerated is asserted to carry
+  the regenerated set, which is the whole outcome of `-force`. The pinned set is
   asserted against a completion deliberately carrying a reasoning block, three list decorations, a
   quoted line, a blank line, an echo of the input, a repeat and a line past the cap — so a parse other
   than `loop.ParseDerivation` differs on it. **Not verified here:** anything about a real model's

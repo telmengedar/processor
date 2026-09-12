@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/telmengedar/processor/internal/eval"
 	"github.com/telmengedar/processor/internal/loop"
@@ -69,6 +70,17 @@ func fileIn(t *testing.T, dir, name, body string) string {
 		t.Fatalf("writing %s failed: %v", name, err)
 	}
 	return path
+}
+
+func uncleanedSpelling(t *testing.T, dir, name string) string {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatalf("creating the detour directory failed: %v", err)
+	}
+
+	sep := string(os.PathSeparator)
+	return dir + sep + "sub" + sep + ".." + sep + name
 }
 
 func readFile(t *testing.T, path string) string {
@@ -137,7 +149,11 @@ func TestTheGeneratorRefusesAnOutPathThatResolvesToTheBaselineSidecarAndWritesNo
 	modelEnv(t, url)
 	before := readFile(t, baseline)
 
-	spelled := filepath.Join(dir, "sub", "..", "derivations.json")
+	spelled := uncleanedSpelling(t, dir, "derivations.json")
+	if spelled == baseline {
+		t.Fatalf("the fixture spells -out as %q, which equals -derivations byte for byte, so a string comparison would catch it and os.SameFile is not what is under test", spelled)
+	}
+
 	code, _, human := runDerive(t, "-corpus", corpus, "-derivations", baseline, "-out", spelled)
 
 	if code != exitUsage {
@@ -155,7 +171,7 @@ func TestTheGeneratorAcceptsAnOutPathBesideTheBaselineInTheSameDirectory(t *test
 	dir := t.TempDir()
 	corpus := fileIn(t, dir, "corpus.json", twoRowCorpus)
 	baseline := fileIn(t, dir, "derivations.json", oneRowBaseline)
-	out := filepath.Join(dir, "sub", "..", "derivations.regenerated.json")
+	out := uncleanedSpelling(t, dir, "derivations.regenerated.json")
 	url, _ := recordingEndpoint(t, decoratedCompletion)
 	modelEnv(t, url)
 
@@ -184,6 +200,27 @@ func TestTheGeneratorOverwritesAnExistingOutFileThatIsNotTheBaseline(t *testing.
 	}
 	if readFile(t, out) == "[]\n" {
 		t.Fatal("the existing -out file was left as it was, so a second generation silently produced nothing")
+	}
+}
+
+func TestTheGeneratorWritesASidecarCarryingARowNarrowerThanTheCapAndThenExitsNonZero(t *testing.T) {
+	dir := t.TempDir()
+	corpus := fileIn(t, dir, "corpus.json", twoRowCorpus)
+	baseline := fileIn(t, dir, "derivations.json", oneRowBaseline)
+	out := filepath.Join(dir, "regenerated.json")
+	url, _ := recordingEndpoint(t, "How does the loop bound the derivation step?\nderivation bound deadline")
+	modelEnv(t, url)
+
+	code, _, human := runDerive(t, "-corpus", corpus, "-derivations", baseline, "-out", out)
+
+	if code == 0 {
+		t.Fatalf("a sidecar carrying a row of two queries against a cap of %d exited 0, so the only record that an arm-versus-arm figure taken against it compares unequal widths is a log line an overnight batch's operator never reads", loop.MaxDerivedQueries)
+	}
+	if _, err := os.Stat(out); err != nil {
+		t.Fatalf("the sidecar must still be written, because the model calls are spent either way: %v", err)
+	}
+	if !strings.Contains(human, "rows narrower than the cap") || !strings.Contains(human, "r01") {
+		t.Fatalf("the operator stream does not name the row that came back short:\n%s", human)
 	}
 }
 
@@ -283,6 +320,88 @@ func TestTheGeneratorWritesNothingAndExitsZeroWhenTheBaselinePinsEveryRow(t *tes
 	}
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
 		t.Fatalf("a run with no target must write no sidecar, stat returned %v", err)
+	}
+}
+
+func TestTheOnlyFlagReachesTheRefusalSoAPinnedRowIsNotRegeneratedFromTheCommandLine(t *testing.T) {
+	dir := t.TempDir()
+	corpus := fileIn(t, dir, "corpus.json", twoRowCorpus)
+	baseline := fileIn(t, dir, "derivations.json", oneRowBaseline)
+	out := filepath.Join(dir, "regenerated.json")
+	url, recorder := recordingEndpoint(t, decoratedCompletion)
+	modelEnv(t, url)
+
+	code, _, human := runDerive(t, "-corpus", corpus, "-derivations", baseline, "-out", out, "-only", "r02")
+
+	if code != exitUsage {
+		t.Fatalf("want exit %d when -only names a row the baseline pins and -force is absent, got %d:\n%s", exitUsage, code, human)
+	}
+	if len(recorder.read()) != 0 {
+		t.Fatalf("a refused run must spend no model call, got %d", len(recorder.read()))
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Fatalf("a refused run must write no sidecar, stat returned %v", err)
+	}
+}
+
+func TestTheForceFlagReachesTheRefusalSoAPinnedRowIsRegeneratedAndReplacesItsBaselinePin(t *testing.T) {
+	dir := t.TempDir()
+	corpus := fileIn(t, dir, "corpus.json", twoRowCorpus)
+	baseline := fileIn(t, dir, "derivations.json", `[
+  {"row": "r01", "queries": ["a pinned query the baseline holds"], "source": "hand-authored"}
+]`)
+	out := filepath.Join(dir, "regenerated.json")
+	url, recorder := recordingEndpoint(t, decoratedCompletion)
+	modelEnv(t, url)
+
+	code, _, human := runDerive(t, "-corpus", corpus, "-derivations", baseline, "-out", out, "-only", "r01", "-force")
+
+	if code != 0 {
+		t.Fatalf("want exit 0 when -force lifts the refusal, got %d:\n%s", code, human)
+	}
+	if len(recorder.read()) != 1 {
+		t.Fatalf("want exactly one model call, for the one row -only named, got %d", len(recorder.read()))
+	}
+
+	regenerated, err := eval.LoadDerivations(out, corpusFrom(t, twoRowCorpus))
+	if err != nil {
+		t.Fatalf("the regenerated sidecar did not load: %v", err)
+	}
+	if !slices.Equal(regenerated.Queries["r01"], decoratedCompletionQueries) {
+		t.Fatalf("-force spent a model call and pinned %q, want the regenerated set %q; the baseline's own queries surviving here makes -force a no-op that costs money", regenerated.Queries["r01"], decoratedCompletionQueries)
+	}
+	if regenerated.Sources["r01"] != eval.SourceBlindGenerated {
+		t.Fatalf("a regenerated row kept the baseline's source %q, want %q", regenerated.Sources["r01"], eval.SourceBlindGenerated)
+	}
+}
+
+func TestTheTimeoutFlagReachesTheBoundThatCutsADerivationCall(t *testing.T) {
+	dir := t.TempDir()
+	corpus := fileIn(t, dir, "corpus.json", twoRowCorpus)
+	out := filepath.Join(dir, "regenerated.json")
+
+	release := make(chan struct{})
+	blocking := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	}))
+	t.Cleanup(blocking.Close)
+	t.Cleanup(func() { close(release) })
+	modelEnv(t, blocking.URL)
+
+	code, _, human := runDerive(t, "-corpus", corpus, "-derivations", "", "-out", out, "-timeout", "1ms")
+
+	if code != exitError {
+		t.Fatalf("want exit %d when the -timeout bound cuts the call, got %d:\n%s", exitError, code, human)
+	}
+	if !strings.Contains(human, "the derivation's own 1ms bound expired") {
+		t.Fatalf("the operator cannot tell which deadline fired from:\n%s", human)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Fatalf("a cut batch must write no sidecar, stat returned %v", err)
 	}
 }
 

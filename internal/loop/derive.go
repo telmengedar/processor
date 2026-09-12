@@ -125,7 +125,12 @@ func MergeQueries(input string, derived []string) []string {
 
 // DeriveQueries asks model for queries derived from input under DerivationBound, returning a cause naming which deadline fired when one did.
 func DeriveQueries(ctx context.Context, model ModelPort, input string) ([]string, error) {
-	return deriveQueries(ctx, model, input, DerivationBound)
+	return DeriveQueriesWithin(ctx, model, input, DerivationBound)
+}
+
+// DeriveQueriesWithin is DeriveQueries under a bound the caller chooses, for an offline batch that is not a turn.
+func DeriveQueriesWithin(ctx context.Context, model ModelPort, input string, bound time.Duration) ([]string, error) {
+	return deriveQueries(ctx, model, input, bound)
 }
 
 func deriveQueries(ctx context.Context, model ModelPort, input string, bound time.Duration) ([]string, error) {

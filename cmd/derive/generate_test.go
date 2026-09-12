@@ -91,11 +91,21 @@ func baselinePinning(pinned map[string][]string) eval.Derivations {
 func generateOne(t *testing.T, model loop.ModelPort, row blindRow) map[string][]string {
 	t.Helper()
 
-	generated, err := generate(context.Background(), model, []blindRow{row}, time.Minute, discardLogger())
+	generated, _, err := generate(context.Background(), model, []blindRow{row}, time.Minute, discardLogger())
 	if err != nil {
 		t.Fatalf("generating %s failed: %v", row.id, err)
 	}
 	return generated
+}
+
+func generateFailure(t *testing.T, ctx context.Context, model loop.ModelPort, row blindRow, timeout time.Duration) error {
+	t.Helper()
+
+	_, _, err := generate(ctx, model, []blindRow{row}, timeout, discardLogger())
+	if err == nil {
+		t.Fatalf("want an error generating %s, got nil", row.id)
+	}
+	return err
 }
 
 func TestTheGeneratorPinsExactlyTheQuerySetTheProductsOwnParseYieldsForADecoratedCompletion(t *testing.T) {
@@ -143,11 +153,8 @@ func TestTheGeneratorAsksForTheTurnsOwnOutputCeilingRatherThanACeilingOfItsOwn(t
 func TestTheGeneratorFailsTheWholeBatchWhenOneRowsCompletionParsesToNoQueryAtAll(t *testing.T) {
 	rows := []blindRow{{id: "r01", input: "What bounds one derivation call?"}}
 
-	_, err := generate(context.Background(), &scriptedModel{text: "\n   \n\t\n"}, rows, time.Minute, discardLogger())
+	err := generateFailure(t, context.Background(), &scriptedModel{text: "\n   \n\t\n"}, rows[0], time.Minute)
 
-	if err == nil {
-		t.Fatal("want an error when a row yields no query, got nil")
-	}
 	if !strings.Contains(err.Error(), "r01") {
 		t.Fatalf("the error does not name the row that failed, got %v", err)
 	}
@@ -156,29 +163,35 @@ func TestTheGeneratorFailsTheWholeBatchWhenOneRowsCompletionParsesToNoQueryAtAll
 func TestTheGeneratorFailsTheWholeBatchWhenTheModelCallItselfFails(t *testing.T) {
 	rows := []blindRow{{id: "r01", input: "What bounds one derivation call?"}}
 
-	_, err := generate(context.Background(), &scriptedModel{err: errors.New("the endpoint refused")}, rows, time.Minute, discardLogger())
+	err := generateFailure(t, context.Background(), &scriptedModel{err: errors.New("the endpoint refused")}, rows[0], time.Minute)
 
-	if err == nil {
-		t.Fatal("want an error when the derivation call fails, got nil")
-	}
 	if !strings.Contains(err.Error(), "the endpoint refused") {
 		t.Fatalf("the error does not carry the call's own cause, got %v", err)
 	}
 }
 
-func TestTheGeneratorBoundsEachDerivationCallAndReportsWhichRowTheBoundExpiredOn(t *testing.T) {
-	rows := []blindRow{{id: "r02", input: "Where does a run record land?"}}
+func TestTheGeneratorsOwnTimeoutNamesItselfAndNotTheEnclosingDeadlineWhenItIsWhatExpired(t *testing.T) {
+	row := blindRow{id: "r02", input: "Where does a run record land?"}
 
-	_, err := generate(context.Background(), &blockingModel{}, rows, time.Millisecond, discardLogger())
+	err := generateFailure(t, context.Background(), blockingModel{}, row, time.Millisecond)
 
-	if err == nil {
-		t.Fatal("want an error when the call outlives its bound, got nil")
-	}
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("want the deadline as the cause, got %v", err)
+	if !strings.Contains(err.Error(), "the derivation's own 1ms bound expired") {
+		t.Fatalf("the error does not name the bound that fired, and a batch has two live deadlines, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "r02") {
 		t.Fatalf("the error does not name the row whose call was cut, got %v", err)
+	}
+}
+
+func TestTheEnclosingDeadlineNamesItselfRatherThanTheGeneratorsOwnTimeoutWhenItIsWhatExpired(t *testing.T) {
+	row := blindRow{id: "r02", input: "Where does a run record land?"}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+
+	err := generateFailure(t, ctx, blockingModel{}, row, time.Hour)
+
+	if !strings.Contains(err.Error(), "the enclosing run bound expired during derivation") {
+		t.Fatalf("a cancelled parent is reported as the generator's own timeout, which is the one thing §7.4 says the operator must be able to tell apart, got %v", err)
 	}
 }
 
@@ -285,6 +298,37 @@ func TestTheGeneratorsMergeStampsEveryRegeneratedRowBlindGeneratedAndKeepsTheCar
 	}
 }
 
+func TestTheGeneratorsMergeGivesARegeneratedSetPrecedenceOverTheSameRowsBaselinePin(t *testing.T) {
+	corpus := corpusFrom(t, twoRowCorpus)
+	baseline := baselinePinning(map[string][]string{"r01": {"the query the baseline pinned"}})
+
+	merged := mergeSidecar(baseline, map[string][]string{"r01": {"the query this run regenerated"}}, corpus)
+
+	if len(merged) != 1 || merged[0].Row != "r01" {
+		t.Fatalf("want one entry for the overlapping row, got %+v", merged)
+	}
+	if !slices.Equal(merged[0].Queries, []string{"the query this run regenerated"}) {
+		t.Fatalf("the row is both pinned and regenerated and carries %q; the baseline winning here makes -force spend a model call and write the baseline back", merged[0].Queries)
+	}
+	if merged[0].Source != eval.SourceBlindGenerated {
+		t.Fatalf("the regenerated row carries source %q, want %q re-stamped", merged[0].Source, eval.SourceBlindGenerated)
+	}
+}
+
+func TestTheGeneratorsTargetsWithOnlyNamingAnUnpinnedRowSucceedWithoutForce(t *testing.T) {
+	corpus := corpusFrom(t, twoRowCorpus)
+	baseline := baselinePinning(map[string][]string{"r01": {"a pinned query"}})
+
+	targets, err := selectTargets(blindRows(corpus), baseline, "r02", false)
+
+	if err != nil {
+		t.Fatalf("-only naming a row the baseline leaves unpinned needs no -force, got %v", err)
+	}
+	if len(targets) != 1 || targets[0].id != "r02" {
+		t.Fatalf("want the one named unpinned row, got %+v", targets)
+	}
+}
+
 func TestTheGeneratorsMergeLeavesARowNeitherPinnedNorRegeneratedOutOfTheSidecar(t *testing.T) {
 	corpus := corpusFrom(t, twoRowCorpus)
 
@@ -373,6 +417,37 @@ func TestTheShapeCheckReportsAQuestionLineThatIsNotPhrasedAsOne(t *testing.T) {
 
 	if len(problems) != 1 || !strings.Contains(problems[0], "line 2") {
 		t.Fatalf("want one problem naming line 2, got %v", problems)
+	}
+}
+
+func TestTheShapeCheckReportsAKeywordLineEndingInAQuestionMarkThatOpensWithNoInterrogative(t *testing.T) {
+	problems := shapeProblems([]string{
+		"How does the loop bound the derivation step?",
+		"Which deadline fires when a derivation stalls?",
+		"What names the cause a fallback records?",
+		"Which context carries the derivation's own cause?",
+		"the deadline that fires when a derivation stalls?",
+	})
+
+	if len(problems) != 1 || !strings.Contains(problems[0], "line 5") {
+		t.Fatalf("a last line that opens with no interrogative is still a question when it ends in a mark, and the mark is the only thing that says so here, got %v", problems)
+	}
+}
+
+func TestTheShapeCheckReportsEveryProblemInASetThatCarriesMoreThanOne(t *testing.T) {
+	problems := shapeProblems([]string{
+		"derivation bound deadline",
+		"Which deadline fires when a derivation stalls?",
+		"What names the cause a fallback records?",
+		"Which context carries the derivation's own cause?",
+		"How does the loop bound the derivation step?",
+	})
+
+	if len(problems) != 2 {
+		t.Fatalf("want both the unquestioned line 1 and the questioning line 5 reported, got %v", problems)
+	}
+	if !strings.Contains(problems[0], "line 1") || !strings.Contains(problems[1], "line 5") {
+		t.Fatalf("want the problems in line order, got %v", problems)
 	}
 }
 

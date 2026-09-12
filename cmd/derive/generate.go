@@ -114,38 +114,27 @@ func pinnedAmong(wanted []string, baseline eval.Derivations) []string {
 	return pinned
 }
 
-func generate(ctx context.Context, model loop.ModelPort, targets []blindRow, timeout time.Duration, logger *slog.Logger) (map[string][]string, error) {
+func generate(ctx context.Context, model loop.ModelPort, targets []blindRow, timeout time.Duration, logger *slog.Logger) (map[string][]string, []string, error) {
 	generated := make(map[string][]string, len(targets))
+	var short []string
+
 	for _, row := range targets {
-		queries, err := deriveRow(ctx, model, row, timeout)
+		queries, err := loop.DeriveQueriesWithin(ctx, model, row.input, timeout)
 		if err != nil {
-			return nil, fmt.Errorf("row %s: %w", row.id, err)
+			return nil, nil, fmt.Errorf("row %s: %w", row.id, err)
 		}
 
 		for _, problem := range shapeProblems(queries) {
 			logger.Warn("shape", "row", row.id, "problem", problem)
 		}
+		if len(queries) != loop.MaxDerivedQueries {
+			short = append(short, row.id)
+		}
 		logger.Info("generated", "row", row.id, "queries", len(queries))
 
 		generated[row.id] = queries
 	}
-	return generated, nil
-}
-
-func deriveRow(ctx context.Context, model loop.ModelPort, row blindRow, timeout time.Duration) ([]string, error) {
-	bounded, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	text, err := model.Derive(bounded, loop.DerivationPrompt(row.input), loop.MaxOutputTokens)
-	if err != nil {
-		return nil, err
-	}
-
-	queries := loop.ParseDerivation(text, row.input)
-	if len(queries) == 0 {
-		return nil, errors.New("the model returned no usable query")
-	}
-	return queries, nil
+	return generated, short, nil
 }
 
 func shapeProblems(queries []string) []string {
