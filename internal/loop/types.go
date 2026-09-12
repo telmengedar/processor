@@ -1,6 +1,8 @@
 // Package loop implements the Processor turn: context assembly, judgement, and write-back.
 package loop
 
+import "time"
+
 // Anchor is the subject node a run is about, fetched with its full body.
 type Anchor struct {
 	ID      int64
@@ -216,6 +218,9 @@ type JudgeInput struct {
 	Block      string
 	Input      string
 	PriorTools []ToolExchange
+
+	// Now is the instant the prompt states, zero when the caller supplies none.
+	Now time.Time
 }
 
 // JudgeResult is one judgement step's outcome.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
@@ -65,13 +66,17 @@ func admit(candidates []Candidate, budget int) (admitted []Candidate, dispositio
 	return admitted, dispositions
 }
 
-// RenderUserContent composes the user message: the request, the assembled block, then the same request again.
-func RenderUserContent(block, input string) string {
+// RenderUserContent composes the user message: the request, the instant it states, the assembled block, then the same request again.
+func RenderUserContent(block, input string, now time.Time) string {
 	request := "===== INPUT =====\n" + input
 
 	var b strings.Builder
 
 	b.WriteString(request)
+	if !now.IsZero() {
+		b.WriteString("\n\n===== NOW =====\n")
+		b.WriteString(now.UTC().Format(time.RFC3339))
+	}
 	b.WriteString("\n\n\n")
 	b.WriteString(block)
 	b.WriteString("\n")
