@@ -2,10 +2,17 @@
 
 > **Repo path:** `docs/architecture/the-query-the-graph-is-asked.md` (canonical copy).
 > **DiVoid node: #13585** — it carries this file verbatim, uploaded from the path above. **The identity is
-> against the LF form**, which is what this working tree holds (0 CRLF, 1,132 LF) and what is uploaded; a
+> against the LF form**, which is what this working tree holds (0 CRLF) and what is uploaded; a
 > `core.autocrlf` checkout on this machine produces a different digest for the same document, so the claim
 > is *node #13585 == this file, LF*, not "byte-identical" unqualified. A parity publish goes to **#13585 and
 > no other node**.
+>
+> **No line or byte count is frozen here.** *(It was — **"1,132 LF"** — and it was **wrong at the commit
+> that wrote it**: `87363dd` holds 1,160 lines. Not stale; never right, and nothing ever re-checked it.
+> Found 2026-09-12.)* A byte-identity claim is a property of **one publish at one ref**, so it
+> belongs in the publish record as `node #13585 == git cat-file blob <ref>:docs/architecture/
+> the-query-the-graph-is-asked.md, LF, N bytes, sha256 …` — **and it is verified on the digest, never on
+> the length** (#1220 §3, 2026-08-31). A number in this header is a number nothing re-checks.
 >
 > **Revision 2, 2026-09-11**, answering QA **#13590** (⚠️ approved with warnings; seven, all document-side).
 > Corrections are made **in place and marked where they were wrong**, rather than silently rewritten —
@@ -16,6 +23,35 @@
 > than by the review; the two load-bearing ones are §11's carrier count and §17.3's mitigation clause.**
 > *(No total is given deliberately: a count written as a closing flourish is the thing a correction round
 > most reliably gets wrong, and this header had it wrong at "two" before the sweep was run over itself.)*
+>
+> **Correction round, 2026-09-12 — Unit 2 shipped and deleted the file this document cites throughout.**
+> `cmd/derive` replaces `scripts/generate_derivations.py`, which is **deleted** at `e967204`
+> (`feat/the-derivation-generator`, parent `main` at `d2d5b38`). Every citation of that script was correct
+> against the tree it was read on and **stays, struck or dated, as a record** (#11034 P-43); what changes is
+> that **no sentence here still tells a reader to consult, run or fall back on it.** Corrected in place:
+> §TL;DR, §1's success criterion, §2.4 (and the **2,623 B → 2,630 B** attribution fix — that figure was the
+> *script's* prompt, quoted where a reader reads the *product's*), §3, §4.5, §7.1 (DRY **discharged**;
+> fallback **retired**), §7.2, §13 F-2 and F-5, §14 Q7, §15, §16. **New §18** rules on the three decisions
+> the implementation made outside §16, records what the deletion falsified, and states what this round's
+> sweep structurally could not reach.
+>
+> **Two findings worth the header.** (a) **#13596's fallback is *not* unexecutable** — its trigger fires only
+> in the branch where Unit 2 has *not* merged, and in that branch the script is still on `main`; the two
+> states are mutually exclusive by construction, so what the task needs is a **close as discharged**, not a
+> re-specification (§18.4). (b) **The corrections reach #11235** —
+> `docs/architecture/m3-derived-recall.md` carries two live claims about *"the generator"* that never name
+> the file and are therefore invisible to a name-scoped sweep. Three sites there are touched — those two and
+> the first use of the phrase, which carries the definition. §18.6.
+>
+> **Node parity, for the operator — measured, and worse than "one round behind".** Node **#13585** is
+> **102,214 B over 1,160 lines** (`GET /api/nodes/13585/content`, fetched 2026-09-12). That matches **no
+> commit of this file**: `87363dd` is 101,201 B, `01ef459` is 108,287 B, `57d6033` is 109,779 B. Diffed
+> against `87363dd` it differs on **exactly one line** — §17 row 3, in its later *"MITIGATED ELSEWHERE
+> 2026-09-11"* form — so the node is **`87363dd` plus one in-place row edit, and is missing everything from
+> `01ef459` and `57d6033`** (the #13703 / #13705 corrections, including §16 step 1's A-B-A triple). Publish
+> **the whole file**, not a patch, and **read the node's first line before writing it** (#1220's
+> read-before-you-discard guard). A publish is the only moment anyone looks at what is in a node; this is
+> what that look found.
 >
 > **Ordering authority:** **#13534** (the Processor product briefing) — this is **third** in its §8 order,
 > behind the container (`feat/the-product-runs-in-a-container`, PR #64) and the failure report
@@ -60,9 +96,9 @@
 
 **What.** The turn stops asking the graph the task text and starts asking questions **derived** from it. One
 model call before retrieval turns the input into at most five additional queries; the raw input stays at
-index 0; `loop.Retrieve` is untouched in code. **The mechanism is the one `scripts/generate_derivations.py`
-already runs** — moved out of a script that fills the eval's sidecar into the product the sidecar is
-supposed to be a record of.
+index 0; `loop.Retrieve` is untouched in code. **The mechanism is the one the eval's sidecar generator
+already ran** — moved out of a script that fills the eval's sidecar into the product the sidecar is
+supposed to be a record of. *(That script is deleted as of Unit 2; §18.)*
 
 **How.** `loop.ModelPort` gains one method — prompt in, text out. `internal/loop` owns the prompt, the parse
 and the merge rule; `internal/eval.QueriesFor` is re-pointed at that same merge rule, so the two arms become
@@ -75,10 +111,11 @@ list is order-preserving, so **a turn today performs no fusion at all** (#11398,
 is the first time the product ranks the way its instrument has been scoring — not more input to a running
 mechanism. Risk **F-9**.
 
-**Cost.** One model call, assembled prompt **2,623 B** — **3.7 %** of the 71,800 B judgement call it
+**Cost.** One model call, assembled prompt **2,630 B** — **3.7 %** of the 71,800 B judgement call it
 precedes. **Five extra unscoped recalls: 4 graph calls before judgement become 9**, and their wall-clock
 cost is **unmeasured** (F-3). One new record string field, empty on the success path. Full figures and their
-provenance: §2.4.
+provenance: §2.4. *(2,630 B corrected from 2,623 B on 2026-09-12 — 2,623 was the script's prompt, not the
+product's; §18.5.)*
 
 **What it buys, and it is small — stated here rather than only 400 lines down.** On the pinned sidecar,
 **9/23 → 11/23 retrieved: +2 rows, and one of the two is contaminated — so one row of uncontaminated
@@ -141,6 +178,11 @@ prompt.
 > merge rule becomes shared **by construction** (§7.3, guarded by G-4); the *prompt* stays two texts until
 > Unit 2, held equal by a trigger rather than by the compiler (§7.1). **A reader should not take "the sweep
 > measures the product" as fully delivered by Unit 1.**
+>
+> **The second half landed 2026-09-12.** Unit 2 shipped at `e967204` and **deleted** the Python copy, so the
+> prompt is one text with one carrier and the *"held equal by a trigger"* clause above is spent. **This
+> criterion is now met in full by construction** — the merge rule by §7.3, the prompt by there being only
+> one of it. §18.1.
 
 ---
 
@@ -220,8 +262,12 @@ decided by this table.
 
 ### 2.4 What a derivation-shaped call costs, measured on this exact call
 
-`scripts/generate_derivations.py` is a working derivation step that lives outside the product. Measured
-from its source and from `internal/eval/`:
+`scripts/generate_derivations.py` **was** a working derivation step that lived outside the product. Measured
+from its source and from `internal/eval/` at **`0df5c14`**, and **kept as a dated record rather than as a
+pointer** (#11034 P-43): Unit 2 deleted the file at `e967204` (§18), so every figure below and every
+`…py:NN` citation in this section resolves against `0df5c14` — equivalently against `main` at `d2d5b38` —
+and against no later tree. **Nothing in this section asks a reader to consult or run that file.** The
+product's own figure is the last row, and it is the one to quote:
 
 | quantity | figure |
 |---|---|
@@ -230,12 +276,14 @@ from its source and from `internal/eval/`:
 | corpus input | 70–203 B, **median 123 B** |
 | **assembled prompt, median input** | **2,623 B** |
 | output, five queries | 239–395 B, **median 297 B** |
-| generation latency, twelve rows, `ai/qwen3-coder` | **~0.4 s/row**, 5/5 valid distinct queries on the first attempt for every row (#11348, verbatim) — *the runtime attribution (Docker Model Runner) is not #11348's; it is source-provable from `scripts/generate_derivations.py:62` and `:79`* |
+| generation latency, twelve rows, `ai/qwen3-coder` | **~0.4 s/row**, 5/5 valid distinct queries on the first attempt for every row (#11348, verbatim) — *the runtime attribution (Docker Model Runner) is not #11348's; it is source-provable from `scripts/generate_derivations.py:62` and `:79`, both resolved at `0df5c14`* |
+| **the product's own assembled prompt, median input** *(added 2026-09-12)* | **2,630 B** — `loop.DerivationPrompt` at `e967204`: a 2,507 B fixed part plus the 123 B input. **This is the figure to quote for the product**; the script's fixed part was 2,500 B, so the two differ by 7 B. Measured, not derived — `len(DerivationPrompt(strings.Repeat("q", 123)))` returns `2630`. |
 
 Against the judgement call it precedes: **71,800 B / 19,687 prompt tokens**, and **both figures are of one
 request** — #13091 §5(b)'s byte-identical seq2/seq3 call 1, sha256 `bf6b122498c52765…`, whose
 `prompt_eval_count` is 19,687 in both trajectories. The derivation prompt is **3.7 %** of it by bytes
-(2,623 / 71,800 = 3.65 %). *(Bytes, not tokens: nothing in this product tokenizes, so a token ratio would be
+(**2,630** / 71,800 = 3.66 %; the 2,623 that stood here is the *script's* prompt — corrected 2026-09-12,
+§18.5). *(Bytes, not tokens: nothing in this product tokenizes, so a token ratio would be
 a fabricated one — the same P-51 constraint #13564 A2 states. The token count is quoted only to size the
 call, never divided into.)*
 
@@ -290,6 +338,10 @@ derivation call runs under; and the parity contract between the product's query 
 6. **Regenerating the pinned sidecar.** `internal/eval/derivations.json` is the comparability baseline for
    every arm-versus-arm figure this project holds (#11348), and Unit 2 writes a new file rather than
    overwriting it.
+   **Both shipped at `e967204`:** `cmd/derive` is that separate command, it writes only its `-out` file,
+   and an `-out` resolving to the baseline is refused by `os.SameFile` — which the design asked for in prose
+   and the implementation turned into a pinned property. `cmd/eval` is untouched and still constructs no
+   model client (§7.3). §18.3.
 7. **A second, cheaper model endpoint for derivation.** #11235 §12 q1 is a spend decision that is Toni's;
    §14 Q2 records it as decided-for-now with its reversal cost.
 8. **Retry of a failed derivation.** §4.5.
@@ -439,10 +491,15 @@ byte for byte.** #11235 §5 ruled this and it stands unchanged. The turn does no
 failed: retrieval on the raw input alone is whatever the raw-input arm currently reads, and erroring the run
 instead would trade a degraded answer for no answer.
 
-**No retry.** `scripts/generate_derivations.py` makes up to four *attempts* — `MAX_FILL_ATTEMPTS = 4` at
-`scripts/generate_derivations.py:81`, i.e. three retries — because it must *collect* five
-distinct queries for a file that will be pinned forever; a turn does not — it takes whatever parses and
-proceeds, and a partial set of two queries is strictly better than the raw input alone. A retry would double
+**No retry.** The need a retry serves is *collecting* a full set for a file that will be pinned forever, and
+a turn has no such need — it takes whatever parses and proceeds, and a partial set of two queries is
+strictly better than the raw input alone. ~~`scripts/generate_derivations.py` makes up to four *attempts* —
+`MAX_FILL_ATTEMPTS = 4` at `scripts/generate_derivations.py:81`, i.e. three retries — because it must
+*collect* five distinct queries for a file that will be pinned forever; a turn does not~~ *(true of the
+script at `0df5c14`, and **retired as a contrast on 2026-09-12**: Unit 2 shipped with no fill loop, so
+nothing in this project retries a derivation any more, and the file the citation resolves into is deleted at
+`e967204`. The ground this section did not anticipate, and it is the stronger one: **an instrument that
+retries where the turn does not stops measuring the turn.** §18.2.)* A retry would double
 the latency of the step whose cheapness is its justification, in the branch where the endpoint has already
 shown it is slow or broken. #13564 §3 out-of-scopes retry for the judgement call and reaches the same conclusion — *on a different ground*, #11312's: an operator who could read “model is loading” would wait. Same answer, not the same argument.
 
@@ -529,8 +586,10 @@ or declare something to an endpoint?*
 | `MergeQueries(input string, derived []string) []string` | the input first, then each derived query that is not already present, compared exactly as `QueriesFor` compares today | how `derived` was obtained |
 | `DeriveQueries(ctx, model ModelPort, input string) ([]string, error)` | composing the three above around one bounded port call | the fallback decision, which is `Run`'s |
 
-**The prompt is the one already in the tree**, transcribed from `scripts/generate_derivations.py`'s
-`SYSTEM_PROMPT` and `FEW_SHOT` — four standalone questions naming a mechanism, concept or technical term
+**The prompt is the one that was already in the tree**, transcribed at `0df5c14` from
+`scripts/generate_derivations.py`'s `SYSTEM_PROMPT` and `FEW_SHOT` — **provenance, not a pointer:** that
+file is deleted at `e967204`, and `internal/loop/derive.go` is now its only carrier (§18.1). Four standalone
+questions naming a mechanism, concept or technical term
 likely to appear in the *documentation*, plus one dense keyword line; explicitly forbidden from restating
 the input or answering it. **It is not re-authored here**, because it is the prompt that produced r12 — the
 only uncontaminated positive evidence for derivation this project holds (#11235 R2a) — and re-writing it
@@ -544,6 +603,19 @@ constant — at **2 sites**. Whichever line count is used, `17 × 2 = 34` or `30
 this paragraph is. **It is a real violation and it is not rationalised.**
 
 **Unit 2 discharges it**, by replacing the Python generator with a command that calls this same function.
+
+> **DISCHARGED 2026-09-12 — by deletion, not by convergence.** Unit 2 shipped at `e967204`: `cmd/derive`
+> calls `loop.DerivationPrompt`, and `scripts/generate_derivations.py` is **deleted** rather than
+> re-pointed. The implementation's own ground for that, and it is the right one: *"leaving `SYSTEM_PROMPT`
+> in the tree discharges none of the duplication this unit exists to end."* A second copy that agrees today
+> is still a second copy, and the DRY math above is a statement about copies, not about agreement. **The
+> prompt now exists at one site** — `derivationInstructions` and `derivationExemplars` in
+> `internal/loop/derive.go`. **Falsifier, as the exact string run** (#1220, 2026-09-09):
+> `git grep -c SYSTEM_PROMPT -- '*.py' '*.go'` — **no hits at `e967204`**; a hit is a second carrier and
+> re-opens this paragraph. **Every remaining `SYSTEM_PROMPT` occurrence in the tree is inside *this
+> document*** — prose about what the prompt was transcribed from, and about this falsifier — which the
+> pathspec excludes deliberately. *(No count is given: it is the number of sentences a later round happens
+> to write, and a count written as a closing flourish is what a correction round most reliably gets wrong.)*
 
 > **The discharge has a trigger and an owner, because a condition with neither never fires (#13590 §6).**
 > An earlier revision said only *"if Unit 2 is not going to be built, embed the prompt as a single file."*
@@ -560,6 +632,14 @@ this paragraph is. **It is a real violation and it is not rationalised.**
 > operator adds that link when it opens** — the architect runs no `gh` and files no PR (#7506 §1).
 > **Why a merge count and not a date:** the repo's own clock is merges, `MaxModelCalls`-style constants
 > move on merges, and a date passes while nobody is working.
+>
+> **RETIRED 2026-09-12 — and the reason matters more than the retirement, because a deleted file looks like
+> a broken fallback and is not one.** The trigger fires only in the branch where **Unit 2 has not merged**,
+> and in that branch `scripts/generate_derivations.py` is still on `main`, because it is deleted only by
+> Unit 2's own commit. Measured 2026-09-12: `git show main:scripts/generate_derivations.py | wc -c` returns
+> **19,247** at `d2d5b38`. The two states are mutually exclusive by construction, so the fallback was
+> executable in every branch that could ever have invoked it. **What #13596 needs when Unit 2 merges is a
+> close as discharged** — the close its own last paragraph already asks for — not a re-specification. §18.4.
 
 **And F-5 must be readable in that branch, which it currently is not** — see §13 F-5, corrected.
 
@@ -581,9 +661,13 @@ adapters, `internal/condense`, `cmd/condense` and their tests is a tidy that bel
 that surface, and is filed rather than folded in (§14 Q6).
 
 **Sampling is the configured sampling** — `PROCESSOR_MODEL_TEMPERATURE`, default `0`. **This differs from
-how the pinned sidecar was generated**, which used `temperature 0.5` (`scripts/generate_derivations.py:397`),
-and the divergence is named here rather than discovered later: a sidecar regenerated by Unit 2 will differ
-from the pinned one for that reason as well as for the model's own variance.
+how the pinned sidecar was generated**, which used `temperature 0.5`
+(`scripts/generate_derivations.py:397`, resolved at `0df5c14`; that file is deleted at `e967204`, so the
+citation resolves on `main` at `d2d5b38` and not on the tip), and the divergence is named here rather than
+discovered later: a sidecar regenerated by Unit 2 will differ from the pinned one for that reason as well as
+for the model's own variance. **Realised 2026-09-12:** `cmd/derive` takes the configured sampling and adds
+no temperature flag of its own, so the 0-versus-0.5 gap is a property of every arm-versus-arm figure it
+produces rather than a prediction about one. §18.3.
 
 ### 7.3 `internal/eval` — re-pointed, not rewritten
 
@@ -936,10 +1020,10 @@ unacceptable, the two levers are `MaxDerivedQueries` and parallel recalls, both 
 | # | risk | mitigation | falsifier |
 |---|---|---|---|
 | **F-1** | **§4.2's class-1 refutation is a tokenizer artifact** | The categorical result (0 of 25 subsets) rests on words the input never spells, not on decimals | §4.2's differential pair, **both arms executed with their output quoted at #13590 §1**: stemmed re-run over all 25 (0/25 survives under Porter and under an aggressive suffix-strip), plus **two** controls — A (stopword strip) proving the subset predicate, and **B (stopword strip + one inflectional variant) proving the stemmer is engaged**, subset under the stemmed run and not under the plain one. **A alone passes even when the stemmer never ran**, which is why B is the arm that matters. |
-| **F-2** | **A live model's derivations are worse than the pinned ones** — #11235 R1, still the largest open risk in the line | `Record.Queries` records what was actually asked, verbatim, so a bad derivation is readable rather than inferred | **Unit 2 discharges it**: generate a second sidecar with the product's own `Derive` against the product's own configured model, sweep it and the pinned one at **one graph state**, bracketed by #11235 §9.1a's A-B-A control, and compare arm to arm — never against a rate recorded on another day, because the graph is live and unversioned (#11235 §9.1). Falsified if the live-derived arm does not beat the raw-input arm taken at the same graph state — *(corrected 2026-09-11, #13703: this read "in the same session", which decides nothing; #11235 §9.1a.)* **Round 2, #13705 W-1 — this detector is only partially bracketed.** A and B are *different arms*, so repeating A probes 25 of the 150 query neighbourhoods the derived arm reads; a graph change favouring the other 125 is a **false acceptance** of exactly this hypothesis. Unit 2 must either close it with an A-B-A-B' quadruple or report the margin as partially bracketed. **The branch where this detector is silent: Unit 2 not built** — see the note under F-5, which owns the trigger for both. **It is *not* exposed to the admission confound §12 records from record #13591**, because it is a *sweep* measurement and on the sweep corpus twelve of fourteen misses never reach the candidate set at all (#11365 §2). |
+| **F-2** | **A live model's derivations are worse than the pinned ones** — #11235 R1, still the largest open risk in the line | `Record.Queries` records what was actually asked, verbatim, so a bad derivation is readable rather than inferred | **Unit 2 discharges it**: generate a second sidecar with the product's own `Derive` against the product's own configured model, sweep it and the pinned one at **one graph state**, bracketed by #11235 §9.1a's A-B-A control, and compare arm to arm — never against a rate recorded on another day, because the graph is live and unversioned (#11235 §9.1). Falsified if the live-derived arm does not beat the raw-input arm taken at the same graph state — *(corrected 2026-09-11, #13703: this read "in the same session", which decides nothing; #11235 §9.1a.)* **Round 2, #13705 W-1 — this detector is only partially bracketed.** A and B are *different arms*, so repeating A probes 25 of the 150 query neighbourhoods the derived arm reads; a graph change favouring the other 125 is a **false acceptance** of exactly this hypothesis. Unit 2 must either close it with an A-B-A-B' quadruple or report the margin as partially bracketed. **The branch where this detector is silent: Unit 2 not built** — see the note under F-5, which owns the trigger for both. **It is *not* exposed to the admission confound §12 records from record #13591**, because it is a *sweep* measurement and on the sweep corpus twelve of fourteen misses never reach the candidate set at all (#11365 §2). **The silent branch closed 2026-09-12:** Unit 2 shipped at `e967204`, so this detector can now fire — what it still needs is a run, not a unit. §18. |
 | **F-3** | **The latency claim is built from two figures neither of which measured this code** (A6) | Named as a hedge in every sentence that uses them | **Split, because one clock cannot answer both halves.** *(a) Does the derivation step cost what is claimed?* — Unit 1 logs the step's own wall clock on **both** paths (§16 step 5), so the first run that carries it answers this; the cost section is wrong if it exceeds ~5 s on a healthy host. *(b) Do the five extra recalls cost more than the model call?* — **not answerable by that clock**, and Unit 1 does not add the second one. It needs `Retrieve` timed separately, which is Q3's instrumentation and is not in this unit. **Stating (b) as though (a) answered it was the defect; the honest position is that (b) is unmeasured and named.** Either way the levers are `MaxDerivedQueries` and parallel recalls. |
 | **F-4** | **The 30 s bound silently converts the derived arm into the raw arm under load** | The cause is recorded and **names the bound by identity** (§7.4) rather than by `ctx.Err()`, which cannot distinguish it from `runBound` | Any run whose `derivationError` names the derivation bound. It is a measurement, not a defect, and it says the host is slow — the distinction #13534 §8 insists on. **The premise that makes this discriminate:** the derivation timeout carries its own named cause, so a run whose *ten-minute* bound expired mid-derivation reports `runBound`, not this one. **Without that, the detector fires on the wrong bound and reads a dying run as a slow step** — and it fires under load, which is the only condition it exists for. |
-| **F-5** | **The prompt drifts between Go and Python** between Unit 1 and Unit 2 | §7.1 states the DRY math, names Unit 2 as the discharge, and gives the fallback a **trigger (10 merges) and an owner (a filed task)** | A regenerated sidecar whose shape differs from the product's output for a reason nobody can name. **This detector can only fire if Unit 2 is built** — and Unit 2 is instrument work that #13534 §5 demotes, so it is silent in exactly the branch that threatens the claim. **That is why the fallback carries a trigger instead of a condition:** the trigger fires on merge count whether or not anyone decides anything, and it is the only thing standing in this branch. |
+| **F-5** | **The prompt drifts between Go and Python** between Unit 1 and Unit 2 | §7.1 states the DRY math, names Unit 2 as the discharge, and gives the fallback a **trigger (10 merges) and an owner (a filed task)** | A regenerated sidecar whose shape differs from the product's output for a reason nobody can name. **This detector can only fire if Unit 2 is built** — and Unit 2 is instrument work that #13534 §5 demotes, so it is silent in exactly the branch that threatens the claim. **That is why the fallback carries a trigger instead of a condition:** the trigger fires on merge count whether or not anyone decides anything, and it is the only thing standing in this branch. **CLOSED 2026-09-12 by deletion (§18.1).** There is no Python copy left to drift from, so the hazard this row names cannot occur and the detector is retired rather than fired. What survives is a *different* risk with a different detector — §18.3's realised sampling divergence (0 against 0.5), which changes what a regenerated sidecar contains without any prompt having drifted. |
 | **F-6** | **`derivationError` lands past the embedding cap for a long input** | §7.5 derives the offset from invariant 1 and states its condition rather than asserting a guarantee | An input over **~2,500** characters (`3L + D + 100 > 7880`). The field is still on the record and still in the HTTP response; only search reachability is lost — the state #13564 lives with for every field after `candidates`. |
 | **F-7** | **A future adapter forgets `Derive`** | Go's type system: `var _ loop.ModelPort = (*Client)(nil)` fails to compile. #10466's *"Adding a model provider"* archetype gains a step, as #13345 §11 added one for `RenderToolResult` | A third adapter that compiles without it — impossible by construction, which is the point. |
 | **F-8** | **This unit is built and Toni still cannot run a task**, because the container is on a branch | Nothing here depends on the container; #13534 §8 sequences them | Stated, not mitigated. §2.6 measures it. |
@@ -957,7 +1041,7 @@ unacceptable, the two levers are `MaxDerivedQueries` and parallel recalls, both 
 | **Q4** | Add a feedback pass on top of derivation? | **No.** §4.3. | R-2. | **Low, additive.** |
 | **Q5** | Deprecate `Record.Query`? | **No**, unchanged from #11235 §12 q4. It is the raw input, it is what `queries[0]` is by invariant, and removing it is a deletion with a reader inventory owed. **Now genuinely redundant** and a deletion candidate for a later pass with a real inventory in hand. | Delete it in this unit. | **Low**, but it is a second feature and belongs in its own PR. |
 | **Q6** | Rename `Condense` to something neutral now that two callers use it? | **No.** It touches two adapters, `internal/condense`, `cmd/condense` and their tests for a naming improvement, in a PR whose feature is elsewhere. | Fold the rename in. | **Trivial**, and it stays trivial. |
-| **Q7** | `MaxDerivedQueries = 5`? | **Yes, and 5 is inherited rather than fitted — say so.** It is `QUERIES_PER_ROW = 5` at `scripts/generate_derivations.py:80`, a constant **chosen** in the generator; all 25 sidecar rows carry that shape because the generator was told to. What follows is weaker than "measured" and is the actual reason: **5 is the only value for which an arm-versus-arm figure exists at all**, because the pinned sidecar is the only derived arm this project has swept. Matching it is what keeps §12's comparison a comparison. | 3, or 4. | **Trivial, and free to settle by measurement:** truncate the sidecar's query lists to *k* and sweep. Zero model calls, one graph state under §9.1a's control *(was "one session" — corrected 2026-09-11, #13703)*, and #11235 §12 q2 already ruled this a measurement rather than a decision. |
+| **Q7** | `MaxDerivedQueries = 5`? | **Yes, and 5 is inherited rather than fitted — say so.** It is `QUERIES_PER_ROW = 5` at `scripts/generate_derivations.py:80` (resolved at `0df5c14`; that file is deleted at `e967204` and `loop.MaxDerivedQueries = 5` is now the only live carrier of the number), a constant **chosen** in the generator; all 25 sidecar rows carry that shape because the generator was told to. What follows is weaker than "measured" and is the actual reason: **5 is the only value for which an arm-versus-arm figure exists at all**, because the pinned sidecar is the only derived arm this project has swept. Matching it is what keeps §12's comparison a comparison. | 3, or 4. | **Trivial, and free to settle by measurement:** truncate the sidecar's query lists to *k* and sweep. Zero model calls, one graph state under §9.1a's control *(was "one session" — corrected 2026-09-11, #13703)*, and #11235 §12 q2 already ruled this a measurement rather than a decision. |
 | **Q8** | Does a failed derivation change the HTTP status? | **No.** The run succeeds; the response is 200 and carries `derivationError` on the record. A degraded query set is not a failed run. | Return a warning header or a non-2xx. | **Trivial**, and it would break the closed set of five codes `routes.go:37-43` maintains. |
 
 ---
@@ -981,7 +1065,8 @@ unacceptable, the two levers are `MaxDerivedQueries` and parallel recalls, both 
 - [x] **DRY math quoted for every inline-versus-extract call.** Adapter delegation `3 × 2 = 6` — inlined
       (§7.2). The merge rule `9 × 2 = 18` — **extracted**, and on a parity argument rather than the line
       count (§7.3). The prompt — 1,790 B, `17 × 2 = 34` counted in Python or `30 × 2 = 60` estimated in Go,
-      **above threshold either way, named as a violation, discharged by Unit 2, and with the fallback given
+      **above threshold either way, named as a violation, discharged by Unit 2** — **done, 2026-09-12, by
+      deletion (§18.1); the fallback was never invoked and is retired (§18.4)** — and with the fallback given
       a trigger (10 merges) and an owner (a filed task) rather than a condition nobody fires** (§7.1). A
       third request builder — `78 + 74 = ~152` lines **measured off the existing builders**, not estimated
       — rejected (R-7).
@@ -1069,7 +1154,7 @@ unacceptable, the two levers are `MaxDerivedQueries` and parallel recalls, both 
 | step | what | acceptance |
 |---|---|---|
 | 1 | **Extract the merge rule.** `loop.MergeQueries(input string, derived []string) []string` — input first, then each derived query not already present, compared exactly as `derivations.go:92-101` compares today. Re-point `eval.Derivations.QueriesFor` at it. | **Zero-delta, decided by an A-B-A triple — see the block under this table.** Sweep `internal/eval/derivations.json` on the **pre-change** binary (**A**), on the **post-change** binary (**B**), then on the **pre-change** binary again (**C**), back to back, same corpus and sidecar files. **Accept when B == A and C == A**, each on every JSON field except `sweptAt`. ~~the same rates as a sweep taken immediately before the change, in the same session~~ *(corrected 2026-09-11, #13703 — "same session" is a clock bound and decides nothing; the graph moved under an unchanged binary inside one session. #11235 §9.1a is canonical.)* |
-| 2 | **`loop.DerivationPrompt` and `loop.ParseDerivation`**, both pure, no `ctx`, no port — `Assemble`'s discipline. The prompt is transcribed from `scripts/generate_derivations.py`'s `SYSTEM_PROMPT` + `FEW_SHOT`; the parse is its `parse_lines` + `dedupe_against`, capped at `MaxDerivedQueries = 5`. **Do not re-author either.** | ~~Table tests over the twelve `blind-generated` sidecar rows' raw shapes~~ — **ambiguous, and one reading was unsatisfiable; resolved 2026-09-11 (#13703, from #13702 W-1).** The generator's raw model output **is not persisted**: `scripts/generate_derivations.py:307` computes `raw_text` and `:308` immediately reduces it to `candidates`, and the sidecar's only keys across all 25 rows are `row`, `queries`, `source` (both measured at `962ac3a`). So "the twelve rows' raw shapes" **do not exist in the artefact the criterion named**. **The property the criterion is for:** `ParseDerivation` reproduces `parse_lines` + `dedupe_against` on every shape either can meet. **Three populations are specified below, and the list is known-not-exhaustive** — the parse's other guards at `0f011b5` (echo-dropping, repeat-dropping, the cap) satisfy the same property and are not excluded by their absence here. Guards resolved at `0f011b5`: (a) **decoration stripping**, over hand-built texts carrying the shapes `parse_lines` must strip — `TestParseDerivationStripsListDecorationSurroundingQuotesAndReasoningArtifacts`; (b) **idempotency over the twelve `blind-generated` rows**, their pinned lines joined by `\n` parsing back unchanged — this is what the sidecar can support and it is **not** a parse-the-model's-output test — `TestParseDerivationReturnsTheSidecarsOwnBlindGeneratedSetFromTheTextThatWouldHaveProducedIt`; (c) **the empty case**, an all-blank text returning an empty slice and not nil — `TestParseDerivationOfATextWhoseEveryLineIsBlankReturnsAnEmptySliceAndNotNil`. **Stated limit:** no guard here sees the transcription against a *real* model's output, because that output is discarded at generation time. |
+| 2 | **`loop.DerivationPrompt` and `loop.ParseDerivation`**, both pure, no `ctx`, no port — `Assemble`'s discipline. The prompt is transcribed from `scripts/generate_derivations.py`'s `SYSTEM_PROMPT` + `FEW_SHOT`; the parse is its `parse_lines` + `dedupe_against` *(all four names resolve at `0df5c14`; the file is deleted at `e967204`, and this row is Unit 1's build step, which shipped — it is a record of how the transcription was sourced, not an instruction, §18.1)*, capped at `MaxDerivedQueries = 5`. **Do not re-author either.** | ~~Table tests over the twelve `blind-generated` sidecar rows' raw shapes~~ — **ambiguous, and one reading was unsatisfiable; resolved 2026-09-11 (#13703, from #13702 W-1).** The generator's raw model output **is not persisted**: `scripts/generate_derivations.py:307` computes `raw_text` and `:308` (resolved at `0df5c14`) immediately reduces it to `candidates`, and the sidecar's only keys across all 25 rows are `row`, `queries`, `source` (both measured at `962ac3a`). So "the twelve rows' raw shapes" **do not exist in the artefact the criterion named**. **The property the criterion is for:** `ParseDerivation` reproduces `parse_lines` + `dedupe_against` on every shape either can meet. **Three populations are specified below, and the list is known-not-exhaustive** — the parse's other guards at `0f011b5` (echo-dropping, repeat-dropping, the cap) satisfy the same property and are not excluded by their absence here. Guards resolved at `0f011b5`: (a) **decoration stripping**, over hand-built texts carrying the shapes `parse_lines` must strip — `TestParseDerivationStripsListDecorationSurroundingQuotesAndReasoningArtifacts`; (b) **idempotency over the twelve `blind-generated` rows**, their pinned lines joined by `\n` parsing back unchanged — this is what the sidecar can support and it is **not** a parse-the-model's-output test — `TestParseDerivationReturnsTheSidecarsOwnBlindGeneratedSetFromTheTextThatWouldHaveProducedIt`; (c) **the empty case**, an all-blank text returning an empty slice and not nil — `TestParseDerivationOfATextWhoseEveryLineIsBlankReturnsAnEmptySliceAndNotNil`. **Stated limit:** no guard here sees the transcription against a *real* model's output, because that output is discarded at generation time. |
 | 3 | **`loop.ModelPort.Derive(ctx, prompt string, maxOutputTokens int) (string, error)`**; both adapters delegate to their existing `Condense` and return `.Text`. Every test fake implementing `ModelPort` needs the method — that is the bulk of the diff and it is mechanical. | `var _ loop.ModelPort = (*Client)(nil)` still compiles in both adapter packages. |
 | 4 | **`loop.DeriveQueries(ctx, model, input)`** — prompt, one bounded port call, parse. The 30 s bound is applied **here with `context.WithTimeout`**, never in the adapter. | The bound fires against a fake that blocks, and the returned cause names the bound and the elapsed time. |
 | 5 | **`Run` calls it**, merges, and records. `Record.derivationError` declared **between `Queries` and `Anchor`**. One `Info` on success and one `Warn` with the whole cause on fallback, **both carrying the derivation step's own elapsed** — F-3(a) is answerable only if the success path is timed too, and it is one value the step already holds. One summary line. | §8's six failure modes each produce **the same candidate set as a raw-only run** — assert set equality, never non-nil (#11235 G-3's premise). |
@@ -1178,6 +1263,11 @@ Do not construct a model client anywhere in `cmd/eval`.
 
 ### Unit 2 — one prompt, one shape check *(the instrument; its own PR, sequenced after)*
 
+> **SHIPPED 2026-09-12 at `e967204`** (`feat/the-derivation-generator`, whose parent is `main` at
+> `d2d5b38`). **This subsection is the ask, not the artefact.** What was built diverges from it at three
+> points, each argued by the implementer and each ruled on in **§18** — two of them correct this document
+> rather than depart from it. Read §18 before reading anything below as a specification.
+
 Replace `scripts/generate_derivations.py` with a Go command that calls `loop.DerivationPrompt`,
 `ModelPort.Derive` and `loop.ParseDerivation` and writes a sidecar. **It writes a new file; it does not
 overwrite `internal/eval/derivations.json`**, which is the comparability baseline for every arm-versus-arm
@@ -1233,3 +1323,237 @@ did not happen"* from a non-event into an event.
 | 3 | **Self-poisoning.** #13091 §6 measured **10 of 20** candidate slots going to this system's own prior run records — so the effective candidate limit for that input was 10, not 20. Record **#13591** reproduces it on a **novel** input — the harder case — at **9 of 20 slots**, ranks 4 through 15, all prior `processor-run` records of 66–72 kB each: **45 % of the aperture on a first-time input** (#13592 §3). The gap between that and #13091 §6's 10-of-20 on a *repeated* input is much smaller than "repeated task text" predicts. Six more queries widen the aperture and **widen this too**. | **Corrected in this revision — the previous mitigation was false against the code.** It read *"`Retrieve` already drops self-produced rows at fusion, so they no longer consume the limit."* **`internal/loop/retrieve.go` never reads `SelfProduced`** — `fuse`'s only exclusion is the anchor. The single production read is `assemble.go:52-53`, inside `admit`, which runs **after** `fuse` has already capped the list at `CandidateLimit`. **So self-produced rows do consume the candidate limit; what they are spared is the byte budget** (the `switch` short-circuits before `cumulative += size`). The old clause also contradicted #13091 §6 *in the same row* — "effective limit is 10, not 20" is only possible because they consume it. **The risk is therefore larger than this row previously allowed, not smaller**, and ~~nothing here mitigates it: they remain what the graph ranks highest for a repeated task text (#11179, #11141). Untouched.~~ **MITIGATED ELSEWHERE 2026-09-11, and the correction above stays exactly as written because it was true of the tree it measured** (`docs/architecture/the-aperture-spends-slots-admission-refuses.md`, #13601). `fuse` now skips a self-produced row on all three fill passes and `Retrieve` asks the graph for more rows than it returns, so the **initial** aperture no longer spends slots on rows admission refuses: the effective candidate limit for such an input is 20 again, not 10 or 11. **What this row still names, and it is not small:** the *supplementary* aperture does not pass through `fuse` and spends its slots exactly as before; the six-query fan-out this design adds multiplies the fetch rather than the aperture, so the mitigation scales with it; and the fetch-side headroom is a bridge with a stated expiry, watched by a WARN rather than assumed. **Nothing in that change is a judgement about what a run record is worth** — the predicate is inherited from `admit`, which already refused these rows. |
 | 4 | **The reverse coverage guard** (#11296). `validateDerivations` still checks sidecar → corpus only. | A warn and a coverage figure mitigate it; the guard direction is still open and this design changes no sidecar row. |
 | 5 | **Whether the retrieval constants are right for the new arm.** Every one of them was tuned on the old input **and under a ranking the turn will no longer perform** — per §2.2 and #11398, a turn today runs no fusion at all, so `CandidateLimit`, `RecallScopeReserve` and the byte budget were all set against plain similarity order plus a scope reserve. **After this change the first 17 slots are reciprocal-rank fused for the first time**, which is a second reason the constants are untested, independent of the input changing. | That is the *next* question and #13534 §5 demotes it until Toni's own runs say what to aim at. **F-9 is the specific hazard**; #11365 §8 already measured three sweep rows demoted by fusion. |
+
+---
+
+## 18. Unit 2 as built — the deletion, the three divergences, and what each falsified
+
+*(Added 2026-09-12, after `e967204` — `feat/the-derivation-generator` — landed `cmd/derive` and deleted
+`scripts/generate_derivations.py`. That commit's parent is `main` at `d2d5b38`. Every figure in this section
+was read at one of those two refs and names which.)*
+
+### 18.0 Is this document still the authority for Unit 2?
+
+**Yes for the ask, no for the artefact — and the split is not a hedge.** §16's Unit 2 subsection says what
+the instrument is *for* and what it must not break. It was never a specification of a command's surface, and
+reading it as one is what makes three reasonable decisions look like departures.
+
+| # | what shipped | ruling |
+|---|---|---|
+| **D-1** | one model call per row, no fill loop | **Adopt.** It falsifies §4.5's premise — which assumed the *generator* is the party obliged to collect a full set — and the replacement premise is stronger |
+| **D-2** | `cmd/derive` composes `DerivationPrompt` / `Derive` / `ParseDerivation` itself rather than calling `loop.DeriveQueries` | **Not a divergence from this document.** §16 names exactly those three and never names `DeriveQueries`. The new fact is a DRY cost, recorded in §18.3 with its math |
+| **D-3** | `-derivations ""` means *no baseline; every corpus row is a target* | **Adopt, and record that it closes a gap §16 had.** Without it the discharge this unit exists for has no default target set |
+
+**Where a divergence is adopted, the superseded text above is left standing, struck and dated, with a
+pointer here** (#11034 P-43). A line that was right about the tree it was read on is a record, not a defect,
+and retro-editing it would destroy the only evidence of what was known when.
+
+### 18.1 The deletion is right, and the argument is the implementer's
+
+`scripts/generate_derivations.py` and `scripts/test_generate_derivations.py` are deleted at `e967204`
+(−772 lines). The ground, verbatim from the commit message: *"The script is deleted rather than superseded:
+leaving `SYSTEM_PROMPT` in the tree discharges none of the duplication this unit exists to end."*
+
+**That is §7.1's own math read correctly.** §7.1 counts *copies*, not disagreements — `17 × 2 = 34` in
+Python or `30 × 2 = 60` in Go. A script re-pointed at a shared prompt file would have produced one text with
+two readers, which is the #13596 fallback's shape and is strictly worse than one text with one reader once
+the second reader has no remaining job. **After Unit 2 the script has no remaining job:** its only output was
+a sidecar, and `cmd/derive` writes sidecars from the product's own functions.
+
+**What the deletion costs, rather than waved past:** every `…py:NN` citation in this document stops
+resolving on the tip. That is a documentation cost, paid in §18.5. It is not a reason to keep a second copy
+of a prompt in the tree.
+
+**What it buys, and it is the unit's whole point:** a generated sidecar is now *the query set the turn would
+ask*, because the two run the same `DerivationPrompt` and the same `ParseDerivation`. Before it, an
+arm-versus-arm figure compared the instrument against itself.
+
+**Falsifier, published as the exact string run** (#1220, 2026-09-09):
+`git grep -c SYSTEM_PROMPT -- '*.py' '*.go'` — **no hits at `e967204`**. A hit is a second carrier and
+re-opens §7.1's DRY paragraph. *(The pathspec is part of the command, not a note beside it: `SYSTEM_PROMPT`
+appears in this document as prose about provenance and about this very falsifier, and a bare grep would fire
+on those for as long as the sentences stand. No count is given — it is a number a later round changes.)*
+
+### 18.2 D-1 — one call per row, which corrects §4.5 rather than departing from it
+
+**What shipped.** `deriveRow` makes exactly one `ModelPort.Derive` call per corpus row and returns an error
+if the parse yields nothing. There is no `MAX_FILL_ATTEMPTS` equivalent anywhere in the command.
+
+**The implementer's ground, and it holds:** an instrument that retries stops measuring the product. The turn
+makes one call and takes what parses (§4.5); a generator that retries reports a query set the turn could not
+have produced. **The bias runs one way — toward fuller, better sets than the product achieves** — which is
+the silent direction, invisible in the artefact to every later reader.
+
+**Why this is a correction, not a deviation.** §4.5 reached its no-retry conclusion *by contrast*: the script
+retries because it must collect five for a file that will be pinned forever. That premise was true of
+`scripts/generate_derivations.py`, whose output **was** the pinned baseline. **It is false of `cmd/derive`,
+whose output explicitly is not** — §16 forbids overwriting `internal/eval/derivations.json`, and `os.SameFile`
+now enforces it. A comparison arm is not a pinned artefact: it must share the product's failure distribution,
+not repair it. §4.5's conclusion about the *turn* was never in doubt; what needed revising is the half of its
+argument that rested on there being a second, retrying party.
+
+**What replaces the fill loop, and this is what makes the trade acceptable:** a short row is **visible, not
+silent.** `shapeProblems` emits a WARN whenever a row's query count is not `loop.MaxDerivedQueries`, so
+raggedness is read as a measurement of the product instead of being repaired into a measurement of the
+instrument.
+
+**The cost, stated:** a generated sidecar may be ragged where the pinned one is uniformly 5/5, so an
+arm-versus-arm figure taken against it is not row-for-row comparable on query count. **That is the honest
+shape, and it is what F-2 wants to know** — *"does a real model derive as well as the pinned set"* includes
+*"does it produce five at all"*. A fill loop would have deleted the answer to half the question and left the
+other half looking cleaner than it is.
+
+**Falsifier:** a `cmd/derive` run in which a row carries fewer than five queries and logs no shape WARN
+refutes the claim that raggedness is visible, and with it this section's acceptance of D-1.
+
+### 18.3 D-2 and D-3 — the composition, the empty baseline, and two properties the implementation pinned
+
+**D-2 is compliance, not divergence.** §16 asks for *"a Go command that calls `loop.DerivationPrompt`,
+`ModelPort.Derive` and `loop.ParseDerivation`"*. It does not name `loop.DeriveQueries`; the only place this
+document names it is §7.1's component table, which is Unit **1**'s inventory. So there is nothing to rule on
+— the implementer built what §16 asked for and reported a concern about §7.1's table. The concern is sound
+and is recorded here rather than acted on.
+
+**The concern.** `loop.DeriveQueries` binds `DerivationBound` — 30 s, a *product* policy chosen (§7.4)
+because a turn's derivation failure costs only a fallback. A 25-call batch is not a turn: a bound that is
+right for one interactive step is a batch-abort policy at twenty-five, and `cmd/derive` takes `-timeout`
+instead. `DeriveQueries` additionally maps failures into the cause vocabulary §7.5 designed for
+`Record.derivationError`, and there is no record here for those causes to land in.
+
+**The DRY math, since the composition now exists at two sites** (#1267). The shared shape is *bound the
+context, call `Derive` with `DerivationPrompt`, `ParseDerivation` the text, refuse an empty result* — **~9
+lines × 2 sites = 18**, which is #1267's *">5 lines at 2 (not >2) sites"* band: **a judgement call whose
+trade-off must be stated explicitly**, the same band and the same treatment §7.1 gave the prompt. **The
+trade-off:** what is duplicated is the *bound* and the *empty-result message*, and **neither reaches the
+query set**. What determines the query set — the prompt text and the parse — is shared by construction and
+cannot drift. **The tidy, named and not folded in:** `deriveQueries` already exists unexported in
+`internal/loop`, taking `bound` as a parameter; exporting that form would collapse the two sites at the cost
+of putting a batch concern on the loop's surface. Filed on the same ground §7.2 used for `Condense`'s name.
+
+**And note what D-2 is *not*: it is not a parity risk.** §7.3's parity argument is about the *merge rule*,
+where two implementations make the arms differ in a way no single-package test can see. Here the two sites
+share the functions that decide the output and differ only in a deadline and an error string.
+
+**D-3 closes a gap this document had, and the measurement is the argument.** `-derivations ""` means there
+is no baseline, so every corpus row is a target. Without it, the default target set is `Unpinned(corpus)` —
+and **measured at `e967204`, 0 of 25 corpus rows are unpinned**, exactly as §2.5 records (*"`Derivations.
+Unpinned(corpus)` returns the empty list"*). **So a `cmd/derive` run with default flags would generate
+nothing**, and the F-2 discharge §16 exists to enable would have had no route except `-only` naming all
+twenty-five rows together with `-force` — whose refusal message is about replacing a measured baseline,
+which is not what is happening when `-out` is a new file. **§16 specified a discharge and did not specify
+the machinery for it.** The implementer noticed and closed it.
+
+**Two properties the design described in prose and the implementation turned into guards**, recorded here so
+the design does not take credit for them:
+
+- **`-out` may not resolve to the baseline.** §16 says *"it writes a new file; it does not overwrite
+  `internal/eval/derivations.json`"*. That is a sentence; `os.SameFile` is a check, and it holds against a
+  `..`-bearing path that a string comparison would pass.
+- **Structural blindness is a byte comparison.** §16 says the generator *"must read `{id, input}` and discard
+  every other corpus field before any model-facing value is constructed"*. The implementation pins it by
+  requiring two corpora that agree on `id` and `input` but differ in subject, stratum, anchor and required
+  set to put **identical bytes on the wire** — which is the property itself, not a proxy for it.
+
+**And one divergence that is not a decision but a consequence, now realised:** §7.2 predicted that a sidecar
+regenerated by Unit 2 would differ from the pinned one because the pinned one used `temperature 0.5` and the
+product uses the configured sampling, default `0`. `cmd/derive` adds no temperature flag of its own, so that
+prediction is now a standing property of every figure it produces. **It is not a defect** — the point of the
+unit is to measure the product's sampling, not the script's — but it means a Unit 2 sidecar differs from the
+pinned one for **two** reasons at once, sampling and prompt-carrier, and an arm-versus-arm figure cannot
+attribute a delta between them. State that alongside any such figure.
+
+### 18.4 #13596's fallback is executable, and the correction matters more than the fix
+
+**It was reported to me that the deletion makes #13596's named fallback unexecutable as written. It does
+not — and the reasoning is worth keeping, because a deleted file looks exactly like a broken fallback.**
+
+#13596's trigger is *"Unit 2 has not merged to `main` within 10 merges after Unit 1 merges."* **The trigger
+fires only in the branch where Unit 2 has not merged — and in that branch the script is still on `main`,
+because it is deleted only by Unit 2's own commit.** Measured 2026-09-12:
+`git show main:scripts/generate_derivations.py | wc -c` returns **19,247** at `d2d5b38`, and `:80`, `:81`,
+`:307`, `:308` and `:397` all resolve there. **The two states are mutually exclusive by construction**, so
+the fallback was executable in every branch that could ever have invoked it.
+
+**What #13596 needs is a close, not a re-specification** — and its own last paragraph already says so: *"if
+the answer is that Unit 2 is not being built, the right close is to say so as a decision and take the
+fallback."* The symmetric close is the one that now applies: **Unit 2 was built, the duplication is
+discharged by deletion, the trigger can no longer fire, and the task closes as discharged when the PR
+merges.** The three deferrals it tracks resolve with it — §7.1's duplication (**discharged**, §18.1), F-5
+(**closed**; there is no Python copy left to drift from), and F-2 with Q1's reversal cost (**no longer
+blocked**; the machinery exists and what they need is a run).
+
+**The operator owns that close**, because the architect files no PR and does not decide when one merges
+(#7506 §1). Until it merges, #13596 stays open and correct exactly as written.
+
+**Falsifier for this section:** `git show main:scripts/generate_derivations.py` failing on the ref the
+trigger is evaluated against would refute it. On `d2d5b38` it does not.
+
+### 18.5 Every figure the deleted script sourced, and where it stands now
+
+**The re-derivation rule, since a list is not a specification** (#1220): search this document for
+`generate_derivations`, for `scripts/`, and for the script's own identifiers — `SYSTEM_PROMPT`, `FEW_SHOT`,
+`parse_lines`, `dedupe_against`, `QUERIES_PER_ROW`, `MAX_FILL_ATTEMPTS`, `raw_text` — and read every hit.
+**Do not trust the table below to be complete.**
+
+| figure | sourced from | where it stands now |
+|---|---|---|
+| system prompt **1,790 B**, few-shot **710 B** | the script at `0df5c14` | **Historical.** Resolve at `0df5c14` or `main` `d2d5b38`. The product's counterpart is a **2,507 B** fixed part |
+| **assembled prompt 2,623 B** | 1,790 + 710 + the 123 B median input | **Corrected wherever it was read as the product's:** the TL;DR's Cost line and §2.4's ratio now quote **2,630 B** (`loop.DerivationPrompt` at `e967204`). §2.4 keeps 2,623 B as the *script's* figure, labelled |
+| latency **~0.4 s/row**, model `ai/qwen3-coder` | **#11348**; the runtime attribution from the script `:62` / `:79` | **Historical, and #11348 still carries it** — the script citation corroborates #11348, it is not its source. Resolve `:62` / `:79` at `0df5c14` |
+| `QUERIES_PER_ROW = 5` (`:80`) | the script | **Live under a new carrier:** `loop.MaxDerivedQueries = 5`. §14 Q7 |
+| `MAX_FILL_ATTEMPTS = 4` (`:81`) | the script | **Retired.** Nothing in this project retries a derivation. §4.5, §18.2 |
+| `temperature 0.5` (`:397`) | the script | **Historical, and its consequence is now realised** — §7.2, §18.3 |
+| `raw_text` / `candidates` (`:307` / `:308`) | the script | **Historical.** The claim they support — the generator's raw output was never persisted — is a fact about the **pinned** sidecar and is unaffected by the deletion. §16 step 2 |
+
+**The 7 B, which is the one figure this round changed rather than dated.** The script's fixed part was
+**2,500 B** (1,790 + 710); `loop.DerivationPrompt`'s is **2,507 B**. At the corpus's median 123 B input the
+script assembled **2,623 B** and the product assembles **2,630 B**. Measured at `e967204`:
+`len(DerivationPrompt(""))` returns `2507` and `len(DerivationPrompt(strings.Repeat("q", 123)))` returns
+`2630`; the prompt is exactly `2507 + len(input)`, because the input is appended as the last block.
+
+**The ratio against the 71,800 B judgement call is unchanged at one decimal** — 3.66 % against 3.65 % — so
+no conclusion in §2.4 or §12 moves. **The defect was attribution, not arithmetic**, and that is the class a
+reader cannot catch by reading: 2,623 B sat under a heading asking *what a derivation-shaped call costs* and
+was quoted in the TL;DR's **Cost** line, where every neighbouring figure is the product's. It was found by
+measuring the replacement, which is the only instrument that reaches this class.
+
+### 18.6 The sweep that produced this section, and what it structurally cannot reach
+
+**Reported to me as eleven sites, by name. Both numbers are right, about different artefacts, and the gap is
+itself a finding.** At `e967204` the tree's copy holds **12 occurrences on 11 lines** —
+`git show HEAD:docs/architecture/the-query-the-graph-is-asked.md | grep -o generate_derivations | wc -l`
+returns 12, and the same pipeline ending in `grep -c generate_derivations` returns 11. **Node #13585 holds
+**11 occurrences on 11 lines**, because it carries the **revision-2** text and is missing
+the **#13703 / #13705** corrections — one of which (`01ef459`) added the second occurrence to §16's step-2
+row, taking the file from 11 to 12. So *eleven* is exact for the node and one short for the tree, and **the
+node has been silently out of parity for two commits** (`01ef459`, `57d6033`), not one. A publish is the
+only moment anyone looks at what is in a node; this is what that look found — see the header for the full
+measurement.
+
+**And the name is the wrong instrument regardless.** This document's own re-derivation rule — *grep for
+`Unit 2` and read each hit* — returns **25** lines at `e967204`. The property *"instructs a reader to
+consult, run or fall back on a file not in the tree"* is not decidable from any identifier.
+
+**What the layers I ran structurally cannot reach**, stated so the next reader sweeps the complement rather
+than repeating me:
+
+- **A name-scoped grep cannot reach a claim that never names the file.** The sites this round found in
+  **#11235 / `docs/architecture/m3-derived-recall.md`** are exactly that shape — *"a re-runnable generator
+  kept in the tree"* and *"the generator exists, the run is minutes"*. **Neither contained the string
+  `generate_derivations`** before this round corrected them: at `e967204`,
+  `git grep -l generate_derivations` returns **one file**, this one. Both were live claims about the present
+  tree and one is load-bearing on a ruling (*"(b) is the default and the question is settled"*). **Three
+  sites in that file are touched** — those two, plus its first use of *"the generator"* at `:725`, which
+  needed no correction but sits **~400 lines above** the place the name is now explained, so it carries the
+  definition instead of relying on adjacency. They are corrected in that document, not here.
+- **A grep cannot reach a figure whose attribution is wrong.** 2,623 B is a correct number under a wrong
+  owner, and no pattern separates it from a correct one.
+- **A grep cannot reach a premise that a deletion falsifies without mentioning it.** §4.5's no-retry argument
+  named the script, so it was findable; the *reason* it needed revising — that the generator's role changed
+  from producing the baseline to producing a comparison arm — is a fact about §16, which the sweep term
+  never reaches.
+- **I did not sweep the eval corpus or the run records.** `internal/eval/corpus-anchor.json` carries an
+  anchor titled *"scripts/ — the three rigs that drive the built…"*; at `e967204` `scripts/` holds exactly
+  three rigs (`compare.py`, `smoke.py`, `step_trace.py`), so the title reads correctly today — but I have
+  not checked the DiVoid node behind it, and a corpus anchor is a pinned string that nothing in this repo
+  re-resolves.
