@@ -164,3 +164,11 @@ func TestOpenAICompatRedactionIsANoOpOnTheErrorTextOfAnEndpointCarryingNoUserinf
 		}
 	}
 }
+
+func TestOpenAICompatDeriveRedactsTheCredentialFromTheRequestFailedError(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient(unreachableBase, "model-x", "", loop.Sampling{}, refusingClient())
+	_, err := c.Derive(context.Background(), "prompt", 64)
+	assertCredentialRedacted(t, err, unreachableBase+completionsRouteUnderTest, unreachableAuthority)
+}

@@ -103,7 +103,24 @@ type fakeModel struct {
 
 	beforeReturn func()
 
-	calls []JudgeInput
+	derivedText string
+	deriveErr   error
+	deriveHold  chan struct{}
+
+	calls         []JudgeInput
+	derivePrompts []string
+}
+
+func (f *fakeModel) Derive(ctx context.Context, prompt string, _ int) (string, error) {
+	f.derivePrompts = append(f.derivePrompts, prompt)
+	if f.deriveHold != nil {
+		select {
+		case <-f.deriveHold:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+	return f.derivedText, f.deriveErr
 }
 
 func (f *fakeModel) Judge(_ context.Context, in JudgeInput) (JudgeResult, error) {

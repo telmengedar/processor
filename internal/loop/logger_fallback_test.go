@@ -39,6 +39,8 @@ func (m *probeModel) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeR
 	return loop.JudgeResult{Answer: "done", Reason: loop.Answered, RawReason: "stop"}, nil
 }
 
+func (m *probeModel) Derive(context.Context, string, int) (string, error) { return "", nil }
+
 func TestTurnBuiltByAnExternalKeyedLiteralSurvivesTheNilLoggerBranch(t *testing.T) {
 	t.Parallel()
 

@@ -170,13 +170,15 @@ type Sampling struct {
 
 // Record is the outcome of one run.
 type Record struct {
-	Input      string        `json:"input"`
-	Subject    int64         `json:"subject"`
-	Query      string        `json:"query"`
-	Queries    []string      `json:"queries"`
-	Anchor     AnchorSummary `json:"anchor"`
-	Candidates []Disposition `json:"candidates"`
-	Block      string        `json:"block"`
+	Input   string   `json:"input"`
+	Subject int64    `json:"subject"`
+	Query   string   `json:"query"`
+	Queries []string `json:"queries"`
+	// DerivationError is why the query set is the raw input alone, empty when queries were derived.
+	DerivationError string        `json:"derivationError,omitempty"`
+	Anchor          AnchorSummary `json:"anchor"`
+	Candidates      []Disposition `json:"candidates"`
+	Block           string        `json:"block"`
 
 	Answer string `json:"answer"`
 	Model  string `json:"model"`
