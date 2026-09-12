@@ -441,7 +441,7 @@ produce **the same candidate set as a raw-only run** — not merely that it prod
 
 | # | Risk | Mitigation | Falsifier |
 |---|---|---|---|
-| R1 | **A real model's derivations are worse than the hand-written ones this design was measured on.** The largest risk in the document | §9's A/B compares a live-derived arm against the pinned arm on one graph state; §4.4 records the derived queries verbatim so a bad derivation is readable rather than inferred | a live-derivation sweep **fails to beat a raw-input arm taken in the same session** ~~scores at or below 10/13~~ *(converted 2026-09-05: `/13` identified the corpus `corpusHash 6c1ba696` that PR #27 replaced. This is a forward-looking acceptance threshold rather than a dated record, so it is restated as arm-vs-arm on whatever the corpus then is — the same conversion §9 acceptance item 1 and §11 step 1 already carry, and for the same reason: the graph is live and unversioned, so a fixed denominator is a comparison against a system that no longer exists)* |
+| R1 | **A real model's derivations are worse than the hand-written ones this design was measured on.** The largest risk in the document | §9's A/B compares a live-derived arm against the pinned arm on one graph state; §4.4 records the derived queries verbatim so a bad derivation is readable rather than inferred | a live-derivation sweep **fails to beat a raw-input arm taken at the same graph state (§9.1a — **and note §9.1a's scope limit: this is an arm-versus-arm comparison, so the bracket covers 25 of the 150 query neighbourhoods the derived arm reads, and the residual error direction here is a false *acceptance*. Added round 2, #13705 W-1**)** ~~scores at or below 10/13~~ *(converted 2026-09-05: `/13` identified the corpus `corpusHash 6c1ba696` that PR #27 replaced. This is a forward-looking acceptance threshold rather than a dated record, so it is restated as arm-vs-arm on whatever the corpus then is — the same conversion §9 acceptance item 1 and §11 step 1 already carry, and for the same reason: the graph is live and unversioned, so a fixed denominator is a comparison against a system that no longer exists)* |
 | R2 | **The design was selected on the same 13 rows it *was* scored on.** Six combiners were compared and the best kept — that is selection on the test set, and the honest reading of 12/13 is *an upper bound*. *(Tense corrected 2026-09-05: it is now scored on 25. The twelve rows PR #27 added are the only ones it was **not** selected on — ~~and the sidecar pins derivations for none of them, §12 q5, which is why they cannot yet answer the question they exist to answer.~~ **Struck later the same day: PR #32 pinned all twelve (§12 q5 closed), so they now *can* answer it. §9.2 is what they answer — and the answer is one row.**)* | Stated here rather than mitigated. The corpus was authored before this design existed and none of its rows were changed; #11092 §11 Q1's task-set question is the place this gets resolved | **Fired — and §9.1 already explains it. Do not read this row as an unfired falsifier.** The advantage did shrink on rows added after this document: **+0.09 on eleven rows** (0.82 → 0.91) became **+0.04 on twenty-three** (0.39 → 0.43). §9.1 reads that as **coverage dilution, not generalisation failure** — twelve of the twenty-three labelled rows are identical between the arms *by construction*, because the sidecar gives them no derivations, so they are incapable of showing an advantage either way. **That explanation is on the record and is itself testable**: §12 q5 option (a) or (b) would settle it by giving the twelve rows derivations. ~~Until one of them happens this firing is **uninformative rather than answered**.~~ ~~**Note also that R2a below was re-confirmed on 2026-09-05 and this row was not.**~~ *(Both struck 2026-09-05, later the same day: (b) happened — PR #32 closed the sidecar to 25/25 with blind, model-generated queries — and **§9.2 is the reading.** **Ruling: the dilution explanation is confirmed as the cause of the shrinkage and refuted as a complete account of it.** Confirmed, because closing coverage restores the full-corpus margin to **+0.09 on twenty-three** (0.39 → 0.48), which is the eleven-row figure to two decimals; the +0.04 was an artifact of rows incapable of differing. Refuted as complete, because dilution implied the twelve rows were merely **silent** — given queries, **eleven of the twelve still miss**, and the restored margin is wins and denominator growing at the same rate rather than evidence of generalisation: derivation converts **1 of 2** available misses on the eleven selected-on rows and **1 of 12** on the out-of-sample twelve. **This row is answered, not closed** — the charge it names has moved from unmeasurable to measurable-and-unsettled, and §9.2 carries the restated falsifier.)* |
 | R2a | **R2 bites hardest on precisely the row carrying the derived half of the hypothesis, and that is not a coincidence.** The derived arm's advantage over the scope-only arm is **one corpus row, r03** *(re-confirmed 2026-09-05. `Retrieve` builds the scope and issues the scoped recall unconditionally, so a sweep with no `-derivations` **is** the scope-only arm — and r03 is the single row separating it from the pinned arm on retrieved, 9/11 → 10/11)*. **r03's first pinned query is §2.2's own measured best derived question, verbatim** — and §2.2 already flags its author as contaminated for r03, r07 and r08. So the one row that distinguishes derivation from scope alone is a row whose winning query was written by someone who had read the diagnosis first. **Step 4's case rests on it** | Not mitigable inside this corpus, and naming it is the mitigation. R1's live-derivation reading (§9 item 4) is the only thing that answers it: it asks whether a model, uncontaminated, produces a query as good as the hand-written one. Until that reading exists, treat the derived arm's margin over the scope-only arm as **one hand-written query's worth of evidence** | a live-derived sweep leaves r03 `notRetrieved`, collapsing the derived arm onto the scope-only arm. *(**Weakened in the design's favour 2026-09-05, later the same day** — and this is the best news in §9.2. The derived arm's advantage over the scope-only arm is **no longer one row**. At 25/25 sidecar coverage it is **two — r03 and r12** — and **r12's queries had no author in the sense this row means**: they were generated by a model that never saw the row's `required`, `subject`, `hash` or `why` fields, blindness enforced structurally rather than by care (PR #32; `project_corpus_blind()` discards those fields before any model-facing value is constructed). **So r03 could collapse entirely and the arms would still separate.** This falsifier is not retired — it is simply no longer sufficient on its own to collapse the arms, and the row's core charge is correspondingly narrowed: the derived half of the hypothesis no longer rests **only** on a contaminated query. One uncontaminated row is not a result, but it is the first evidence in this document that is not r03's.)* |
 | R3 | **Cost per turn rises from 1 graph read to 1 + N + 2** (N derived queries, one scoped recall, one links read), plus one model call | All reads are `GET`s against one host; the model call is small — a derivation prompt carries the input, not the block. **The sweep's model cost stays zero** (§4.5) | a turn's wall time or graph error rate rises materially in the smoke rig |
@@ -565,14 +565,140 @@ admitted → `cut at rank 6`. Net **+1 retrieved, +1 admitted**.
 without all three names nothing: `corpusHash ffa291d5` (the corpus file), `derivationHash 23b50552` (the
 sidecar, at 13-of-25 coverage), and **the graph's own content**, which carries no hash and is the one that
 moved. Item 2 above is the proof that the third is not hypothetical — which is why the acceptance step below
-compares two arms **taken in one session** and never a fresh arm against a rate recorded on another day.
+compares two arms **taken at one graph state** and never a fresh arm against a rate recorded on another day.
+**§9.1a states what "one graph state" means and how it is established; it is the canonical statement, and
+two later designs restated it as *"in the same session"*, which is not the same claim.**
 
 **The second identity has since expired too** *(2026-09-05, later the same day)*. PR #32 replaced the sidecar
 with a 25-of-25 one, so **`23b50552` now identifies a file that is not in the tree**. Every number in §9.1
 remains a valid reading **of that file**; none of them is a reading of the sidecar a sweep loads today.
 **That is two of the three identities expiring inside two days** — and it is why §9.2 states its ruling in
 terms of arm-vs-arm differences per population rather than in rates, since a difference between two arms taken
-in one session survives all three moving and a rate survives none of them.
+at one graph state survives all three moving and a rate survives none of them.
+
+### 9.1a When two readings are comparable — the canonical statement *(added 2026-09-11; #13703)*
+
+**This is the block #13585 and #13601 point at.** Both previously restated the rule as *"in the same
+session"*, and that restatement is what drifted (#11034 P-52).
+
+> **Two readings are comparable when they were taken at ONE GRAPH STATE. Clock proximity establishes
+> nothing.**
+
+**Why *"same session"* was the wrong proxy.** §9.1 item 2 recorded the baseline moving **overnight**, so the
+phrase was written to exclude a **cross-day** comparison — and at that it works. It was then read as though
+it also bounded movement *within* a session, and it never did. Measured 2026-09-11: the same pre-change
+binary read `admitted 8/23` at `18:33:10Z` and `9/23` at `19:38:16Z`. **Unchanged code, changed answer,
+inside one session** (#13702 §1, #13703). *"Same session"* is necessary hygiene; it was never a criterion.
+
+**"One graph state" is not directly observable** — the graph carries no hash, which is the whole of the
+third identity above. So it is not asserted, it is **probed**, by a control built from the reading you are
+already taking:
+
+> **Bracket the comparison with a repeat of its own first reading.** Take arm **A**, take arm **B**, then
+> take **A again on the same binary**. If the two A readings **disagree**, the window was dirty and the
+> comparison is **void — not failed**; re-take it.
+
+**The control is one-sided, and this is the sentence an earlier revision got backwards** *(corrected
+2026-09-11 round 2, #13705 W-2)*. It licenses `A != C ⟹ the window was dirty`. **It does not license
+`A == C ⟹ the window was clean`**, because a movement that is added and reversed inside the window also
+yields `A == C`. That is not idle: a single page of the graph shows **14 missing ids across a 514-id
+span** (#13705 §1). `A == C` is **necessary, not sufficient** — and "the control detects rather than
+prevents" is a *different* distinction that does not cover this one.
+
+**What it does buy, stated as the size of the improvement rather than as a claim of soundness.** Under
+*"same session"*, **every** movement inside the window was undetectable. Under the bracket, **monotone**
+movement — a node added and kept, the dominant mode on an append-dominant substrate — **is** detected.
+What survives is observationally-reversing movement, which needs an add **and** a remove **and** a ranking
+effect inside the same 13–18 minutes. **The dominant case is converted; the rare one remains** (#13705 §1).
+
+#### The scope limit: the bracket repeats A, so it certifies stillness only for A's queries
+
+*(Added 2026-09-11 round 2, from #13705 W-1 — this is a limit on the rule above, not on the procedure
+#13585 step 1 runs.)*
+
+**A repeat of A probes the neighbourhoods A's own queries read.** Where B issues queries A does not, those
+neighbourhoods are **outside the bracket**, and a write landing in one of them leaves `A == C` while
+changing B. Measured on the pinned sidecar at `962ac3a`:
+
+| arm | distinct query strings across the 25 rows |
+|---|---|
+| derived (`-derivations`) | **150** (6 per row) |
+| raw-input (no `-derivations`) | **25** (`queries[0]` per row) |
+| issued by the derived arm and **never** by the raw arm | **125** |
+
+**So an arm-versus-arm use brackets 25 of 150 neighbourhoods — 16.7 %.** And the error direction there is
+the unsafe one: R1 and F-2 both want the derived arm to *beat* the raw arm, so an unnoticed change
+favouring the 125 unbracketed neighbourhoods is a **false acceptance** of the largest open hypothesis in
+this line. **The two uses do not share a safety direction:**
+
+| use | A and B are | bracket coverage | a reversal inside the window gives |
+|---|---|---|---|
+| **zero-delta** (#13585 Unit 1 step 1) | the **same arm**, two binaries — byte-identical `queries` arrays on all 25 rows (#13705) | **complete** | a **false rejection** — conservative, costs one re-take |
+| **arm-versus-arm** (R1, F-2, `anchor-grounded-recall.md` §11.2 F2) | **different arms** | **25 of 150** | a **false acceptance** — the dangerous direction |
+
+**So the zero-delta procedure is fully bracketed and genuinely fixed; the arm-versus-arm falsifiers inherit
+a partial bracket and must say so.** Closing it needs a bracket that repeats **B**'s query set as well —
+an A-B-A-B' quadruple — which is one more sweep and is **not specified here**, because no arm-versus-arm
+run is currently scheduled. *Falsified by:* a demonstration that any graph change affecting a derived
+query's top-20 also affects the raw input's top-20. Nothing claims that, and #13592's one-record/one-row
+locality points the other way.
+
+**The control rests on two properties *of the sweep itself*, each held by a guard rather than an argument.**
+(Input identity — same corpus file, same sidecar file — is a property of the invocation, not of the sweep,
+and the procedure fixes it separately.)
+
+| property | why the control needs it | the guard |
+|---|---|---|
+| the sweep is **deterministic given graph state** | without it, the two A readings could differ while the graph stood still, and a clean window would read as dirty | `anchor-grounded-recall.md` **A6**, and measured: two same-binary sweeps 9m52s apart changed **0 of 25** candidate lists (#13702 §1) |
+| the sweep **writes nothing to the graph** | an instrument that mutates its own substrate can never bracket anything, because A and C differ by construction | **`TestSweepReadsTheGraphAndNeverWritesToIt`** — `cmd/eval/sweep_test.go:382` at `962ac3a`, whose fake fatals with *"the sweep called WriteRun; the instrument must not mutate the substrate it measures"*. **Not a type-level guarantee:** `loop.GraphPort` **does** carry `WriteRun` (`internal/loop/turn.go:67` at `962ac3a`, above PR #74's `@@ -173,6 +177,21 @@` hunk and so unmoved by it), which is why a test holds this and not the signature. Stronger in fact than the test alone: `cmd/eval/sweep.go` contains **no static reference to `WriteRun` at all** (#13705 I-3) |
+
+**The two halves are measured on opposite sides of the same claim.** With **no** write between them, two
+readings of one binary agree completely — 0 of 25 rows moved (#13702). With a **run** between them, which
+files a record, two readings of one input share **19 of 20** candidates, the single delta being the new
+record displacing one row (#13592). **Graph state is the variable and writes are what move it.**
+
+**Replicated by a third party on 2026-09-11.** Two sweeps of the `962ac3a` binary, `sweptAt
+20:12:08.9620511Z` and `20:18:15.3795650Z` — **6m06.42s apart** — compared `identical` on every field but
+`sweptAt` across all 25 rows, and
+both read `labelled retrieved 11/23 (0.48) admitted 9/23 (0.39)`, `control 2/2 (1.00) / 1/2 (0.50)`,
+`corpusHash ffa291d5`, `derivationHash 2ec61afc`.
+
+**Two same-binary pairs have now been measured** — **9m52s** (#13702 runs 1↔3) and **6m06s** (this round) —
+and both are identical. *The 4m22s pair in #13702 is runs 1↔2, which is **old code versus new code**: it is
+the comparison these controls license, not a third control. Counting it as one would be counting the
+measurement as its own control.*
+
+**What the control costs, stated because it is not zero.** One extra reading. **Two sweeps measured on this
+host took 4m20s and 5m47s** (2026-09-11; a range over n=2, quoted with its set per #13592), so an A-B-A
+triple spans roughly **13–18 minutes**, while movement has been observed somewhere inside the **65m06s**
+between `18:33:10Z` and `19:38:16Z`. **So the triple is not a window narrow enough to be safe — it is a
+window wide enough to be audited.** The control does not prevent a dirty window; it detects one. Preventing
+it is #13592's rule and belongs to whoever is exercising the product: *do not run tasks while a measurement
+is in flight.*
+
+**Three routes to this control being worth nothing, and only the first was named before** *(the other two
+added 2026-09-11 round 2, from #13705 W-1/W-2)*:
+
+| # | route | what it would take to establish it |
+|---|---|---|
+| **1** | **the sweep is not deterministic given graph state** — then `A != C` no longer means the graph moved, and the control reports dirty windows that were clean | a pair of same-binary readings, with **no** write between them, differing on any field but `sweptAt` |
+| **2** | **`A == C` is read as certifying a clean window** — it does not; an added-then-reversed movement yields `A == C` (W-2) | already established: 14 missing ids across a 514-id span (#13705 §1). The remedy is wording, not measurement — never write `A == C` as sufficient |
+| **3** | **the bracket is read as covering B's queries** — it covers A's; 25 of 150 on an arm-versus-arm use (W-1) | already measured on the pinned sidecar at `962ac3a`. The remedy is an A-B-A-B' quadruple, unspecified here |
+
+**Route 1 would void every arm-versus-arm figure in this document. Routes 2 and 3 do not — they bound what
+the control can conclude**, and both are now stated above rather than discovered by the next reader.
+
+**Do not treat that table as complete; re-derive it.** The routes *are* the premises the control rests on,
+so the rule that generates them is: **ask what must hold for `A != C` to mean the graph moved, and what
+`A == C` licenses given that.** Any premise that answer depends on is a row. Two of these three were found
+by a reviewer after the first revision named only one (#13705 W-1/W-2), which is the calibration to carry.
+
+**What is duplicated and what is not.** The **procedure** is restated wherever it has to be runnable in
+place. **The *generalisation* — what makes two readings comparable — is ruled on here and nowhere else**,
+and that is the thing that drifted when #13585 and #13601 each restated it. *(Precision added round 2 from
+#13705 I-7: #13585's step-1 block does restate both guards, the cost and a falsifier, because a procedure a
+stranger executes has to carry its own premises. What it must not do — and no longer does — is state its
+own version of the rule.)*
 
 ### 9.2 Coverage closed — the addendum §9.1 asked for *(2026-09-05, later the same day)*
 
@@ -884,8 +1010,11 @@ about overlap at all but about r15's frame inheritance, which no token-level con
 
 ### Acceptance
 
-1. **A sweep on the raw-input arm** (no `-derivations`), taken **in the same session** as every reading it
-   will be compared against. ~~returns **0.73 / 0.64 / control 1.00** with `corpusHash 6c1ba696`. If it does
+1. **A sweep on the raw-input arm** (no `-derivations`), taken **at the same graph state** as every reading
+   it will be compared against — established by §9.1a's control, not by the clock. ~~taken **in the same
+   session** as every reading it will be compared against~~ *(corrected 2026-09-11, #13703: "same session"
+   was read as implying "same graph" and does not; §9.1a.)*
+   ~~returns **0.73 / 0.64 / control 1.00** with `corpusHash 6c1ba696`. If it does
    not, the graph moved and nothing below is comparable — stop and re-baseline.~~ *(Struck 2026-09-05: both
    halves are dead. `6c1ba696` identified the thirteen-row corpus PR #27 replaced with `ffa291d5`, and 0.73
    no longer reproduces even on the eleven surviving rows, which now read 0.82 — §9.1 item 2.)* **The step's
@@ -894,9 +1023,12 @@ about overlap at all but about r15's frame inheritance, which no token-level con
    recorded on another day, because the graph is live and unversioned and a cross-day comparison is two
    different systems. A raw-input arm that disagrees with §9.1 is evidence the graph moved — which is
    information, not a stop.
-2. **A sweep on the pinned arm**, same session, minutes apart, returns the retrieved rate. Both readings carry
-   `corpusHash`, `derivationHash` and the arm's name. **Both are free of model calls**, so this is the whole
-   A/B for the retrieval question and it costs nothing.
+2. **A sweep on the pinned arm**, back to back with item 1 and bracketed by §9.1a's control, returns the
+   retrieved rate. Both readings carry `corpusHash`, `derivationHash` and the arm's name. **Both are free of
+   model calls**, so this is the whole A/B for the retrieval question and it costs two sweeps plus the
+   control's third. *(This item read "same session, minutes apart" until 2026-09-11; both were clock bounds
+   and neither decided anything — #13703, §9.1a. Round 2, #13705 I-8: the replacement removed the phrase, so
+   the note now records what was struck rather than annotating live text.)*
 3. **`admittedBytes` and `admittedCount` are carried on both readings**, per #11133's explicit instruction —
    a rate match across a change that moves context is the trap that node exists to prevent. **They are carried
    for every row whatever its verdict**, because they are plain fields on the row struct and are marshalled
@@ -950,7 +1082,7 @@ that is what §9 item 4 measures and what R1 carries.
 
 | # | Step | Why this order |
 |---|---|---|
-| 1 | **Extract `loop.Retrieve` and have `cmd/eval/sweep.go` call it**, with today's single-query behaviour and no new capability. Sweep re-run must return **the same rates as a raw-input sweep taken immediately before the extraction** — ~~**0.73 / 0.64 / 1.00** unchanged~~ *(struck 2026-09-05: that pair identified a corpus and a graph state that no longer exist; §9.1)* | A pure refactor with a **zero-delta acceptance criterion** — the only step whose correctness is checkable against an existing number. **The number must be taken, not quoted:** the delta is zero against a reading from the same session, and against nothing else. Doing this step after the behaviour change would leave nothing to check it against |
+| 1 | **Extract `loop.Retrieve` and have `cmd/eval/sweep.go` call it**, with today's single-query behaviour and no new capability. Sweep re-run must return **the same rates as a raw-input sweep of the pre-extraction binary, bracketed by §9.1a's A-B-A control** — ~~taken immediately before the extraction~~ *(corrected 2026-09-11, #13703: "immediately before … in the same session" is a clock bound and decides nothing; §9.1a)* — ~~**0.73 / 0.64 / 1.00** unchanged~~ *(struck 2026-09-05: that pair identified a corpus and a graph state that no longer exist; §9.1)* | A pure refactor with a **zero-delta acceptance criterion** — the only step whose correctness is checkable against an existing number. **The number must be taken, not quoted:** the delta is zero against a reading at the same graph state, and against nothing else. Doing this step after the behaviour change would leave nothing to check it against |
 | 2 | **`GraphPort.Recall` scope parameter + `Neighbours`**, `internal/divoid` implementing both. Still no derivation | G-6, G-7, G-8 land here. Independently valuable and independently reviewable |
 | 3 | **Fusion + the scope reserve**, wired into `Retrieve`. Sweep gains `-derivations`; a pinned sidecar is authored | G-1, G-2 land here. **This is where the retrieved rate is expected to move, with zero model calls on either arm** — the whole A/B of §9 items 1–3 is runnable at the end of this step |
 | 4 | **`QueriesPort`, the derivation prompt, the degraded mode, the record fields** | G-3, G-4, G-9. The live half. Deliberately last, because steps 1–3 are measurable without a model and this one is not |

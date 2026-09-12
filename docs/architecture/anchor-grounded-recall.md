@@ -358,7 +358,7 @@ mechanism by which this change could quietly harm a row, and F2 is where it woul
 | **R2** | **A wrong anchor now steers half the fan-out**, where today it costs only three reserve slots. | Partly intended: A2 says the anchor is chosen deliberately. Bounded by retaining the raw arm — a wrong anchor loses fusion mass, it does not replace the list. Recorded as a genuine increase in sensitivity, not argued away. |
 | **R3** | **Anchor names that are long, generic, or uninformative.** A generic name is a no-op; a very long one could swamp the input's signal. | Only identity text is used, never the body. Q1 asks for the name-length distribution across the graph before this is called bounded in general rather than in the anchors measured. |
 | **R4** | **Self-poisoning compounds.** A run record of this input already ranks 6th on t1's own recall and has joined the anchor's neighbourhood (#11141, live in §3). A grounded query names the anchor, and run-record names embed the input — so grounded queries may match run records *more* strongly. | The self-produced cut already exists at admission. ~~**But it is a cut, not a rank exclusion**, so poisoned rows still consume candidate slots. Flagged as Q3; not solved here.~~ **CORRECTED 2026-09-11 (`docs/architecture/the-aperture-spends-slots-admission-refuses.md`, #13601): it is now a selection exclusion as well as a cut.** `fuse` skips a self-produced row on all three of its fill passes and `Retrieve` fetches deeper so the freed slots are filled, so such a row no longer consumes a candidate slot in an initial assembly. The row's own concern — a grounded query matching run records *more* strongly — is therefore bounded at the aperture rather than only at admission. **It still holds of the supplementary aperture**, which does not pass through `fuse`. Q3 is answered and reversed. |
-| **R5** | **The sweep's baselines are superseded.** Both callers change ranking, so 11/23 retrieved and 9/23 admitted stop being the comparison point. | Intended — the instrument should measure the product (#11142). Both arms must be re-run and the new baseline recorded in the same session, not inferred. |
+| **R5** | **The sweep's baselines are superseded.** Both callers change ranking, so 11/23 retrieved and 9/23 admitted stop being the comparison point. | Intended — the instrument should measure the product (#11142). Both arms must be re-run at **one graph state** and the new baseline recorded, not inferred. ~~in the same session~~ *(corrected 2026-09-11, #13703: "same session" is a clock bound and does not imply one graph state — an unchanged binary moved `admitted 8/23` → `9/23` inside one session. `m3-derived-recall.md` §9.1a is canonical, and A6 above is the assumption it rests on.)* |
 | **R6** | **Design-document parity.** This adds a row to the combiner table in M3 §4.2 and changes §4.1's shape diagram and §4.3's placement table. | M3 is `docs/architecture/m3-derived-recall.md`, graph node **#11235**. M1 (#10532) is touched only descriptively. **Q4: is M3 under the same P-40 parity rule as M1?** If so this needs a parity publish. |
 
 ---
@@ -380,7 +380,11 @@ in the candidate order handed to admission** and its **admit/cut disposition**.
 
 ### 11.2 F2 — the harm guard. The existing sweep corpus, used for the one thing it is good at.
 
-Run the 23-row sweep on both arms at one graph state, in one session.
+Run the 23-row sweep on both arms at one graph state, established by `m3-derived-recall.md` §9.1a's
+A-B-A control. ~~in one session~~ *(corrected 2026-09-11, #13703 round 2, from #13705 W-3: the target
+— "at one graph state" — was already right here; what followed it was the discredited proxy and no way to
+establish the target. **This is an *arms* comparison, so §9.1a's stated scope limit applies**: the bracket
+repeats one arm and certifies stillness only for the queries that arm issues.)*
 
 - **Prediction:** `admitted` does not fall below **9/23**, and specifically **r01 and r10 both keep their
   required node admitted.**
