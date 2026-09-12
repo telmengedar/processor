@@ -54,6 +54,19 @@ words; that document carries the argument.
   stratum. A control node the byte budget merely cut exits zero under a named budget alarm — that is the
   assembler being measured, not the instrument failing. Needs the graph half of the boot configuration
   only.
+- `cmd/derive` — the sidecar generator: regenerates a corpus row's pinned query set by running the
+  product's own derivation — `loop.DerivationPrompt`, the configured model adapter's `Derive`, and
+  `loop.ParseDerivation` — so a sweep of the result measures the query set the turn would actually
+  ask, rather than one an offline script invented. It reads `{id, input}` off a corpus row and
+  nothing else: the answer key (`required`, `subject`, `why`, the anchor title) is discarded before
+  any model-facing value is built, because a derivation that has seen the answer cannot be scored
+  against it. **It writes a new file (`-out`) and never the baseline it read (`-derivations`)** — the
+  baseline is the query set every arm-versus-arm figure in this repo was measured against, so an
+  `-out` resolving to the same file is refused. `-only` names rows; naming a row the baseline
+  already pins takes `-force`. `-derivations ""` means there is no baseline, so every corpus row is
+  a target. `-dry-run` writes the sidecar to stdout instead. One model call per row, no retry — the
+  turn makes one call too, and an instrument that retries stops measuring the turn. Needs the model
+  half of the boot configuration only.
 - `scripts/smoke.py` — the live smoke run, and the opposite instrument to the sweep: `python
   scripts/smoke.py` builds `cmd/processor`, starts it on a free port and posts the **same input twice**,
   printing per turn how many candidates were admitted out of how many, the block that was actually sent
@@ -468,9 +481,10 @@ go test -count=1 -v ./...
 ```
 
 `-count=1` disables Go's test cache; without it a re-run can print `(cached)` and execute nothing.
-A passing run prints one `ok` line per package — **twelve**: `cmd/condense`, `cmd/eval`, `cmd/processor`,
-`internal/boot`, `internal/condense`, `internal/divoid`, `internal/eval`, `internal/loop`,
-`internal/ollama`, `internal/openaicompat`, `internal/server`, `internal/workspace` — and
+A passing run prints one `ok` line per package — **fourteen**: `cmd/condense`, `cmd/derive`, `cmd/eval`,
+`cmd/processor`, `internal/boot`, `internal/condense`, `internal/divoid`, `internal/eval`,
+`internal/loop`, `internal/ollama`, `internal/openaicompat`, `internal/redacturl`, `internal/server`,
+`internal/workspace` — and
 every `--- PASS:` line for each test. A `?` line is the one to watch for: it means a package shipped with
 no test at all. The default suite is fully offline and hermetic: no network call, no credential, no live
 graph, no live model, no spend — every
@@ -620,3 +634,14 @@ flags it.
   satisfied by an implementation that reads the two verdicts alike. **Not verified here — and not
   verifiable by any test:** that the numbers mean anything. No corpus exists yet, and a green build
   proves the instrument works while proving nothing about what it measures (design **#10926** §15).
+- **The sidecar generator (`cmd/derive`):** the blindness is pinned as a byte comparison, not as an
+  absence — two corpora differing in subject, stratum, anchor title and required set but agreeing on
+  `{id, input}` must put **identical bytes** on the wire, so any field that leaked would move them
+  apart. The refusals are pinned in both directions: `-only` on a pinned row red without `-force` and
+  green with it, `-out` resolving to the baseline refused while a sibling path in the same directory
+  is accepted, and the baseline's bytes asserted unchanged across a successful run. The pinned set is
+  asserted against a completion deliberately carrying a reasoning block, three list decorations, a
+  quoted line, a blank line, an echo of the input, a repeat and a line past the cap — so a parse other
+  than `loop.ParseDerivation` differs on it. **Not verified here:** anything about a real model's
+  output. No test in this repo calls a live endpoint, so whether a regenerated sidecar sweeps as well
+  as the pinned one is a measurement to be taken, not a property this suite can assert.
