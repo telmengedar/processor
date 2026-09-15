@@ -605,15 +605,51 @@ fixture quality.**
 | **M3** (#13980) | keyed on the rank-1 row cut for the byte budget | `Assemble` | **green** |
 | **M4** (#13980) | keyed on a shutout whose reasons are all byte-budget | `Assemble` | **green** |
 | **M5** (#13980) | keyed on a withheld count of four or more | `Assemble` | **green** |
-| **M8** (this ruling) | **unconditional**, after `record.Block` is set | **`Turn.Run`** | **green** |
+| **M8** (this ruling) | keyed on **any row having been withheld**, after `record.Block` is set | **`Turn.Run`** | **green** |
+| **M8u** (#13985) | the same, **unconditional** — appended on every run | **`Turn.Run`** | **red** — a pre-existing assertion, below |
 
 M3 is this unit's own subject condition — the rank-1 row cut for the byte budget is exactly what the
-operator WARN reports, and whether the same fact reaches the **model** is §5.2's elective half. M8 is
-worse than M3–M5 and is mine: it needs **no predicate at all**. Appending to `block` between the record's
-construction and `t.judge(...)` sends the model a block the record does not carry, and the whole suite
-stays green at exit 0. Measured in a detached worktree at `274dcc8` and **re-measured at `098c4ca`**
-after the W-2 test fix landed — 13 `ok`, 0 `--- FAIL` at both refs. A probe asserting
-`JudgeInput.Block == Record.Block` was green unmutated and red under it, printing the delta verbatim.
+operator WARN reports, and whether the same fact reaches the **model** is §5.2's elective half.
+
+**M8 is mine, and it escapes `Assemble` entirely.** Appending to `block` between the record's
+construction and `t.judge(...)` sends the model a block the record does not carry. Measured in a detached
+worktree at `274dcc8`, re-measured at `098c4ca` and again at `e343870`: **the suite stays green**, and a
+probe asserting `JudgeInput.Block == Record.Block` was green unmutated and red under it, printing the
+delta verbatim.
+
+> **CORRECTED 2026-09-15 (#13985).** This paragraph first described M8 as **unconditional** and said it
+> *"needs no predicate at all"*. **That is false of the mutation that was run.** M8 appends only when some
+> row was withheld (`for _, d := range dispositions { if !d.Included { … } }`) — which is a predicate, and
+> the natural one, since a withheld-row disclosure has nothing to say when nothing was withheld. The
+> *"13 `ok`, 0 `--- FAIL`"* figure is correct for that mutation and reproduces; it does **not** reproduce
+> for the unconditional variant the sentence described. **The number was right and the label was wrong**,
+> which is this arc's recurring shape and is why the correction is recorded rather than patched away.
+
+**The unconditional variant is caught, and by an assertion nobody would find.** `internal/loop/turn_test.go`
+has carried `if model.calls[0].Block != record.Block` since **`11ad386`**, inside
+`TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered` — a name that carries none of this
+property (P-20). It is a real discriminator, and it reddens against an unconditional append.
+
+**It does not weaken the case for G-10; measurement sharpens it.** That test's fixture is `baseGraph()`,
+which supplies **no candidates at all**, so no row is ever withheld in it and M8's predicate never fires
+there — verified: under M8 the whole suite reddens **only** G-10, and that test passes. So the
+pre-existing assertion catches the one shape a withheld-row disclosure would never take (*append even
+when nothing was withheld*) and misses the shape it would (*append because something was*). **It is
+fixture-limited in exactly the direction that matters**, on top of being unfindable by name. G-10's
+fixture carries an oversize row (`AssemblyByteBudget+1`), so it exercises the predicate and catches both
+variants.
+
+**Keep the old assertion; do not rename it and do not delete it as redundant.** Renaming would mis-describe
+the dozen other things its test checks, and deleting a green guard because another one covers it today is
+how a pair stops discriminating quietly. It is recorded here so the next reader neither re-discovers it as
+news nor mistakes it for this property's guard.
+
+**And G-10 catches M8 and none of M1–M5 — by design, not as a gap.** `Turn.Run` calls `Assemble` once and
+uses the one returned block for both the record and the judge, so a disclosure injected *inside* `Assemble`
+poisons both copies identically and the two stay equal. **G-10 tests for divergence between them, not for
+disclosure as such**, so it structurally cannot see an assembly-scope injection — which is exactly what the
+forbidden-list entry is for. The two instruments partition the problem and neither covers the other's half;
+confirmed by constructing M3 and watching G-10 stay green.
 
 #### Why widening cannot close it
 
