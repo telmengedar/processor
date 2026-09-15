@@ -13,7 +13,7 @@ const (
 
 var userContentTestInstant = time.Date(2026, 3, 4, 5, 6, 7, 0, time.FixedZone("test+02", 2*60*60))
 
-const userContentTestInstantUTC = "2026-03-04T05:06:07+02:00"
+const userContentTestInstantRFC3339 = "2026-03-04T05:06:07+02:00"
 
 func TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy(t *testing.T) {
 	t.Parallel()
@@ -21,7 +21,7 @@ func TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy(t *testing.T) {
 	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{})
 
 	want := "===== INPUT =====\n" + userContentTestInput +
-		"\n\n===== NOW =====\n" + userContentTestInstantUTC + "\n\n\n" +
+		"\n\n===== NOW =====\n" + userContentTestInstantRFC3339 + "\n\n\n" +
 		userContentTestBlock +
 		"\n===== INPUT =====\n" + userContentTestInput
 
@@ -35,9 +35,9 @@ func TestTheAssembledPromptStatesTheInstantInTheZoneItWasRead(t *testing.T) {
 
 	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{})
 
-	if !strings.Contains(got, userContentTestInstantUTC) {
+	if !strings.Contains(got, userContentTestInstantRFC3339) {
 		t.Fatalf("user content does not state %q, so a task saying \"today\" has nothing to resolve it against; content=%q",
-			userContentTestInstantUTC, got)
+			userContentTestInstantRFC3339, got)
 	}
 	if strings.Contains(got, "03:06:07") {
 		t.Fatalf("user content normalises the instant to UTC rather than stating the zone it was read in; content=%q", got)
@@ -64,7 +64,7 @@ func TestAZeroWindowRendersTheUserContentByteIdenticallyToTheNoWindowLayout(t *t
 	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{})
 
 	want := "===== INPUT =====\n" + userContentTestInput +
-		"\n\n===== NOW =====\n" + userContentTestInstantUTC + "\n\n\n" +
+		"\n\n===== NOW =====\n" + userContentTestInstantRFC3339 + "\n\n\n" +
 		userContentTestBlock +
 		"\n===== INPUT =====\n" + userContentTestInput
 
@@ -84,7 +84,7 @@ func TestANonZeroWindowAddsExactlyOneLineInsideTheExistingNowSpan(t *testing.T) 
 	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, window)
 
 	want := "===== INPUT =====\n" + userContentTestInput +
-		"\n\n===== NOW =====\n" + userContentTestInstantUTC +
+		"\n\n===== NOW =====\n" + userContentTestInstantRFC3339 +
 		"\nretrieval is limited to nodes updated 2026-03-04 … 2026-03-04\n\n\n" +
 		userContentTestBlock +
 		"\n===== INPUT =====\n" + userContentTestInput
@@ -112,7 +112,7 @@ func TestRenderUserContentPlacesExactlyTwoVerbatimRequestCopiesTheFirstAtTheHead
 		t.Fatalf("user content does not open with the request; it opens with %q", sections[0])
 	}
 
-	blockLayout := "\n\n===== NOW =====\n" + userContentTestInstantUTC + "\n\n\n" + userContentTestBlock + "\n"
+	blockLayout := "\n\n===== NOW =====\n" + userContentTestInstantRFC3339 + "\n\n\n" + userContentTestBlock + "\n"
 
 	head, ok := strings.CutSuffix(sections[1], blockLayout)
 	if !ok {

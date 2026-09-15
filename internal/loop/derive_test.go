@@ -447,6 +447,9 @@ func TestNoDerivedQueryContainsADate(t *testing.T) {
 	texts := []string{
 		"DATES: 2026-09-12..2026-09-12\nhow does the split change work?\nsecond question?\ndense keyword line",
 		"DATES: none\nhow does the split change work?\nsecond question?\ndense keyword line",
+		"DATES: 2026-13-40..2026-13-40\nhow does the split change work?\nsecond question?\ndense keyword line",
+		"DATES: 2026-09-15..2026-09-10\nhow does the split change work?\nsecond question?\ndense keyword line",
+		"DATES: 2026-09-12\nhow does the split change work?\nsecond question?\ndense keyword line",
 	}
 
 	for _, text := range texts {
@@ -456,6 +459,39 @@ func TestNoDerivedQueryContainsADate(t *testing.T) {
 				t.Fatalf("ParseDerivation(%q) returned query %q carrying a date: the DATES line must never leak into the query set the parser hands back", text, query)
 			}
 		}
+	}
+}
+
+func TestTheDatesLineNeverAppearsInTheQuerySetWhateverItsValue(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		text string
+	}{
+		{name: "valid range", text: "DATES: 2026-09-12..2026-09-12\nfirst question?"},
+		{name: "none", text: "DATES: none\nfirst question?"},
+		{name: "garbage value with no digits at all", text: "DATES: sometime soon\nfirst question?"},
+		{name: "inverted range", text: "DATES: 2026-09-15..2026-09-10\nfirst question?"},
+		{name: "invalid calendar date", text: "DATES: 2026-13-40..2026-13-40\nfirst question?"},
+		{name: "one bound only", text: "DATES: 2026-09-12\nfirst question?"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := ParseDerivation(tc.text, "what did the split change", time.UTC)
+
+			for _, query := range got {
+				if strings.HasPrefix(query, dateLinePrefix) {
+					t.Fatalf("ParseDerivation(%q) returned query %q: the DATES line survived into the query set, so a date-shaped string reaches the graph as a semantic query and matches nothing", tc.text, query)
+				}
+			}
+			if !slices.Contains(got, "first question?") {
+				t.Fatalf("ParseDerivation(%q) returned %q, want it still to carry %q: only the DATES line is ever excluded", tc.text, got, "first question?")
+			}
+		})
 	}
 }
 
