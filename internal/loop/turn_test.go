@@ -1478,6 +1478,35 @@ func TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped
 	}
 }
 
+func TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{
+		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 101, Type: "task", Name: "Small", Similarity: 0.5, Content: "small body"},
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if cutCount(record.Candidates) == 0 {
+		t.Fatalf("test setup error: no candidate was cut, want at least one so the sent block and the record's block have something to disagree about")
+	}
+	if len(model.calls) == 0 {
+		t.Fatal("test setup error: the model was never called")
+	}
+
+	for i, call := range model.calls {
+		if call.Block != record.Block {
+			t.Fatalf("judgement call %d received block %q, want it byte-identical to record.Block %q: the model must never see anything the record does not also carry", i, call.Block, record.Block)
+		}
+	}
+}
+
 func TestAShortApertureIsWarnedEvenWhenNothingWasCutBecauseNothingWasFetched(t *testing.T) {
 	t.Parallel()
 
