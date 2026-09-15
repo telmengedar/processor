@@ -502,7 +502,7 @@ inventory.**
 | **G-6** | I-6 | `TestRenderToolResultSaysResultsWereFoundAndNoneWereIncludedWhenAdmissionCutThemAll` | The exchange carries **empty `Results` and non-empty `Dispositions`** — the `turn.go:359-360` shape. A renderer reading only `Results` cannot tell this from the empty case and reddens. | **Live, and its output is quoted:** at `872156e`, `git grep -n "no additional results found" -- 'internal/**'` returns `internal/loop/assemble.go:92` and `internal/loop/toolresult_test.go:34`. G-6 requires a third site to exist and the `assemble.go:92` branch to be conditional. |
 | **G-7** | I-6 | `TestRenderToolResultRendersARecallThatFoundNothingAsOneSentenceRatherThanAnEmptyString` — **exists**, `toolresult_test.go:29` | It constructs a `ToolExchange` with **no dispositions at all**, so it distinguishes *fix the empty branch* from *replace the empty branch*. **Must stay green unmodified.** | **Live:** it is in the tree today and passes; a fix that rewrites the genuinely-empty message reddens it. |
 | **G-9** | I-3, §14a | `TestTheAssembledBlockIsAFunctionOfTheAdmittedRowsAlone` | Calls `Assemble` twice with the same anchor and budget: once with the full candidate list, once with **only the rows the first call admitted**. The two blocks must be **byte-identical**. A disclosure differs between the two calls **only where an arm realizes the state that disclosure is keyed on** — so G-9's reach is its arms, not the input domain (§14c). Widen the arms to widen the reach; this row is not closure and must not be read as it. | **Established.** §14a's probe appends a withheld-count manifest inside `Assemble`; of every instrument this design relied on, G-9 is the only one that reddens against it. |
-| **G-10** | I-3, §14c | `TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries` | Runs a real `Turn.Run` whose candidate set has at least one row cut, captures the `JudgeInput` the model port received, and asserts its `Block` is byte-identical to `Record.Block`. **Measured to catch:** M8 — an append between the record's construction and `t.judge`, keyed on any row having been withheld. **Measured not to catch:** M9 and M11 (§14c R1), both keyed on a shutout, which this guard's fixture does not realize — M11 sits in the same span as M8 and passes. The guard is one test with one fixture; no span is claimed for it. | **Established.** §14c's **M8** — the append keyed on any row having been withheld — left the whole suite green at `274dcc8`, before this guard existed, which is why it exists; at `e343870` it reddens this guard **and nothing else**, and the guard is green unmutated. |
+| **G-10** | I-3, §14c | `TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries` | Runs a real `Turn.Run` whose candidate set has at least one row cut, captures the `JudgeInput` the model port received, and asserts its `Block` is byte-identical to `Record.Block`. **Measured at `1547aed`, where the guard has two arms** — *partial admission* (rank 1 cut, one lower row admitted) and *shutout* (every row cut). **Catches:** M8, and M11 — a post-record append keyed on a shutout, which reds the shutout arm as the sole failure. **Does not catch:** M9 (pre-record) and M13 (post-record, keyed on rank 1 admitted with a lower row withheld) — §14c R1. No span is claimed for this guard; the row states what was run against it and nothing else. | **Established.** §14c's **M8** — the append keyed on any row having been withheld — left the whole suite green at `274dcc8`, before this guard existed, which is why it exists; at `e343870` it reddens this guard **and nothing else**, and the guard is green unmutated. |
 | **G-8** | I-7 | `TestRenderToolResultNamesNoUnadmittedNodeInTheAllCutSentence` | C3: the model cannot fetch by id, so an id in that sentence is budget spent on an unusable fact. A renderer that lists the cut rows reddens. | **No runnable falsifier established.** |
 
 > **Corrected 2026-09-11 during Unit 2's implementation (QA #13697 CF-1).** G-6's name above read
@@ -696,18 +696,20 @@ A model-facing disclosure needs both the rendered block and the withheld rows in
    characterisations of this set have now been falsified (*"requires breaking a prohibition"*, *"is
    recorded"*, *"the silent half is guarded"*), so the enumeration carries measurements only.
 
-   **R1 — an append inside `Turn.Run`, keyed on a state no guard's fixture realizes.** Breaks no
-   prohibition: `Turn.Run` is deliberately off §18's list. Two measured survivors, whole suite green at
-   exit 0 with no reds:
+   **R1 — an append inside `Turn.Run`.** Breaks no prohibition: `Turn.Run` is deliberately off §18's
+   list. **Membership re-measured at `1547aed`**, each row a whole-suite run at exit 0 with no reds:
 
-   | id | position | key | measured |
+   | id | position | key | measured at `1547aed` |
    |---|---|---|---|
-   | **M9** | before the record literal (`turn.go:149`) | shutout | green at `5932ba2`; G-10 green, both G-9 arms green, `assemble.go` unchanged so §18's bounce is not triggered |
-   | **M11** | after the record literal, before `t.judge` | shutout | green at `0d53a8c`; G-10 green **while the relation it asserts is violated** — probed: model saw the text, `Record.Block` did not, `record.Block != model block` |
+   | **M9** | before the record literal (`turn.go:149`) | shutout | **survives** — both G-10 arms green, both G-9 arms green, `assemble.go` unchanged so §18's bounce is not triggered |
+   | **M13** | after the record literal, before `t.judge` | rank 1 admitted, a lower row withheld | **survives** — the shape §15 calls *well-matched*; G-10's partial arm has rank 1 **cut**, so it does not realize this |
+   | ~~**M11**~~ | after the record literal | shutout | **no longer a member** — at `1547aed` it reds G-10's shutout arm as the sole failure. It was a member at `0d53a8c`, before that arm existed. |
 
-   **M11 is the member that decides the ruling below.** It sits inside the span an earlier revision of
-   this section said G-10 guarded, and G-10 is green because **G-10 is one test with one fixture and that
-   fixture is not a shutout** — which item 2 above states and which that revision then contradicted.
+   **M9 is the member that decides the ruling below, and it replaced M11 when the arms landed.** Its
+   standing is **structural rather than fixtural**: a pre-record append lands in `Record.Block` *and* in
+   the block sent to the model, so the two values G-10 compares stay identical and the relation holds.
+   **No number of arms can change that** — arms fix M11 and M13; they cannot reach M9, because G-10
+   asserts an equality that this position preserves.
 
    **R2 — an append inside `Assemble`, keyed on a state G-9's arms do not realize.** Measured survivors:
    M3, M4, M5. Additionally requires changing `Assemble` against §18's explicit prohibition, which R1
@@ -719,7 +721,8 @@ A model-facing disclosure needs both the rendered block and the withheld rows in
    guard is the same instrument class as G-10 — a relation between two observed values in one run — and
    **there is no non-fixture-sampled formulation of that relation that is a test**, because a test checks
    its own fixture. Adding guards extends fixture sets; it does not change the class. G-10's missing
-   shutout arm is a defect in its arms, not in its specification, and is being fixed as such.
+   shutout arm was a defect in its arms, not in its specification; it landed at `1547aed`, and M11 moved
+   out of R1 as a result.
 
 #### The one instrument that is not fixture-sampled, priced and declined
 
@@ -756,6 +759,38 @@ reads that block"* was contradicted by the scope table **two sections earlier**,
 `cmd/eval`'s sweep *"discards the block (`_, dispositions := loop.Assemble(...)`) and calls no model"*.
 The sweep also calls `Assemble` directly and never enters `Turn.Run`, so it could not observe a
 `Turn.Run` disclosure at any distance. A proximity-scoped check would have passed that sentence.
+
+#### And the check above cannot find a stale row, so here is the second one
+
+Every defect corrected in this section up to `17933d7` was **a summary widening a row**. The next one was
+**the inverse**: G-10 gained a shutout arm at `1547aed`, and this section's rows went on describing the
+one-fixture guard. **Resolving summaries against rows cannot find that** — the rows agreed with each
+other and disagreed with the tree. The first check is sound and structurally blind to it.
+
+> **A guard row is a measurement against a tree, not a statement about a guard. It carries the ref it was
+> measured at, and it is re-resolved against the tree — not against other rows.**
+
+**The trigger is mechanical and needs no judgement:** for each guard row, if
+`git diff <the row's ref>..HEAD -- <the guard's test file>` is non-empty, that row is **due
+re-measurement** and may not be relied on until it has been.
+
+**The trigger applies to rows that carry a measurement, and §14's table is not yet uniform — stated rather
+than asserted, because this paragraph was itself written claiming otherwise and the check above caught
+it.** Of the guard rows, **three claim a measurement**: G-3, G-9 and G-10. **Only G-10 carries a commit
+ref**; G-3 cites a QA node and G-9 cites *"§14a's probe"*, neither of which fixes a tree. So the trigger is
+runnable for G-10 today, and **G-3 and G-9 are due a ref**. The remaining rows read *"No runnable
+falsifier established"*, which needs no trigger: there is no measurement in them to go stale. **A row that
+names a measurement must carry its ref; a row that names none must not pretend to.**
+
+**Two halves, and a row must say which it has.** The cheap half is mechanical — the named test resolves,
+and it still has the shape the row assumes (`TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries` has
+**two** arms at `1547aed`, not one). The expensive half is re-running the mutation the row names. This
+round ran the expensive half for M9, M11 and M13; the rows say so, at that ref.
+
+**The direction of this defect was conservative** — the rows *understated* what the guards catch, so
+nothing shipped weaker than described. That is worth recording and is not a reason to grade it lower: it
+was a live false claim in the table §18 reads its acceptance from, and it made a caught mutation the
+ruling's pivot.
 
 ## 15. How the remedy is measured — both arms
 
