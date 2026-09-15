@@ -23,10 +23,11 @@ the **one instant the prompt already states** (PR #76's `NOW`) and sends them as
 every topical recall, the block's and the model's alike. No time in the input, no window.
 
 **Cost.** One value type, one parameter on `GraphPort.Recall`, one line each in the derivation prompt, the `NOW`
-span and the record. **It reverses PR #76 on one point**: the prompt states the host's civil time, not UTC —
-inverting three named guards merged three days ago.
+span and the record. **It reverses PR #76 on one point**: the prompt states the host's civil time, not UTC.
+Measured, not reasoned: that reddens **six guards across three packages**, two of them adapter test files — §4.3
+carries the run and the disposition of each.
 
-**Rejected.** Giving the *model* the window through the `recall` tool — ~21 sites across both adapters, a new
+**Rejected.** Giving the *model* the window through the `recall` tool — **15 delta sites, 9 in the adapters**, a new
 model-authored-date failure class, and it leaves the **assembled block** unbounded, so "today" still costs one of
 the six model calls. A window in the derivation costs zero.
 
@@ -228,7 +229,8 @@ brief did not name.
 ### 4.1 D1 — the loop determines the window, through the derivation call it already makes
 
 **Ruling.** The derivation call emits the window alongside the queries. The judgement model gets no window knob; the
-`recall` tool's schema is unchanged and **both adapters are untouched**.
+`recall` tool's schema is unchanged and **no adapter production file changes**. (D3 does touch one *test* file in
+each adapter, for a reason unrelated to the tool — §4.3.)
 
 **The decisive argument is the call budget, and it is measured.** `MaxModelCalls` is 6 (`turn.go:17`), and #13718
 spent all six. A window produced by the derivation call bounds **the assembled block itself** — the material the
@@ -236,11 +238,29 @@ model sees before its first judgement call — and the derivation call is outsid
 the tool can only bound material the model asks for *after* seeing an unbounded block, which costs at least one of
 the six calls for every time-bounded task, forever.
 
-**And the cost is not close.** A tool-supplied window touches, per adapter: the argument struct, the JSON-schema
-literal, the native-call parser, the text-recovered-call parser (whose parameters are a flat string map), and the
-replay marshaller — ten sites across `internal/ollama/wire.go` and `internal/openaicompat/wire.go` — plus
-`JudgeResult`, `ToolExchange`, `ToolCallRecord`, `cappedExchange`, `toolCallRecords`, the system text, and then the
-same port and client work this design needs anyway. It also opens a failure class that does not otherwise exist:
+**And the cost is not close — enumerated rather than asserted.** A tool-supplied window touches, in the adapters:
+
+```
+git grep -c -E '^(type recallToolArguments|func (recallTool|toolArguments|translateRecall|recoverRecall))' 6c8a1df -- internal/ollama/wire.go internal/openaicompat/wire.go
+git grep -c 'recoveredCall' 6c8a1df -- internal/openaicompat
+```
+
+The first is anchored on **declarations**, so its per-file output *is* the count rather than something asserted
+about the count — an unanchored pattern also matches each type's use sites and returns 7 and 6. Its output, which
+is a pair of `grep -c` counts and not a pair of line citations:
+
+```
+6c8a1df:internal/ollama/wire.go:5
+6c8a1df:internal/openaicompat/wire.go:4
+```
+
+`internal/ollama/wire.go` **5** — the argument struct (`:52`), the JSON-schema literal (`:61`), the replay
+marshaller (`:144`), the native-call parser (`:231`), and the text-recovered-call parser (`:197`, whose parameters
+are a flat string map). `internal/openaicompat/wire.go` **4** — the same minus the text-recovered-call parser,
+because the second command exits **1** with no output: **`recoveredCall` does not exist in that package at all.**
+The adapters are therefore **9 sites, not a symmetric 10**. Outside them: `JudgeResult`, `ToolExchange`, `ToolCallRecord`,
+`cappedExchange`, `toolCallRecords` and the system text — **6 more, for 15**. The port and client work is *not*
+counted, because this design needs it either way and a shared cost is not a delta. It also opens a failure class that does not otherwise exist:
 **a model-authored date string**, which can be `"yesterday"`, `"2026-09-32"`, or an instant in an unstated zone,
 and which must be validated and reported on every round.
 
@@ -293,17 +313,41 @@ boundary, it is a whole wrong day, and the answer looks completely normal.
 **The substrate supports it — measured, not assumed.** `createdFrom=2026-09-15T00:00:00+02:00` returns 13 where
 `…Z` returns 11 (§2.2). The graph filters on the instant an offset denotes.
 
-**The cost, stated plainly, because it reverses a decision three days old.** Three guards merged in PR #76 pin the
-UTC normalisation and must be inverted:
+**The cost, measured rather than reasoned, because it reverses a decision three days old.** The mutation §16
+Milestone 3 prescribes — `turn.go:148` and `assemble.go:78`, those two lines and nothing else — applied at
+`6c8a1df` on a green baseline, then `go build ./... && go test ./...` over the whole tree, unfiltered:
 
-| Guard | File | What it pins today |
-|---|---|---|
-| `TestRenderUserContentStatesTheInstantAsRFC3339InUTCWhateverZoneItWasGivenIn` | `internal/loop/usercontent_test.go:33` | the rendered instant is forced to UTC |
-| `TestTheRunRecordCarriesTheSameInstantTheAssembledPromptStates` | `internal/loop/promptclock_test.go:81` | `record.Now` formats to `2026-09-12T08:30:00Z` |
-| `TestTheRunRecordsInstantIsOnTheWireUnderTheKeyNow` | `internal/loop/promptclock_test.go:121` | the wire key carries the UTC spelling |
+```
+internal/loop/turn.go:148      now := t.now().UTC()                           ->  now := t.now()
+internal/loop/assemble.go:78   b.WriteString(now.UTC().Format(time.RFC3339))  ->  b.WriteString(now.Format(time.RFC3339))
+```
 
-They were named well, which is what makes the reversal legible rather than silent — each says what it pins, so
-each can be re-pointed at the new property with its intent intact. **No information is lost on the wire:** RFC 3339
+`go build` exit 0. `go test ./...` exit 1: **six guards red across three packages**, and a seventh whose name reads
+as though it were affected is **green**.
+
+| # | Guard | Package | What it pins | Why the mutation reaches it | Disposition |
+|---|---|---|---|---|---|
+| 1 | `TestRenderUserContentStatesTheInstantAsRFC3339InUTCWhateverZoneItWasGivenIn` | `internal/loop` | **the frame itself** — the rendered instant is forced to UTC whatever zone it arrived in | its property *is* what D3 reverses | **invert** → G8 |
+| 2 | `TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy` | `internal/loop` | the user-content layout: request, `NOW` span, block, request | its `want` embeds `userContentTestInstantUTC` (`usercontent_test.go:24`; const at `:16`) | **re-point the constant**, property unchanged → G14 |
+| 3 | `TestRenderUserContentPlacesExactlyTwoVerbatimRequestCopiesTheFirstAtTheHead` | `internal/loop` | exactly two verbatim request copies, head and tail | its `blockLayout` embeds the same constant (`usercontent_test.go:79`) | **re-point the constant**, property unchanged → G15 |
+| 4 | `TestTheRunRecordCarriesTheSameInstantTheAssembledPromptStates` | `internal/loop` | one clock read per turn, and `record.Now` == the prompt's instant | asserts the spelling `recordInstantUTC` (`promptclock_test.go:106` and `:114`; const at `:79`) | **re-point the expected spelling**, property unchanged → G16 |
+| 5 | `TestJudgeSendsANativeUserMessageByteEqualToRenderUserContentOfTheSameBlockAndInput` | `internal/ollama` | the wire user message is byte-equal to `RenderUserContent` of the same inputs | **the byte-equality survives** — its `want` is computed from `RenderUserContent`, so it moves with the change. What fails is the *separate* `strings.Contains(…, instantUTC)` at `usercontent_test.go:51` | **re-point one constant** (`:20`) → G17 |
+| 6 | `TestJudgeSendsAUserMessageByteEqualToRenderUserContentOfTheSameBlockAndInput` | `internal/openaicompat` | the same property, same shape, same line numbers | the same | **re-point one constant** (`:20`) → G17 |
+| — | `TestTheRunRecordsInstantIsOnTheWireUnderTheKeyNow` | `internal/loop` | the JSON key `now`, and RFC 3339 marshalling of whatever the field holds | **it does not reach it.** `promptclock_test.go:124` marshals `Record{Now: recordInstantLocal.UTC()}` — the test supplies the UTC value itself and never touches `turn.clock` | **green under the mutation. Do not edit it.** |
+
+**The last row is the one worth reading twice.** An earlier revision of this document listed it among the guards to
+invert, on the strength of its *name* — which does contain the property. It is a correct, passing test of a
+*different* property, and an implementer told to re-point it would have been editing green code on this document's
+authority. No citation check catches that: the name resolves, the line resolves, and the claim about what happens
+when the code changes had simply never been run. **A resolved citation is not an observed outcome** — the guard
+column and the result column are two different claims, and only one of them a resolver can audit.
+
+**And the correction cuts both ways.** More guards move than the earlier count said — six, not three, reaching two
+packages it never mentioned, which is why §12.4's adapter sentence is now scoped to production files. But five of
+the six are **constant re-points**, not property reversals: only row 1's property is genuinely being inverted, and
+rows 5 and 6 keep their byte-equality assertion intact. The bundle is wider and shallower than it was stated to be.
+
+**No information is lost on the wire:** RFC 3339
 with an offset denotes the same instant as its `Z` spelling, so any consumer comparing `Record.Now` as a time is
 unaffected. What changes is which calendar day a *reader* — human or model — sees.
 
@@ -422,7 +466,25 @@ includes the day range. **Does not own:** zone arithmetic, wire spellings, or wh
 
 **Prompt.** Gains (a) the stated instant, in the same `===== NOW =====` span shape the judgement prompt uses, so
 the model meets one vocabulary rather than two; (b) an instruction to emit **one additional first line** naming a
-day range; (c) one sharpened rule.
+day range; (c) one sharpened rule; and (d) — load-bearing, and easy to miss — **reconciliation with the three
+directives the new line contradicts.**
+
+A `DATES:` line placed first is a sixth line, is not a question ending in `?`, and is literally a preamble. Each of
+those is forbidden by text already in this same prompt, rendered from `MaxDerivedQueries = 5` (`derive.go:14`) at
+`derive.go:78`:
+
+| site | rendered text | conflict |
+|---|---|---|
+| `derive.go:33` | *"Output exactly 5 lines:"* | the output is now 6 |
+| `derive.go:34` | *"The first 4 lines are distinct, standalone questions (each ending in ?) …"* | the first line is now the `DATES:` line |
+| `derive.go:36` | *"Output ONLY those 5 lines. No numbering, no bullets, no quotes, no preamble, no commentary …"* | the `DATES:` line is a preamble |
+
+All three must be restated to describe the new shape — one `DATES:` line followed by five query lines, of which the
+first four are questions — rather than left for a later instruction to override. **The failure is silent by
+construction:** §7.2 turns every unrecognised shape into a zero window, so a model obeying the unreconciled count
+directive emits no `DATES:` line, gets no window, and behaves exactly as it does today. Milestone 4's property
+never becomes true and nothing reports it. This is the one change in the design whose omission produces no error,
+no red test and no log line.
 
 **Output contract — one extra line, first, prefixed:**
 
@@ -513,8 +575,10 @@ never a member).
 ### 7.6 The record and the summary
 
 `Record` gains one field, `Window`, omitted entirely when zero. Without it a run's dispositions are
-uninterpretable — *"why only 51 candidates?"* has no answer — and the next #13720-shaped diagnosis is impossible.
-Same argument that put `Queries` and `Now` in the record.
+uninterpretable — *"why only 51 candidates?"* has no answer, and the next #13720-shaped diagnosis would have to be
+re-derived from the queries every time, as §0's was. Same argument that put `Queries` and `Now` in the record.
+**Not "impossible":** §0 performs exactly that diagnosis against a record carrying no `Window`, because none exists
+at `6c8a1df`. The field buys cheapness and durability, not possibility, and §11 states it in that form.
 
 `RenderSummary` prints the window on the `ASSEMBLY` line when present. One line.
 
@@ -664,8 +728,10 @@ and this design does not claim it.
 ### 12.4 Maintainability
 
 The wire spellings appear at exactly one site (§7.4). The frame appears at exactly one site — the clock read —
-and propagates as data. Both adapters are untouched, so the two-adapter duplication that makes tool-schema changes
-expensive is not paid.
+and propagates as data. **No adapter production file changes**, so the two-adapter duplication that makes
+tool-schema changes expensive is not paid — the 9 sites §4.1 enumerates for the rejected route are all avoided.
+What D3 does reach in each adapter is one *test* file, `usercontent_test.go:20`, whose hardcoded UTC spelling is a
+one-constant edit (§4.3 rows 5 and 6).
 
 ### 12.5 The trade-offs, named
 
@@ -674,7 +740,7 @@ expensive is not paid.
 | Model cannot adjust the window mid-run (D1) | a task whose time scope the derivation misjudges cannot be rescued within the run | the measured failure is *no bound at all*; and D1 buys a bounded **block**, which is worth a model call every time |
 | `updated` only (D4) | historical windows lose anything touched since | substrate has no update history; the alternative errs silently |
 | Scoped leg unbounded (D5) | up to 3 of 20 rows may fall outside the window | keeps a mechanism a prior design built; the rows are identifiable by `Sources[].scoped` |
-| Local frame (D3) | inverts 3 named guards merged three days ago | 8.3–16.7 % of the day is otherwise answered with the wrong calendar day, silently |
+| Local frame (D3) | **measured:** reddens 6 guards in 3 packages — 1 inverted, 5 re-pointed, and a 7th that looks affected is not (§4.3) | 8.3–16.7 % of the day is otherwise answered with the wrong calendar day, silently |
 | Window in the record | one more field on a large struct | without it every windowed run's disposition list is uninterpretable |
 
 ---
@@ -721,11 +787,26 @@ described mechanisms (#1220 §9).
 | G11 | `TestTheRecordCarriesTheWindowThatBoundedRetrieval` | diagnosis | asserts both instants **and their offset**, so a record normalised to UTC — which would lose which civil day was meant — fails. |
 | G12 | `TestNoDerivedQueryContainsADate` | §7.1's sharpened rule, at the parse boundary | a shape check over the parsed queries. **Limit:** it pins the parser's contract, not the model's output; the model is not in the test's reach. Stated rather than claimed. |
 | G13 | `TestEvalSweepRunsWithNoWindow` | eval determinism | asserts the window observed by the sweep's fake is zero. A future change that threads a derivation into eval fails here rather than silently changing corpus scores. |
+| G14 | `TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy` *(existing, re-pointed)* | §4.3 row 2 | the layout property is frame-independent and stays as written; only `userContentTestInstantUTC` at `usercontent_test.go:16` becomes the offset spelling. Discriminates as it always did — a renderer that drops or reorders the `NOW` span still fails it. |
+| G15 | `TestRenderUserContentPlacesExactlyTwoVerbatimRequestCopiesTheFirstAtTheHead` *(existing, re-pointed)* | §4.3 row 3 | same constant, same reasoning. Its real property — two verbatim request copies — is untouched by the frame, and an implementation that emitted one copy fails it either way. |
+| G16 | `TestTheRunRecordCarriesTheSameInstantTheAssembledPromptStates` *(existing, re-pointed)* | §4.3 row 4 | pins **one clock read per turn** (`reads != 1` is a `t.Fatalf`) as well as the spelling. That half is frame-independent and is the half G7 leans on; only the expected spelling moves. |
+| G17 | `TestJudgeSends…UserMessageByteEqualToRenderUserContentOfTheSameBlockAndInput`, both adapters *(existing, re-pointed)* | §4.3 rows 5 and 6 | the byte-equality assertion needs no change — its `want` is computed from `RenderUserContent`. Only the standalone `strings.Contains(…, instantUTC)` at `usercontent_test.go:51` moves, in each adapter, one constant at `:20`. |
+
+**One named guard needs no replacement and must not be edited.**
+`TestTheRunRecordsInstantIsOnTheWireUnderTheKeyNow` measured **green** under D3's mutation (§4.3, last row). It
+pins the wire key and the marshalling of whatever the field holds, not production's frame. It is recorded here so
+that an implementer sweeping §4.3 for "guards about the instant" meets the adjudication rather than the name.
 
 **The falsifier for this table itself:** any row whose named guard would still pass against an implementation
 lacking the claimed property. G1, G3, G5, G7, G9 and G11 are each written so that the *nearest wrong
 implementation* — empty-string parameter, uniform bounding, partial parse, UTC normalisation, extra whitespace,
 UTC record — fails them, and that is what the third column records.
+
+**G14–G17 are the one part of this table that is not a prediction.** They are existing tests, and their behaviour
+under D3's change was **observed** rather than reasoned: six red, one green, from one `go test ./...` at `6c8a1df`
+under the two-line mutation (§4.3). That is also their limit — the run establishes that they *move*, and says
+nothing about whether the re-pointed versions discriminate, because the re-pointed versions do not exist yet.
+Their third column is a judgement like every other row's.
 
 **Not covered, and named rather than omitted:** no guard can catch a model emitting a **valid but wrong** day range
 (L4). There is no oracle for it in-tree. It is visible in the record and nowhere else.
@@ -846,11 +927,17 @@ are named here so a reader running the loose form does not read the difference a
 **Property:** the run reads its clock once, and the instant's zone is the frame for both what the prompt states and
 how the window is built.
 
-`turn.go:148` stops normalising to UTC; `assemble.go:78` stops re-normalising. Guards **G7, G8**. The three PR #76
-guards in §4.3 are re-pointed at the new property with their intent intact — **re-point them, do not delete them**;
-each currently names a real property and the names are why the reversal is legible.
+`turn.go:148` stops normalising to UTC; `assemble.go:78` stops re-normalising. Guards **G7, G8**, plus **G14–G17**
+for the existing tests that move.
 
-Sweep for the property, not the three rows: **every site that forces a frame on the instant this run states.**
+**Run the mutation before editing any test.** §4.3's table is the output of `go test ./...` under exactly these two
+edits, and it is this milestone's specification: **six guards go red, and one guard whose name suggests it should
+is green.** Row 1 has its property inverted; rows 2–6 need one constant re-pointed each and their properties left
+alone; `TestTheRunRecordsInstantIsOnTheWireUnderTheKeyNow` is **not** to be touched. Do not edit a test your run
+does not redden — re-derive the list from your own run rather than from this table, and **if your run disagrees
+with §4.3, your run wins and this document is wrong.**
+
+Sweep for the property, not the rows: **every site that forces a frame on the instant this run states.**
 Note the two sites that must *not* change — `internal/divoid/write.go:108` and `internal/loop/summary.go:53`
 format their own separate `at` argument, and their UTC form is correct (#13884, §17).
 
@@ -862,6 +949,13 @@ zero on every malformed shape, and no derived query contains a date.
 `derive.go`: the prompt gains the instant, the `DATES:` instruction and the sharpened no-dates-in-queries rule;
 both exemplars gain the line (one range, one `none`); `ParseDerivation` gains the location argument and the window
 return. `turn.go`'s `derive` threads it. Guards **G5, G6, G12**.
+
+**A second property, and it is the one with no guard behind it:** no directive in `derivationInstructions`
+contradicts the shape the model is now asked for. `derive.go:33`, `:34` and `:36` are the three I found (§7.1) —
+read the whole of `derivationInstructions` (`:23-38`) rather than stopping at them, because a directive that merely
+*implies* the old shape counts too. **Verify by rendering the prompt and reading it**, not by diffing the source:
+the conflicts are between sentences, and only the rendered text puts them side by side. Nothing in the suite can
+catch a miss here — §7.2 makes it a silent no-op.
 
 ### Milestone 5 — the window is applied, stated and recorded
 
