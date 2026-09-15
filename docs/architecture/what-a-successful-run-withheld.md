@@ -502,7 +502,7 @@ inventory.**
 | **G-6** | I-6 | `TestRenderToolResultSaysResultsWereFoundAndNoneWereIncludedWhenAdmissionCutThemAll` | The exchange carries **empty `Results` and non-empty `Dispositions`** — the `turn.go:359-360` shape. A renderer reading only `Results` cannot tell this from the empty case and reddens. | **Live, and its output is quoted:** at `872156e`, `git grep -n "no additional results found" -- 'internal/**'` returns `internal/loop/assemble.go:92` and `internal/loop/toolresult_test.go:34`. G-6 requires a third site to exist and the `assemble.go:92` branch to be conditional. |
 | **G-7** | I-6 | `TestRenderToolResultRendersARecallThatFoundNothingAsOneSentenceRatherThanAnEmptyString` — **exists**, `toolresult_test.go:29` | It constructs a `ToolExchange` with **no dispositions at all**, so it distinguishes *fix the empty branch* from *replace the empty branch*. **Must stay green unmodified.** | **Live:** it is in the tree today and passes; a fix that rewrites the genuinely-empty message reddens it. |
 | **G-9** | I-3, §14a | `TestTheAssembledBlockIsAFunctionOfTheAdmittedRowsAlone` | Calls `Assemble` twice with the same anchor and budget: once with the full candidate list, once with **only the rows the first call admitted**. The two blocks must be **byte-identical**. A disclosure differs between the two calls **only where an arm realizes the state that disclosure is keyed on** — so G-9's reach is its arms, not the input domain (§14c). Widen the arms to widen the reach; this row is not closure and must not be read as it. | **Established.** §14a's probe appends a withheld-count manifest inside `Assemble`; of every instrument this design relied on, G-9 is the only one that reddens against it. |
-| **G-10** | I-3, §14c | `TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries` | Runs a real `Turn.Run` whose candidate set has at least one row cut, captures the `JudgeInput` the model port received, and asserts its `Block` is byte-identical to `Record.Block`. **It is a relation between two observed values in one run, not a property sampled over inputs** — so unlike G-9 it holds for every fixture any test exercises, and any disclosure appended in `Turn.Run` between the record's construction and `t.judge` reddens it regardless of what it is keyed on. | **Established.** §14c's M8 — an unconditional append in `Turn.Run` — leaves the whole suite green at `274dcc8` and reddens this guard, which was green unmutated. |
+| **G-10** | I-3, §14c | `TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries` | Runs a real `Turn.Run` whose candidate set has at least one row cut, captures the `JudgeInput` the model port received, and asserts its `Block` is byte-identical to `Record.Block`. **It is a relation between two observed values in one run, not a property sampled over inputs**, so within its own fixture any disclosure appended **between the record's construction and `t.judge`** reddens it regardless of what it is keyed on. **That span is its whole reach:** an append made *before* the record literal lands in both values, leaves them equal, and passes it (§14c). | **Established.** §14c's **M8** — the append keyed on any row having been withheld — left the whole suite green at `274dcc8`, before this guard existed, which is why it exists; at `e343870` it reddens this guard **and nothing else**, and the guard is green unmutated. |
 | **G-8** | I-7 | `TestRenderToolResultNamesNoUnadmittedNodeInTheAllCutSentence` | C3: the model cannot fetch by id, so an id in that sentence is budget spent on an unusable fact. A renderer that lists the cut rows reddens. | **No runnable falsifier established.** |
 
 > **Corrected 2026-09-11 during Unit 2's implementation (QA #13697 CF-1).** G-6's name above read
@@ -688,27 +688,77 @@ A model-facing disclosure needs both the rendered block and the withheld rows in
    change and cannot be false of any of M1–M5. It is the opposite failure direction, not the same
    instrument. And the entry is principled rather than enumerative — `Assemble` is on the list because
    it is one of the two scopes above, not because someone thought of it.
-2. **`Turn.Run` cannot go on the list**, because every unit edits it. **G-10** closes it instead: the
-   block the model is sent must be byte-identical to the block the record carries. That is a relation
-   between two observed values in one run rather than a property over an input domain, so it holds for
-   **every fixture any test exercises** rather than for two arms — and M8 is its falsifier.
-3. **The residual, stated rather than closed:** a disclosure introduced inside `Assemble` **by a change
-   this design's bounce condition does not stop**, keyed on a state G-9's arms do not realize. Nothing
-   here reaches that. It requires an implementer to change `Assemble` against an explicit prohibition,
-   which is a review failure rather than a gate failure, and this design does not claim to prevent it.
+2. **`Turn.Run` cannot go on the list**, because every unit edits it. **G-10 covers one position inside
+   it, not the scope** — the span between the record's construction and `t.judge`, where the block the
+   model is sent and the block the record carries can diverge. M8 is its falsifier. **It is not a
+   property that holds for every fixture any test exercises:** it is checked where a test checks it, and
+   G-10 is one test with one fixture. An earlier revision of this ruling claimed both the scope and the
+   universality; the row at §14's table has always carried the correct span, and this item had dropped it.
+3. **The primary residual, measured and uncovered: an append inside `Turn.Run` *before* the record
+   literal.** **M9** — injected at `turn.go:149` and keyed on a shutout — leaves the whole suite at
+   `5932ba2` **green, exit 0, no reds**: G-10 passes **by construction**, because the append lands in
+   both values and they stay equal; both G-9 arms pass; §18's `Assemble` bounce condition is not
+   triggered, because `assemble.go` has zero changed lines. **It breaks no prohibition** — `Turn.Run` is
+   deliberately off the list — so it is *more* reachable than item 4 below, which an earlier revision of
+   this ruling listed instead while asserting closure over this one.
+4. **The secondary residual:** a disclosure introduced inside `Assemble`, keyed on a state G-9's arms do
+   not realize. It additionally requires changing `Assemble` against §18's explicit prohibition, so it is
+   a review failure on top of a gate gap.
+
+#### Why the uncovered position is the one that can least hide, and why no third guard is specified
+
+G-10 covers the span where a disclosure is **silent**, and the position it cannot cover is the one where
+a disclosure is **loud**. Measured on M9 at `5932ba2`, a shutout run:
+
+```
+record.Block contains the leak : true
+the model saw the leak         : true
+record.Block == model block    : true   <- which is why G-10 is green
+```
+
+A pre-record append is written into `Record.Block`, so it reaches the HTTP response and the
+`session-log` node every run files to the graph, and §15's both-arms benchmark reads that block. A
+post-record append reaches the model **and nothing else** — no record, no response, no artifact. So the
+half G-10 guards is the half that leaves no trace, and the half it cannot guard writes its own evidence
+into a durable record.
+
+**No G-11 is specified**, and that is a ruling rather than an omission. A guard recomputing `Assemble`
+and comparing it to `Record.Block` would cover the pre-record position **for its own fixture** — the
+fixture-sampled class this section has just ruled insufficient for closure (M3, M4, M5). It would buy a
+narrower span on the half that already writes its own evidence, and leave a residual identical in kind.
 
 #### The one instrument that would close it, priced and declined
 
 Disclosure becomes impossible if the block's type is unforgeable outside its constructor: move
 `renderBlock` into its own package returning an opaque `Block` whose only field is unexported, and type
 `JudgeInput.Block` as that type. Then no scope outside that package can append to a block, because none
-can construct one. **Declined.** It costs a new package, a new type and a change to every adapter that
-reads `JudgeInput.Block`, to defend a decision (§5.2 chose not to ship the elective half) against a
-contributor who has not read it — a review-time risk, for which §18's diff-scoped bounce condition is the
-proportionate instrument. #1136 §2 requires a concrete reason the existing surface cannot serve; *"a
-future contributor might not notice"* is not one. **Recorded so the next round does not re-derive it**,
-and so that if the elective half is ever revisited the structural option is on the table with its price
-already attached.
+can construct one — and unlike every gate above it closes `Assemble`, the pre-record position and the
+post-record position together. The price is **one package, one type, and two adapter read sites**, plus
+the tests that construct or read a `JudgeInput`.
+
+**Declined — and on a different ground than the earlier revision gave.** That revision argued §18's
+diff-scoped bounce condition was the proportionate instrument; item 3 above shows it does not reach the
+pre-record position at all, so that ground is gone. The ground that survives is the measurement above:
+the only genuinely uncovered position produces a disclosure that is **recorded in every run's own
+artifact**. The residual risk is therefore *"a leak that is written into the record and the response and
+that nobody reads"*, not an undetectable one — and restructuring the model-facing type system to make a
+**recorded** leak impossible is disproportionate to that, in a unit whose deliverable is one operator
+WARN (RULING 2026-09-03). #1136 §2 still asks for a concrete requirement the existing surface cannot
+serve, and defending a decision §5.2 already took is not one. **Recorded with its price so the next round
+does not re-derive it**, and so the option is on the table with a number attached if the elective half is
+ever revisited.
+
+#### The check this section owes itself
+
+All three false claims corrected in this document were **generalisations of true ones**, and in each case
+the correctly-scoped original sat a few lines away — G-10's table row carried *"between the record's
+construction and `t.judge`"* while the ruling said it closed `Turn.Run`; the M8 prose said *"keyed on any
+row having been withheld"* while the table row still said *"unconditional"*. **The summary sentence
+inherits the measured sentence's confidence without its scope.**
+
+> **Before a summary sentence about a guard ships, resolve it against the row it summarises** — the way a
+> `file:line` citation is resolved against the file. A summary that widens its row is the defect; the row
+> is the record.
 
 ## 15. How the remedy is measured — both arms
 
