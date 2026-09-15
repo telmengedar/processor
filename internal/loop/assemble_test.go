@@ -652,37 +652,79 @@ func TestAssembleEmptyCandidatesRendersAnchorOnly(t *testing.T) {
 func TestTheAssembledBlockIsAFunctionOfTheAdmittedRowsAlone(t *testing.T) {
 	t.Parallel()
 
-	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Content: "anchor body"}
-	candidates := []Candidate{
-		{ID: 10, Content: strings.Repeat("x", 40)},
-		{ID: 20, Content: strings.Repeat("y", 40)},
-		{ID: 900, SelfProduced: true, Content: "self produced body"},
-		{ID: 30, Content: strings.Repeat("z", 40)},
+	cases := []struct {
+		name       string
+		anchor     Anchor
+		candidates []Candidate
+		budget     int
+	}{
+		{
+			name:   "partial admission",
+			anchor: Anchor{ID: 1, Type: "t", Name: "anchor", Content: "anchor body"},
+			candidates: []Candidate{
+				{ID: 10, Content: strings.Repeat("x", 40)},
+				{ID: 20, Content: strings.Repeat("y", 40)},
+				{ID: 900, SelfProduced: true, Content: "self produced body"},
+				{ID: 30, Content: strings.Repeat("z", 40)},
+			},
+			budget: 90,
+		},
+		{
+			name:   "shutout",
+			anchor: Anchor{ID: 2, Type: "t", Name: "anchor", Content: "anchor body"},
+			candidates: []Candidate{
+				{ID: 40, SelfProduced: true, Content: "self produced body"},
+				{ID: 50, Content: strings.Repeat("w", 200)},
+			},
+			budget: 20,
+		},
 	}
-	const budget = 90
 
-	fullBlock, dispositions := Assemble(anchor, candidates, budget)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	admittedIDs := make(map[int64]bool, len(dispositions))
-	for _, d := range dispositions {
-		if d.Included {
-			admittedIDs[d.ID] = true
-		}
-	}
-	if len(admittedIDs) == 0 || len(admittedIDs) == len(candidates) {
-		t.Fatalf("test setup error: %d of %d candidates admitted, want a real cut so the two calls below have something to disagree about", len(admittedIDs), len(candidates))
-	}
+			fullBlock, dispositions := Assemble(tc.anchor, tc.candidates, tc.budget)
 
-	admittedOnly := make([]Candidate, 0, len(admittedIDs))
-	for _, c := range candidates {
-		if admittedIDs[c.ID] {
-			admittedOnly = append(admittedOnly, c)
-		}
-	}
+			admittedIDs := make(map[int64]bool, len(dispositions))
+			reasons := make(map[string]bool)
+			for _, d := range dispositions {
+				if d.Included {
+					admittedIDs[d.ID] = true
+				} else {
+					reasons[d.CutReason] = true
+				}
+			}
 
-	admittedOnlyBlock, _ := Assemble(anchor, admittedOnly, budget)
+			switch tc.name {
+			case "partial admission":
+				if len(admittedIDs) == 0 || len(admittedIDs) == len(tc.candidates) {
+					t.Fatalf("test setup error: %d of %d candidates admitted, want a real cut so the two calls below have something to disagree about", len(admittedIDs), len(tc.candidates))
+				}
+			case "shutout":
+				if len(admittedIDs) != 0 {
+					t.Fatalf("test setup error: %d of %d candidates admitted, want a genuine shutout — every candidate cut", len(admittedIDs), len(tc.candidates))
+				}
+				if len(tc.candidates) == 0 {
+					t.Fatal("test setup error: no candidates at all is a degenerate shutout with nothing to withhold, want at least one real row cut")
+				}
+				if !reasons[cutReasonSelfProduced] || !reasons[cutReasonByteBudget] {
+					t.Fatalf("test setup error: cut reasons were %v, want both self-produced and byte-budget represented so a reason-specific disclosure has something to key on too", reasons)
+				}
+			}
 
-	if fullBlock != admittedOnlyBlock {
-		t.Fatalf("assembling the full candidate list produced a different block than assembling only the rows it admitted: full=\n%q\nadmitted-only=\n%q\nthe block must disclose nothing about a withheld row — its reason, its id, its size, or the bare fact that it exists — whatever field or function carries it", fullBlock, admittedOnlyBlock)
+			admittedOnly := make([]Candidate, 0, len(admittedIDs))
+			for _, c := range tc.candidates {
+				if admittedIDs[c.ID] {
+					admittedOnly = append(admittedOnly, c)
+				}
+			}
+
+			admittedOnlyBlock, _ := Assemble(tc.anchor, admittedOnly, tc.budget)
+
+			if fullBlock != admittedOnlyBlock {
+				t.Fatalf("assembling the full candidate list produced a different block than assembling only the rows it admitted: full=\n%q\nadmitted-only=\n%q\nthe block must disclose nothing about a withheld row — its reason, its id, its size, or the bare fact that it exists — whatever field or function carries it", fullBlock, admittedOnlyBlock)
+			}
+		})
 	}
 }
