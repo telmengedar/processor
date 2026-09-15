@@ -239,9 +239,10 @@ Request:
 {"input": "free text", "subject": 12345}
 ```
 
-`input` must be non-empty; `subject` is the id of the node the run is about. Before it reads the graph
-the turn asks the model once, under its own 30-second bound, for up to five further queries derived from
-`input` **and for a calendar day range** — one extra output line, `DATES: YYYY-MM-DD..YYYY-MM-DD` or
+`input` must be non-empty; `subject` is the id of the node the run is about. The turn fetches that
+subject first — so an unreachable graph and a subject that resolves to nothing both fail before any model
+call and cost **none**. It then asks the model once, under its own 30-second bound, for up to five
+further queries derived from `input` **and for a calendar day range** — one extra output line, `DATES: YYYY-MM-DD..YYYY-MM-DD` or
 `DATES: none`, resolved against the instant the prompt states — which becomes the run's retrieval window.
 That call is not charged to the run's six-call judgement budget, and any outcome which is not a usable
 query set leaves the run asking `input` alone and records why on the record's `derivationError`. A
@@ -589,8 +590,12 @@ flags it.
   non-zero window sends `updatedFrom`/`updatedTo` as RFC 3339, and a **zero** window sends an encoded
   query string byte-identical to one from before the parameter existed, so an un-windowed run cannot
   silently acquire a filter. The wire spelling is established **both** by the suite and by a
-  filtered-versus-unfiltered control run against `divoid.mamgo.io` — #13721's table, which carries three
-  inert parameter names as negative controls and is reproduced in PR #77's body. **What has not been
+  filtered-versus-unfiltered control run against `divoid.mamgo.io`, recorded in **PR #77's body**. That
+  control exists because **#13721** measured the hazard it guards against: of nine parameter names probed
+  on 2026-09-12, **five were silently ignored**, each returning rows and a `total` identical to the
+  unfiltered control, so each looked exactly like a filter that worked. **#13721 is the source of the
+  hazard, not of PR #77's table** — they are separate probes of a moving graph taken three days apart,
+  and their control totals differ accordingly. **What has not been
   done** is running *this project's own client* against the live graph under that control: the probe was
   raw REST, so the suite is the only thing coupling the spelling to `internal/divoid`.
 - **The judgement step and write-back (`POST /runs`, unit B):** `internal/openaicompat` is pinned at the
