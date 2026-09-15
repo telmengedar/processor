@@ -8,8 +8,10 @@
 > Boundaries held, not crossed: **#13564** (a call that *fails*) · **#13601** (rows never *fetched*) ·
 > **#11308** + `docs/architecture/substance-backed-admission.md` (the oversize node itself).
 > Corrections consumed: **#13671** (the disclosure volume is **9**, not §16.2's ~12).
-> **Baseline: `main` at `872156e`, working tree clean.** Every repo fact in §2 and §14 was read out of
-> that tree. #13601 Unit 1 is on **PR #70, open** — no claim here holds at that ref unless it says so.
+> **Baseline: `main` at `872156e`, working tree clean.** Every repo fact in this document was read out
+> of that tree **except where a section dates itself otherwise** — §14a and §14c state their own refs.
+> A citation here is a dated record, corrected in place with the old text struck, never silently
+> renumbered to a later tree (P-43). #13601 Unit 1 is on **PR #70, open** — no claim here holds at that ref unless it says so.
 > **Citation convention:** a bare `file.go:N` is under **`internal/loop/`**; every citation outside
 > that package is written with its full path. **Node sizes carry `(record)` or `(live <date>)`** — §19.
 
@@ -494,11 +496,13 @@ inventory.**
 |---|---|---|---|---|
 | **G-1** | I-1, I-2 | `TestTurnRunWarnsWhenTheTopRankedCandidateWasDroppedForTheByteBudget` | The fixture's **rank-1** candidate is oversize while **lower-ranked** rows are admitted. An implementation that only counts cuts, or only fires on a shutout, stays silent here — which is the #13591 shape exactly. | **No runnable falsifier established.** The mutation (delete the WARN site) is not run by the author; the implementer quotes its output. |
 | **G-2** | I-1 | `TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasAdmittedEvenThoughOthersWereCut` | The fixture admits rank 1 **and cuts several lower rows on size** — the #13598 shape, 9 cuts and a correct answer. **A guard without the "even though others were cut" clause passes against the any-cut rule §12.1 rejects.** | **No runnable falsifier established.** |
-| **G-3** | I-3 | `TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasCutAsSelfProduced` | `admit` reaches its self-produced arm **before** the budget arm (`assemble.go:52` precedes `:54`), so a rank-1 record carries the self-produced reason and no size was ever charged. An implementation keyed on `!Included` rather than on the reason string (`assemble.go:12-13`) reddens. | **No runnable falsifier established.** |
+| **G-3** | I-3 | `TestTheTopCutWarnIsSilentWhenTheTopCandidateWasCutAsSelfProduced` | `admit` reaches its self-produced arm (`assemble.go:53`) **before** the budget arm (`:55`), so a rank-1 row cut as self-produced carries that reason and **was never charged for bytes**. **The fixture must therefore carry a `Size` strictly greater than the remaining budget:** with `Anchor.Size` 100 and `AssemblyByteBudget` 60,000, remaining is **59,900**, so `Size: 70_000`. Below that threshold the byte-budget condition is unreachable, the guard passes on arithmetic alone, and it separates nothing — see §14b. Built by hand against `logFinished`, because the case is unreachable through `Turn.Run` and that is the invariant working, not a defect; the name no longer claims `Turn.Run` because the assertion cannot carry it (P-20). | **Established, and its output is quoted.** QA #13947 probed `logFinished` with a self-produced rank-1 disposition at `Size: 70000` against `remaining = 59900`: `MISATTRIBUTES: self-produced row at Size=70000 (> remaining 59900) raised the BYTE-BUDGET warn`. A reason-reading implementation stays green on that fixture; one keyed on `!Included && Size > remaining` reddens. |
 | **G-4** | I-4 | `TestTurnRunRaisesBothTheShutoutAndTheDroppedTopCandidateRecordsWhenNothingWasAdmitted` | Every candidate oversize: the shutout condition and the rank-1 condition are **both** true. An implementation that treats the new record as an `else` branch of the shutout reddens. | **No runnable falsifier established.** |
 | **G-5** | I-5 | `TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped` | Compares the record and block against the pre-change golden for the same fixture. **This is the guard that makes "zero cost" checkable** rather than asserted. | **No runnable falsifier established.** |
 | **G-6** | I-6 | `TestRenderToolResultSaysResultsWereFoundAndNoneWereIncludedWhenAdmissionCutThemAll` | The exchange carries **empty `Results` and non-empty `Dispositions`** — the `turn.go:359-360` shape. A renderer reading only `Results` cannot tell this from the empty case and reddens. | **Live, and its output is quoted:** at `872156e`, `git grep -n "no additional results found" -- 'internal/**'` returns `internal/loop/assemble.go:92` and `internal/loop/toolresult_test.go:34`. G-6 requires a third site to exist and the `assemble.go:92` branch to be conditional. |
 | **G-7** | I-6 | `TestRenderToolResultRendersARecallThatFoundNothingAsOneSentenceRatherThanAnEmptyString` — **exists**, `toolresult_test.go:29` | It constructs a `ToolExchange` with **no dispositions at all**, so it distinguishes *fix the empty branch* from *replace the empty branch*. **Must stay green unmodified.** | **Live:** it is in the tree today and passes; a fix that rewrites the genuinely-empty message reddens it. |
+| **G-9** | I-3, §14a | `TestTheAssembledBlockIsAFunctionOfTheAdmittedRowsAlone` | Calls `Assemble` twice with the same anchor and budget: once with the full candidate list, once with **only the rows the first call admitted**. The two blocks must be **byte-identical**. A disclosure differs between the two calls **only where an arm realizes the state that disclosure is keyed on** — so G-9's reach is its arms, not the input domain (§14c). Widen the arms to widen the reach; this row is not closure and must not be read as it. | **Established.** §14a's probe appends a withheld-count manifest inside `Assemble`; of every instrument this design relied on, G-9 is the only one that reddens against it. |
+| **G-10** | I-3, §14c | `TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries` | Runs a real `Turn.Run` whose candidate set has at least one row cut, captures the `JudgeInput` the model port received, and asserts its `Block` is byte-identical to `Record.Block`. **Measured at `1547aed`, where the guard has two arms** — *partial admission* (rank 1 cut, one lower row admitted) and *shutout* (every row cut). **Catches:** M8, and M11 — a post-record append keyed on a shutout, which reds the shutout arm as the sole failure. **Does not catch:** M9 (pre-record) and M13 (post-record, keyed on rank 1 admitted with a lower row withheld) — §14c R1. No span is claimed for this guard; the row states what was run against it and nothing else. | **Established.** §14c's **M8** — the append keyed on any row having been withheld — left the whole suite green at `274dcc8`, before this guard existed, which is why it exists; at `e343870` it reddens this guard **and nothing else**, and the guard is green unmutated. |
 | **G-8** | I-7 | `TestRenderToolResultNamesNoUnadmittedNodeInTheAllCutSentence` | C3: the model cannot fetch by id, so an id in that sentence is budget spent on an unusable fact. A renderer that lists the cut rows reddens. | **No runnable falsifier established.** |
 
 > **Corrected 2026-09-11 during Unit 2's implementation (QA #13697 CF-1).** G-6's name above read
@@ -521,25 +525,300 @@ inventory.**
 > nil` would pass while breaking production silently. The second of those is what satisfies G-6's
 > falsifier: it supplies the third `"no additional results found"` site the column requires.
 
-**Structural fact usable as a pre-submit check, stated with the command exactly as it was run.**
+### 14a. RETRACTED 2026-09-15 — both instruments this section named are unsound, and the replacement is G-9
 
-```
-git grep -n "CutReason" -- 'internal/loop/*.go' ':!internal/loop/*_test.go'
-```
+**This section previously made §5.2's elective half mechanically checkable two ways. Neither works, and
+the measurement is below.** §18's Unit 1 acceptance criterion built on the first of them is retired in
+the same amendment.
 
-At `872156e` this returns **four** lines: two writes (`assemble.go:53`, `:59`), one production read
-(`summary.go:244`, the record summary), one declaration (`types.go:63`). **No production read on the
-model-facing path.** This design must leave that output **unchanged** — it is the mechanical statement
-that §5.2's elective half was not smuggled in.
+**What it said.** A pre-submit grep — `git grep -n "CutReason" -- 'internal/loop/*.go'
+':!internal/loop/*_test.go'` — whose output this design had to leave unchanged at four lines; and,
+named as strictly stronger, a type-level fact: *"`renderBlock`'s signature is `(anchor Anchor, admitted
+[]Candidate)` and `Candidate` declares no `CutReason` and no `Included`. **Disclosure to the model is
+impossible without changing that signature or that type.**"*
 
-**And the limit of that command, because a grep expresses a property about spellings and not about
-calls:** a manifest implemented through a differently-named field would not appear in it. **The
-stronger instrument is free and type-level:** `renderBlock`'s signature is
-`(anchor Anchor, admitted []Candidate)` and `Candidate` (`types.go:14`) declares no `CutReason` and no
-`Included`. **Disclosure to the model is impossible without changing that signature or that type**, and
-that is a fact about the program, not about its spelling.
+**That sentence is false.** Measured in a detached worktree at `fb48f66`: `Assemble` (`assemble.go:18`)
+holds **both** the dispositions and the rendered block, and returns `renderBlock(anchor, admitted)`. A
+`withheldManifest` helper appended to that return value discloses to the model how many rows were
+withheld, and:
+
+| instrument | result |
+|---|---|
+| `renderBlock`'s signature | **unchanged** (`assemble.go:127`) |
+| `Candidate` (`types.go:27`) | **unchanged** — no diff in `types.go` at all |
+| §18's nine bounce conditions | **0 changed lines**, each |
+| the whole suite | **13/13 `ok`** |
+| §18's grep | **the same four sites, no fifth** |
+
+The manifest counts `!d.Included` and never names a reason, so no spelling of `CutReason` appears; it
+lives in `Assemble`, which is on neither the signature nor the bounce list. **Every instrument this
+design owned passed a change that puts withheld-row information directly into the model's block.**
+
+**So the grep is retired, and the type-level claim is withdrawn rather than relied on.** The grep was
+also wrong in the other direction, which is how this was found: it pins *spellings across files*, so it
+forbids a **read** on the operator-log path — which cannot reach the model and which the property
+permits. It bounced a compliant implementation and cost a real mechanism change (#13944), and it is the
+*fires-on-compliant-code* shape this repo has now recorded four times. A third defect, minor but worth
+naming: *"the same four lines"* is ambiguous between the four **sites** and their **line numbers**, and
+under the literal reading any unrelated edit to `assemble.go` fails it.
+
+**The replacement is behavioural: G-9** asserts that the block `Assemble` returns is a function of the
+admitted rows alone — assemble twice, once with everything and once with only what was admitted, and
+require byte-identical output. It reddens against the manifest above, and it is **strictly stronger than
+the retired grep**, which that manifest leaves untouched.
+
+> **RETRACTED 2026-09-15 — this section originally continued:** *"it does so without caring what field
+> carries the disclosure, which function emits it, or how anything is spelled … A longer list of names
+> is the same instrument that just failed … **G-9 protects the property.**"* **Both halves are false.**
+> §14c carries the measurements that falsify them and the ruling that replaces them.
+
+### 14b. Why G-3's fixture value is the whole of G-3
+
+`admit` charges no bytes against a row it cuts as self-produced, so the byte-budget condition
+`!Included && Size > remaining` is **false by default** on any self-produced fixture whose size is
+small. The shipped Unit 1 fixture used `Size: 500` against `remaining = 59900` — 119× below the
+threshold — so the guard passed without consulting the reason at all. QA measured all three
+consequences: deleting `CutReason: cutReasonSelfProduced` from the fixture left it **green**; breaking
+`appendUnseen` reddened **seven** other tests and left it **green**; and the same guard at `Size: 70000`
+**reddens** against the shipped implementation.
+
+**A guard whose stated job is to reject an approach, which that approach passes, is decoration** — and
+the cost here was not the guard: it was that the round's one source of information about the collision
+stayed green, so the design bounce (§18) was never triggered and the resolution was made under a gate
+that should not have existed. **A fixture below the threshold at which a guard can discriminate is a
+defect in the guard, not a detail of it.**
 
 ---
+
+### 14c. RULING 2026-09-15 — a behavioural gate over `Assemble` cannot establish this property, and three rounds of widening is the evidence
+
+§14a retired a false universal and installed another one section later. This is the ruling on whether a
+third attempt would fare better. **It would not, and the reason is categorical rather than a matter of
+fixture quality.**
+
+#### What was measured
+
+| id | disclosure | where | suite |
+|---|---|---|---|
+| **M1** (§14a) | unconditional withheld-count manifest | `Assemble` | **red** — G-9 both arms |
+| **M2** (#13957) | keyed on a shutout | `Assemble` | **red** — G-9 shutout arm only |
+| **M3** (#13980) | keyed on the rank-1 row cut for the byte budget | `Assemble` | **green** |
+| **M4** (#13980) | keyed on a shutout whose reasons are all byte-budget | `Assemble` | **green** |
+| **M5** (#13980) | keyed on a withheld count of four or more | `Assemble` | **green** |
+| **M8** (this ruling) | keyed on **any row having been withheld**, after `record.Block` is set | **`Turn.Run`** | **green** |
+| **M8u** (#13985) | the same, **unconditional** — appended on every run | **`Turn.Run`** | **red** — a pre-existing assertion, below |
+
+M3 is this unit's own subject condition — the rank-1 row cut for the byte budget is exactly what the
+operator WARN reports, and whether the same fact reaches the **model** is §5.2's elective half.
+
+**M8 is mine, and it escapes `Assemble` entirely.** Appending to `block` between the record's
+construction and `t.judge(...)` sends the model a block the record does not carry. Measured in a detached
+worktree at `274dcc8`, re-measured at `098c4ca` and again at `e343870`: **the suite stays green**, and a
+probe asserting `JudgeInput.Block == Record.Block` was green unmutated and red under it, printing the
+delta verbatim.
+
+> **CORRECTED 2026-09-15 (#13985).** This paragraph first described M8 as **unconditional** and said it
+> *"needs no predicate at all"*. **That is false of the mutation that was run.** M8 appends only when some
+> row was withheld (`for _, d := range dispositions { if !d.Included { … } }`) — which is a predicate, and
+> the natural one, since a withheld-row disclosure has nothing to say when nothing was withheld. The
+> *"13 `ok`, 0 `--- FAIL`"* figure is correct for that mutation and reproduces; it does **not** reproduce
+> for the unconditional variant the sentence described. **The number was right and the label was wrong**,
+> which is this arc's recurring shape and is why the correction is recorded rather than patched away.
+
+**The unconditional variant is caught, and by an assertion nobody would find.** `internal/loop/turn_test.go`
+has carried `if model.calls[0].Block != record.Block` since **`11ad386`**, inside
+`TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered` — a name that carries none of this
+property (P-20). It is a real discriminator, and it reddens against an unconditional append.
+
+**It does not weaken the case for G-10; measurement sharpens it.** That test's fixture is `baseGraph()`,
+which supplies **no candidates at all**, so no row is ever withheld in it and M8's predicate never fires
+there — verified: under M8 the whole suite reddens **only** G-10, and that test passes. So the
+pre-existing assertion catches the one shape a withheld-row disclosure would never take (*append even
+when nothing was withheld*) and misses the shape it would (*append because something was*). **It is
+fixture-limited in exactly the direction that matters**, on top of being unfindable by name. G-10's
+fixture carries an oversize row (`AssemblyByteBudget+1`), so it exercises the predicate and catches both
+variants.
+
+**Keep the old assertion; do not rename it and do not delete it as redundant.** Renaming would mis-describe
+the dozen other things its test checks, and deleting a green guard because another one covers it today is
+how a pair stops discriminating quietly. It is recorded here so the next reader neither re-discovers it as
+news nor mistakes it for this property's guard.
+
+**And G-10 catches M8 and none of M1–M5 — by design, not as a gap.** `Turn.Run` calls `Assemble` once and
+uses the one returned block for both the record and the judge, so a disclosure injected *inside* `Assemble`
+poisons both copies identically and the two stay equal. **G-10 tests for divergence between them, not for
+disclosure as such**, so it structurally cannot see an assembly-scope injection — which is exactly what the
+forbidden-list entry is for. The two instruments partition the problem and neither covers the other's half;
+confirmed by constructing M3 and watching G-10 stay green.
+
+#### Why widening cannot close it
+
+G-9 evaluates the property at the points its arms realize. The property is a **universal over an
+unbounded input domain** — for every anchor, candidate set and budget, the block is a function of the
+admitted rows alone. For any finite set of arms there exists a predicate false at all of them, so a
+disclosure keyed on that predicate survives. **That is a fact about sampling a universal, not about the
+arms chosen**; M3, M4 and M5 are three instances of it rather than three oversights. Answering them
+tells the next round nothing about M6.
+
+**So the closure claim is withdrawn rather than re-attempted.** G-9 keeps a real and stated job: it is
+strictly stronger than the retired grep, it costs one test, and it reddens any disclosure that varies
+with the withheld rows **at the states its arms realize**. That is a usable result. A universal the next
+attack falsifies is worse than no claim, because §18 declined a structural protection on the strength of
+this one.
+
+#### Where a disclosure can be introduced at all, which is derivable rather than enumerated
+
+A model-facing disclosure needs both the rendered block and the withheld rows in one scope. At
+`274dcc8` exactly two scopes hold both, and the list is closed by construction rather than by search:
+
+| scope | holds both? | why |
+|---|---|---|
+| `renderBlock` | no | receives `(anchor, admitted)`; `Candidate` declares neither `Included` nor `CutReason` |
+| `admit` | no | holds the dispositions and the admitted rows, never the block |
+| **`Assemble`** | **yes** | computes both and returns both |
+| **`Turn.Run`** | **yes** | `block, dispositions := Assemble(...)`, and `block` then flows to `t.judge` |
+| `cmd/eval`'s sweep | no | discards the block (`_, dispositions := loop.Assemble(...)`) and calls no model |
+
+#### The ruling
+
+1. **`Assemble` goes on §18's forbidden list.** This reverses §14a, and the reasoning that rejected it —
+   *"a longer list of names is the same instrument that just failed"* — was wrong on the comparison. The
+   grep matched **content**, so it fired on a compliant operator-path read. A bounce condition is
+   **diff-scoped**: it asks whether this change touched `Assemble`, which cannot be true of a compliant
+   change and cannot be false of any of M1–M5. It is the opposite failure direction, not the same
+   instrument. And the entry is principled rather than enumerative — `Assemble` is on the list because
+   it is one of the two scopes above, not because someone thought of it.
+2. **`Turn.Run` cannot go on the list**, because every unit edits it. **What G-10 is measured to catch:**
+   M8, at `e343870` — and nothing else among the mutations run against it. **What it is measured not to
+   catch:** M9 and M11, both below. No claim is made here about which positions or spans are guarded;
+   two such claims have been made in this section and both were falsified.
+3. **The residuals, enumerated and ranked by reachability. They are not characterised** — three
+   characterisations of this set have now been falsified (*"requires breaking a prohibition"*, *"is
+   recorded"*, *"the silent half is guarded"*), so the enumeration carries measurements only.
+
+   **R1 — an append inside `Turn.Run`.** Breaks no prohibition: `Turn.Run` is deliberately off §18's
+   list. **Membership re-measured at `1547aed`**, each row a whole-suite run at exit 0 with no reds:
+
+   | id | position | key | measured at `1547aed` |
+   |---|---|---|---|
+   | **M9** | before the record literal (`turn.go:149`) | shutout | **survives** — both G-10 arms green, both G-9 arms green, `assemble.go` unchanged so §18's bounce is not triggered |
+   | **M13** | after the record literal, before `t.judge` | rank 1 admitted, a lower row withheld | **survives** — the shape §15 calls *well-matched*; G-10's partial arm has rank 1 **cut**, so it does not realize this |
+   | ~~**M11**~~ | after the record literal | shutout | **no longer a member** — at `1547aed` it reds G-10's shutout arm as the sole failure. It was a member at `0d53a8c`, before that arm existed. |
+
+   **M9 is the member that decides the ruling below, and it replaced M11 when the arms landed.** Its
+   standing is **structural rather than fixtural**: a pre-record append lands in `Record.Block` *and* in
+   the block sent to the model, so the two values G-10 compares stay identical and the relation holds.
+   **No number of arms can change that** — arms fix M11 and M13; they cannot reach M9, because G-10
+   asserts an equality that this position preserves.
+
+   **R2 — an append inside `Assemble`, keyed on a state G-9's arms do not realize.** Measured survivors:
+   M3, M4, M5. Additionally requires changing `Assemble` against §18's explicit prohibition, which R1
+   does not.
+
+4. **No further guard is specified here, and the reason is a correction.** An earlier revision declined a
+   recomputing guard (`Assemble` recomputed and compared to `Record.Block`) on the ground that it would
+   be the fixture-sampled class while G-10 was not. **That distinction does not exist** (QA #13993). A recomputing
+   guard is the same instrument class as G-10 — a relation between two observed values in one run — and
+   **there is no non-fixture-sampled formulation of that relation that is a test**, because a test checks
+   its own fixture. Adding guards extends fixture sets; it does not change the class. G-10's missing
+   shutout arm was a defect in its arms, not in its specification; it landed at `1547aed`, and M11 moved
+   out of R1 as a result.
+
+#### The one instrument that is not fixture-sampled, priced and declined
+
+Disclosure becomes impossible if the block's type is unforgeable outside its constructor: move
+`renderBlock` into its own package returning an opaque `Block` whose only field is unexported, and type
+`JudgeInput.Block` as that type. Then no scope outside that package can append to a block, because none
+can construct one. It is **the only instrument in this document that is not fixture-sampled**. The price
+is one package, one type, `JudgeInput.Block`'s type, **two adapter read sites** (`internal/ollama/wire.go:113`, `internal/openaicompat/wire.go:120`), and every test that
+constructs or reads a `JudgeInput`.
+
+**Declined on proportion alone.** This unit's deliverable is one operator WARN (§18 Unit 1); the remedy
+restructures the model-facing type system. RULING 2026-09-03 and #1136 §2 both bind on that ground, and
+neither needs a claim about what the gates cover.
+
+> **No detectability argument is offered for this decline.** This section previously offered two — *"it
+> requires breaking a prohibition"* and *"the leak is recorded"* — and R1 falsifies both: M9 and M11 break
+> no prohibition, and M11 is absent from `Record.Block`. **The decline rests on proportion to this unit
+> and on nothing else, and it is re-decidable on that ground alone:** if the property is wanted closed,
+> this is the instrument and its price is above. That is a scoping decision for the operator, not a
+> finding this document can settle.
+
+#### The check this section owes itself
+
+Four claims corrected in this document were **generalisations of true ones**, and in each case a
+correctly-scoped original already existed in a row of a table.
+
+> **Before a summary sentence about a guard ships, resolve it against the row it summarises** — the way a
+> `file:line` citation is resolved against the file. A summary that widens its row is the defect; the row
+> is the record.
+
+**The row may be anywhere, and proximity is not part of the check.** At least one original did not sit
+near its summary: the claim that *"§15's both-arms benchmark
+reads that block"* was contradicted by the scope table **two sections earlier**, which records that
+`cmd/eval`'s sweep *"discards the block (`_, dispositions := loop.Assemble(...)`) and calls no model"*.
+The sweep also calls `Assemble` directly and never enters `Turn.Run`, so it could not observe a
+`Turn.Run` disclosure at any distance. A proximity-scoped check would have passed that sentence.
+
+#### And the check above cannot find a stale row, so here is the second one
+
+Every defect corrected in this section up to `17933d7` was **a summary widening a row**. The next one was
+**the inverse**: G-10 gained a shutout arm at `1547aed`, and this section's rows went on describing the
+one-fixture guard. **Resolving summaries against rows cannot find that** — the rows agreed with each
+other and disagreed with the tree. The first check is sound and structurally blind to it.
+
+> **A guard row is a measurement against a tree, not a statement about a guard. It carries the ref it was
+> measured at, and it is re-resolved against the tree — not against other rows.**
+
+**The trigger is mechanical and needs no judgement:** for each guard row, if
+`git diff <the row's ref>..HEAD -- <the guard's test file>` is non-empty, that row is **due
+re-measurement** and may not be relied on until it has been.
+
+**The trigger applies to rows that carry a measurement, and §14's table is not yet uniform.** Enumerated
+**by row** — every falsifier cell read, none matched for a phrase:
+
+| | rows | ref |
+|---|---|---|
+| claims a measurement | **G-3**, **G-6**, **G-7**, **G-9**, **G-10** | G-6 `872156e`, G-10 `274dcc8`/`e343870`; **G-3, G-7 and G-9 carry none** |
+| claims none | G-1, G-2, G-4, G-5, G-8 | not applicable — nothing in them can go stale |
+
+**Five and five.** G-3 cites a QA node and G-9 cites *"§14a's probe"*; neither fixes a tree. **G-7 is the
+worst of the three** — *"it is in the tree **today** and passes"* is a measurement with no ref and an
+explicitly relative word, the exact form the rule above forbids. So the trigger is runnable for **G-6 and
+G-10**, and **G-3, G-7 and G-9 are due a ref**.
+
+> **A row that names a measurement must carry its ref; a row that names none must not pretend to.**
+
+**An earlier revision of this paragraph said three and one.** It was built by matching the falsifier cells
+for *"Established"* and *"No runnable falsifier established"*, and the two rows it missed — G-6 and G-7 —
+are the two that say ***"Live"***. That is **#11034 §8, P-52's first sharpening** — *"Enumerate by ROW,
+never by phrase"* — reproduced inside the paragraph that installs a row-integrity check.
+
+**So the trigger is not self-sustaining yet, and this is the honest grade.** The trigger itself is
+mechanical: pointed at a row it fires with no judgement. But **it is fed by a hand list built by phrase,
+and a mechanical trigger fed by a hand list inherits the list's method** — which is this document's own
+cheap-half / expensive-half distinction applied to the wrong pair. The property still owed:
+
+> **The set of rows carrying a measurement must be decidable from the table itself, without reading any
+> cell for a phrase**, so a row worded in a way nobody anticipated cannot fall silently outside the
+> trigger's scope.
+
+**The shape that would deliver it, specified and not yet applied:** every falsifier cell **opens** with
+either a commit ref in backticks or the literal token `none`, so the classification is the cell's first
+token rather than its prose. Then a novel wording cannot escape, because the marker is required by shape
+and a cell without one is visibly malformed — the same move §14b makes for a fixture value. **Applying it
+touches G-6's row, which is filed debt this branch does not open (#14000)**, so it is specified here and
+left for the unit that owns that row.
+
+**Two halves, and a row must say which it has.** The cheap half is mechanical — the named test resolves,
+and it still has the shape the row assumes (`TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries` has
+**two** arms at `1547aed`, not one). The expensive half is re-running the mutation the row names. This
+round ran the expensive half for M9, M11 and M13; the rows say so, at that ref.
+
+**The direction of this defect was conservative** — the rows *understated* what the guards catch, so
+nothing shipped weaker than described. That is worth recording and is not a reason to grade it lower: it
+was a live false claim in the table §18 reads its acceptance from, and it made a caught mutation the
+ruling's pivot.
 
 ## 15. How the remedy is measured — both arms
 
@@ -691,16 +970,31 @@ cut.* Sweep `turn.go`'s run-summary block for that property; **the site below is
 
 - Known occurrence: `turn.go:166-193`, `logFinished`, beside the shutout WARN at `:189`.
 
-**Acceptance:** G-1 … G-5 exist and pass, and the `git grep -n "CutReason" -- 'internal/loop/*.go'
-':!internal/loop/*_test.go'` command in §14 returns the **same four lines** it returns at `872156e`.
-**Not acceptance:** any product run, and §15.2's sweep figure — that is **reported**, and gates
-nothing.
+**Acceptance:** G-1 … G-5, **G-9** and **G-10** exist and pass, with **G-3 carrying the fixture §14 specifies**
+(`Size: 70_000`, strictly above the remaining budget) — a G-3 below that threshold is not acceptance,
+it is decoration. **Not acceptance:** any product run, and §15.2's sweep figure — that is **reported**,
+and gates nothing.
+
+**RETIRED 2026-09-15 — the `CutReason` grep is no longer an acceptance criterion.** It forbade a read
+on the operator-log path that the property permits, and it passed a model-facing disclosure that G-9
+catches; §14a carries the measurement. **Consequence, and it is the point of retiring it:** the WARN
+**reads `Disposition.CutReason`** to decide that the top row was cut for the byte budget. It is a claim
+about a *reason*, so it reads the reason. Deriving it arithmetically from `!Included && Size >
+remaining` is equivalent on every input reachable today — QA verified that end to end — but only
+because `fuse`/`appendUnseen` (`retrieve.go:90`) drops self-produced rows before `Assemble` sees them,
+which is a cross-file invariant that **no test couples to this inference** (#13943). The equivalence is
+contingent; the field is not. Read the field.
 
 ### What neither unit may do
 
-Change `admit`, `renderBlock`, `Record`, `Disposition`, `Candidate`, `runResponse`, or any budget
-constant. If an implementation finds it needs one of those, **the design is wrong and should bounce**
-rather than be widened.
+Change `admit`, **`Assemble`**, `renderBlock`, `Record`, `Disposition`, `Candidate`, `runResponse`, or
+any budget constant. If an implementation finds it needs one of those, **the design is wrong and should
+bounce** rather than be widened.
+
+**`Assemble` was added 2026-09-15 (§14c), reversing §14a's decision to leave it off.** It is one of only
+two scopes holding both the rendered block and the withheld rows, and every measured disclosure to date
+was introduced inside it. Reading a field is not changing a type and calling `Assemble` is not changing
+it — the condition is zero changed lines in its body.
 
 ---
 

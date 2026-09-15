@@ -236,11 +236,26 @@ func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Dur
 		t.log().Warn("assembly admitted no candidate: the block carried the anchor alone", "subject", record.Subject, "candidates", len(record.Candidates))
 	}
 
+	if top, ok := topRankedDisposition(record.Candidates); ok && top.CutReason == cutReasonByteBudget {
+		remaining := summaryRemainingAfterAnchor(record.Limits, record.Anchor.Size)
+		t.log().Warn("the top-ranked candidate was cut for the byte budget: the best match the graph found did not reach the model",
+			"subject", record.Subject, "candidateId", top.ID, "candidateName", top.Name, "candidateSize", top.Size, "remaining", remaining)
+	}
+
 	if len(record.Candidates) < record.Limits.CandidateLimit {
 		t.log().Warn("the candidate aperture under-delivered: retrieval returned fewer rows than the limit holds", "subject", record.Subject, "candidates", len(record.Candidates), "candidateLimit", record.Limits.CandidateLimit)
 	}
 
 	t.log().Info("run finished", attrs...)
+}
+
+func topRankedDisposition(dispositions []Disposition) (Disposition, bool) {
+	for _, d := range dispositions {
+		if d.Rank == 1 {
+			return d, true
+		}
+	}
+	return Disposition{}, false
 }
 
 func cutCount(dispositions []Disposition) int {
