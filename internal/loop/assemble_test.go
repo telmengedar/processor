@@ -701,6 +701,9 @@ func TestTheAssembledBlockIsAFunctionOfTheAdmittedRowsAlone(t *testing.T) {
 				if len(admittedIDs) == 0 || len(admittedIDs) == len(tc.candidates) {
 					t.Fatalf("test setup error: %d of %d candidates admitted, want a real cut so the two calls below have something to disagree about", len(admittedIDs), len(tc.candidates))
 				}
+				if !reasons[cutReasonSelfProduced] || !reasons[cutReasonByteBudget] {
+					t.Fatalf("test setup error: cut reasons were %v, want both self-produced and byte-budget represented so a reason-specific disclosure has something to key on inside this arm too", reasons)
+				}
 			case "shutout":
 				if len(admittedIDs) != 0 {
 					t.Fatalf("test setup error: %d of %d candidates admitted, want a genuine shutout — every candidate cut", len(admittedIDs), len(tc.candidates))
@@ -711,6 +714,8 @@ func TestTheAssembledBlockIsAFunctionOfTheAdmittedRowsAlone(t *testing.T) {
 				if !reasons[cutReasonSelfProduced] || !reasons[cutReasonByteBudget] {
 					t.Fatalf("test setup error: cut reasons were %v, want both self-produced and byte-budget represented so a reason-specific disclosure has something to key on too", reasons)
 				}
+			default:
+				t.Fatalf("test setup error: arm %q has no setup rule, so it would run with no guarantee about what it fixtures — every arm must name its own", tc.name)
 			}
 
 			admittedOnly := make([]Candidate, 0, len(admittedIDs))
