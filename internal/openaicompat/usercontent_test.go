@@ -3,7 +3,9 @@ package openaicompat
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/telmengedar/processor/internal/loop"
 )
@@ -14,12 +16,17 @@ func TestJudgeSendsAUserMessageByteEqualToRenderUserContentOfTheSameBlockAndInpu
 	const (
 		block = "===== ANCHOR =====\nid: 1\ntype: t\nname: solo\n\njust the anchor\n"
 		input = "Ship it.\r\n\tsecond line — 100% \"done\" <&> %s %%\n\tlast\n"
+
+		instantUTC = "2026-03-04T03:06:07Z"
 	)
+
+	instant := time.Date(2026, 3, 4, 5, 6, 7, 0, time.FixedZone("test+02", 2*60*60))
 
 	srv, captured := capturingServer(t, stopResponse)
 	c := NewClient(srv.URL, "the-model-id", "", loop.Sampling{}, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "the system text", Block: block, Input: input}); err != nil {
+	in := loop.JudgeInput{System: "the system text", Block: block, Input: input, Now: instant}
+	if _, err := c.Judge(context.Background(), in); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
 
@@ -38,8 +45,12 @@ func TestJudgeSendsAUserMessageByteEqualToRenderUserContentOfTheSameBlockAndInpu
 	if got.Messages[1].Role != "user" {
 		t.Fatalf("messages[1].Role = %q, want %q", got.Messages[1].Role, "user")
 	}
-	if want := loop.RenderUserContent(block, input); got.Messages[1].Content != want {
+	if want := loop.RenderUserContent(block, input, instant); got.Messages[1].Content != want {
 		t.Fatalf("messages[1].Content = %q, want %q byte-exact", got.Messages[1].Content, want)
+	}
+	if !strings.Contains(got.Messages[1].Content, instantUTC) {
+		t.Fatalf("messages[1].Content states no %q, so the instant the loop supplied never reached the wire; content=%q",
+			instantUTC, got.Messages[1].Content)
 	}
 }
 

@@ -1,6 +1,8 @@
 // Package loop implements the Processor turn: context assembly, judgement, and write-back.
 package loop
 
+import "time"
+
 // Anchor is the subject node a run is about, fetched with its full body.
 type Anchor struct {
 	ID      int64
@@ -170,8 +172,12 @@ type Sampling struct {
 
 // Record is the outcome of one run.
 type Record struct {
-	Input   string   `json:"input"`
-	Subject int64    `json:"subject"`
+	Input   string `json:"input"`
+	Subject int64  `json:"subject"`
+
+	// Now is the instant the assembled prompt states, in UTC; absent when the prompt states none.
+	Now time.Time `json:"now,omitzero"`
+
 	Query   string   `json:"query"`
 	Queries []string `json:"queries"`
 	// DerivationError is why the query set is the raw input alone, empty when queries were derived.
@@ -216,6 +222,9 @@ type JudgeInput struct {
 	Block      string
 	Input      string
 	PriorTools []ToolExchange
+
+	// Now is the instant the prompt states, zero when the caller supplies none.
+	Now time.Time
 }
 
 // JudgeResult is one judgement step's outcome.
