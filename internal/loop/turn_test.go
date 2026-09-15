@@ -1481,29 +1481,68 @@ func TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped
 func TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries(t *testing.T) {
 	t.Parallel()
 
-	graph := baseGraph()
-	graph.candidates = []Candidate{
-		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-		{ID: 101, Type: "task", Name: "Small", Similarity: 0.5, Content: "small body"},
+	cases := []struct {
+		name       string
+		candidates []Candidate
+	}{
+		{
+			name: "partial admission",
+			candidates: []Candidate{
+				{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
+				{ID: 101, Type: "task", Name: "Small", Similarity: 0.5, Content: "small body"},
+			},
+		},
+		{
+			name: "shutout",
+			candidates: []Candidate{
+				{ID: 200, Type: "documentation", Name: "TooBig1", Similarity: 0.9, Content: strings.Repeat("z", AssemblyByteBudget+1)},
+				{ID: 201, Type: "documentation", Name: "TooBig2", Similarity: 0.8, Content: strings.Repeat("y", AssemblyByteBudget+1)},
+			},
+		},
 	}
-	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
 
-	record, _, err := turn.Run(context.Background(), "hello", 42)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if cutCount(record.Candidates) == 0 {
-		t.Fatalf("test setup error: no candidate was cut, want at least one so the sent block and the record's block have something to disagree about")
-	}
-	if len(model.calls) == 0 {
-		t.Fatal("test setup error: the model was never called")
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	for i, call := range model.calls {
-		if call.Block != record.Block {
-			t.Fatalf("judgement call %d received block %q, want it byte-identical to record.Block %q: the model must never see anything the record does not also carry", i, call.Block, record.Block)
-		}
+			graph := baseGraph()
+			graph.candidates = tc.candidates
+			model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+			turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+
+			record, _, err := turn.Run(context.Background(), "hello", 42)
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+
+			admitted := len(record.Candidates) - cutCount(record.Candidates)
+
+			switch tc.name {
+			case "partial admission":
+				if admitted == 0 || admitted == len(record.Candidates) {
+					t.Fatalf("test setup error: %d of %d candidates admitted, want a real partial cut so the sent block and the record's block have something to disagree about", admitted, len(record.Candidates))
+				}
+			case "shutout":
+				if admitted != 0 {
+					t.Fatalf("test setup error: %d of %d candidates admitted, want a genuine shutout — every candidate cut", admitted, len(record.Candidates))
+				}
+				if len(record.Candidates) < 2 {
+					t.Fatalf("test setup error: only %d candidate(s) reached the record, want at least 2 so a withheld-count-keyed disclosure also has something to key on", len(record.Candidates))
+				}
+			default:
+				t.Fatalf("test setup error: arm %q has no setup rule, so it would run with no guarantee about what it fixtures — every arm must name its own", tc.name)
+			}
+
+			if len(model.calls) == 0 {
+				t.Fatal("test setup error: the model was never called")
+			}
+
+			for i, call := range model.calls {
+				if call.Block != record.Block {
+					t.Fatalf("judgement call %d received block %q, want it byte-identical to record.Block %q: the model must never see anything the record does not also carry", i, call.Block, record.Block)
+				}
+			}
+		})
 	}
 }
 
