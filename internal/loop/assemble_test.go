@@ -648,3 +648,41 @@ func TestAssembleEmptyCandidatesRendersAnchorOnly(t *testing.T) {
 		t.Fatalf("block = %q, want %q", block, want)
 	}
 }
+
+func TestTheAssembledBlockIsAFunctionOfTheAdmittedRowsAlone(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Content: "anchor body"}
+	candidates := []Candidate{
+		{ID: 10, Content: strings.Repeat("x", 40)},
+		{ID: 20, Content: strings.Repeat("y", 40)},
+		{ID: 900, SelfProduced: true, Content: "self produced body"},
+		{ID: 30, Content: strings.Repeat("z", 40)},
+	}
+	const budget = 90
+
+	fullBlock, dispositions := Assemble(anchor, candidates, budget)
+
+	admittedIDs := make(map[int64]bool, len(dispositions))
+	for _, d := range dispositions {
+		if d.Included {
+			admittedIDs[d.ID] = true
+		}
+	}
+	if len(admittedIDs) == 0 || len(admittedIDs) == len(candidates) {
+		t.Fatalf("test setup error: %d of %d candidates admitted, want a real cut so the two calls below have something to disagree about", len(admittedIDs), len(candidates))
+	}
+
+	admittedOnly := make([]Candidate, 0, len(admittedIDs))
+	for _, c := range candidates {
+		if admittedIDs[c.ID] {
+			admittedOnly = append(admittedOnly, c)
+		}
+	}
+
+	admittedOnlyBlock, _ := Assemble(anchor, admittedOnly, budget)
+
+	if fullBlock != admittedOnlyBlock {
+		t.Fatalf("assembling the full candidate list produced a different block than assembling only the rows it admitted: full=\n%q\nadmitted-only=\n%q\nthe block must disclose nothing about a withheld row — its reason, its id, its size, or the bare fact that it exists — whatever field or function carries it", fullBlock, admittedOnlyBlock)
+	}
+}

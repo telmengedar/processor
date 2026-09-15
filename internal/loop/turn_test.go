@@ -1393,7 +1393,7 @@ func TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasAdmittedEvenThoughOthersW
 	}
 }
 
-func TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasCutAsSelfProduced(t *testing.T) {
+func TestTheTopCutWarnIsSilentWhenTheTopCandidateWasCutAsSelfProduced(t *testing.T) {
 	t.Parallel()
 
 	var logBuf strings.Builder
@@ -1405,7 +1405,7 @@ func TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasCutAsSelfProduced(t *test
 		Anchor:  AnchorSummary{Size: 100},
 		Limits:  Limits{AssemblyByteBudget: AssemblyByteBudget},
 		Candidates: []Disposition{
-			{Rank: 1, ID: 900, Name: "SelfProducedRecord", CutReason: cutReasonSelfProduced, Included: false, Size: 500},
+			{Rank: 1, ID: 900, Name: "SelfProducedRecord", CutReason: cutReasonSelfProduced, Included: false, Size: 70_000},
 			{Rank: 2, ID: 901, Name: "Doc", Included: true, Size: 200},
 		},
 	}

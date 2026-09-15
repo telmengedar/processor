@@ -236,12 +236,10 @@ func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Dur
 		t.log().Warn("assembly admitted no candidate: the block carried the anchor alone", "subject", record.Subject, "candidates", len(record.Candidates))
 	}
 
-	if top, ok := topRankedDisposition(record.Candidates); ok {
+	if top, ok := topRankedDisposition(record.Candidates); ok && top.CutReason == cutReasonByteBudget {
 		remaining := summaryRemainingAfterAnchor(record.Limits, record.Anchor.Size)
-		if !top.Included && top.Size > remaining {
-			t.log().Warn("the top-ranked candidate was cut for the byte budget: the best match the graph found did not reach the model",
-				"subject", record.Subject, "candidateId", top.ID, "candidateName", top.Name, "candidateSize", top.Size, "remaining", remaining)
-		}
+		t.log().Warn("the top-ranked candidate was cut for the byte budget: the best match the graph found did not reach the model",
+			"subject", record.Subject, "candidateId", top.ID, "candidateName", top.Name, "candidateSize", top.Size, "remaining", remaining)
 	}
 
 	if len(record.Candidates) < record.Limits.CandidateLimit {
