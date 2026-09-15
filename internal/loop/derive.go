@@ -99,7 +99,7 @@ func DerivationPrompt(input string, now time.Time) string {
 	return strings.Join(append(blocks, input), "\n\n")
 }
 
-// ParseDerivation reads text as query lines plus, anywhere among them, an optional DATES directive, dropping reasoning artifacts, list decoration, blanks, repeats and case-folded echoes of input, capped at MaxDerivedQueries. Recognition uses the same content-form reduction a query line is put through, case-insensitively, so a directive is excluded from the query set wherever it sits and however many times it appears. loc resolves the window; it is named only by a recognised directive that is the first content line and the only one anywhere — every other case yields a zero window rather than a guessed one.
+// ParseDerivation reads text as query lines with an optional DATES directive among them, dropping reasoning artifacts, list decoration, blanks, repeats and case-folded echoes of input, capped at MaxDerivedQueries. loc resolves the window.
 func ParseDerivation(text, input string, loc *time.Location) ([]string, UpdateWindow) {
 	lines := strings.Split(derivationThinkBlock.ReplaceAllString(text, ""), "\n")
 	window := windowFromDirectiveLines(lines, loc)
@@ -117,7 +117,7 @@ func ParseDerivation(text, input string, loc *time.Location) ([]string, UpdateWi
 
 func windowFromDirectiveLines(lines []string, loc *time.Location) UpdateWindow {
 	directiveCount := 0
-	firstContentIsSoleCandidate := false
+	firstContentIsDirective := false
 	firstContentSeen := false
 	var value string
 
@@ -129,7 +129,7 @@ func windowFromDirectiveLines(lines []string, loc *time.Location) UpdateWindow {
 		v, ok := directiveValue(reduced)
 		if !firstContentSeen {
 			firstContentSeen = true
-			firstContentIsSoleCandidate = ok
+			firstContentIsDirective = ok
 		}
 		if ok {
 			directiveCount++
@@ -137,7 +137,7 @@ func windowFromDirectiveLines(lines []string, loc *time.Location) UpdateWindow {
 		}
 	}
 
-	if directiveCount != 1 || !firstContentIsSoleCandidate {
+	if directiveCount != 1 || !firstContentIsDirective {
 		return UpdateWindow{}
 	}
 	return resolveDatesValue(value, loc)

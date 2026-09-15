@@ -518,13 +518,8 @@ func directiveLeakFixtures() []directiveLeakFixture {
 	return fixtures
 }
 
-var leakCheckDecoration = regexp.MustCompile(`^\s*(?:[-*•]|\d+[.)])\s*`)
-
-const leakCheckQuoteCutset = "\"“”'"
-
 func queryStillLooksLikeADirective(query string) bool {
-	reduced := strings.Trim(leakCheckDecoration.ReplaceAllString(strings.TrimSpace(query), ""), leakCheckQuoteCutset)
-	return len(reduced) >= len(dateLinePrefix) && strings.EqualFold(reduced[:len(dateLinePrefix)], dateLinePrefix)
+	return len(query) >= len(dateLinePrefix) && strings.EqualFold(query[:len(dateLinePrefix)], dateLinePrefix)
 }
 
 func TestTheDatesLineNeverAppearsInTheQuerySetWhateverItsValuePlacementOrSpelling(t *testing.T) {
@@ -545,6 +540,35 @@ func TestTheDatesLineNeverAppearsInTheQuerySetWhateverItsValuePlacementOrSpellin
 				if !slices.Contains(got, want) {
 					t.Fatalf("ParseDerivation(%q) returned %q, want it still to carry %q: only a recognised directive line is ever excluded", fixture.text, got, want)
 				}
+			}
+		})
+	}
+}
+
+func TestADoublyDecoratedDirectiveIsNotRecognisedAndStaysAQuery(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name          string
+		firstLine     string
+		wantSurviving string
+	}{
+		{"double bullet dash", "- - DATES: 2026-09-12..2026-09-12", "- DATES: 2026-09-12..2026-09-12"},
+		{"double bullet star", "* * DATES: 2026-09-12..2026-09-12", "* DATES: 2026-09-12..2026-09-12"},
+		{"double bullet dot", "• • DATES: 2026-09-12..2026-09-12", "• DATES: 2026-09-12..2026-09-12"},
+		{"double numbered dot", "1. 1. DATES: 2026-09-12..2026-09-12", "1. DATES: 2026-09-12..2026-09-12"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, window := ParseDerivation(tc.firstLine+"\nfirst question?", "what did the split change", time.UTC)
+			if !window.IsZero() {
+				t.Fatalf("window = %+v, want zero: only one decoration token is stripped, so this line does not reduce to a recognised directive", window)
+			}
+			if !slices.Contains(got, tc.wantSurviving) {
+				t.Fatalf("ParseDerivation returned %q, want it to still carry %q: a line the parser does not recognise as the directive is a query, decoration and all", got, tc.wantSurviving)
 			}
 		})
 	}
@@ -603,7 +627,7 @@ func TestOnlyAFirstContentLineDirectiveNamesTheWindowAndNoneDoesWhenTwoAppear(t 
 
 		_, window := ParseDerivation("first question?\nDATES: 2026-09-12..2026-09-12", "what did the split change", time.UTC)
 		if !window.IsZero() {
-			t.Fatalf("window = %+v, want zero: a directive that is not the first content line may be a candidate the model discarded — this is the round-1 relaxation QA falsified", window)
+			t.Fatalf("window = %+v, want zero: a directive that is not the first content line may be a candidate the model discarded, not its answer", window)
 		}
 	})
 
