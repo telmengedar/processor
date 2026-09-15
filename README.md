@@ -243,8 +243,9 @@ cap can still arrive while the nodes already at the top keep the ranks they had.
 
 The turn: fetch the subject and recall candidates, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
-model, dispatch a tool each time the model asks for one (up to a call cap of 6 model calls, so at most 5
-tool dispatches per run — the capping call's request is counted but never dispatched), then write the
+model, dispatch a tool each time the model asks for one (up to a **judgement**-call cap of 6, so at most 5
+tool dispatches per run — the capping call's request is counted but never dispatched; the derivation call
+above is not charged to this cap, so a turn makes up to **seven** model calls in all), then write the
 record back to the graph as one `session-log` node linked to the subject.
 
 Two tools are offered on every call: `recall`, which searches the same graph, and `write_file`, which
@@ -566,7 +567,9 @@ flags it.
   text-only answer, a tool call, a truncated response, a refused response, and an unrecognised finish
   reason with the raw value preserved, and that a missing usage object decodes as absent rather than
   zero. `internal/loop`'s tool cycle, call cap, and every design §6.5 failure-path row (including that a
-  recall failure produces no model call at all, and that a write-back failure does not fail the request)
+  recall failure produces no **judgement** call — since `3489a2d` the derivation call precedes retrieval and has
+  already completed, so the property pinned is that `Judge` is never reached — and that a write-back failure
+  does not fail the request)
   are pinned at the port level against canned graph and model doubles. `internal/divoid`'s write side (the
   three-POST sequence, the content-type header on the body POST, the bare-id body on the link POST, and
   that the adapter alone supplies the written node's type, name and edge) is pinned at the wire level,

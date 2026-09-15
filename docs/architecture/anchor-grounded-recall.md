@@ -183,7 +183,7 @@ The change adds **one query source** and **one exclusion** to the existing retri
   │     composed here, from the anchor this step already receives      │
   │                                                                    │
   │   ── reciprocal-rank fusion over the unscoped lists ──             │
-  │      (already implemented; INERT IN A TURN TODAY — #11398)         │
+  │      (already implemented; inert in a turn until `3489a2d` — #11398) │
   │                                                                    │
   │   anchor-scoped recall ──► 3 reserved tail slots  (UNCHANGED)      │
   │                                                                    │
@@ -200,7 +200,8 @@ The change adds **one query source** and **one exclusion** to the existing retri
    what is asked. The measured effect (§3.3) is what that distinction buys.
 2. **It activates machinery that already exists and is currently doing nothing.** #11398 established that
    reciprocal-rank fusion is *inert in a turn*, because the turn passes exactly one query and fusion over one
-   list is order-preserving. This change gives the turn a second list — **the first real job the product's
+   list is order-preserving. **(True when written; since `3489a2d` the turn passes up to six queries and fusion
+   is live, so this design is no longer the first to give the fusion step work.)** This change gives the turn a second list — **the first real job the product's
    fusion step has ever had** — and narrows the turn/sweep ranking divergence #11398 §2 names as a defect in
    the instrument.
 3. **It retains the raw arm rather than replacing it.** This is what bounds the damage on r10: fusion scores
