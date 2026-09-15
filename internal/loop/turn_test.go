@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -1316,6 +1317,165 @@ func shutoutLogLine(log string) string {
 		}
 	}
 	return ""
+}
+
+func topCutLogLine(log string) string {
+	for _, line := range strings.Split(log, "\n") {
+		if strings.Contains(line, `msg="the top-ranked candidate was cut for the byte budget`) {
+			return line
+		}
+	}
+	return ""
+}
+
+func TestTurnRunWarnsWhenTheTopRankedCandidateWasDroppedForTheByteBudget(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{
+		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 101, Type: "task", Name: "Small", Similarity: 0.5, Content: "small body"},
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(record.Candidates) != 2 || record.Candidates[0].Rank != 1 || record.Candidates[0].CutReason != cutReasonByteBudget || record.Candidates[0].Included {
+		t.Fatalf("test setup error: rank-1 disposition is %+v, want it cut for the byte budget", record.Candidates[0])
+	}
+	if cutCount(record.Candidates) == len(record.Candidates) {
+		t.Fatalf("test setup error: every candidate was cut, want at least one admitted so this is not the shutout case")
+	}
+
+	warning := topCutLogLine(logBuf.String())
+	if warning == "" {
+		t.Fatalf("no top-cut record for a run whose rank-1 candidate was dropped for the byte budget; log:\n%s", logBuf.String())
+	}
+	wantRemaining := AssemblyByteBudget - len(graph.node.Content)
+	for _, want := range []string{"level=WARN", "subject=42", "candidateId=100", "candidateName=BigDoc", fmt.Sprintf("candidateSize=%d", AssemblyByteBudget+1), fmt.Sprintf("remaining=%d", wantRemaining)} {
+		if !strings.Contains(warning, want) {
+			t.Fatalf("the top-cut record does not carry %q; it was:\n%s", want, warning)
+		}
+	}
+}
+
+func TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasAdmittedEvenThoughOthersWereCut(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{
+		{ID: 100, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
+		{ID: 101, Type: "documentation", Name: "Big1", Similarity: 0.8, Content: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 102, Type: "documentation", Name: "Big2", Similarity: 0.7, Content: strings.Repeat("y", AssemblyByteBudget+1)},
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(record.Candidates) != 3 || !record.Candidates[0].Included || cutCount(record.Candidates) != 2 {
+		t.Fatalf("test setup error: %+v, want rank 1 admitted and the two lower rows cut", record.Candidates)
+	}
+
+	if warning := topCutLogLine(logBuf.String()); warning != "" {
+		t.Fatalf("a run whose rank-1 candidate was admitted raised the top-cut alarm even though lower rows were cut:\n%s", warning)
+	}
+}
+
+func TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasCutAsSelfProduced(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	turn := &Turn{logger: logger}
+
+	record := Record{
+		Subject: 42,
+		Anchor:  AnchorSummary{Size: 100},
+		Limits:  Limits{AssemblyByteBudget: AssemblyByteBudget},
+		Candidates: []Disposition{
+			{Rank: 1, ID: 900, Name: "SelfProducedRecord", CutReason: cutReasonSelfProduced, Included: false, Size: 500},
+			{Rank: 2, ID: 901, Name: "Doc", Included: true, Size: 200},
+		},
+	}
+
+	turn.logFinished(record, WriteReceipt{}, 0)
+
+	if warning := topCutLogLine(logBuf.String()); warning != "" {
+		t.Fatalf("a run whose rank-1 candidate was cut as self-produced raised the byte-budget top-cut alarm:\n%s", warning)
+	}
+}
+
+func TestTurnRunRaisesBothTheShutoutAndTheDroppedTopCandidateRecordsWhenNothingWasAdmitted(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{
+		{ID: 100, Type: "documentation", Name: "Big1", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 101, Type: "documentation", Name: "Big2", Similarity: 0.8, Content: strings.Repeat("y", AssemblyByteBudget+1)},
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(record.Candidates) != 2 || cutCount(record.Candidates) != 2 {
+		t.Fatalf("test setup error: %d candidates of which %d were cut, want both cut", len(record.Candidates), cutCount(record.Candidates))
+	}
+
+	if shutoutLogLine(logBuf.String()) == "" {
+		t.Fatalf("no shutout record for a run that admitted nothing; log:\n%s", logBuf.String())
+	}
+	if topCutLogLine(logBuf.String()) == "" {
+		t.Fatalf("no top-cut record for a run that admitted nothing, whose rank-1 row was also dropped for the byte budget; log:\n%s", logBuf.String())
+	}
+}
+
+func TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{
+		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 101, Type: "task", Name: "Small", Similarity: 0.5, Content: "small body"},
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	wantBlock, wantDispositions := Assemble(graph.node, graph.candidates, AssemblyByteBudget)
+	if record.Block != wantBlock {
+		t.Fatalf("record.Block changed when the top candidate was dropped:\ngot  %q\nwant %q", record.Block, wantBlock)
+	}
+	if len(record.Candidates) != len(wantDispositions) {
+		t.Fatalf("record.Candidates has %d rows, want %d", len(record.Candidates), len(wantDispositions))
+	}
+	for i, want := range wantDispositions {
+		got := record.Candidates[i]
+		if got.Rank != want.Rank || got.ID != want.ID || got.Included != want.Included || got.CutReason != want.CutReason || got.Size != want.Size {
+			t.Fatalf("record.Candidates[%d] = %+v, want %+v", i, got, want)
+		}
+	}
 }
 
 func TestAShortApertureIsWarnedEvenWhenNothingWasCutBecauseNothingWasFetched(t *testing.T) {
