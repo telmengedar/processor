@@ -8,8 +8,10 @@
 > Boundaries held, not crossed: **#13564** (a call that *fails*) · **#13601** (rows never *fetched*) ·
 > **#11308** + `docs/architecture/substance-backed-admission.md` (the oversize node itself).
 > Corrections consumed: **#13671** (the disclosure volume is **9**, not §16.2's ~12).
-> **Baseline: `main` at `872156e`, working tree clean.** Every repo fact in §2 and §14 was read out of
-> that tree. #13601 Unit 1 is on **PR #70, open** — no claim here holds at that ref unless it says so.
+> **Baseline: `main` at `872156e`, working tree clean.** Every repo fact in this document was read out
+> of that tree **except where a section dates itself otherwise** — §14a and §14c state their own refs.
+> A citation here is a dated record, corrected in place with the old text struck, never silently
+> renumbered to a later tree (P-43). #13601 Unit 1 is on **PR #70, open** — no claim here holds at that ref unless it says so.
 > **Citation convention:** a bare `file.go:N` is under **`internal/loop/`**; every citation outside
 > that package is written with its full path. **Node sizes carry `(record)` or `(live <date>)`** — §19.
 
@@ -66,10 +68,10 @@ a substance range between sets, and this rule is the same refusal applied to the
 challenged — which is where the first version of this document slipped (QA #13680 W-1).
 
 **The load-bearing fact, verified in code rather than inferred from the answer text.** `renderBlock`
-(`assemble.go:127`) writes one `ANCHOR` section and then one `CANDIDATE` section **per admitted row**
-(`assemble.go:135-136`). Its parameters are `(anchor Anchor, admitted []Candidate)`, and **`Candidate`
-(`types.go:27`) carries neither `Included` nor `CutReason`** — those live only on `Disposition`
-(`types.go:75-76`), which goes to the record. **The renderer is structurally incapable of disclosing a
+(`assemble.go:108`) writes one `ANCHOR` section and then one `CANDIDATE` section **per admitted row**
+(`assemble.go:116`). Its parameters are `(anchor Anchor, admitted []Candidate)`, and **`Candidate`
+(`types.go:14`) carries neither `Included` nor `CutReason`** — those live only on `Disposition`
+(`types.go:62-63`), which goes to the record. **The renderer is structurally incapable of disclosing a
 cut, because nothing it receives records one.**
 
 So the model was not withholding a caveat. **It was never told**, and from inside the block the six
@@ -323,9 +325,9 @@ component, no new port, no new type, no new constant, no new persisted field.
 | component | gains | still does not own |
 |---|---|---|
 | **`logFinished` (`turn.go:166`)** | one WARN: the rank-1 candidate was dropped for the byte budget. | Deciding admission; reading the block; any reason other than the byte budget. Self-produced cuts belong to #13601's WARN and are explicitly not this one's (§11). |
-| **`RenderToolResult` (`assemble.go:100`)** | the ability to distinguish *recall returned nothing* from *recall returned rows and admission cut all of them*. | Naming which rows, or their ids — the model cannot fetch by id (C3), so ids would be budget spent on something unusable. |
-| **`admit` (`assemble.go:31`)** | **nothing.** | — |
-| **`renderBlock` (`assemble.go:127`)** | **nothing.** | — |
+| **`RenderToolResult` (`assemble.go:84`)** | the ability to distinguish *recall returned nothing* from *recall returned rows and admission cut all of them*. | Naming which rows, or their ids — the model cannot fetch by id (C3), so ids would be budget spent on something unusable. |
+| **`admit` (`assemble.go:30`)** | **nothing.** | — |
+| **`renderBlock` (`assemble.go:108`)** | **nothing.** | — |
 | **`Record` / `Disposition` / `runResponse`** | **nothing.** | — |
 
 ---
@@ -499,7 +501,8 @@ inventory.**
 | **G-5** | I-5 | `TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped` | Compares the record and block against the pre-change golden for the same fixture. **This is the guard that makes "zero cost" checkable** rather than asserted. | **No runnable falsifier established.** |
 | **G-6** | I-6 | `TestRenderToolResultSaysResultsWereFoundAndNoneWereIncludedWhenAdmissionCutThemAll` | The exchange carries **empty `Results` and non-empty `Dispositions`** — the `turn.go:359-360` shape. A renderer reading only `Results` cannot tell this from the empty case and reddens. | **Live, and its output is quoted:** at `872156e`, `git grep -n "no additional results found" -- 'internal/**'` returns `internal/loop/assemble.go:92` and `internal/loop/toolresult_test.go:34`. G-6 requires a third site to exist and the `assemble.go:92` branch to be conditional. |
 | **G-7** | I-6 | `TestRenderToolResultRendersARecallThatFoundNothingAsOneSentenceRatherThanAnEmptyString` — **exists**, `toolresult_test.go:29` | It constructs a `ToolExchange` with **no dispositions at all**, so it distinguishes *fix the empty branch* from *replace the empty branch*. **Must stay green unmodified.** | **Live:** it is in the tree today and passes; a fix that rewrites the genuinely-empty message reddens it. |
-| **G-9** | I-3, §14a | `TestTheAssembledBlockIsAFunctionOfTheAdmittedRowsAlone` | Calls `Assemble` twice with the same anchor and budget: once with the full candidate list, once with **only the rows the first call admitted**. The two blocks must be **byte-identical**. Any disclosure of a withheld row — its reason, its id, its size, or the bare fact that it exists — makes them differ, **whatever field it is spelled with and whatever function emits it**. | **Established.** §14a's probe appends a withheld-count manifest inside `Assemble`; of every instrument this design relied on, G-9 is the only one that reddens against it. |
+| **G-9** | I-3, §14a | `TestTheAssembledBlockIsAFunctionOfTheAdmittedRowsAlone` | Calls `Assemble` twice with the same anchor and budget: once with the full candidate list, once with **only the rows the first call admitted**. The two blocks must be **byte-identical**. A disclosure differs between the two calls **only where an arm realizes the state that disclosure is keyed on** — so G-9's reach is its arms, not the input domain (§14c). Widen the arms to widen the reach; this row is not closure and must not be read as it. | **Established.** §14a's probe appends a withheld-count manifest inside `Assemble`; of every instrument this design relied on, G-9 is the only one that reddens against it. |
+| **G-10** | I-3, §14c | `TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries` | Runs a real `Turn.Run` whose candidate set has at least one row cut, captures the `JudgeInput` the model port received, and asserts its `Block` is byte-identical to `Record.Block`. **It is a relation between two observed values in one run, not a property sampled over inputs** — so unlike G-9 it holds for every fixture any test exercises, and any disclosure appended in `Turn.Run` between the record's construction and `t.judge` reddens it regardless of what it is keyed on. | **Established.** §14c's M8 — an unconditional append in `Turn.Run` — leaves the whole suite green at `274dcc8` and reddens this guard, which was green unmutated. |
 | **G-8** | I-7 | `TestRenderToolResultNamesNoUnadmittedNodeInTheAllCutSentence` | C3: the model cannot fetch by id, so an id in that sentence is budget spent on an unusable fact. A renderer that lists the cut rows reddens. | **No runnable falsifier established.** |
 
 > **Corrected 2026-09-11 during Unit 2's implementation (QA #13697 CF-1).** G-6's name above read
@@ -559,16 +562,15 @@ permits. It bounced a compliant implementation and cost a real mechanism change 
 naming: *"the same four lines"* is ambiguous between the four **sites** and their **line numbers**, and
 under the literal reading any unrelated edit to `assemble.go` fails it.
 
-**The replacement is behavioural, and it is one guard.** **G-9** asserts that the block `Assemble`
-returns is a function of the admitted rows alone — assemble twice, once with everything and once with
-only what was admitted, and require byte-identical output. It reddens against the manifest above by
-construction, and it does so without caring what field carries the disclosure, which function emits it,
-or how anything is spelled. **That is the property §5.2's elective half would violate**, stated directly
-instead of through two proxies for it.
+**The replacement is behavioural: G-9** asserts that the block `Assemble` returns is a function of the
+admitted rows alone — assemble twice, once with everything and once with only what was admitted, and
+require byte-identical output. It reddens against the manifest above, and it is **strictly stronger than
+the retired grep**, which that manifest leaves untouched.
 
-> **Why `Assemble` is not simply added to §18's forbidden list instead.** A longer list of names is the
-> same instrument that just failed — it protects the sites someone thought of. G-9 protects the
-> property. Per #1136 §4 the list does not grow when one guard subsumes it.
+> **RETRACTED 2026-09-15 — this section originally continued:** *"it does so without caring what field
+> carries the disclosure, which function emits it, or how anything is spelled … A longer list of names
+> is the same instrument that just failed … **G-9 protects the property.**"* **Both halves are false.**
+> §14c carries the measurements that falsify them and the ruling that replaces them.
 
 ### 14b. Why G-3's fixture value is the whole of G-3
 
@@ -587,6 +589,90 @@ that should not have existed. **A fixture below the threshold at which a guard c
 defect in the guard, not a detail of it.**
 
 ---
+
+### 14c. RULING 2026-09-15 — a behavioural gate over `Assemble` cannot establish this property, and three rounds of widening is the evidence
+
+§14a retired a false universal and installed another one section later. This is the ruling on whether a
+third attempt would fare better. **It would not, and the reason is categorical rather than a matter of
+fixture quality.**
+
+#### What was measured
+
+| id | disclosure | where | suite |
+|---|---|---|---|
+| **M1** (§14a) | unconditional withheld-count manifest | `Assemble` | **red** — G-9 both arms |
+| **M2** (#13957) | keyed on a shutout | `Assemble` | **red** — G-9 shutout arm only |
+| **M3** (#13980) | keyed on the rank-1 row cut for the byte budget | `Assemble` | **green** |
+| **M4** (#13980) | keyed on a shutout whose reasons are all byte-budget | `Assemble` | **green** |
+| **M5** (#13980) | keyed on a withheld count of four or more | `Assemble` | **green** |
+| **M8** (this ruling) | **unconditional**, after `record.Block` is set | **`Turn.Run`** | **green** |
+
+M3 is this unit's own subject condition — the rank-1 row cut for the byte budget is exactly what the
+operator WARN reports, and whether the same fact reaches the **model** is §5.2's elective half. M8 is
+worse than M3–M5 and is mine: it needs **no predicate at all**. Appending to `block` between the record's
+construction and `t.judge(...)` sends the model a block the record does not carry, and the whole suite
+stays green at exit 0. Measured in a detached worktree at `274dcc8` and **re-measured at `098c4ca`**
+after the W-2 test fix landed — 13 `ok`, 0 `--- FAIL` at both refs. A probe asserting
+`JudgeInput.Block == Record.Block` was green unmutated and red under it, printing the delta verbatim.
+
+#### Why widening cannot close it
+
+G-9 evaluates the property at the points its arms realize. The property is a **universal over an
+unbounded input domain** — for every anchor, candidate set and budget, the block is a function of the
+admitted rows alone. For any finite set of arms there exists a predicate false at all of them, so a
+disclosure keyed on that predicate survives. **That is a fact about sampling a universal, not about the
+arms chosen**; M3, M4 and M5 are three instances of it rather than three oversights. Answering them
+tells the next round nothing about M6.
+
+**So the closure claim is withdrawn rather than re-attempted.** G-9 keeps a real and stated job: it is
+strictly stronger than the retired grep, it costs one test, and it reddens any disclosure that varies
+with the withheld rows **at the states its arms realize**. That is a usable result. A universal the next
+attack falsifies is worse than no claim, because §18 declined a structural protection on the strength of
+this one.
+
+#### Where a disclosure can be introduced at all, which is derivable rather than enumerated
+
+A model-facing disclosure needs both the rendered block and the withheld rows in one scope. At
+`274dcc8` exactly two scopes hold both, and the list is closed by construction rather than by search:
+
+| scope | holds both? | why |
+|---|---|---|
+| `renderBlock` | no | receives `(anchor, admitted)`; `Candidate` declares neither `Included` nor `CutReason` |
+| `admit` | no | holds the dispositions and the admitted rows, never the block |
+| **`Assemble`** | **yes** | computes both and returns both |
+| **`Turn.Run`** | **yes** | `block, dispositions := Assemble(...)`, and `block` then flows to `t.judge` |
+| `cmd/eval`'s sweep | no | discards the block (`_, dispositions := loop.Assemble(...)`) and calls no model |
+
+#### The ruling
+
+1. **`Assemble` goes on §18's forbidden list.** This reverses §14a, and the reasoning that rejected it —
+   *"a longer list of names is the same instrument that just failed"* — was wrong on the comparison. The
+   grep matched **content**, so it fired on a compliant operator-path read. A bounce condition is
+   **diff-scoped**: it asks whether this change touched `Assemble`, which cannot be true of a compliant
+   change and cannot be false of any of M1–M5. It is the opposite failure direction, not the same
+   instrument. And the entry is principled rather than enumerative — `Assemble` is on the list because
+   it is one of the two scopes above, not because someone thought of it.
+2. **`Turn.Run` cannot go on the list**, because every unit edits it. **G-10** closes it instead: the
+   block the model is sent must be byte-identical to the block the record carries. That is a relation
+   between two observed values in one run rather than a property over an input domain, so it holds for
+   **every fixture any test exercises** rather than for two arms — and M8 is its falsifier.
+3. **The residual, stated rather than closed:** a disclosure introduced inside `Assemble` **by a change
+   this design's bounce condition does not stop**, keyed on a state G-9's arms do not realize. Nothing
+   here reaches that. It requires an implementer to change `Assemble` against an explicit prohibition,
+   which is a review failure rather than a gate failure, and this design does not claim to prevent it.
+
+#### The one instrument that would close it, priced and declined
+
+Disclosure becomes impossible if the block's type is unforgeable outside its constructor: move
+`renderBlock` into its own package returning an opaque `Block` whose only field is unexported, and type
+`JudgeInput.Block` as that type. Then no scope outside that package can append to a block, because none
+can construct one. **Declined.** It costs a new package, a new type and a change to every adapter that
+reads `JudgeInput.Block`, to defend a decision (§5.2 chose not to ship the elective half) against a
+contributor who has not read it — a review-time risk, for which §18's diff-scoped bounce condition is the
+proportionate instrument. #1136 §2 requires a concrete reason the existing surface cannot serve; *"a
+future contributor might not notice"* is not one. **Recorded so the next round does not re-derive it**,
+and so that if the elective half is ever revisited the structural option is on the table with its price
+already attached.
 
 ## 15. How the remedy is measured — both arms
 
@@ -738,7 +824,7 @@ cut.* Sweep `turn.go`'s run-summary block for that property; **the site below is
 
 - Known occurrence: `turn.go:166-193`, `logFinished`, beside the shutout WARN at `:189`.
 
-**Acceptance:** G-1 … G-5 and **G-9** exist and pass, with **G-3 carrying the fixture §14 specifies**
+**Acceptance:** G-1 … G-5, **G-9** and **G-10** exist and pass, with **G-3 carrying the fixture §14 specifies**
 (`Size: 70_000`, strictly above the remaining budget) — a G-3 below that threshold is not acceptance,
 it is decoration. **Not acceptance:** any product run, and §15.2's sweep figure — that is **reported**,
 and gates nothing.
@@ -755,9 +841,14 @@ contingent; the field is not. Read the field.
 
 ### What neither unit may do
 
-Change `admit`, `renderBlock`, `Record`, `Disposition`, `Candidate`, `runResponse`, or any budget
-constant. If an implementation finds it needs one of those, **the design is wrong and should bounce**
-rather than be widened.
+Change `admit`, **`Assemble`**, `renderBlock`, `Record`, `Disposition`, `Candidate`, `runResponse`, or
+any budget constant. If an implementation finds it needs one of those, **the design is wrong and should
+bounce** rather than be widened.
+
+**`Assemble` was added 2026-09-15 (§14c), reversing §14a's decision to leave it off.** It is one of only
+two scopes holding both the rendered block and the withheld rows, and every measured disclosure to date
+was introduced inside it. Reading a field is not changing a type and calling `Assemble` is not changing
+it — the condition is zero changed lines in its body.
 
 ---
 
