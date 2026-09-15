@@ -1,20 +1,25 @@
 # Processor
 
-Processor is a harness whose substrate is memory, not history (see `VISION.md`). Two binaries: one
-serves the turn over HTTP, the other sweeps a retrieval corpus and scores what retrieval delivered.
+Processor is a harness whose substrate is memory, not history (see `VISION.md`). Three binaries: one
+serves the turn over HTTP, one sweeps a retrieval corpus and scores what retrieval delivered, and one
+derives substance for a named, bounded set of graph nodes — offline, and never inside a turn.
 
 ## Status
 
 <!-- Maintenance: this section is anchored to VISION.md's milestone list, not to the tree. A merge
      changes nothing here; a finished milestone moves one item from "what is coming" up into "what you
      get today". Keep counts, package names, file lists and graph node ids out of it — they belong to
-     the sections below that own them, where they are already checked against a real run. -->
+     the sections below that own them, where they are already checked against a real run.
+     What this section is NOT immune to, and what has now falsified it twice: the SHAPE of a turn. A step
+     added, an order changed, or a behaviour that becomes conditional falsifies these sentences while
+     every count in them stays right, so the anchoring above does not catch it. On a merge that changes
+     what a turn does, re-read this against the turn rather than against the numbers. -->
 
 **What you get by cloning this today.** Build it, point it at a DiVoid graph and at any
 OpenAI-compatible model endpoint — a local runtime works with no key and no per-token spend — and one
-`POST /runs` gives you a full turn: it pulls context out of the graph mechanically, asks the model once
-(letting the model request one supplementary lookup of its own), writes the result back to the graph as
-a node, and hands you the whole record of what it retrieved, what it kept, what it cut and why. That
+`POST /runs` gives you a full turn: it asks the model what to search for, pulls context out of the graph
+mechanically, asks the model again to answer — letting it request supplementary lookups of its own —
+writes the result back to the graph as a node, and hands you the whole record of what it retrieved, what it kept, what it cut and why. That
 path has been run end to end against a real model, on both the plain-answer route and the tool-using
 one. There is also a second binary that scores how good the retrieval was — it builds and runs, but the
 hand-labelled answer key it scores against does not exist yet, **so today it can tell you nothing
@@ -24,8 +29,9 @@ meaningful**. Writing that answer key is the work currently in front of the proj
 
 - **Better context assembly**, which is the next real capability and the one the project is actually
   about. What is here now is deliberately the simplest thing that is honestly mechanical: a fan-out of
-  whole-graph recalls fused by reciprocal rank, three of the twenty candidate slots reserved for the
-  subject's own two-hop neighbourhood, a byte budget, and no memory of previous turns.
+  recalls fused by reciprocal rank — across the whole graph, or across a span of time when the request
+  asked about one — three of the twenty candidate slots reserved for the subject's own two-hop
+  neighbourhood, a byte budget, and no memory of previous turns.
 - **Gates a model cannot talk its way past** — work described in the graph as obligations to meet, and
   checked mechanically rather than asserted in prose.
 - **A background pass that keeps the memory from silting up** — grouping, re-homing and marking what has
@@ -63,8 +69,9 @@ words; that document carries the argument.
   first turn is clean by construction, so only the second can show what the first left behind. It takes
   the graph credential from `PROCESSOR_DIVOID_URL`/`PROCESSOR_DIVOID_KEY` when those are set and
   otherwise from the ambient `DIVOID_URL`/`DIVOID_RAZIEL_KEY`, naming both pairs when neither is there.
-  It costs **two model calls at minimum and twelve at most** — one per turn, and up to the loop's own
-  cap of six per turn when the model asks for supplementary recall — writes two run records and names
+  It costs **four model calls at minimum and fourteen at most** — two per turn, the query derivation and
+  one judgement, and up to the loop's own judgement cap of six per turn when the model asks for
+  supplementary recall — writes two run records and names
   them on exit; it deletes nothing. Its default input and subject match no corpus row on purpose: a run
   writes a record that outranks every real candidate for its own input, so a default matching a row
   would poison the next sweep of that row. Exits non-zero when a turn admits zero candidates, and also
@@ -233,13 +240,20 @@ Request:
 
 `input` must be non-empty; `subject` is the id of the node the run is about. Before it reads the graph
 the turn asks the model once, under its own 30-second bound, for up to five further queries derived from
-`input`; that call is not charged to the run's six-call judgement budget, and any outcome which is not a
-usable query set leaves the run asking `input` alone and records why on the record's `derivationError`.
-`input` is always the first query. Each query is ranked against the whole graph, and `input` is ranked
-once more inside the subject's own two-hop neighbourhood, which costs one extra read of the subject's
-edges. The whole-graph lists are fused by reciprocal rank; the last three of
-the twenty candidate slots are held for the neighbourhood list, so a node the whole graph ranks past the
-cap can still arrive while the nodes already at the top keep the ranks they had.
+`input` **and for a calendar day range** — one extra output line, `DATES: YYYY-MM-DD..YYYY-MM-DD` or
+`DATES: none`, resolved against the instant the prompt states — which becomes the run's retrieval window.
+That call is not charged to the run's six-call judgement budget, and any outcome which is not a usable
+query set leaves the run asking `input` alone and records why on the record's `derivationError`. A
+`DATES` line that is absent, unrecognised or malformed yields **no window** rather than a guessed one,
+and retrieval is then unbounded, exactly as it was before the line existed.
+`input` is always the first query. Each query is ranked against the whole graph — or, when the run
+derived a window, against the nodes whose last update falls inside it — and `input` is ranked once more
+inside the subject's own two-hop neighbourhood, which costs one extra read of the subject's edges. **That
+neighbourhood recall is never bounded by the window**, deliberately: it answers what is structurally
+adjacent to the subject, which has no time dimension, and bounding it would silently empty the reserve
+below. The ranked lists are fused by reciprocal rank; the last three of the twenty candidate slots are
+held for the neighbourhood list, so a node ranked past the cap can still arrive while the nodes already
+at the top keep the ranks they had.
 
 The turn: fetch the subject and recall candidates, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
@@ -253,7 +267,10 @@ writes one file into the run's working directory. Neither is urged — the syste
 sentence and still asks for prose — so whether a run reaches for the file tool is a property of the model
 and the task, not of the prompt.
 
-Response (`200`) is the run record: the input, the query, the anchor summary, **every** candidate
+Response (`200`) is the run record: the input, the instant the prompt stated (`now`, absent when it
+stated none), the query and the full query set the derivation produced (`queries`, with `input` always
+first) together with `derivationError` when that derivation failed, the update-time window retrieval was
+held to (`window`, absent when the run expressed no time constraint), the anchor summary, **every** candidate
 retrieval returned — not only the ones kept — each with its rank, similarity, size, content hash, and
 whether it was included or cut and why, the assembled block itself, the model's answer, the model id, which adapter and endpoint served the
 run's model calls (`provider`: `adapter` and `endpoint`, as the adapter itself reported them rather than as
@@ -274,6 +291,10 @@ absent, never zero-filled), the stop reason (both the loop's own neutral value a
 string), the five constants that governed the run (`limits`: candidate limit, assembly byte budget,
 supplementary byte budget, max model calls, max output tokens), and the sampling the run was made with
 (`sampling`: `temperature` and `topP`, each key absent when nothing was sent for it).
+
+**Read that as a description, not as the field list.** `Record` in `internal/loop/types.go` is the field
+list; three merges have each added a key that did not reach this paragraph until someone
+swept for it. To check it, read the struct's tags rather than trusting the sentence.
 
 **`source` exists because a correct call is not always reported as one.** Against `qwen3-coder-fixed:30b`
 on ollama 0.33.3 the endpoint sometimes returns `done_reason: stop` with no tool call and a complete,
@@ -469,9 +490,11 @@ go test -count=1 -v ./...
 ```
 
 `-count=1` disables Go's test cache; without it a re-run can print `(cached)` and execute nothing.
-A passing run prints one `ok` line per package — **twelve**: `cmd/condense`, `cmd/eval`, `cmd/processor`,
-`internal/boot`, `internal/condense`, `internal/divoid`, `internal/eval`, `internal/loop`,
-`internal/ollama`, `internal/openaicompat`, `internal/server`, `internal/workspace` — and
+A passing run prints one `ok` line per package — **thirteen at `bdd5fea`**: `cmd/condense`, `cmd/eval`,
+`cmd/processor`, `internal/boot`, `internal/condense`, `internal/divoid`, `internal/eval`,
+`internal/loop`, `internal/ollama`, `internal/openaicompat`, `internal/redacturl`, `internal/server`,
+`internal/workspace`. **`go list ./...` owns that number, not this sentence** — run it rather than
+counting the names here, which have been one short since `internal/redacturl` arrived. And
 every `--- PASS:` line for each test. A `?` line is the one to watch for: it means a package shipped with
 no test at all. The default suite is fully offline and hermetic: no network call, no credential, no live
 graph, no live model, no spend — every
@@ -560,7 +583,11 @@ flags it.
   discrimination (a missing subject is a `200` with an empty result, never a `404`). **Since verified live** against
   `divoid.mamgo.io`: every decode assumption held, including that the `fields` projection populates
   `content` inline rather than needing a second fetch, and that `Recall` must not re-sort what the graph
-  already returned in rank order (**#10883**).
+  already returned in rank order (**#10883**). The retrieval window is pinned at the same wire level: a
+  non-zero window sends `updatedFrom`/`updatedTo` as RFC 3339, and a **zero** window sends an encoded
+  query string byte-identical to one from before the parameter existed, so an un-windowed run cannot
+  silently acquire a filter. **Not** verified live against the graph — the wire spelling is pinned by the
+  suite and by the design's own probe, not by a filtered-versus-unfiltered control on `divoid.mamgo.io`.
 - **The judgement step and write-back (`POST /runs`, unit B):** `internal/openaicompat` is pinned at the
   wire level against a local test server — the exact request shape (model, messages, `max_tokens`, the one
   tool declaration), the `Authorization` header sent only when a key is configured, decoding of a
