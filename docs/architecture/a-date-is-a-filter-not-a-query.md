@@ -246,13 +246,28 @@ git grep -c 'recoveredCall' 6c8a1df -- internal/openaicompat
 ```
 
 The first is anchored on **declarations**, so its per-file output *is* the count rather than something asserted
-about the count — an unanchored pattern also matches each type's use sites and returns 7 and 6. Its output, which
-is a pair of `grep -c` counts and not a pair of line citations:
+about the count. Its output, which is a pair of `grep -c` counts and not a pair of line citations:
 
 ```
 6c8a1df:internal/ollama/wire.go:5
 6c8a1df:internal/openaicompat/wire.go:4
 ```
+
+The anchor is load-bearing rather than decorative: **drop it and the same pattern counts use sites too.** That
+claim is a command, published because a number asserted about an unpublished command is the defect this very
+section exists to fix —
+
+```
+git grep -c -E 'recallToolArguments|func recallTool|func toolArguments|func translateRecall|func recoverRecall' 6c8a1df -- internal/ollama/wire.go internal/openaicompat/wire.go
+```
+
+```
+6c8a1df:internal/ollama/wire.go:7
+6c8a1df:internal/openaicompat/wire.go:6
+```
+
+7 and 6, not 5 and 4, because `recallToolArguments` is matched again at each of its use sites. The declaration
+counts are the site counts; these are not.
 
 `internal/ollama/wire.go` **5** — the argument struct (`:52`), the JSON-schema literal (`:61`), the replay
 marshaller (`:144`), the native-call parser (`:231`), and the text-recovered-call parser (`:197`, whose parameters
@@ -330,8 +345,8 @@ as though it were affected is **green**.
 | 1 | `TestRenderUserContentStatesTheInstantAsRFC3339InUTCWhateverZoneItWasGivenIn` | `internal/loop` | **the frame itself** — the rendered instant is forced to UTC whatever zone it arrived in | its property *is* what D3 reverses | **invert** → G8 |
 | 2 | `TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy` | `internal/loop` | the user-content layout: request, `NOW` span, block, request | its `want` embeds `userContentTestInstantUTC` (`usercontent_test.go:24`; const at `:16`) | **re-point the constant**, property unchanged → G14 |
 | 3 | `TestRenderUserContentPlacesExactlyTwoVerbatimRequestCopiesTheFirstAtTheHead` | `internal/loop` | exactly two verbatim request copies, head and tail | its `blockLayout` embeds the same constant (`usercontent_test.go:79`) | **re-point the constant**, property unchanged → G15 |
-| 4 | `TestTheRunRecordCarriesTheSameInstantTheAssembledPromptStates` | `internal/loop` | one clock read per turn, and `record.Now` == the prompt's instant | asserts the spelling `recordInstantUTC` (`promptclock_test.go:106` and `:114`; const at `:79`) | **re-point the expected spelling**, property unchanged → G16 |
-| 5 | `TestJudgeSendsANativeUserMessageByteEqualToRenderUserContentOfTheSameBlockAndInput` | `internal/ollama` | the wire user message is byte-equal to `RenderUserContent` of the same inputs | **the byte-equality survives** — its `want` is computed from `RenderUserContent`, so it moves with the change. What fails is the *separate* `strings.Contains(…, instantUTC)` at `usercontent_test.go:51` | **re-point one constant** (`:20`) → G17 |
+| 4 | `TestTheRunRecordCarriesTheSameInstantTheAssembledPromptStates` | `internal/loop` | one clock read per turn, and `record.Now` == the prompt's instant | asserts the spelling `recordInstantUTC` (`promptclock_test.go:106` and `:114`; const at `:79`) | **split the constant** — `:79` is also read by row 7 at `:129`, so re-pointing it reddens the guard this table forbids editing. Row 4 reads a new sibling; `recordInstantUTC` is left byte-untouched → G16 |
+| 5 | `TestJudgeSendsANativeUserMessageByteEqualToRenderUserContentOfTheSameBlockAndInput` | `internal/ollama` | the wire user message is byte-equal to `RenderUserContent` of the same inputs | **the byte-equality survives** — its `want` is computed from `RenderUserContent`, so it moves with the change. What fails is the *separate* `strings.Contains(…, instantUTC)` at `usercontent_test.go:51` — **the test's only absolute anchor**, not an incidental extra (§4.3.2) | **re-point one constant** (`:20`) → G17 |
 | 6 | `TestJudgeSendsAUserMessageByteEqualToRenderUserContentOfTheSameBlockAndInput` | `internal/openaicompat` | the same property, same shape, same line numbers | the same | **re-point one constant** (`:20`) → G17 |
 | — | `TestTheRunRecordsInstantIsOnTheWireUnderTheKeyNow` | `internal/loop` | the JSON key `now`, and RFC 3339 marshalling of whatever the field holds | **it does not reach it.** `promptclock_test.go:124` marshals `Record{Now: recordInstantLocal.UTC()}` — the test supplies the UTC value itself and never touches `turn.clock` | **green under the mutation. Do not edit it.** |
 
@@ -344,8 +359,80 @@ column and the result column are two different claims, and only one of them a re
 
 **And the correction cuts both ways.** More guards move than the earlier count said — six, not three, reaching two
 packages it never mentioned, which is why §12.4's adapter sentence is now scoped to production files. But five of
-the six are **constant re-points**, not property reversals: only row 1's property is genuinely being inverted, and
-rows 5 and 6 keep their byte-equality assertion intact. The bundle is wider and shallower than it was stated to be.
+the six leave their property alone and change only what they expect, and rows 5 and 6 keep their byte-equality
+assertion intact. The bundle is wider and shallower than it was stated to be.
+
+### 4.3.1 The remedy was run, and one of the five expectation edits is not one edit
+
+D3's mutation plus the edits this table prescribes for rows 1–6, applied at `6c8a1df`: `go build ./...` exit 0,
+`go test ./...` **exit 0, 13/13 packages ok**, with `TestTheRunRecordsInstantIsOnTheWireUnderTheKeyNow` and the
+constant it reads **byte-untouched**. That is Milestone 3's acceptance predicate and it is satisfiable — but only
+after one decision the word *re-point* hides.
+
+Every constant these rows name has a reader set, and changing it is one edit only when that set is unanimous:
+
+| constant | readers at `6c8a1df` | guards reading it | unanimous? |
+|---|---|---|---|
+| `userContentTestInstantUTC` (`usercontent_test.go:16`) | `:24`, `:38`, `:40`, `:79` | rows 1, 2, 3 | **yes** — all three want the offset spelling once row 1 is inverted. One edit. |
+| `instantUTC` (`ollama/usercontent_test.go:20`) | `:51`, `:53` | row 5 only, and it is function-local | **yes.** One edit. |
+| `instantUTC` (`openaicompat/usercontent_test.go:20`) | `:51`, `:53` | row 6 only, function-local | **yes.** One edit. |
+| `recordInstantUTC` (`promptclock_test.go:79`) | `:106`, `:108`, `:114`, `:116`, **`:129`** | row 4 **and row 7** | **no.** `:129` is row 7, which supplies its own UTC value and must keep expecting the `Z` spelling. |
+
+**So row 4 is a constant *split*, not a re-point.** `recordInstantUTC` keeps its value and its definition and
+becomes row 7's private constant — after the split its only reader is row 7's own assertion (`:129` at `6c8a1df`; the split adds a line, so it moves). Row 4 reads a new sibling holding the
+same instant in the run's own zone. Nothing inside row 7's block is edited, which is what lets its prohibition
+stand rather than collide with row 4's remedy.
+
+Re-pointing the shared constant instead — the edit an earlier revision of this table prescribed — reddens row 7:
+
+```
+promptclock_test.go:130: the record wire carries no "now":"2026-09-12T10:30:00+02:00";
+body={"input":"","subject":0,"now":"2026-09-12T08:30:00Z","query":"", ... }
+```
+
+Production is right there and the expectation is wrong. The trap is that an implementer meeting that failure has
+been told three times not to touch the guard that just went red, leaving two visible moves — violate the
+instruction, or abandon row 4's remedy — when the correct third move was never named.
+
+**The rule this generalises to, because nothing about it is specific to time.** *A shared constant is a caller.* A
+remedy can be correct for its own scope and broken by something else that reads what it touches, and no amount of
+care **within** the scope finds it — the two edits alter each other's reachable input space, so each needs
+re-proving against the other's new shape. Before prescribing an edit to any named symbol, run its reader inventory
+(`git grep -n` for the symbol, scoped to its package) and ask of each reader whether it wants the new value. Where
+the answer is not unanimous the remedy is a **split**, and the design owes that decision explicitly.
+
+**And note which of this document's own safeguards missed it.** §16 M3's *"if your run disagrees with §4.3, your
+run wins"* does not fire, because §4.3 is **correct** about the mutation — the disagreement appears only after the
+remedy, a state the table never describes. §14 bounds G14–G17 to one unmeasured property: whether the re-pointed
+versions **discriminate**. The defect sat in a second one nobody had named — **what else the prescribed edit
+reaches**. A correctly-stated bound is not protection against the thing it bounds out.
+
+### 4.3.2 Rows 5 and 6 keep an assertion that looks redundant and is not
+
+Their byte-equality at `usercontent_test.go:48` computes its `want` from `RenderUserContent` itself. That is the
+**correct** shape for a fidelity guard — its subject is whether the adapter transmits the loop's rendering verbatim,
+so it must track the collaborator, and its survival under D3 is correct by construction rather than luck. Measured
+by QA over three adapter-side manglings (append a space, swap block and input, substitute the adapter's own
+rendering): **3 of 3 killed, control green.**
+
+But a fourth mutation — `RenderUserContent` stops emitting the `NOW` span at all, so the instant never reaches the
+wire — **passes `:48`**, because both arms of the comparison lose the span together. Only `:51` catches it.
+
+**So `:51` is the pair's only absolute anchor**, and the only assertion that can detect the property the test's own
+name claims. It is listed in rows 5 and 6 as a cost because that is where D3 touches it; it must not be read as the
+annoying leftover of an otherwise self-sufficient check. Deleting it as redundant with `:48` would convert a
+discriminating pair into a circular one.
+
+**The general form, and the obvious rule is the wrong one here.** #8385's relation-guard rule — *a relation guard
+is only as strong as the span its arms cover* — prescribes widening the arms' spread. That **cannot** repair this
+pair: against a change on the producer both arms share, the arms move identically at every fixture, so no spread
+separates them. #8385's own later sharpening (2026-09-15) states the rule that does apply, and it was written
+about this exact pair in these two adapters:
+
+> **Where the expected side comes from a producer both arms share, the paired absolute anchor is the guard. Do not
+> price it as redundancy, and do not delete it on the strength of the relation-guard rule.**
+
+`:51` is that anchor. Citing the relation-guard rule here would point a reader at the remedy that destroys it.
 
 **No information is lost on the wire:** RFC 3339
 with an offset denotes the same instant as its `Z` spelling, so any consumer comparing `Record.Now` as a time is
@@ -740,7 +827,7 @@ one-constant edit (§4.3 rows 5 and 6).
 | Model cannot adjust the window mid-run (D1) | a task whose time scope the derivation misjudges cannot be rescued within the run | the measured failure is *no bound at all*; and D1 buys a bounded **block**, which is worth a model call every time |
 | `updated` only (D4) | historical windows lose anything touched since | substrate has no update history; the alternative errs silently |
 | Scoped leg unbounded (D5) | up to 3 of 20 rows may fall outside the window | keeps a mechanism a prior design built; the rows are identifiable by `Sources[].scoped` |
-| Local frame (D3) | **measured:** reddens 6 guards in 3 packages — 1 inverted, 5 re-pointed, and a 7th that looks affected is not (§4.3) | 8.3–16.7 % of the day is otherwise answered with the wrong calendar day, silently |
+| Local frame (D3) | **measured:** reddens 6 guards in 3 packages — 1 property inverted, 4 expectations re-pointed, 1 constant **split**, and a 7th that looks affected is not (§4.3, §4.3.1) | 8.3–16.7 % of the day is otherwise answered with the wrong calendar day, silently |
 | Window in the record | one more field on a large struct | without it every windowed run's disposition list is uninterpretable |
 
 ---
@@ -789,8 +876,8 @@ described mechanisms (#1220 §9).
 | G13 | `TestEvalSweepRunsWithNoWindow` | eval determinism | asserts the window observed by the sweep's fake is zero. A future change that threads a derivation into eval fails here rather than silently changing corpus scores. |
 | G14 | `TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy` *(existing, re-pointed)* | §4.3 row 2 | the layout property is frame-independent and stays as written; only `userContentTestInstantUTC` at `usercontent_test.go:16` becomes the offset spelling. Discriminates as it always did — a renderer that drops or reorders the `NOW` span still fails it. |
 | G15 | `TestRenderUserContentPlacesExactlyTwoVerbatimRequestCopiesTheFirstAtTheHead` *(existing, re-pointed)* | §4.3 row 3 | same constant, same reasoning. Its real property — two verbatim request copies — is untouched by the frame, and an implementation that emitted one copy fails it either way. |
-| G16 | `TestTheRunRecordCarriesTheSameInstantTheAssembledPromptStates` *(existing, re-pointed)* | §4.3 row 4 | pins **one clock read per turn** (`reads != 1` is a `t.Fatalf`) as well as the spelling. That half is frame-independent and is the half G7 leans on; only the expected spelling moves. |
-| G17 | `TestJudgeSends…UserMessageByteEqualToRenderUserContentOfTheSameBlockAndInput`, both adapters *(existing, re-pointed)* | §4.3 rows 5 and 6 | the byte-equality assertion needs no change — its `want` is computed from `RenderUserContent`. Only the standalone `strings.Contains(…, instantUTC)` at `usercontent_test.go:51` moves, in each adapter, one constant at `:20`. |
+| G16 | `TestTheRunRecordCarriesTheSameInstantTheAssembledPromptStates` *(existing, re-pointed onto a **new** constant)* | §4.3 row 4 | pins **one clock read per turn** (`reads != 1` is a `t.Fatalf`) as well as the spelling. That half is frame-independent and is the half G7 leans on. Its expectation must move to a **sibling** constant: `recordInstantUTC` is shared with the one guard that must not change (§4.3.1), so editing it in place reddens that guard. |
+| G17 | `TestJudgeSends…UserMessageByteEqualToRenderUserContentOfTheSameBlockAndInput`, both adapters *(existing, re-pointed)* | §4.3 rows 5 and 6 | the byte-equality assertion needs no change — its `want` is computed from `RenderUserContent`. Only the standalone `strings.Contains(…, instantUTC)` at `usercontent_test.go:51` moves, in each adapter, one constant at `:20`. **`:51` must survive that edit, never be dropped as redundant** — it is the pair's only absolute anchor and the only assertion that catches the loop losing the `NOW` span entirely (§4.3.2). |
 
 **One named guard needs no replacement and must not be edited.**
 `TestTheRunRecordsInstantIsOnTheWireUnderTheKeyNow` measured **green** under D3's mutation (§4.3, last row). It
@@ -931,11 +1018,23 @@ how the window is built.
 for the existing tests that move.
 
 **Run the mutation before editing any test.** §4.3's table is the output of `go test ./...` under exactly these two
-edits, and it is this milestone's specification: **six guards go red, and one guard whose name suggests it should
-is green.** Row 1 has its property inverted; rows 2–6 need one constant re-pointed each and their properties left
-alone; `TestTheRunRecordsInstantIsOnTheWireUnderTheKeyNow` is **not** to be touched. Do not edit a test your run
-does not redden — re-derive the list from your own run rather than from this table, and **if your run disagrees
-with §4.3, your run wins and this document is wrong.**
+edits: **six guards go red, and one guard whose name suggests it should is green.** Row 1 has its property
+inverted; rows 2–6 change only what they expect, leaving their properties alone;
+`TestTheRunRecordsInstantIsOnTheWireUnderTheKeyNow` is **not** to be touched. Do not edit a test your run does not
+redden — re-derive the list from your own run rather than from this table, and **if your run disagrees with §4.3,
+your run wins and this document is wrong.**
+
+**Then run the reader inventory before making any of those edits, because the mutation table is not the
+specification — §4.3.1 is.** For each constant an expectation edit would touch, `git grep -n` the symbol across its
+package and check every reader: three of the four are unanimous and take one edit, and `recordInstantUTC`
+(`promptclock_test.go:79`) is **not** — it is shared between row 4 and row 7, so it is **split**, never re-pointed.
+Re-pointing it reddens row 7, and the run that says so is in §4.3.1.
+
+**This milestone's acceptance predicate is a green suite, not a red one.** Apply the D3 mutation and the row 1–6
+remedies and run `go test ./...`: it must reach **exit 0 across all 13 packages with `promptclock_test.go`'s row-7
+assertion and the constant it reads unedited**. Measured achievable at `6c8a1df` (§4.3.1). If your run cannot reach
+green with row 7 intact, stop and report it rather than editing row 7 — that outcome would mean this design is
+wrong about the split, not that the prohibition should yield.
 
 Sweep for the property, not the rows: **every site that forces a frame on the instant this run states.**
 Note the two sites that must *not* change — `internal/divoid/write.go:108` and `internal/loop/summary.go:53`
