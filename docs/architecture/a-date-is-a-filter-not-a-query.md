@@ -2,7 +2,15 @@
 
 > DiVoid node: **#13891** (`documentation`, root `#10422`). Repo path: `docs/architecture/a-date-is-a-filter-not-a-query.md`.
 > The node carries this document in full, not an abstract of it.
-> Task: **#13721**. Sibling that already shipped: PR #76 (`6c8a1df`). Baseline for every citation below: **`6c8a1df`**.
+> Task: **#13721**. Sibling that already shipped: PR #76 (`6c8a1df`).
+> **Two baselines, and a citation names which one it resolves against.** The design body was written against
+> **`6c8a1df`** and its citations were resolved there at submission (§16). The amendment of 2026-09-15 — §4.6 and
+> the sites it lists — was written after PR #79 merged and resolves against **`bdd5fea`**, the tip that carries the
+> shipped parser; its eight new citations were resolved there, one by one. **The body's citations were not
+> re-resolved against `bdd5fea`, and §7.1's three are measurably stale there** — `derive.go:33` / `:34` / `:36` are
+> quoted in §7.1 with their pre-#79 text and at `bdd5fea` land on the no-dates rule, the line-count directive and
+> the question-lines directive respectively. How many others rot was not measured. Everything marked `bdd5fea` is
+> the amendment's; everything unmarked is `6c8a1df` and must be read at that ref.
 
 **Toni, 2026-09-12, verbatim:**
 
@@ -31,7 +39,18 @@ carries the run and the disposition of each.
 model-authored-date failure class, and it leaves the **assembled block** unbounded, so "today" still costs one of
 the six model calls. A window in the derivation costs zero.
 
-*Five rulings in all (§4), and #13720's "the recalls returned zero rows" premise is corrected in §0.*
+*Five rulings shipped (§4.1–§4.5), and #13720's "the recalls returned zero rows" premise is corrected in §0.*
+
+*Everything above shipped in PR #79. **The only live decision is below.***
+
+**Amendment 2026-09-15 — D6 (§4.6).** **What.** The shipped parser accepts the `DATES:` directive only as the
+first content line and only in its bare spelling; **ten measured output shapes send the directive to the graph as a
+semantic query** — #13720's own failure through this feature's parser — and nine also lose the window. **How.**
+Recognise the directive by what it says, not where it sits: normalised by everything this file already normalises
+somewhere, excluded from the query set wherever and however often it appears, and naming the window only when the
+output carries exactly one. **Cost.** Nothing beyond the parse — no type, no knob, no signature, no prompt change.
+**Rejected.** Also dropping the lines before the directive: it reclaims one junk slot and silently destroys a real
+query when the model puts the directive last.
 
 ---
 
@@ -45,6 +64,7 @@ Every figure below carries where it came from. Two instruments, and they do not 
 | Filter **semantics** and all **magnitudes** quoted here | `mcp__divoid__divoid_search` / `divoid_list`, re-measured | 2026-09-15 |
 | #13718's recall behaviour | the run record's own JSON, re-derived | 2026-09-15 |
 | Repo facts, line citations, greps | the working tree at `6c8a1df` | 2026-09-15 |
+| **§4.6's fourteen probed shapes, and every "the shipped parser does X" claim in it** | a throwaway Go test calling `ParseDerivation` directly, run against `bdd5fea` in a scratch copy of the tree; its printed output is quoted verbatim in §4.6 | 2026-09-15 |
 
 **What my instrument structurally cannot reach:** the MCP server sits between me and the HTTP surface, so nothing I
 measured establishes the **wire spelling** of the parameters. That comes from #13721 alone. Milestone 1 re-verifies
@@ -218,13 +238,16 @@ packages `ok`).
 | The call cap not backing off on unproductive recalls | #13720's own item 2, not filed against this design |
 | Derivation specificity (derived queries broader than the input) | #13720's item 3 |
 | Any configurable timezone, retention, or default-window setting | §4.2, §4.3 — refused, not deferred |
+| Enforcing *"a query line must never contain a date"* anywhere but the prompt | §4.6 shape 6 and **L8** — refused, not deferred; §0 measured such a date to be inert, so the enforcement would cost topical content and buy nothing |
+| Removing a model-emitted preamble **line** from the query set | §4.6 shapes 4 and 5 and **L7** — refused at the parser; the lever is the prompt (`derive.go:38`) |
 
 ---
 
 ## 4. The rulings
 
-Five decisions. The brief named three as open; the shape below **deletes one of them** and answers a fourth the
-brief did not name.
+Five decisions at the original baseline. The brief named three as open; the shape below **deletes one of them** and
+answers a fourth the brief did not name. **§4.6 is a sixth, added 2026-09-15 against `bdd5fea` after PR #79
+shipped** — it rules on the parse rather than on the feature, and it is the only one of the six not yet built.
 
 ### 4.1 D1 — the loop determines the window, through the derivation call it already makes
 
@@ -487,6 +510,134 @@ deliberately: a one-day window over an anchor whose neighbourhood is months old 
 not indistinguishable — every disposition carries `Sources`, and a scoped row's source has `scoped: true`
 (`types.go:33-38`). A reader of the record can tell exactly which rows crossed the boundary and why.
 
+### 4.6 D6 — the directive is recognised by what it says, not by where it sits
+
+> **Added 2026-09-15, after PR #79 merged.** Everything in this ruling resolves against **`bdd5fea`**, not against
+> the document's `6c8a1df` baseline. Raised as **#13939**; the hazard is also carried on map node **#13901**.
+
+**Ruling.** The parser recognises the directive from a line reduced by **every normalisation this file already
+performs somewhere** — the list decoration and surrounding quotes it strips from a query line, and the letter-case
+folding it applies when deciding whether two queries are the same. Every recognised directive line is excluded from
+the query set, wherever it sits and however many there are. The window is named by the directive **only when the
+output carries exactly one**; zero directive lines and two-or-more directive lines both yield a zero window.
+
+**The recognition set has a bright line, and it is not "whatever seems reasonable".** It is *what this file already
+tolerates for some other decision* — `derive.go:160` (decoration, quotes) and `derive.go:174` (case) at `bdd5fea`.
+A spelling tolerated **nowhere** in the file is not admitted, which is what puts row J below on the far side of the
+line and keeps this ruling from being an open-ended appetite for model disobedience.
+
+#### The measurement, because the premise is a claim and this is its evidence
+
+`ParseDerivation` called directly at `bdd5fea` with the inputs below, printing `window.IsZero()` and the returned
+query slice. Verbatim output — the control is row A, and rows L–N are shapes the shipped parser already tolerates
+and that this ruling leaves alone:
+
+```
+A well-formed (control)        window.IsZero()=false queries=["q1?" "q2?"]
+B preamble line                window.IsZero()=true  queries=["Here are the queries:" "DATES: 2026-09-12..2026-09-12" "q1?"]
+C code fence                   window.IsZero()=true  queries=["```" "DATES: 2026-09-12..2026-09-12" "q1?"]
+D think + preamble             window.IsZero()=true  queries=["Okay:" "DATES: 2026-09-12..2026-09-12" "q1?"]
+E directive last               window.IsZero()=true  queries=["q1?" "q2?" "DATES: 2026-09-12..2026-09-12"]
+F bullet-decorated             window.IsZero()=true  queries=["DATES: 2026-09-12..2026-09-12" "q1?"]
+G number-decorated             window.IsZero()=true  queries=["DATES: 2026-09-12..2026-09-12" "q1?"]
+H quote-wrapped                window.IsZero()=true  queries=["DATES: 2026-09-12..2026-09-12" "q1?"]
+I lower-case                   window.IsZero()=true  queries=["dates: 2026-09-12..2026-09-12" "q1?"]
+J emphasis-wrapped             window.IsZero()=true  queries=["*DATES: 2026-09-12..2026-09-12**" "q1?"]
+K two directives               window.IsZero()=false queries=["DATES: none" "q1?"]
+L leading blanks (tolerated)   window.IsZero()=false queries=["q1?"]
+M tab-indented (tolerated)     window.IsZero()=false queries=["q1?"]
+N CRLF (tolerated)             window.IsZero()=false queries=["q1?"]
+```
+
+**Ten shapes, not one.** #13939 names row B. Rows C–J are the same defect reached by **eight** further routes. And
+**row K is a tenth that is not a failure shape at all** — the window parses correctly and the *second* directive
+line still reaches the graph as a query, so no description of this defect framed as *"what happens when the parse
+fails"* covers it. Nine of the ten also lose the window; K is the one that does not.
+
+**Row B also costs a third thing, and it is the one the operator measured that #13939 does not state:** the
+preamble line *itself* becomes a query. One line of lead-in therefore costs the window plus **two** of five derived
+slots. The rejected alternatives below include the shape that would remove that second slot, and it loses.
+
+#### The finding, in one sentence, and it is why this is not a judgement call
+
+The prompt (`derive.go:38` at `bdd5fea`) forbids numbering, bullets and quotes of **every** line it asks for:
+
+> *"Output ONLY those %d lines: the DATES line, then the queries. No numbering, no bullets, no quotes, no preamble,
+> no commentary, no blank lines between them."*
+
+The parser **forgives all three on a query line and punishes all three on the directive line**. `derive.go:160`
+strips numbering, bullets and surrounding quotes; `derive.go:115` tests the directive prefix on a line that has had
+none of them removed, and does so before `:160` ever runs. **Rows F, G and H are that asymmetry and nothing else.**
+
+So *"how much disobedience should the parser absorb"* is **largely already answered** — by the strippers that
+exist, for the population they were built against. The tolerance level was chosen when `derivationThinkBlock` and
+`derivationLinePrefix` were written; what was never done is apply it to the file's *other* consumer. For rows F, G
+and H the ruling therefore adds **no** tolerance: it removes a divergence, and it is a DRY consolidation rather
+than a new policy — one normalisation, two consumers, where today there are two that disagree.
+
+**Two decisions are genuinely new, and each is argued on its own rather than on consistency.**
+
+- **Letter case (row I).** `strings.CutPrefix` is case-exact, and the prompt never asks the model to shout. This
+  *is* a widening, and its warrant is a precedent inside the same file rather than a preference: `derivationKey`
+  (`derive.go:174`) already folds case when deciding whether two lines are the same line. The direction of the
+  error decides the rest — an **unrecognised** directive is not merely ignored, it is **issued to the graph as a
+  query**, so every recognition axis left narrow is a live leak path, not a dormant one.
+- **Position and multiplicity (rows B–E and K).** Ruled immediately below.
+
+**And what keeps that reasoning from justifying anything at all** is the bright line above: an axis is widened only
+where this file already tolerates it somewhere. Row J has no such precedent and stays broken (**L9**) — stated
+plainly, because the leak-path argument would otherwise swallow the whole spelling space.
+
+#### Why position stops being the gate, and why that creates no new way to build a wrong window
+
+The design's governing constraint is that **a wrong window is never constructed** (§7.2, §11): a lost window is
+known-safe, a wrong one is not. Accepting the directive from further inside the output looks like it trades that
+away. It does not, and the argument is short enough to check:
+
+1. A wrong window requires an **accepted** directive whose value is not what the request meant.
+2. Acceptance requires **exactly one** directive-form line in the whole output.
+3. Model commentary that reasons about a range in directive form *is* a directive-form line, so it makes the count
+   two and the window zero. Commentary that names a range **not** in directive form is not recognised at all.
+4. What remains is an output carrying exactly one directive-form line, which is by construction the model's answer
+   to the directive instruction. Its being wrong is **L4** — a valid-but-wrong range — which this design already
+   states and accepts, and which is equally reachable today from a well-formed first line.
+
+**The falsification class, named because step 4 is a universal.** A model that emits exactly one directive-form
+line which is not an answer — echoing the instruction's own template (`DATES: YYYY-MM-DD..YYYY-MM-DD`) or leaving
+`DATES: none` behind as residue with no real directive anywhere. Both resolve to a **zero** window, because neither
+value parses as a range, so the class exists and lands on the safe side. That is what makes the relaxation
+defensible rather than merely convenient: it moves probability mass out of *window lost* and into *correct or L4*,
+and into no third place.
+
+**Why refusing on two directives rather than taking the first.** First-wins is strictly better on row K, where the
+leftover-template shape keeps its window. It is also the rule that lets commentary win. The two cases are
+indistinguishable from inside the parser: *"a correct directive followed by residue"* and *"a discarded candidate
+followed by the real one"* are the same three lines. Refusing is the only disposition that is right under both, it
+costs a window rather than constructing one, and it needs no ordering policy to get wrong or to test. Under
+first-wins the error can be a **narrower** window than intended, which is the silent direction (#1220 §5) and the
+one this design refuses everywhere else (D4, §11).
+
+#### The option space, and why each other shape lost
+
+| # | Shape | Verdict |
+|---|---|---|
+| 1 | **Scan for the directive anywhere, change nothing else** — #13939's first candidate | **Lost.** It closes rows B–E in **both** halves — the found line is removed as well as read — and nothing else. F–J stay broken because recognition still runs upstream of normalisation; K keeps leaking its second directive; and with no multiplicity rule a commentary line can win the window. |
+| 2 | **Drop directive-prefixed lines at query-parse time, change nothing else** — #13939's second candidate | **Lost.** Closes the leak on rows B–H and K; leaves **every** window loss standing, so half of #13720's failure survives. Also misses row I (case) and row J (mangled prefix), because a drop keyed on the raw prefix sees neither. |
+| 3 | **1 + 2 together, without normalising recognition** | **Lost, and it is the near miss.** It closes rows B–E entirely and stops the leak on K. It still fails F, G, H and I, because both halves key on the raw prefix that neither normalises. And it takes **first-wins** on K, which is the commentary hazard — the shape that lets a discarded candidate name the window while the real directive sits below it. |
+| 4 | **Discard every line preceding the directive as preamble** | **Lost, and it is the strongest of the rejected shapes.** It recovers row B's second junk slot, which is the one thing D6 does not fix. But on row E the lines preceding the directive **are the queries**, so it returns an empty query set. Cost of the defence: a visible junk query in the common shape. Cost of the remedy: a silently destroyed query set in a rarer one. §11's asymmetry decides it. |
+| 5 | **Shape 4, conditioned on at least one line following the directive** | **Lost.** Decidable, and it does save row E. But on `q1?` / directive / `q2?` it discards `q1?` — a legitimate query, silently. It trades a *visible* over-inclusion for a *silent* under-inclusion on an unmeasured shape, which is the trade this design declines in D4, §7.2 and §11. |
+| 6 | **Drop any query line carrying a date, enforcing `derive.go:33` at the parse boundary** | **Lost, and §0 is why.** A date in a query is *inert*, not harmful: `processor retrieval path changes` and the same string plus `2026-09-15` return the **identical** `total` of 11,414, differing in the fourth decimal of one similarity score. Dropping such a line destroys its topical content and buys no retrieval. Stated as **L8** rather than built. |
+| 7 | **Strip the date substring out of a query line** | **Lost.** A content rewrite, not a parse. It manufactures a query nobody wrote and nobody can trace. |
+| 8 | **A shape filter — keep only lines ending in `?` plus the last line** | **Lost.** A hand-maintained shape allow-list where the model's own directive is the gate — the #10913 shape, and it drops the mandated keyword line whenever the model emits anything after it (row C's closing fence). |
+| 9 | **Change the output contract to a fenced or JSON envelope** | **Lost.** Invalidates both exemplars and the whole of §7.1 to trade line-placement disobedience for malformed-envelope disobedience, at a far larger blast radius, against a defect whose statement is two sentences (RULING 2026-09-03). |
+| 10 | **Widen `derivationLinePrefix` so repeated emphasis characters are decoration (row J)** | **Lost, narrowly.** One character in an existing pattern, and it would close row J for the directive *and* for query lines. But markdown emphasis on a directive line is not observed — `derivationThinkBlock` and `derivationLinePrefix` were each built against something that had been seen. Row J stays broken, deliberately, as **L9**, and §14 carries it as a **negative** fixture asserting the ruled behaviour rather than a wish. |
+
+#### What this ruling costs
+
+Nothing beyond the parse. No new type, no new knob, no signature change, no prompt change, no vocabulary member.
+The sizing table in §12.1 is unchanged by D6 — it adds no row, and part one of the ruling **removes** a divergence
+rather than adding a mechanism.
+
 ---
 
 ## 5. Assumptions and Constraints
@@ -498,7 +649,7 @@ not indistinguishable — every disposition carries `Sources`, and a scoped row'
 | A3 | The graph parses RFC 3339 with offsets and filters on the instant | **Measured**, §2.2 | D3 collapses to UTC-only and the 8.3 % band becomes a stated limit instead of a fix |
 | A4 | `lastUpdate` is set at creation | **Verified** on #13718 | D4's containment argument for now-ending windows fails; the ruling survives on the *what changed* argument alone |
 | A5 | The derivation call remains outside `MaxModelCalls` | `the-query-the-graph-is-asked.md` §4.4, code at `turn.go:194` | D1's decisive argument weakens to a site-count argument, which still wins |
-| A6 | The model can read a stated instant and name calendar days | Untested here | Derivation yields no valid `DATES` line → no window → today's behaviour. The failure is a no-op, not a wrong answer. |
+| A6 | The model can read a stated instant and name calendar days | Untested here | Derivation yields no valid `DATES` line → no window → today's behaviour. **The failure is a no-op only for the window.** As shipped it is not a no-op for the query set: an unrecognised directive line is kept and issued to the graph as a semantic query (§4.6 rows B–K, measured at `bdd5fea`). D6 makes the *whole* failure a no-op, which is what this row asserted before it was true. |
 | A7 | Atomic deploy, single private repo, no external consumer of `Record` | Project convention | — |
 
 **Constraints.** Go 1.27. `internal/loop` declares its ports and depends on no adapter. `Assemble` is pure — no
@@ -519,7 +670,7 @@ Turn.Run
   │    completion  ─► ParseDerivation(text, input, now.Location())
   │                       │
   │                       ├─► queries []string        (as today)
-  │                       └─► window  UpdateWindow    (zero when "DATES: none")
+  │                       └─► window  UpdateWindow    (zero unless exactly one DATES line parses — D6)
   │
   ├─ Retrieve(queries, window)
   │    ├─ per-query recall  ──► Recall(q, fetch, nil,   window)   ← bounded   (D5)
@@ -573,6 +724,11 @@ directive emits no `DATES:` line, gets no window, and behaves exactly as it does
 never becomes true and nothing reports it. This is the one change in the design whose omission produces no error,
 no red test and no log line.
 
+> **Scoping note added 2026-09-15.** *"Behaves exactly as it does today"* holds for the case this paragraph
+> describes — the model emits **no** directive line at all. It does **not** hold for a model that emits one the
+> parser fails to recognise: that line is issued to the graph as a query (§4.6). The silence claimed here is real
+> and is about the window; it was never a claim about the query set.
+
 **Output contract — one extra line, first, prefixed:**
 
 | Form | Meaning |
@@ -580,8 +736,14 @@ no red test and no log line.
 | `DATES: YYYY-MM-DD..YYYY-MM-DD` | the request constrains retrieval to these calendar days, inclusive of both |
 | `DATES: none` | the request expresses no time constraint |
 
-A single day is expressed as both endpoints equal. The prefix is what makes the line distinguishable from a query,
-so parsing degrades safely (§7.2).
+A single day is expressed as both endpoints equal. The prefix is what makes the line distinguishable from a query.
+
+> **Amended 2026-09-15 — "so parsing degrades safely" was the original clause here, and it is false as shipped.**
+> The prefix distinguishes the line only where the parser *recognises* it, and at `bdd5fea` recognition is
+> position-gated and spelling-exact: ten measured shapes send the directive itself to the graph as a query, nine
+> of them losing the window as well. **D6 (§4.6) is what makes this sentence true**, and §7.2 carries the
+> resulting contract. The
+> claim and its correction travel together on purpose — do not read the sentence above without §4.6.
 
 **The sharpened rule**, replacing nothing and sitting beside `:32`'s existing "do not invent specifics":
 
@@ -602,16 +764,40 @@ the model sees both branches in the format-only examples. The exemplar struct ga
 location is passed in, never read from process globals, so the zone is explicit at the call site and fixed in
 tests.
 
+**Recognition, which is one rule with two consumers.** A line is reduced to its content form the way a query line
+already is — surrounding whitespace trimmed, leading list decoration removed, surrounding quotes trimmed — and a
+line is a **directive** when that content form begins with the directive prefix, compared without regard to letter
+case. Position is not consulted. This is D6 (§4.6); the table below is its contract.
+
 | Input condition | queries | window |
 |---|---|---|
-| First non-empty line matches the `DATES:` prefix with a valid range | as today, from the remaining lines | the range, resolved in the given location |
-| First non-empty line matches the prefix with `none` | as today | zero |
-| First non-empty line matches the prefix with anything else | as today | **zero** |
-| No line matches the prefix | as today, all lines | **zero** |
+| Exactly one directive line, valid range | every non-directive line, in order | the range, resolved in the given location |
+| Exactly one directive line, `none` | every non-directive line | zero |
+| Exactly one directive line, any other value | every non-directive line | **zero** |
+| **Two or more directive lines** | every non-directive line — **all** directive lines excluded | **zero**; the output does not say which is the answer |
+| No directive line | as today, all lines | **zero** |
 | No usable query at all | — | error, as today; **no window** |
 
-Every malformed shape degrades to *no window*, which is today's behaviour. A wrong window is never constructed from
-an unparseable line — the design has no path from bad model output to narrowed retrieval.
+**The table is about two dispositions, not one, and they are independent.** *"What reaches the query set"* and
+*"what the window is"* are decided separately: a directive line is excluded from the query set in **every** row of
+this table, including the rows where it names no window and the row where two of them cancel each other out.
+Stating only the window half is what let the shipped parser satisfy the original table while issuing the directive
+to the graph — see §4.6 row K, where the window is correct and a directive still leaks.
+
+**A wrong window is never constructed from an unparseable line**, and this is a bounded claim rather than a
+universal. What would falsify it: an accepted directive whose value is not what the request meant. Acceptance
+requires the output to carry exactly one directive-form line, so the only surviving route is a single directive
+that is itself wrong — **L4**, which this design states and accepts, and which is reachable from a well-formed
+first line too. §4.6 walks the four steps and names the class that lands on the safe side.
+
+**Two shapes this contract deliberately does not reach**, stated here rather than left to be discovered:
+
+- A **preamble line** that is not a directive is a query. Nothing decidable separates it from the mandated
+  trailing keyword line, and every positional rule that removes it destroys a real query on some other shape
+  (§4.6, shapes 4 and 5). **L7.**
+- A directive whose decoration is **outside** the set the file already strips — repeated emphasis characters —
+  is neither recognised nor normalised, so it both loses the window and leaks in mangled form (§4.6 row J).
+  **L9**, with a negative fixture in §14.
 
 **Resolution to instants**, in the supplied location:
 
@@ -738,8 +924,8 @@ parameters is mechanical and changes no logic.
 
 | Contract | Input | Output | Invariant |
 |---|---|---|---|
-| **Derivation completion** | one request, one stated instant | first line `DATES: <range>` or `DATES: none`, then the query lines as today | no query line contains a date, month, year or day-word |
-| **`ParseDerivation`** | completion text, the input, a location | queries, window | pure; any unrecognised or malformed `DATES` value yields a **zero** window, never a guessed one; `To` ≤ `From` yields zero |
+| **Derivation completion** | one request, one stated instant | first line `DATES: <range>` or `DATES: none`, then the query lines as today | **asked of the model, not enforced by the parser:** no query line contains a date, month, year or day-word. Nothing downstream checks it and nothing should — **L8**, and §4.6 shape 6 is why |
+| **`ParseDerivation`** | completion text, the input, a location | queries, window | pure. **Window:** any unrecognised or malformed value yields a **zero** window, never a guessed one; `To` ≤ `From` yields zero; two or more directive lines yield zero. **Query set:** no recognised directive line is ever returned as a query, at any position, at any multiplicity, and whether or not it named a window. The two halves are independent — §7.2 |
 | **`GraphPort.Recall`** | query, limit, scope, window | candidates in the graph's own rank order | a zero window produces a request **byte-identical** to the pre-change one; a non-zero window sets both `updatedFrom` and `updatedTo` |
 | **`Retrieve`** | anchor, queries, limit, reserve, window | fused candidates | the window is applied to every query leg and to **no** scoped leg |
 | **`dispatchRecall`** | the model's query, the run's window | one tool exchange | the model cannot widen, narrow or clear the window |
@@ -752,10 +938,19 @@ parameters is mechanical and changes no logic.
 
 ## 11. Cross-Cutting Concerns
 
-**Failure.** Every failure path in this design terminates at *no window*, which is today's behaviour: derivation
-call fails, derivation returns no usable query, `DATES` line absent, `DATES` value malformed, range inverted. There
-is no path from a degraded input to a narrowed retrieval. That asymmetry is deliberate — a run that returns too
-much is legible to its reader; a run that silently returned too little is not.
+**Failure.** Every failure path in this design terminates at *no window*, which is today's behaviour. The paths, and
+this list is **derivable rather than fixed** — anything that prevents exactly one directive line from resolving to a
+valid range belongs here: derivation call fails; derivation returns no usable query; directive line absent;
+directive value malformed; range inverted; **more than one directive line present** (D6). There is no path from a
+degraded input to a narrowed retrieval. That asymmetry is deliberate — a run that returns too much is legible to
+its reader; a run that silently returned too little is not.
+
+**And the failure paths have a second consequence the window sentence does not cover.** Every path above also
+decides what reaches the *query set*, and that half fails in the opposite direction: a line the parser does not
+recognise as a directive is issued to the graph as a semantic query. At `bdd5fea` that is the live defect (§4.6);
+under D6 the two halves are separated, so a degraded input costs at most a wasted query slot and never a
+date-shaped string on the wire. **The asymmetry stated above is about the window and was never a statement about
+the query set** — which is precisely how the gap survived a full review of this section.
 
 **Observability.** The window is in the record (§7.6) and in the summary line. A run that returned few candidates
 can be told apart from a run that was bounded to few, by reading one field. Without it, #13720's diagnosis would
@@ -841,9 +1036,12 @@ one-constant edit (§4.3 rows 5 and 6).
 | L1 | A one-day window makes a "today" question answerable | a corpus day with no relevant node in it — the window then returns a small, confidently-wrong set instead of a large vague one | **Yes, at low volume.** Quiet days exist. Mitigated only by the window being visible in the prompt and record. |
 | L2 | `updated` covers "what changed" | a historical window; the field holds only the *latest* update, so anything touched since has moved out — **silently** | **Yes**, §4.4. Unfixable at this substrate. |
 | L3 | A zero window is indistinguishable from today | any request that acquires a parameter when the window is zero | guarded, §14 G1 |
-| L4 | The model resolves day-words correctly from a stated instant | any run where it does not | degrades to no window (A6), never to a wrong one — **except** if it emits a *valid but wrong* range, which no guard can catch. Visible in the record. |
+| L4 | The model resolves day-words correctly from a stated instant | any run where it does not | degrades to no window (A6), never to a wrong one — **except** if it emits a *valid but wrong* range, which no guard can catch. Visible in the record. **D6 widens the population this row covers and adds no new class to it:** once position stops gating acceptance, a single directive line from anywhere is accepted, and its being wrong is this row. §4.6 walks the four steps. |
 | L5 | The parameters are spelled `updatedFrom` / `updatedTo` | an unfiltered control returning the same `total` as the filtered call | **Not established by my instrument** (§0). Milestone 1. |
 | L6 | The scoped leg's exemption is harmless | a run where the 3 out-of-window rows dominate the answer to a time-bounded question | possible; identifiable in the record by `scoped: true` |
+| L7 | A non-directive **preamble line reaches the query set**, costing one of five derived slots | a rule that removes `Here are the queries:`, keeps the mandated trailing keyword line, and keeps `q1?`/`q2?` when the model puts the directive last | **Yes, unfixed by D6 and deliberately so** (§4.6 shapes 4 and 5). Direction of error is **over**-inclusion and it is visible in `Record.Queries`. The remedy is prompt-side — `derive.go:38` already says *"no preamble"* — not parser-side. |
+| L8 | The parser does **not** enforce the prompt's *"a query line must never contain a date"* rule | a measurement showing a date in a query narrows or degrades retrieval | **Not present, and that is the finding.** §0 measured a date in a query to be **inert**: `total` identical at 11,414, similarity differing in the fourth decimal. Dropping such a line would destroy its topical content for no retrieval gain; rewriting it manufactures a query nobody wrote. §4.6 shape 6. |
+| L9 | A directive-shaped line that **misses recognition** — decoration outside the stripped set is the measured instance, a misspelled prefix the same class — is not excluded and leaks in whatever form it has | an observed endpoint emitting `**DATES: …**` | **Yes** (§4.6 row J). One character in an existing pattern would close it; not taken, because both existing strippers were built against something that had been seen and this has not. §14 carries it as a **negative** fixture. |
 
 **The hazard that made all of this invisible, restated because it governs §16:** an unsupported parameter is
 **accepted and ignored**. Five of nine names probed in #13721 returned rows and a `total` identical to the
@@ -854,10 +1052,17 @@ control beside it.
 
 ## 14. Coverage — the guards the implementation must carry
 
-**Read this before the table.** None of these tests exists at `6c8a1df`, so **no falsifier here has been executed**.
-The third column states the premise that makes the guard discriminate — a judgement, not a measurement — and the
-implementer is expected to confirm each by mutation before claiming the row. Rows are named guards rather than
-described mechanisms (#1220 §9).
+**Read this before the table.** Rows are named guards rather than described mechanisms (#1220 §9), and the third
+column states the premise that makes each guard discriminate. **Three different epistemic statuses sit in this one
+table, and a reader must not average them:**
+
+- **G1–G13** — none of these tests existed at `6c8a1df`, so **no falsifier for them has been executed**. Their third
+  column is a judgement, and the implementer confirms each by mutation before claiming the row.
+- **G14–G17** — existing tests whose behaviour under D3's change was **observed**, not reasoned (§4.3). What was
+  measured is that they *move*; whether the re-pointed versions discriminate is still a judgement.
+- **G18–G19** — added by the 2026-09-15 amendment. Their falsifiers are **measured against `bdd5fea`** and the
+  observed output is quoted in §4.6, so the *pre-fix red* is established rather than predicted. What is still a
+  judgement is the post-fix green, which no run can establish before the code exists.
 
 | # | Guard | Pins | Why it discriminates |
 |---|---|---|---|
@@ -865,19 +1070,21 @@ described mechanisms (#1220 §9).
 | G2 | `TestANonZeroWindowSendsBothUpdatedFromAndUpdatedTo` | both parameters, RFC 3339 with offset | asserts the exact spellings against a recorded request. The spellings live at one site (§7.4), so this is the only guard that can catch L5 in-tree. |
 | G3 | `TestRetrieveBoundsEveryQueryLegAndLeavesTheScopedLegUnbounded` | D5 | the fake records the window per call **and** the scope; a uniform implementation (all bounded, or none) fails on one of the two assertions. A guard asserting only "some call was bounded" would pass either mistake. |
 | G4 | `TestTheSupplementaryRecallCarriesTheRunsWindow` | `dispatchRecall` is bounded | the premise: the model supplies only a query string, so a window observed on that call can only have come from the turn. This is the guard that closes #13718; without it the model can re-open the unbounded path. |
-| G5 | `TestParseDerivationYieldsNoWindowForEveryMalformedDatesValue` | §7.2's degradation table | table-driven over malformed, absent, inverted and non-date values; asserts **zero**, not merely "not the parsed range". A parser guessing a partial range fails. |
+| G5 | `TestParseDerivationYieldsNoWindowForEveryMalformedDatesValue` | §7.2's degradation table | table-driven over malformed, absent, inverted and non-date values; asserts **zero**, not merely "not the parsed range". A parser guessing a partial range fails. **Its fixture set spans the *value* axis only** — §14.1 states the two axes it does not span, and G19 is where placement and multiplicity are pinned. |
 | G6 | `TestParseDerivationResolvesADayRangeInTheLocationItIsGiven` | D3's frame | the same `DATES` line parsed against two fixed zones must produce two different instants. A parser reading `time.Local` or forcing UTC produces one, and fails. |
 | G7 | `TestTheWindowIsBuiltInTheZoneOfTheInstantTheRunStates` | one frame per run | the turn's clock returns a fixed non-UTC zone; the window's location must equal the stated instant's. Fails against any implementation that normalises either to UTC — including today's. |
 | G8 | `TestTheAssembledPromptStatesTheInstantInTheZoneItWasRead` | D3's prompt half | replaces `TestRenderUserContentStatesTheInstantAsRFC3339InUTCWhateverZoneItWasGivenIn`, asserting the offset spelling is preserved. |
 | G9 | `TestAZeroWindowRendersTheUserContentByteIdenticallyToTheNoWindowLayout` | Flow B | byte equality against the current layout constant. A guard asserting "does not contain the word window" would pass an implementation that added a blank line. |
 | G10 | `TestTheRecordOmitsTheWindowKeyWhenRetrievalWasUnbounded` | wire shape | asserts the key's **absence** and the absence of `0001-01-01`, matching the existing `Now` guard's shape. |
 | G11 | `TestTheRecordCarriesTheWindowThatBoundedRetrieval` | diagnosis | asserts both instants **and their offset**, so a record normalised to UTC — which would lose which civil day was meant — fails. |
-| G12 | `TestNoDerivedQueryContainsADate` | §7.1's sharpened rule, at the parse boundary | a shape check over the parsed queries. **Limit:** it pins the parser's contract, not the model's output; the model is not in the test's reach. Stated rather than claimed. |
+| G12 | `TestNoDerivedQueryContainsADate` — **replaced, not widened**, see §14.1 | §7.1's sharpened rule, at the parse boundary | a shape check over the parsed queries. Its name asserts a universal **D6 rules the parser must not have** (**L8**), and its stated limit names the wrong boundary. Once recognition is shared, *"no date from a recognised directive"* is implied by G18 and buys nothing. §14.1 replaces it with a guard over the two ways a date is **allowed** to reach the query set (**L8**, **L9**) — the only date behaviour that survives D6, and today unpinned. |
 | G13 | `TestEvalSweepRunsWithNoWindow` | eval determinism | asserts the window observed by the sweep's fake is zero. A future change that threads a derivation into eval fails here rather than silently changing corpus scores. |
 | G14 | `TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy` *(existing, re-pointed)* | §4.3 row 2 | the layout property is frame-independent and stays as written; only `userContentTestInstantUTC` at `usercontent_test.go:16` becomes the offset spelling. Discriminates as it always did — a renderer that drops or reorders the `NOW` span still fails it. |
 | G15 | `TestRenderUserContentPlacesExactlyTwoVerbatimRequestCopiesTheFirstAtTheHead` *(existing, re-pointed)* | §4.3 row 3 | same constant, same reasoning. Its real property — two verbatim request copies — is untouched by the frame, and an implementation that emitted one copy fails it either way. |
 | G16 | `TestTheRunRecordCarriesTheSameInstantTheAssembledPromptStates` *(existing, re-pointed onto a **new** constant)* | §4.3 row 4 | pins **one clock read per turn** (`reads != 1` is a `t.Fatalf`) as well as the spelling. That half is frame-independent and is the half G7 leans on. Its expectation must move to a **sibling** constant: `recordInstantUTC` is shared with the one guard that must not change (§4.3.1), so editing it in place reddens that guard. |
 | G17 | `TestJudgeSends…UserMessageByteEqualToRenderUserContentOfTheSameBlockAndInput`, both adapters *(existing, re-pointed)* | §4.3 rows 5 and 6 | the byte-equality assertion needs no change — its `want` is computed from `RenderUserContent`. Only the standalone `strings.Contains(…, instantUTC)` at `usercontent_test.go:51` moves, in each adapter, one constant at `:20`. **`:51` must survive that edit, never be dropped as redundant** — it is the pair's only absolute anchor and the only assertion that catches the loop losing the `NOW` span entirely (§4.3.2). |
+| G18 | `TestTheDatesLineNeverAppearsInTheQuerySetWhateverItsValuePlacementOrSpelling` *(the existing `…WhateverItsValue`, **renamed, re-scoped and widened** — §14.1)* | §7.2's query-set half, which the original contract row never stated | its fixture set spans **placement × multiplicity × spelling**, not value, so the shipped implementation — which drops only a bare directive sitting first — fails on **nine** of §4.6's ten defective rows. The tenth is **J**, outside its reach by ruling (**L9**), not by oversight. A set fixtured only on well-formed output passes that implementation, which is how the defect shipped. **Its assertion moves with its fixtures** onto the same recognition the parser uses; left as a case-exact prefix test it goes green on the very fixtures being added (§14.1). **Falsifier, measured rather than predicted:** run the widened fixtures against `bdd5fea` — §4.6 quotes the observed output, and every row but A, J and L–N shows a recognised directive in the returned query slice. |
+| G19 | `TestTheWindowIsNamedOnlyWhenTheOutputCarriesExactlyOneDirectiveLine` *(new, D6)* | the window half of D6 — position is not a gate, multiplicity is | three assertions the nearest wrong implementations separate: a directive **not first** yields the range (fails today's position gate); **two** directive lines yield **zero** (fails a first-wins implementation, which is the tempting one and the one §4.6 rejects); **zero** directive lines yield zero (the control that keeps the other two honest). A guard asserting only the first would pass first-wins. **Falsifier, measured:** §4.6 rows E and K against `bdd5fea` — E yields zero where this guard wants the range, K yields the range where this guard wants zero. |
 
 **One named guard needs no replacement and must not be edited.**
 `TestTheRunRecordsInstantIsOnTheWireUnderTheKeyNow` measured **green** under D3's mutation (§4.3, last row). It
@@ -885,18 +1092,121 @@ pins the wire key and the marshalling of whatever the field holds, not productio
 that an implementer sweeping §4.3 for "guards about the instant" meets the adjudication rather than the name.
 
 **The falsifier for this table itself:** any row whose named guard would still pass against an implementation
-lacking the claimed property. G1, G3, G5, G7, G9 and G11 are each written so that the *nearest wrong
-implementation* — empty-string parameter, uniform bounding, partial parse, UTC normalisation, extra whitespace,
-UTC record — fails them, and that is what the third column records.
+lacking the claimed property. Run it over **every** row rather than over the ones listed here — G1, G3, G5, G7, G9,
+G11, G18 and G19 are the ones whose third column currently names its *nearest wrong implementation* explicitly
+(empty-string parameter, uniform bounding, partial parse, UTC normalisation, extra whitespace, UTC record,
+drop-only-the-first-bare-directive, first-wins), and a row that does not name one has not been exempted from the
+question, only from having been asked it here.
 
-**G14–G17 are the one part of this table that is not a prediction.** They are existing tests, and their behaviour
-under D3's change was **observed** rather than reasoned: six red, one green, from one `go test ./...` at `6c8a1df`
-under the two-line mutation (§4.3). That is also their limit — the run establishes that they *move*, and says
-nothing about whether the re-pointed versions discriminate, because the re-pointed versions do not exist yet.
-Their third column is a judgement like every other row's.
+**G14–G17's limit, restated because the amendment did not remove it.** Six red, one green, from one
+`go test ./...` at `6c8a1df` under the two-line mutation (§4.3) — that run establishes they *move* and says nothing
+about whether the re-pointed versions discriminate, because the re-pointed versions do not exist yet.
 
 **Not covered, and named rather than omitted:** no guard can catch a model emitting a **valid but wrong** day range
 (L4). There is no oracle for it in-tree. It is visible in the record and nowhere else.
+
+### 14.1 The two shipped date guards — the axes their fixtures must span, and why one is replaced not widened
+
+At `bdd5fea`, `TestNoDerivedQueryContainsADate` holds **5** fixtures and
+`TestTheDatesLineNeverAppearsInTheQuerySetWhateverItsValue` holds **6**. Counted, not recalled: `grep -c '"DATES'`
+over each table's literal block. **In all eleven the directive is the first line of the text.** Both names assert a
+property of the parser; the fixtures establish that property of the parser *on well-formed output*, and a reader
+grepping *"does a date reach the query set"* finds a green test saying no. That is #1220's universal rule — a claim
+of the form *never · whatever its value* owes the input class that would break it, in the same paragraph — and
+neither name carries one.
+
+#### First, one of the two is not merely under-evidenced. Its name is incompatible with D6.
+
+`TestNoDerivedQueryContainsADate` asserts that **no returned query matches `\d{4}-\d{2}-\d{2}`**. Under **L8** the
+parser deliberately does not enforce that: a model-authored query line carrying a date is kept, because §0 measured
+such a date to be inert and dropping the line would destroy its topical content for nothing. So a fixture holding
+`DATES: none` followed by *"what changed on 2026-09-12?"* reddens this guard against an implementation that is
+**correct**.
+
+**That matters for the order of work.** #13939's step 3 reads *"widen the two test names' fixture sets so the names
+stop claiming more than they show."* Widening this one along the obvious axis — more realistic model output —
+produces a guard that fires on compliant code, which #1220 §9 rates as worse than no guard at all, because a reader
+who runs it, sees the hit, checks the code and finds the code correct learns to disregard the column. **Re-scope
+before widening.**
+
+**And re-scoping it to the directive does not save it either — it makes it redundant.** The obvious repair is
+*"no date **from the directive line** survives into the query set"*. Once D6 shares one recognition between the two
+consumers, that property is **implied by G18**: a date can only arrive from a directive the parser failed to
+recognise, and an unrecognised directive is **L9**, which is out of scope by ruling. A guard that cannot fail
+against any implementation G18 passes is not a second guard. #1136 §4 — it can be deleted, so it goes.
+
+#### What replaces it, because deleting it would leave the accepted limits unpinned
+
+**After D6 a date reaches the query set only from a line the parser does not recognise as the directive** — either
+a legitimate query line (**L8**) or a directive-shaped line that misses recognition (**L9**, whose measured instance
+is decoration, and which covers a misspelled prefix on the same reasoning). **Nothing pins any of it.** An accepted
+limit that no test asserts is a sentence in a document, and the next person to read *"no derived query contains a
+date"* in a test name will re-create exactly the guard this section is deleting.
+
+> **`TestADateReachesTheQuerySetOnlyFromALineTheParserDoesNotRecogniseAsTheDirective`** — same table, inverted
+> expectation. It asserts that a date **is** present for the two ruled cases and **absent** for every recognised
+> directive.
+
+Three fixture classes, and each discriminates against a different wrong implementation:
+
+| Fixture | Expectation | The implementation it fails |
+|---|---|---|
+| A model-authored query line legitimately carrying a date, behind `DATES: none` | the date **survives** | one that enforces `derive.go:33` at the parse boundary — §4.6 shape 6, which §0 measured to be a net loss |
+| §4.6 row J, the emphasis-mangled directive | the mangled line **survives**, date and all | one that quietly widened `derivationLinePrefix` past **L9** without the ruling being revisited |
+| Every recognised-directive shape from the placement × spelling axes | **no** date survives | the shipped parser, on nine of §4.6's ten defective rows |
+
+The second row is the one worth defending: it looks like a test that asserts a bug. It is a test that makes a
+**stated limit falsifiable**, so that closing L9 becomes a deliberate edit with a red test attached rather than a
+silent widening — which is what #1220 asks of every universal, applied to the complement.
+
+#### The axes the fixture sets must span
+
+Stated as axes rather than as a list of cases, because a list written from what I found is a search result and not
+a specification (#1220, 2026-09-10). **One fixture table now serves both guards** — G18 asserts *no recognised
+directive survives* over it, the replacement guard asserts *where a date is still allowed* over the same rows. The
+value axis stays where it is.
+
+| Axis | What it must span | Why the names claim it |
+|---|---|---|
+| **Placement** | directive as the first content line; after one or more non-directive content lines; as the **last** line, after the queries; **absent** | *"whatever its value"* and *"no derived query …"* are unqualified as to where the line sits, and today every fixture pins it to the front |
+| **Multiplicity** | exactly one; **two or more** — including the case where the first parses to a valid window, so the leak is on the **success** path (§4.6 row K) | an unqualified *"never appears"* covers the second occurrence, and no fixture has ever held one |
+| **Spelling** | bare; each member of the decoration set the file already strips; each member of the quote cutset; letter-case variants | the prompt forbids numbering, bullets and quotes on *every* line, and the parser forgives them on query lines — so a directive carrying them is ordinary disobedience, not an exotic input |
+| **Spelling — negative** | one fixture for decoration **outside** that set (repeated emphasis, §4.6 row J). It is **not** in G18's reach: G18 asserts over *recognised* directives, and this one is not recognised. It belongs to the replacement guard, asserting the ruled behaviour | so **L9** is pinned rather than merely written down, and a later widening of the pattern reddens something instead of passing silently |
+| **Value** | unchanged — valid range, `none`, garbage, inverted, invalid calendar date, one bound only | already spanned; the six existing cases stay |
+
+Placement × spelling is a cross-product, not two independent lists: the failure in §4.6 row E is *placement with a
+bare spelling*, and row F is *first position with decoration*. A set that varies one axis at a time leaves the
+corners untested, and the corners are where a position gate and a spelling gate interact.
+
+**And the surviving guard's name must move with its axes**, in the opposite direction to the one being replaced.
+`…WhateverItsValue` names one axis and will span three, so the name now claims **less** than it shows — harmless
+to a reader who runs it, misleading to one who greps it and concludes placement is covered elsewhere:
+
+> **`TestTheDatesLineNeverAppearsInTheQuerySetWhateverItsValuePlacementOrSpelling`**
+
+Both directions are the same defect. A name is a claim about the fixtures underneath it, and a claim that is
+wrong in the understating direction still sends the next reader looking for a guard that does not exist.
+
+#### And the assertion must be widened with the fixtures, or the new fixtures are decorative
+
+`TestTheDatesLineNeverAppearsInTheQuerySetWhateverItsValue` decides a leak with a **case-sensitive prefix test on
+the raw returned query** (`derive_test.go:487` at `bdd5fea`). Add the lower-case fixture the spelling axis requires
+and the guard **cannot see the leak that fixture introduces**: the returned query is `dates: 2026-09-12..`, the
+assertion tests for `DATES:`, and the test goes green while the defect stands.
+
+> **The assertion must decide *"is this a directive?"* by the same recognition the parser uses, never by a spelling
+> the fixture set has just been widened past.** Otherwise each new fixture silently converts from a check into a
+> decoration, and the guard's name grows while its reach does not.
+
+This is the same defect shape as a falsifier that cannot discriminate (#1220 §9), arriving through the fixture door
+rather than the falsifier door — which is why widening a fixture set is never only an additive edit.
+
+#### What a reader should re-derive rather than trust
+
+The eleven-fixture count and the *"directive is first in all eleven"* claim are properties of `bdd5fea` and expire
+the moment anyone edits either table. Re-derive them; do not cite this section for them after the implementation
+round. **`N/N` claims are produced by running the loop, not by reading the table**, and they do not survive an
+implementation round (#1220, 2026-09-10).
 
 ---
 
@@ -914,7 +1224,10 @@ Their third column is a judgement like every other row's.
   Both the port signature and the three PR #76 guards change in place.
 - **Block-level DRY.** No block is inlined at multiple sites by this design. The wire spellings appear once
   (§7.4); the frame is established once (the clock read) and propagates as data. `block_size × site_count` is not
-  reached because no duplication is proposed.
+  reached because no duplication is proposed. **D6 moves this in the same direction rather than against it:** the
+  parser today normalises a line **twice, differently**, once for the directive test and once for the query text,
+  and three of §4.6's ten defective shapes are that divergence alone. Part one of D6 collapses the two into
+  one rule with two consumers. It removes duplication; it does not add a site.
 
 **Existing systems first**
 
@@ -1043,7 +1356,12 @@ format their own separate `at` argument, and their UTC form is correct (#13884, 
 ### Milestone 4 — the derivation names the days
 
 **Property:** the derivation output carries a day range or an explicit `none`, the parse is pure and degrades to
-zero on every malformed shape, and no derived query contains a date.
+zero on every malformed shape, and **no line the parser recognises as the directive is ever returned as a query**.
+
+> **Amended 2026-09-15.** The original property ended *"and no derived query contains a date"*, which this
+> milestone cannot make true and D6 rules it must not try to (**L8**, §4.6 shape 6). The clause above replaces it.
+> PR #79 shipped this milestone; **§4.6 is the amendment to it**, and it is a separate unit of work — see the
+> milestone below.
 
 `derive.go`: the prompt gains the instant, the `DATES:` instruction and the sharpened no-dates-in-queries rule;
 both exemplars gain the line (one range, one `none`); `ParseDerivation` gains the location argument and the window
@@ -1070,6 +1388,46 @@ produces the query set **and** the retrieval window*. Sweep the whole file for s
 derivation's outputs, define its prompt shape, or assert what its completion contains; §7.1, §10 and §16's Unit 1
 are the ones I found, and that list is **not** exhaustive. Counting language (*"exactly N lines"*, *"the last
 line"*, *"one query per line"*) is the grep handle.
+
+### Milestone 6 — the directive is recognised by what it says (D6, added 2026-09-15, after PR #79)
+
+**Milestones 1–5 shipped in PR #79 (`bdd5fea`). This one has not, and it is its own unit of work** — it is a
+distinct behaviour change to a shipped parser, so it branches and ships on its own.
+
+**Property:** *no line the derivation produces reaches the graph as a semantic query if the prompt's own rules
+forbid it being one, and a well-formed directive is not discarded because of where it sits or how it is spelled.*
+
+Concretely, three properties that must hold together, and §7.2's table is the contract:
+
+1. The directive is recognised from the **same content form** a query line is reduced to, without regard to letter
+   case — one normalisation, two consumers, where today there are two that disagree.
+2. Every recognised directive line is **excluded from the query set**, at any position, at any multiplicity, and
+   whether or not it named a window.
+3. The window is named **only when the output carries exactly one** directive line.
+
+Guards **G18** (the existing `TestTheDatesLineNeverAppearsInTheQuerySetWhateverItsValue`, renamed, re-scoped and
+widened)
+and **G19** (new). **§14.1 is the specification for both**, and two of its instructions are easy to read past:
+the *assertion* in G18 must move onto shared recognition along with its fixtures, or the new fixtures go green
+without checking anything; and `TestNoDerivedQueryContainsADate` is **replaced**, not widened — widening it as
+written produces a guard that fires on correct code.
+
+**Sweep for the property; the sites below are what I found and are explicitly not exhaustive.** At `bdd5fea` the
+two that decide it are `derive.go:115` (the directive test, run on a whitespace-trimmed line only, and before any
+other normalisation) and `derive.go:160` (the query-line normalisation, run afterwards). The early return at
+`derive.go:117` is what makes position a gate, and `derive.go:119` is what removes the one directive line it did
+accept. **Read `ParseDerivation` and both helpers whole** — the defect is in the *ordering* of two functions, not
+in either of them, so a diff-scoped reading of one will not show it.
+
+**Start by reproducing, not by editing.** §4.6 quotes the shipped parser's output on fourteen inputs. Re-run them
+before touching anything; if your run disagrees with §4.6, **your run wins and this document is wrong.** Rows A and
+L–N must stay exactly as quoted after the change — they are shapes the parser already handles, and a normalisation
+rewrite is the kind of change that breaks them silently.
+
+**One prompt-side item that is not this milestone's, and is not filed:** `derive.go:38` already says *"no
+preamble"*, and **L7** accepts that the model sometimes emits one anyway. Nothing here changes the prompt. If the
+preamble slot is ever judged worth reclaiming, the lever is the prompt or the exemplars, never the parser — §4.6
+shapes 4 and 5 record why.
 
 ### Pre-submit, mechanically, on every file the branch touches
 
@@ -1098,6 +1456,19 @@ less urgent.
 **Historical windows lose what was touched since.** L2. A property of the substrate; no parameterisation fixes it.
 
 **A valid-but-wrong day range.** L4. No in-tree oracle. Visible in the record.
+
+**A preamble line reaching the query set.** L7. D6 stops the *directive* leaking and stops the window being lost;
+it does not remove a lead-in sentence the model prepends, because no decidable rule removes it without destroying a
+real query on some other shape (§4.6 shapes 4 and 5). Costs one of five derived slots, in the over-inclusive
+direction, and is visible in `Record.Queries`. The lever is the prompt.
+
+**A date in a model-authored query line.** L8. The prompt asks against it (`derive.go:33`); nothing enforces it and
+D6 rules that nothing should, because §0 measured such a date to be inert rather than harmful. The guard whose name
+claimed this property is re-scoped in §14.1.
+
+**A directive wearing decoration the file does not strip.** L9, §4.6 row J. One character in an existing pattern
+would close it; not taken, because it has not been observed. Pinned as a negative fixture so the decision is
+falsifiable rather than merely recorded.
 
 **Latency.** §12.3. Cardinality was measured; wall-clock was not.
 
