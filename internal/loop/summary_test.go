@@ -540,6 +540,26 @@ func TestRenderSummaryPrintsEveryDerivedQueryUnderItsOwnIndexAndCountsThem(t *te
 	}
 }
 
+func TestRenderSummaryPrintsTheWindowOnTheAssemblyLineWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Window = UpdateWindow{
+		From: time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC),
+		To:   time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC),
+	}
+
+	with := RenderSummary(record, summaryInstant())
+	without := RenderSummary(summaryRecord(), summaryInstant())
+
+	if !strings.Contains(with, "retrieval is limited to nodes updated 2026-09-07 … 2026-09-07") {
+		t.Fatalf("the summary of a windowed run does not state its window.\nsummary:\n%s", with)
+	}
+	if strings.Contains(without, "retrieval is limited to nodes updated") {
+		t.Fatalf("the summary of an unbounded run states a window it never had.\nsummary:\n%s", without)
+	}
+}
+
 func TestRenderSummaryHeadsTheAdmittedListWithItsCountAndBytesAgainstTheSpaceRemainingAfterTheAnchor(t *testing.T) {
 	t.Parallel()
 

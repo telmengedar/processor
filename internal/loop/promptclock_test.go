@@ -78,6 +78,26 @@ var recordInstantLocal = time.Date(2026, 9, 12, 10, 30, 0, 0, time.FixedZone("te
 
 const recordInstantUTC = "2026-09-12T08:30:00Z"
 
+const recordInstantLocalRFC3339 = "2026-09-12T10:30:00+02:00"
+
+func TestTheWindowIsBuiltInTheZoneOfTheInstantTheRunStates(t *testing.T) {
+	t.Parallel()
+
+	model := &fakeModel{derivedText: "DATES: 2026-09-12..2026-09-12\nfirst question?"}
+	turn := NewTurn(promptClockGraph(), model, nil, "system text", "test-model", testLogger())
+	turn.clock = func() time.Time { return recordInstantLocal }
+
+	record, _, err := turn.Run(context.Background(), "what changed today", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	const wantFrom = "2026-09-12T00:00:00+02:00"
+	if got := record.Window.From.Format(time.RFC3339); got != wantFrom {
+		t.Fatalf("record.Window.From = %s, want %s: the window must be built in the zone of the instant the run states, never normalised to UTC or read from time.Local", got, wantFrom)
+	}
+}
+
 func TestTheRunRecordCarriesTheSameInstantTheAssembledPromptStates(t *testing.T) {
 	t.Parallel()
 
@@ -103,17 +123,17 @@ func TestTheRunRecordCarriesTheSameInstantTheAssembledPromptStates(t *testing.T)
 		t.Fatalf("the turn read its clock %d times, want 1: two reads let the record and the prompt state different instants", reads)
 	}
 
-	if got := record.Now.Format(time.RFC3339); got != recordInstantUTC {
-		t.Fatalf("record.Now reads %s, want %s: a run that resolved \"today\" leaves no trace of which day unless the record states it, in UTC as the prompt does",
-			got, recordInstantUTC)
+	if got := record.Now.Format(time.RFC3339); got != recordInstantLocalRFC3339 {
+		t.Fatalf("record.Now reads %s, want %s: a run that resolved \"today\" leaves no trace of which day unless the record states it, in the zone the prompt does",
+			got, recordInstantLocalRFC3339)
 	}
 	if len(model.calls) != 2 {
 		t.Fatalf("the turn made %d judgement calls, want 2", len(model.calls))
 	}
 	for i, call := range model.calls {
-		if got := call.Now.Format(time.RFC3339); got != recordInstantUTC {
+		if got := call.Now.Format(time.RFC3339); got != recordInstantLocalRFC3339 {
 			t.Fatalf("judgement call %d states %s while the record states %s; the record is only diagnostic if it is the prompt's own instant",
-				i+1, got, recordInstantUTC)
+				i+1, got, recordInstantLocalRFC3339)
 		}
 	}
 }
@@ -144,5 +164,44 @@ func TestARecordCarryingNoInstantOmitsTheNowKeyEntirely(t *testing.T) {
 	}
 	if strings.Contains(string(body), "0001-01-01") {
 		t.Fatalf("the record wire states the zero time as though it were a date; body=%s", body)
+	}
+}
+
+func TestTheRecordOmitsTheWindowKeyWhenRetrievalWasUnbounded(t *testing.T) {
+	t.Parallel()
+
+	body, err := json.Marshal(Record{Input: "no window was supplied"})
+	if err != nil {
+		t.Fatalf("marshal record: %v", err)
+	}
+
+	if strings.Contains(string(body), `"window"`) {
+		t.Fatalf("the record wire carries a window key for a run whose retrieval was unbounded; body=%s", body)
+	}
+	if strings.Contains(string(body), "0001-01-01") {
+		t.Fatalf("the record wire states the zero window's zero time as though it were a date; body=%s", body)
+	}
+}
+
+func TestTheRecordCarriesTheWindowThatBoundedRetrieval(t *testing.T) {
+	t.Parallel()
+
+	window := UpdateWindow{
+		From: time.Date(2026, 9, 12, 0, 0, 0, 0, time.FixedZone("test+02", 2*60*60)),
+		To:   time.Date(2026, 9, 13, 0, 0, 0, 0, time.FixedZone("test+02", 2*60*60)),
+	}
+
+	body, err := json.Marshal(Record{Input: "a window was supplied", Window: window})
+	if err != nil {
+		t.Fatalf("marshal record: %v", err)
+	}
+
+	for _, want := range []string{
+		`"from":"2026-09-12T00:00:00+02:00"`,
+		`"to":"2026-09-13T00:00:00+02:00"`,
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("the record wire carries no %s, so a reader cannot recover which civil day the run meant from an instant normalised to UTC; body=%s", want, body)
+		}
 	}
 }

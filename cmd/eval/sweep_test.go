@@ -21,9 +21,10 @@ const requiredNodeBodyHash = "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a3
 const emptyBodyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
 type recallCall struct {
-	Query string
-	Limit int
-	Scope []int64
+	Query  string
+	Limit  int
+	Scope  []int64
+	Window loop.UpdateWindow
 }
 
 type fakeGraph struct {
@@ -60,8 +61,8 @@ func (f *fakeGraph) Node(_ context.Context, id int64) (loop.Anchor, bool, error)
 	return anchor, found, nil
 }
 
-func (f *fakeGraph) Recall(_ context.Context, query string, limit int, scope []int64) ([]loop.Candidate, error) {
-	f.recallCalls = append(f.recallCalls, recallCall{Query: query, Limit: limit, Scope: scope})
+func (f *fakeGraph) Recall(_ context.Context, query string, limit int, scope []int64, window loop.UpdateWindow) ([]loop.Candidate, error) {
+	f.recallCalls = append(f.recallCalls, recallCall{Query: query, Limit: limit, Scope: scope, Window: window})
 	if f.recallErr != nil {
 		return nil, f.recallErr
 	}
@@ -187,11 +188,30 @@ func TestSweepRecallsWithTheRawInputVerbatimAtTheCountRetrievalIssuesRatherThanO
 	}
 }
 
+func TestEvalSweepRunsWithNoWindow(t *testing.T) {
+	t.Parallel()
+
+	graph := newFakeGraph(t)
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+
+	row := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"})
+	mustSweep(t, graph, corpusOf(row))
+
+	if len(graph.recallCalls) == 0 {
+		t.Fatal("the sweep issued no recall, so there is no window to inspect")
+	}
+	for _, call := range graph.recallCalls {
+		if !call.Window.IsZero() {
+			t.Fatalf("recall %q carried window %+v, want zero: the sweep runs pinned query sidecars with no derivation call, so a future change threading one in must fail here rather than silently changing corpus scores", call.Query, call.Window)
+		}
+	}
+}
+
 func fetchCountRetrievalIssues(t *testing.T) int {
 	t.Helper()
 
 	graph := newFakeGraph(t)
-	if _, err := loop.Retrieve(context.Background(), graph, loop.Anchor{ID: 100}, []string{"a probe query"}, loop.CandidateLimit, loop.RecallScopeReserve); err != nil {
+	if _, err := loop.Retrieve(context.Background(), graph, loop.Anchor{ID: 100}, []string{"a probe query"}, loop.CandidateLimit, loop.RecallScopeReserve, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
 	if len(graph.recallCalls) == 0 {

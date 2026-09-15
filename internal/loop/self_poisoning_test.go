@@ -24,7 +24,7 @@ func (g *poisoningGraph) Node(context.Context, int64) (loop.Anchor, bool, error)
 	return g.anchor, true, nil
 }
 
-func (g *poisoningGraph) Recall(_ context.Context, _ string, limit int, _ []int64) ([]loop.Candidate, error) {
+func (g *poisoningGraph) Recall(_ context.Context, _ string, limit int, _ []int64, _ loop.UpdateWindow) ([]loop.Candidate, error) {
 	rows := append(append([]loop.Candidate{}, g.written...), g.base...)
 	if len(rows) > limit {
 		rows = rows[:limit]

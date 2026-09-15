@@ -22,7 +22,7 @@ var errDerivationUnusable = errors.New("the model returned no usable query")
 
 const derivationInstructions = `You generate alternate search queries for a semantic retrieval system.
 
-You will be given ONE user request. Your job is to produce %d additional queries that a semantic (embedding-based) search engine could use to surface the specific documentation that answers that request. The request itself is already one query the search runs; your job is to add angles that request does not cover.
+You are given the current instant and ONE user request. Your job is to produce %d additional queries that a semantic (embedding-based) search engine could use to surface the specific documentation that answers that request, and to name any time constraint the request expresses. The request itself is already one query the search runs; your job is to add angles that request does not cover.
 
 Think about what actually helps a semantic search here: the request is often phrased the way a confused or informal user would phrase it, while the documentation that answers it is phrased the way an author states a ruling, a mechanism, or a design decision. A good derived query bridges that gap -- it surfaces the underlying mechanism, the specific technical terms, the named concept, or the class of problem the request is really an instance of, using vocabulary closer to how documentation states things.
 
@@ -30,21 +30,25 @@ Rules:
 - Do not restate or lightly reword the input request. Each query must approach the underlying information need from a genuinely different angle than the input and from each other.
 - Do not answer the request. You are generating queries, not answers.
 - Do not invent specifics (names, numbers, node ids) that are not implied by the request itself.
-- Output exactly %d lines:
-  - The first %d lines are distinct, standalone questions (each ending in "?") that name a mechanism, concept, or specific terminology likely to appear in the answer.
+- A query line must never contain a date, a month, a year, or a day-word. A semantic search matches a date only where that date appears as verbatim text, which is nowhere. Time constraints go on the DATES line below and nowhere else.
+- Output exactly %d lines total:
+  - The first line is "DATES: YYYY-MM-DD..YYYY-MM-DD", naming the calendar day range (inclusive of both days) the request constrains retrieval to, resolved against the stated instant; or "DATES: none" when the request expresses no time constraint.
+  - The next %d lines are distinct, standalone questions (each ending in "?") that name a mechanism, concept, or specific terminology likely to appear in the answer.
   - The last line is a dense, keyword-style query (no question mark) combining the most salient technical terms an embedding search would key on.
-- Output ONLY those %d lines. No numbering, no bullets, no quotes, no preamble, no commentary, no blank lines between them.
+- Output ONLY those %d lines: the DATES line, then the queries. No numbering, no bullets, no quotes, no preamble, no commentary, no blank lines between them.
 
 Examples of the desired shape (unrelated to the request you will be given):`
 
 type derivationExemplar struct {
 	input   string
+	dates   string
 	queries []string
 }
 
 var derivationExemplars = []derivationExemplar{
 	{
 		input: "Where is a Go test supposed to state what it is checking, and why not in a comment above it?",
+		dates: "none",
 		queries: []string{
 			"How does a Go test carry what it pins?",
 			"Why are comments not the place to state a test's intent?",
@@ -54,7 +58,8 @@ var derivationExemplars = []derivationExemplar{
 		},
 	},
 	{
-		input: "What happens to a request that is still being worked on when the service is told to stop?",
+		input: "What happened to a request that was still being worked on when the service was told to stop on 2026-09-05?",
+		dates: "2026-09-05..2026-09-05",
 		queries: []string{
 			"How does the server drain requests in flight during shutdown?",
 			"Is a run cancelled or allowed to finish when the process is told to stop?",
@@ -72,24 +77,82 @@ var (
 
 const derivationQuoteCutset = "\"“”'"
 
-// DerivationPrompt renders the derivation instructions, the two format-only exemplars and input as one prompt.
-func DerivationPrompt(input string) string {
-	blocks := make([]string, 0, len(derivationExemplars)+2)
-	blocks = append(blocks, fmt.Sprintf(derivationInstructions, MaxDerivedQueries, MaxDerivedQueries, MaxDerivedQueries-1, MaxDerivedQueries))
+const derivationTotalLines = MaxDerivedQueries + 1
+
+const dateLinePrefix = "DATES:"
+
+var dateRangePattern = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$`)
+
+// DerivationPrompt renders the derivation instructions, the stated instant, the two format-only exemplars and input as one prompt.
+func DerivationPrompt(input string, now time.Time) string {
+	blocks := make([]string, 0, len(derivationExemplars)+3)
+	blocks = append(blocks, fmt.Sprintf(derivationInstructions, MaxDerivedQueries, derivationTotalLines, MaxDerivedQueries-1, derivationTotalLines))
+
+	if !now.IsZero() {
+		blocks = append(blocks, "===== NOW =====\n"+now.Format(time.RFC3339))
+	}
 
 	for _, exemplar := range derivationExemplars {
-		blocks = append(blocks, exemplar.input+"\n"+strings.Join(exemplar.queries, "\n"))
+		blocks = append(blocks, exemplar.input+"\n"+dateLinePrefix+" "+exemplar.dates+"\n"+strings.Join(exemplar.queries, "\n"))
 	}
 
 	return strings.Join(append(blocks, input), "\n\n")
 }
 
-// ParseDerivation reads text as one query per line, dropping reasoning artifacts, list decoration, blanks, repeats and case-folded echoes of input, capped at MaxDerivedQueries.
-func ParseDerivation(text, input string) []string {
+// ParseDerivation reads text as an optional DATES directive followed by one query per line, dropping reasoning artifacts, list decoration, blanks, repeats and case-folded echoes of input, capped at MaxDerivedQueries. loc resolves the directive; any line that lacks it, or carries an unrecognised or malformed value, yields a zero window rather than a guessed one.
+func ParseDerivation(text, input string, loc *time.Location) ([]string, UpdateWindow) {
+	lines := strings.Split(derivationThinkBlock.ReplaceAllString(text, ""), "\n")
+	window, lines := extractDatesLine(lines, loc)
+	return parseQueryLines(lines, input), window
+}
+
+func extractDatesLine(lines []string, loc *time.Location) (UpdateWindow, []string) {
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		value, ok := strings.CutPrefix(trimmed, dateLinePrefix)
+		if !ok {
+			return UpdateWindow{}, lines
+		}
+		rest := slices.Delete(slices.Clone(lines), i, i+1)
+		return resolveDatesValue(strings.TrimSpace(value), loc), rest
+	}
+	return UpdateWindow{}, lines
+}
+
+func resolveDatesValue(value string, loc *time.Location) UpdateWindow {
+	if value == "none" {
+		return UpdateWindow{}
+	}
+
+	m := dateRangePattern.FindStringSubmatch(value)
+	if m == nil {
+		return UpdateWindow{}
+	}
+
+	from, err := time.ParseInLocation("2006-01-02", m[1], loc)
+	if err != nil {
+		return UpdateWindow{}
+	}
+	to, err := time.ParseInLocation("2006-01-02", m[2], loc)
+	if err != nil {
+		return UpdateWindow{}
+	}
+	to = to.AddDate(0, 0, 1)
+
+	if !to.After(from) {
+		return UpdateWindow{}
+	}
+	return UpdateWindow{From: from, To: to}
+}
+
+func parseQueryLines(lines []string, input string) []string {
 	seen := map[string]bool{derivationKey(input): true}
 	queries := make([]string, 0, MaxDerivedQueries)
 
-	for _, line := range strings.Split(derivationThinkBlock.ReplaceAllString(text, ""), "\n") {
+	for _, line := range lines {
 		if len(queries) == MaxDerivedQueries {
 			break
 		}
@@ -123,28 +186,28 @@ func MergeQueries(input string, derived []string) []string {
 	return queries
 }
 
-// DeriveQueries asks model for queries derived from input under DerivationBound, returning a cause naming which deadline fired when one did.
-func DeriveQueries(ctx context.Context, model ModelPort, input string) ([]string, error) {
-	return deriveQueries(ctx, model, input, DerivationBound)
+// DeriveQueries asks model for queries and a retrieval window derived from input and now under DerivationBound, returning a cause naming which deadline fired when one did.
+func DeriveQueries(ctx context.Context, model ModelPort, input string, now time.Time) ([]string, UpdateWindow, error) {
+	return deriveQueries(ctx, model, input, now, DerivationBound)
 }
 
-func deriveQueries(ctx context.Context, model ModelPort, input string, bound time.Duration) ([]string, error) {
+func deriveQueries(ctx context.Context, model ModelPort, input string, now time.Time, bound time.Duration) ([]string, UpdateWindow, error) {
 	bounded, cancel := context.WithTimeoutCause(ctx, bound, errDerivationBound)
 	defer cancel()
 
 	started := time.Now()
-	text, err := model.Derive(bounded, DerivationPrompt(input), MaxOutputTokens)
+	text, err := model.Derive(bounded, DerivationPrompt(input, now), MaxOutputTokens)
 	elapsed := time.Since(started).Round(time.Millisecond)
 	if err != nil {
-		return nil, derivationFailure(bounded, bound, elapsed, err)
+		return nil, UpdateWindow{}, derivationFailure(bounded, bound, elapsed, err)
 	}
 
-	derived := ParseDerivation(text, input)
+	derived, window := ParseDerivation(text, input, now.Location())
 	if len(derived) == 0 {
-		return nil, fmt.Errorf("%w after %s", errDerivationUnusable, elapsed)
+		return nil, UpdateWindow{}, fmt.Errorf("%w after %s", errDerivationUnusable, elapsed)
 	}
 
-	return derived, nil
+	return derived, window, nil
 }
 
 func derivationFailure(ctx context.Context, bound, elapsed time.Duration, err error) error {

@@ -117,7 +117,7 @@ type wireError struct {
 func buildMessages(in loop.JudgeInput) []wireMessage {
 	messages := []wireMessage{
 		{Role: "system", Content: in.System},
-		{Role: "user", Content: loop.RenderUserContent(in.Block, in.Input, in.Now)},
+		{Role: "user", Content: loop.RenderUserContent(in.Block, in.Input, in.Now, in.Window)},
 	}
 
 	for i, r := range in.PriorTools {

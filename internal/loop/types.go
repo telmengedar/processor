@@ -3,6 +3,17 @@ package loop
 
 import "time"
 
+// UpdateWindow is a closed instant range over the graph's last-update field, resolved in the run's own zone; both bounds zero means unbounded.
+type UpdateWindow struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}
+
+// IsZero reports whether the window is unbounded.
+func (w UpdateWindow) IsZero() bool {
+	return w.From.IsZero() && w.To.IsZero()
+}
+
 // Anchor is the subject node a run is about, fetched with its full body.
 type Anchor struct {
 	ID      int64
@@ -175,16 +186,18 @@ type Record struct {
 	Input   string `json:"input"`
 	Subject int64  `json:"subject"`
 
-	// Now is the instant the assembled prompt states, in UTC; absent when the prompt states none.
+	// Now is the instant the assembled prompt states, in the zone it was read; absent when the prompt states none.
 	Now time.Time `json:"now,omitzero"`
 
 	Query   string   `json:"query"`
 	Queries []string `json:"queries"`
 	// DerivationError is why the query set is the raw input alone, empty when queries were derived.
-	DerivationError string        `json:"derivationError,omitempty"`
-	Anchor          AnchorSummary `json:"anchor"`
-	Candidates      []Disposition `json:"candidates"`
-	Block           string        `json:"block"`
+	DerivationError string `json:"derivationError,omitempty"`
+	// Window is the update-time bound retrieval was held to, absent when the run's input expressed no time constraint.
+	Window     UpdateWindow  `json:"window,omitzero"`
+	Anchor     AnchorSummary `json:"anchor"`
+	Candidates []Disposition `json:"candidates"`
+	Block      string        `json:"block"`
 
 	Answer string `json:"answer"`
 	Model  string `json:"model"`
@@ -225,6 +238,9 @@ type JudgeInput struct {
 
 	// Now is the instant the prompt states, zero when the caller supplies none.
 	Now time.Time
+
+	// Window is the update-time bound the run's supplementary recalls are held to, zero when unbounded.
+	Window UpdateWindow
 }
 
 // JudgeResult is one judgement step's outcome.

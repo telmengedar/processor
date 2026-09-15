@@ -159,14 +159,18 @@ func (c *Client) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) 
 	return loop.Anchor{}, false, nil
 }
 
-// Recall returns up to limit candidates in the graph's own rank order, never re-sorted; an empty scope ranks the whole graph.
-func (c *Client) Recall(ctx context.Context, query string, limit int, scope []int64) ([]loop.Candidate, error) {
+// Recall returns up to limit candidates in the graph's own rank order, never re-sorted; an empty scope ranks the whole graph. A non-zero window sets updatedFrom and updatedTo; a zero window sets neither, leaving the request byte-identical to one carrying no window at all.
+func (c *Client) Recall(ctx context.Context, query string, limit int, scope []int64, window loop.UpdateWindow) ([]loop.Candidate, error) {
 	q := url.Values{}
 	q.Set("query", query)
 	q.Set("count", strconv.Itoa(limit))
 	q.Set("fields", candidateFields)
 	for _, id := range scope {
 		q.Add("linkedto", strconv.FormatInt(id, 10))
+	}
+	if !window.IsZero() {
+		q.Set("updatedFrom", window.From.Format(time.RFC3339))
+		q.Set("updatedTo", window.To.Format(time.RFC3339))
 	}
 
 	var resp listingResponse
