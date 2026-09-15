@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/telmengedar/processor/internal/loop"
 )
 
 func TestNodeConstructsTheListingQueryWithIDAndFields(t *testing.T) {
@@ -149,7 +151,7 @@ func TestRecallConstructsTheQueryWithTextAndCount(t *testing.T) {
 	// fixture that already satisfies those normalizations can't fail when
 	// the adapter silently applies one.
 	const wantQueryText = "  Why DOES   the Assembler ignore SCOPE?  "
-	if _, err := c.Recall(context.Background(), wantQueryText, 20, nil); err != nil {
+	if _, err := c.Recall(context.Background(), wantQueryText, 20, nil, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
@@ -175,6 +177,64 @@ func TestRecallConstructsTheQueryWithTextAndCount(t *testing.T) {
 		if _, ok := q[k]; !ok {
 			t.Fatalf("query is missing key %q, got keys %v", k, keysOf(q))
 		}
+	}
+}
+
+func TestAZeroWindowSendsTheSameQueryStringAsBeforeTheWindowExisted(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	if _, err := c.Recall(context.Background(), "q", 20, nil, loop.UpdateWindow{}); err != nil {
+		t.Fatalf("Recall: %v", err)
+	}
+
+	want := url.Values{"query": {"q"}, "count": {"20"}, "fields": {candidateFields}}.Encode()
+	if gotQuery != want {
+		t.Fatalf("a zero window sent %q, want the encoded query string byte-identical to %q: a zero window must not acquire updatedFrom, updatedTo, an empty string, or any sentinel value", gotQuery, want)
+	}
+}
+
+func TestANonZeroWindowSendsBothUpdatedFromAndUpdatedTo(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
+	}))
+	defer srv.Close()
+
+	window := loop.UpdateWindow{
+		From: time.Date(2026, 9, 12, 0, 0, 0, 0, time.FixedZone("test+02", 2*60*60)),
+		To:   time.Date(2026, 9, 13, 0, 0, 0, 0, time.FixedZone("test+02", 2*60*60)),
+	}
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	if _, err := c.Recall(context.Background(), "q", 20, nil, window); err != nil {
+		t.Fatalf("Recall: %v", err)
+	}
+
+	q, err := url.ParseQuery(gotQuery)
+	if err != nil {
+		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+	}
+
+	wantFrom := window.From.Format(time.RFC3339)
+	wantTo := window.To.Format(time.RFC3339)
+	if q.Get("updatedFrom") != wantFrom {
+		t.Fatalf("updatedFrom = %q, want %q", q.Get("updatedFrom"), wantFrom)
+	}
+	if q.Get("updatedTo") != wantTo {
+		t.Fatalf("updatedTo = %q, want %q", q.Get("updatedTo"), wantTo)
 	}
 }
 
@@ -209,7 +269,7 @@ func TestRecallReturnsEveryCandidateTheServerSentUnfiltered(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), "q", 20, nil)
+	got, err := c.Recall(context.Background(), "q", 20, nil, loop.UpdateWindow{})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -242,7 +302,7 @@ func TestRecallMarksOnlyTheRunRecordsThisClientWrote(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), "q", 20, nil)
+	got, err := c.Recall(context.Background(), "q", 20, nil, loop.UpdateWindow{})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -278,7 +338,7 @@ func TestRecallPreservesReturnedOrderWithoutResorting(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), "q", 20, nil)
+	got, err := c.Recall(context.Background(), "q", 20, nil, loop.UpdateWindow{})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -308,7 +368,7 @@ func TestRecallDecodesSimilarityAndContent(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), "q", 20, nil)
+	got, err := c.Recall(context.Background(), "q", 20, nil, loop.UpdateWindow{})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -336,7 +396,7 @@ func TestRecallRequestsSubstanceInTheFieldsProjection(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	if _, err := c.Recall(context.Background(), "q", 20, nil); err != nil {
+	if _, err := c.Recall(context.Background(), "q", 20, nil, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
@@ -366,7 +426,7 @@ func TestRecallDecodesSubstanceWhenPresentAndLeavesItEmptyWhenAbsent(t *testing.
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), "q", 20, nil)
+	got, err := c.Recall(context.Background(), "q", 20, nil, loop.UpdateWindow{})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -391,7 +451,7 @@ func TestRecallOnNon200ReturnsAnError(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	if _, err := c.Recall(context.Background(), "q", 20, nil); err == nil {
+	if _, err := c.Recall(context.Background(), "q", 20, nil, loop.UpdateWindow{}); err == nil {
 		t.Fatal("Recall returned nil error for a 500 response, want an error")
 	}
 }
@@ -514,7 +574,7 @@ func TestRecallSendsOneLinkedToParameterPerScopeIDBecauseAnUnknownScopeKeyIsSile
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	if _, err := c.Recall(context.Background(), "q", 20, []int64{7, 11, 13}); err != nil {
+	if _, err := c.Recall(context.Background(), "q", 20, []int64{7, 11, 13}, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
@@ -562,7 +622,7 @@ func TestRecallSendsNoScopeKeyAtAllForAnEmptyScopeSoTheRankingStaysWholeGraph(t 
 			defer srv.Close()
 
 			c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-			if _, err := c.Recall(context.Background(), "q", 20, tc.scope); err != nil {
+			if _, err := c.Recall(context.Background(), "q", 20, tc.scope, loop.UpdateWindow{}); err != nil {
 				t.Fatalf("Recall: %v", err)
 			}
 

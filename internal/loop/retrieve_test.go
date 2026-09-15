@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 )
 
 type linkedGraph struct {
@@ -19,7 +20,7 @@ func (g *linkedGraph) Neighbours(_ context.Context, id int64) ([]int64, error) {
 	return slices.Sorted(slices.Values(g.edges[id])), nil
 }
 
-func (g *linkedGraph) Recall(_ context.Context, _ string, limit int, scope []int64) ([]Candidate, error) {
+func (g *linkedGraph) Recall(_ context.Context, _ string, limit int, scope []int64, _ UpdateWindow) ([]Candidate, error) {
 	var reachable []int64
 	for _, id := range scope {
 		reachable = append(reachable, g.edges[id]...)
@@ -101,7 +102,7 @@ func TestARecallScopedToTheSubjectReachesANodeTwoHopsOutAndNotOnlyDirectNeighbou
 	if err != nil {
 		t.Fatalf("RecallScope: %v", err)
 	}
-	got, err := graph.Recall(context.Background(), "q", CandidateLimit, scope)
+	got, err := graph.Recall(context.Background(), "q", CandidateLimit, scope, UpdateWindow{})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestARecallScopedToTheSubjectStillReachesTheSubjectsOwnDirectNeighbours(t *
 	if err != nil {
 		t.Fatalf("RecallScope: %v", err)
 	}
-	got, err := graph.Recall(context.Background(), "q", CandidateLimit, scope)
+	got, err := graph.Recall(context.Background(), "q", CandidateLimit, scope, UpdateWindow{})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -139,7 +140,7 @@ func TestARecallScopedToTheSubjectLeavesOutANodeThreeHopsAway(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RecallScope: %v", err)
 	}
-	got, err := graph.Recall(context.Background(), "q", CandidateLimit, scope)
+	got, err := graph.Recall(context.Background(), "q", CandidateLimit, scope, UpdateWindow{})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -181,8 +182,8 @@ func (g *fusionGraph) Neighbours(context.Context, int64) ([]int64, error) {
 	return g.neighbours, nil
 }
 
-func (g *fusionGraph) Recall(_ context.Context, query string, limit int, scope []int64) ([]Candidate, error) {
-	g.calls = append(g.calls, recallCall{Query: query, Limit: limit, Scope: scope})
+func (g *fusionGraph) Recall(_ context.Context, query string, limit int, scope []int64, window UpdateWindow) ([]Candidate, error) {
+	g.calls = append(g.calls, recallCall{Query: query, Limit: limit, Scope: scope, Window: window})
 	if len(scope) > 0 {
 		return g.scoped, nil
 	}
@@ -204,7 +205,7 @@ func ranked(ids ...int64) []Candidate {
 func mustRetrieveCandidates(t *testing.T, graph GraphPort, queries []string, limit, reserve int) []Candidate {
 	t.Helper()
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, limit, reserve)
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, limit, reserve, UpdateWindow{})
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -346,7 +347,7 @@ func TestRetrieveReportsTheNeighbourFailureRatherThanRankingTheWholeGraphTwice(t
 
 	graph := &failingNeighbourGraph{}
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"the input"}, 6, 2)
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"the input"}, 6, 2, UpdateWindow{})
 	if err == nil {
 		t.Fatalf("Retrieve returned %v and a nil error, want the failure: a scope the links route could not supply leaves the reserved slots holding a second copy of the whole-graph ranking, which reads on every rate exactly like a neighbourhood that had nothing to add", candidateIDs(got))
 	}
@@ -357,7 +358,7 @@ func TestRetrieveReadsTheGraphNotAtAllWhenThereIsNoQueryToIssue(t *testing.T) {
 
 	graph := &fusionGraph{lists: map[string][]Candidate{"": ranked(810)}, scoped: ranked(990)}
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, nil, 6, 2)
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, nil, 6, 2, UpdateWindow{})
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -754,5 +755,34 @@ func TestACandidateSetHoldingNoRowThisSystemWroteIsReturnedExactlyAsTheGraphRank
 	want := []int64{810, 220, 640, 130, 990, 880}
 	if !slices.Equal(got, want) {
 		t.Fatalf("retrieval returned %v, want %v: nothing in this fixture is a row this system wrote, so an exclusion that reaches any of them is refusing rows on something other than the rule admission applies, and the aperture it hands back is narrower than the one that was measured", got, want)
+	}
+}
+
+func TestRetrieveBoundsEveryQueryLegAndLeavesTheScopedLegUnbounded(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists:      map[string][]Candidate{"the input": ranked(810), "derived one": ranked(220)},
+		neighbours: []int64{7},
+	}
+	window := UpdateWindow{
+		From: time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC),
+		To:   time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC),
+	}
+
+	if _, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"the input", "derived one"}, 6, 2, window); err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+
+	if len(graph.calls) != 3 {
+		t.Fatalf("Recall was called %d times, want 3: two query legs and one scoped leg", len(graph.calls))
+	}
+	for _, call := range graph.calls {
+		if len(call.Scope) == 0 && call.Window != window {
+			t.Fatalf("query leg %q carried window %+v, want the run's own %+v: a run's time constraint must reach every topical recall", call.Query, call.Window, window)
+		}
+		if len(call.Scope) > 0 && !call.Window.IsZero() {
+			t.Fatalf("the scoped leg carried window %+v, want it unbounded: bounding the anchor's own neighbourhood answers a question the reserve was never asked", call.Window)
+		}
 	}
 }

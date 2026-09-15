@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -53,11 +54,13 @@ func (d *deriveFake) Derive(ctx context.Context, prompt string, maxOutputTokens 
 	return d.text, d.err
 }
 
+var derivationPromptTestNow = time.Date(2026, 9, 12, 8, 30, 0, 0, time.UTC)
+
 func TestTheDerivationPromptCarriesTheInstructionsBothExemplarsAndEndsWithTheInputItself(t *testing.T) {
 	t.Parallel()
 
 	const input = "what did the split change"
-	prompt := DerivationPrompt(input)
+	prompt := DerivationPrompt(input, derivationPromptTestNow)
 
 	for _, want := range []string{
 		"You generate alternate search queries for a semantic retrieval system.",
@@ -70,7 +73,10 @@ func TestTheDerivationPromptCarriesTheInstructionsBothExemplarsAndEndsWithTheInp
 
 	for _, exemplar := range derivationExemplars {
 		if !strings.Contains(prompt, exemplar.input) {
-			t.Fatalf("the derivation prompt drops exemplar input %q; the exemplars are how the five-line shape is taught", exemplar.input)
+			t.Fatalf("the derivation prompt drops exemplar input %q; the exemplars are how the six-line shape is taught", exemplar.input)
+		}
+		if !strings.Contains(prompt, "DATES: "+exemplar.dates) {
+			t.Fatalf("the derivation prompt drops exemplar DATES line %q", "DATES: "+exemplar.dates)
 		}
 		for _, query := range exemplar.queries {
 			if !strings.Contains(prompt, query) {
@@ -87,13 +93,13 @@ func TestTheDerivationPromptCarriesTheInstructionsBothExemplarsAndEndsWithTheInp
 func TestTheDerivationPromptAsksForExactlyAsManyLinesAsTheCapWillKeep(t *testing.T) {
 	t.Parallel()
 
-	prompt := DerivationPrompt("what did the split change")
+	prompt := DerivationPrompt("what did the split change", derivationPromptTestNow)
 
 	for _, want := range []string{
 		"produce 5 additional queries",
-		"Output exactly 5 lines:",
-		"The first 4 lines are distinct",
-		"Output ONLY those 5 lines.",
+		"Output exactly 6 lines total:",
+		"The next 4 lines are distinct",
+		"Output ONLY those 6 lines:",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("the derivation prompt does not say %q; asking for a count the parse will not keep spends the call on queries that are discarded", want)
@@ -101,10 +107,20 @@ func TestTheDerivationPromptAsksForExactlyAsManyLinesAsTheCapWillKeep(t *testing
 	}
 }
 
+func TestTheDerivationPromptStatesTheInstantInTheSameSpanTheJudgementPromptUses(t *testing.T) {
+	t.Parallel()
+
+	prompt := DerivationPrompt("what did the split change", derivationPromptTestNow)
+
+	if !strings.Contains(prompt, "===== NOW =====\n"+derivationPromptTestNow.Format(time.RFC3339)) {
+		t.Fatalf("the derivation prompt does not state the instant in the ===== NOW ===== span, so the model resolving \"today\" has nothing to resolve it against; prompt=%q", prompt)
+	}
+}
+
 func TestTheDerivationPromptNamesNoProtocolTokenTheAdapterOwns(t *testing.T) {
 	t.Parallel()
 
-	prompt := strings.ToLower(DerivationPrompt("what did the split change"))
+	prompt := strings.ToLower(DerivationPrompt("what did the split change", derivationPromptTestNow))
 
 	for _, forbidden := range []string{"\"role\"", "assistant:", "json schema", "tool_call", "max_tokens"} {
 		if strings.Contains(prompt, forbidden) {
@@ -133,7 +149,10 @@ func TestParseDerivationReturnsTheSidecarsOwnBlindGeneratedSetFromTheTextThatWou
 		}
 		blind++
 
-		got := ParseDerivation(strings.Join(row.Queries, "\n"), "an input no pinned query repeats")
+		got, window := ParseDerivation(strings.Join(row.Queries, "\n"), "an input no pinned query repeats", time.UTC)
+		if !window.IsZero() {
+			t.Fatalf("row %s: parsing text with no DATES line yielded window %+v, want zero", row.Row, window)
+		}
 		if !slices.Equal(got, row.Queries) {
 			t.Fatalf("row %s: the product's parse yields %q from the text the generator wrote as %q; the sweep and the turn would then be measuring two different query sets", row.Row, got, row.Queries)
 		}
@@ -183,7 +202,8 @@ func TestParseDerivationStripsListDecorationSurroundingQuotesAndReasoningArtifac
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			if got := ParseDerivation(tc.text, "what did the split change"); !slices.Equal(got, tc.want) {
+			got, _ := ParseDerivation(tc.text, "what did the split change", time.UTC)
+			if !slices.Equal(got, tc.want) {
 				t.Fatalf("ParseDerivation = %q, want %q: a query carrying its own decoration is embedded as that decoration and ranks against it", got, tc.want)
 			}
 		})
@@ -193,7 +213,7 @@ func TestParseDerivationStripsListDecorationSurroundingQuotesAndReasoningArtifac
 func TestParseDerivationOfATextWhoseEveryLineIsBlankReturnsAnEmptySliceAndNotNil(t *testing.T) {
 	t.Parallel()
 
-	got := ParseDerivation("\n   \n\t\n", "what did the split change")
+	got, _ := ParseDerivation("\n   \n\t\n", "what did the split change", time.UTC)
 
 	if got == nil {
 		t.Fatalf("ParseDerivation returned nil for an all-blank text; a caller distinguishing nil from empty would read two outcomes where the design has one")
@@ -207,7 +227,7 @@ func TestParseDerivationDropsALineThatOnlyEchoesTheInputInAnotherCase(t *testing
 	t.Parallel()
 
 	const input = "What did the split change?"
-	got := ParseDerivation("WHAT DID THE SPLIT CHANGE?\na genuinely different angle?", input)
+	got, _ := ParseDerivation("WHAT DID THE SPLIT CHANGE?\na genuinely different angle?", input, time.UTC)
 
 	want := []string{"a genuinely different angle?"}
 	if !slices.Equal(got, want) {
@@ -218,7 +238,7 @@ func TestParseDerivationDropsALineThatOnlyEchoesTheInputInAnotherCase(t *testing
 func TestParseDerivationDropsARepeatOfAQueryItAlreadyKept(t *testing.T) {
 	t.Parallel()
 
-	got := ParseDerivation("first question?\nFirst Question?\nsecond question?", "what did the split change")
+	got, _ := ParseDerivation("first question?\nFirst Question?\nsecond question?", "what did the split change", time.UTC)
 
 	want := []string{"first question?", "second question?"}
 	if !slices.Equal(got, want) {
@@ -229,7 +249,7 @@ func TestParseDerivationDropsARepeatOfAQueryItAlreadyKept(t *testing.T) {
 func TestParseDerivationKeepsNoMoreQueriesThanTheCapAdmits(t *testing.T) {
 	t.Parallel()
 
-	got := ParseDerivation("q1?\nq2?\nq3?\nq4?\nq5?\nq6?\nq7?", "what did the split change")
+	got, _ := ParseDerivation("q1?\nq2?\nq3?\nq4?\nq5?\nq6?\nq7?", "what did the split change", time.UTC)
 
 	want := []string{"q1?", "q2?", "q3?", "q4?", "q5?"}
 	if !slices.Equal(got, want) {
@@ -280,7 +300,7 @@ func TestDeriveQueriesSendsTheRenderedPromptAndReturnsWhatTheTextParsesTo(t *tes
 	const input = "what did the split change"
 	model := &deriveFake{text: "first derived?\nsecond derived?"}
 
-	got, err := DeriveQueries(context.Background(), model, input)
+	got, window, err := DeriveQueries(context.Background(), model, input, derivationPromptTestNow)
 	if err != nil {
 		t.Fatalf("DeriveQueries returned %v, want the parsed queries", err)
 	}
@@ -288,10 +308,13 @@ func TestDeriveQueriesSendsTheRenderedPromptAndReturnsWhatTheTextParsesTo(t *tes
 	if want := []string{"first derived?", "second derived?"}; !slices.Equal(got, want) {
 		t.Fatalf("DeriveQueries = %q, want %q", got, want)
 	}
+	if !window.IsZero() {
+		t.Fatalf("DeriveQueries returned window %+v for text carrying no DATES line, want zero", window)
+	}
 	if len(model.prompts) != 1 {
 		t.Fatalf("the derivation made %d model calls, want exactly 1: a second is a retry, which doubles the latency of the step whose cheapness is its justification", len(model.prompts))
 	}
-	if model.prompts[0] != DerivationPrompt(input) {
+	if model.prompts[0] != DerivationPrompt(input, derivationPromptTestNow) {
 		t.Fatalf("the derivation sent a prompt other than the rendered one, so what the model was asked is not what this package's tests pin")
 	}
 	if model.tokens[0] != 4096 {
@@ -304,7 +327,7 @@ func TestDeriveQueriesBoundsTheCallAtThirtySecondsAndNotAtTheAdaptersOwnTimeout(
 
 	model := &deriveFake{text: "first derived?"}
 
-	if _, err := DeriveQueries(context.Background(), model, "what did the split change"); err != nil {
+	if _, _, err := DeriveQueries(context.Background(), model, "what did the split change", derivationPromptTestNow); err != nil {
 		t.Fatalf("DeriveQueries returned %v", err)
 	}
 
@@ -321,7 +344,7 @@ func TestDeriveQueriesNamesItsOwnBoundAndTheElapsedWhenTheDerivationOutlastsIt(t
 
 	model := &deriveFake{hold: make(chan struct{})}
 
-	_, err := deriveQueries(context.Background(), model, "what did the split change", testBound)
+	_, _, err := deriveQueries(context.Background(), model, "what did the split change", derivationPromptTestNow, testBound)
 	if err == nil {
 		t.Fatalf("a derivation that outlasted its bound returned no error")
 	}
@@ -339,7 +362,7 @@ func TestDeriveQueriesNamesTheEnclosingRunBoundWhenTheParentDeadlineIsWhatExpire
 	ctx, cancel := context.WithTimeout(context.Background(), testBound)
 	defer cancel()
 
-	_, err := deriveQueries(ctx, model, "what did the split change", time.Hour)
+	_, _, err := deriveQueries(ctx, model, "what did the split change", derivationPromptTestNow, time.Hour)
 	if err == nil {
 		t.Fatalf("a derivation whose enclosing run expired returned no error")
 	}
@@ -354,7 +377,7 @@ func TestDeriveQueriesCarriesTheAdaptersOwnSentenceWhenTheCallFailsWithNoDeadlin
 
 	model := &deriveFake{err: errors.New("openaicompat: unexpected status 503: model is loading")}
 
-	_, err := deriveQueries(context.Background(), model, "what did the split change", time.Hour)
+	_, _, err := deriveQueries(context.Background(), model, "what did the split change", derivationPromptTestNow, time.Hour)
 	if err == nil {
 		t.Fatalf("a failed derivation call returned no error")
 	}
@@ -367,11 +390,80 @@ func TestDeriveQueriesCarriesTheAdaptersOwnSentenceWhenTheCallFailsWithNoDeadlin
 	}
 }
 
+func TestParseDerivationYieldsNoWindowForEveryMalformedDatesValue(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		text string
+	}{
+		{name: "none", text: "DATES: none\nfirst question?"},
+		{name: "absent — no line matches the prefix at all", text: "first question?\nsecond question?"},
+		{name: "garbage value", text: "DATES: sometime soon\nfirst question?"},
+		{name: "inverted range", text: "DATES: 2026-09-15..2026-09-10\nfirst question?"},
+		{name: "invalid calendar date", text: "DATES: 2026-13-40..2026-13-40\nfirst question?"},
+		{name: "one bound only", text: "DATES: 2026-09-12\nfirst question?"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, window := ParseDerivation(tc.text, "what did the split change", time.UTC)
+			if !window.IsZero() {
+				t.Fatalf("ParseDerivation(%q) returned window %+v, want zero: a wrong window must never be constructed from an unparseable line", tc.text, window)
+			}
+		})
+	}
+}
+
+func TestParseDerivationResolvesADayRangeInTheLocationItIsGiven(t *testing.T) {
+	t.Parallel()
+
+	const text = "DATES: 2026-09-12..2026-09-12\nfirst question?"
+
+	zoneA := time.FixedZone("test+02", 2*60*60)
+	zoneB := time.FixedZone("test-05", -5*60*60)
+
+	_, windowA := ParseDerivation(text, "what did the split change", zoneA)
+	_, windowB := ParseDerivation(text, "what did the split change", zoneB)
+
+	if windowA.From.Equal(windowB.From) {
+		t.Fatalf("the same DATES line resolved to the same instant in two different zones (%s): a parser reading time.Local or forcing UTC would do exactly this", windowA.From.Format(time.RFC3339))
+	}
+	if !windowA.From.Equal(time.Date(2026, 9, 12, 0, 0, 0, 0, zoneA)) {
+		t.Fatalf("windowA.From = %s, want midnight of the 12th in zoneA", windowA.From.Format(time.RFC3339))
+	}
+	if !windowB.From.Equal(time.Date(2026, 9, 12, 0, 0, 0, 0, zoneB)) {
+		t.Fatalf("windowB.From = %s, want midnight of the 12th in zoneB", windowB.From.Format(time.RFC3339))
+	}
+}
+
+func TestNoDerivedQueryContainsADate(t *testing.T) {
+	t.Parallel()
+
+	datePattern := regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
+
+	texts := []string{
+		"DATES: 2026-09-12..2026-09-12\nhow does the split change work?\nsecond question?\ndense keyword line",
+		"DATES: none\nhow does the split change work?\nsecond question?\ndense keyword line",
+	}
+
+	for _, text := range texts {
+		got, _ := ParseDerivation(text, "what did the split change", time.UTC)
+		for _, query := range got {
+			if datePattern.MatchString(query) {
+				t.Fatalf("ParseDerivation(%q) returned query %q carrying a date: the DATES line must never leak into the query set the parser hands back", text, query)
+			}
+		}
+	}
+}
+
 func TestDeriveQueriesRefusesATextThatParsesToNoQueryAtAll(t *testing.T) {
 	t.Parallel()
 
 	for _, text := range []string{"", "\n  \n", "what did the split change"} {
-		got, err := deriveQueries(context.Background(), &deriveFake{text: text}, "what did the split change", time.Hour)
+		got, _, err := deriveQueries(context.Background(), &deriveFake{text: text}, "what did the split change", derivationPromptTestNow, time.Hour)
 		if err == nil {
 			t.Fatalf("a derivation yielding %q returned %q rather than a cause; a model that refuses returns something rather than erroring", text, got)
 		}

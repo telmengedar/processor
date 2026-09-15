@@ -53,7 +53,7 @@ func (s stubGraph) Node(context.Context, int64) (loop.Anchor, bool, error) {
 	return s.anchor, s.found, s.nodeErr
 }
 
-func (s stubGraph) Recall(context.Context, string, int, []int64) ([]loop.Candidate, error) {
+func (s stubGraph) Recall(context.Context, string, int, []int64, loop.UpdateWindow) ([]loop.Candidate, error) {
 	if s.recallIdx != nil {
 		i := *s.recallIdx
 		*s.recallIdx++
@@ -180,7 +180,7 @@ func (g *deadlineGraph) Node(ctx context.Context, id int64) (loop.Anchor, bool, 
 	return loop.Anchor{ID: id, Type: "documentation", Name: "Subject", Content: "anchor body"}, true, nil
 }
 
-func (g *deadlineGraph) Recall(context.Context, string, int, []int64) ([]loop.Candidate, error) {
+func (g *deadlineGraph) Recall(context.Context, string, int, []int64, loop.UpdateWindow) ([]loop.Candidate, error) {
 	return nil, nil
 }
 
@@ -203,7 +203,7 @@ func (g *blockingGraph) Node(ctx context.Context, _ int64) (loop.Anchor, bool, e
 	}
 }
 
-func (g *blockingGraph) Recall(context.Context, string, int, []int64) ([]loop.Candidate, error) {
+func (g *blockingGraph) Recall(context.Context, string, int, []int64, loop.UpdateWindow) ([]loop.Candidate, error) {
 	return nil, nil
 }
 

@@ -11,8 +11,8 @@ const (
 	recallOverfetchFactor = 5
 )
 
-// Retrieve asks the graph for more rows than it returns, fusing them into at most limit candidates, never the anchor and never a row this system wrote.
-func Retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []string, limit, reserve int) ([]Candidate, error) {
+// Retrieve asks the graph for more rows than it returns, fusing them into at most limit candidates, never the anchor and never a row this system wrote; window bounds every per-query recall and never the scoped one.
+func Retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []string, limit, reserve int, window UpdateWindow) ([]Candidate, error) {
 	if len(queries) == 0 {
 		return nil, nil
 	}
@@ -21,7 +21,7 @@ func Retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []str
 
 	lists := make([][]Candidate, 0, len(queries))
 	for _, query := range queries {
-		list, err := graph.Recall(ctx, query, fetch, nil)
+		list, err := graph.Recall(ctx, query, fetch, nil, window)
 		if err != nil {
 			return nil, err
 		}
@@ -33,7 +33,7 @@ func Retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []str
 		return nil, err
 	}
 
-	scoped, err := graph.Recall(ctx, queries[0], fetch, scope)
+	scoped, err := graph.Recall(ctx, queries[0], fetch, scope, UpdateWindow{})
 	if err != nil {
 		return nil, err
 	}

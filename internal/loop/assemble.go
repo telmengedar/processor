@@ -66,8 +66,8 @@ func admit(candidates []Candidate, budget int) (admitted []Candidate, dispositio
 	return admitted, dispositions
 }
 
-// RenderUserContent composes the user message: the request, the instant it states, the assembled block, then the same request again.
-func RenderUserContent(block, input string, now time.Time) string {
+// RenderUserContent composes the user message: the request, the instant it states and the window it was bounded to when one applied, the assembled block, then the same request again.
+func RenderUserContent(block, input string, now time.Time, window UpdateWindow) string {
 	request := "===== INPUT =====\n" + input
 
 	var b strings.Builder
@@ -75,7 +75,11 @@ func RenderUserContent(block, input string, now time.Time) string {
 	b.WriteString(request)
 	if !now.IsZero() {
 		b.WriteString("\n\n===== NOW =====\n")
-		b.WriteString(now.UTC().Format(time.RFC3339))
+		b.WriteString(now.Format(time.RFC3339))
+		if !window.IsZero() {
+			b.WriteString("\n")
+			b.WriteString(windowLine(window))
+		}
 	}
 	b.WriteString("\n\n\n")
 	b.WriteString(block)
@@ -83,6 +87,13 @@ func RenderUserContent(block, input string, now time.Time) string {
 	b.WriteString(request)
 
 	return b.String()
+}
+
+func windowLine(w UpdateWindow) string {
+	const dateLayout = "2006-01-02"
+	from := w.From.Format(dateLayout)
+	to := w.To.AddDate(0, 0, -1).Format(dateLayout)
+	return fmt.Sprintf("retrieval is limited to nodes updated %s … %s", from, to)
 }
 
 // RenderToolResult renders one completed tool round as the text the model is shown for it.

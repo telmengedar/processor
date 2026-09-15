@@ -13,12 +13,12 @@ const (
 
 var userContentTestInstant = time.Date(2026, 3, 4, 5, 6, 7, 0, time.FixedZone("test+02", 2*60*60))
 
-const userContentTestInstantUTC = "2026-03-04T03:06:07Z"
+const userContentTestInstantUTC = "2026-03-04T05:06:07+02:00"
 
 func TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy(t *testing.T) {
 	t.Parallel()
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant)
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{})
 
 	want := "===== INPUT =====\n" + userContentTestInput +
 		"\n\n===== NOW =====\n" + userContentTestInstantUTC + "\n\n\n" +
@@ -30,24 +30,24 @@ func TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy(t *testing.T) {
 	}
 }
 
-func TestRenderUserContentStatesTheInstantAsRFC3339InUTCWhateverZoneItWasGivenIn(t *testing.T) {
+func TestTheAssembledPromptStatesTheInstantInTheZoneItWasRead(t *testing.T) {
 	t.Parallel()
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant)
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{})
 
 	if !strings.Contains(got, userContentTestInstantUTC) {
 		t.Fatalf("user content does not state %q, so a task saying \"today\" has nothing to resolve it against; content=%q",
 			userContentTestInstantUTC, got)
 	}
-	if strings.Contains(got, "05:06:07") {
-		t.Fatalf("user content states the instant in the zone it was handed rather than in UTC; content=%q", got)
+	if strings.Contains(got, "03:06:07") {
+		t.Fatalf("user content normalises the instant to UTC rather than stating the zone it was read in; content=%q", got)
 	}
 }
 
 func TestRenderUserContentGivenNoInstantIsByteIdenticalToTheDatelessLayout(t *testing.T) {
 	t.Parallel()
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, time.Time{})
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, time.Time{}, UpdateWindow{})
 
 	want := "===== INPUT =====\n" + userContentTestInput + "\n\n\n" +
 		userContentTestBlock +
@@ -55,6 +55,42 @@ func TestRenderUserContentGivenNoInstantIsByteIdenticalToTheDatelessLayout(t *te
 
 	if got != want {
 		t.Fatalf("with no instant the user content =\n%q\nwant the dateless layout\n%q", got, want)
+	}
+}
+
+func TestAZeroWindowRendersTheUserContentByteIdenticallyToTheNoWindowLayout(t *testing.T) {
+	t.Parallel()
+
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{})
+
+	want := "===== INPUT =====\n" + userContentTestInput +
+		"\n\n===== NOW =====\n" + userContentTestInstantUTC + "\n\n\n" +
+		userContentTestBlock +
+		"\n===== INPUT =====\n" + userContentTestInput
+
+	if got != want {
+		t.Fatalf("a zero window changed the layout: got=\n%q\nwant\n%q", got, want)
+	}
+}
+
+func TestANonZeroWindowAddsExactlyOneLineInsideTheExistingNowSpan(t *testing.T) {
+	t.Parallel()
+
+	window := UpdateWindow{
+		From: time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC),
+		To:   time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC),
+	}
+
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, window)
+
+	want := "===== INPUT =====\n" + userContentTestInput +
+		"\n\n===== NOW =====\n" + userContentTestInstantUTC +
+		"\nretrieval is limited to nodes updated 2026-03-04 … 2026-03-04\n\n\n" +
+		userContentTestBlock +
+		"\n===== INPUT =====\n" + userContentTestInput
+
+	if got != want {
+		t.Fatalf("user content with a window =\n%q\nwant\n%q", got, want)
 	}
 }
 
@@ -66,7 +102,7 @@ func TestRenderUserContentPlacesExactlyTwoVerbatimRequestCopiesTheFirstAtTheHead
 		input  = "Ship it.\r\n\tsecond line — 100% \"done\" <&> %s %%\n\tlast"
 	)
 
-	got := RenderUserContent(userContentTestBlock, input, userContentTestInstant)
+	got := RenderUserContent(userContentTestBlock, input, userContentTestInstant, UpdateWindow{})
 
 	sections := strings.Split(got, marker)
 	if len(sections) != 3 {

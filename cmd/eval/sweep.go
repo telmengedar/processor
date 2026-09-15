@@ -51,7 +51,7 @@ func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row, de
 
 	queries := derivations.QueriesFor(row)
 
-	candidates, err := loop.Retrieve(ctx, graph, anchor, queries, loop.CandidateLimit, loop.RecallScopeReserve)
+	candidates, err := loop.Retrieve(ctx, graph, anchor, queries, loop.CandidateLimit, loop.RecallScopeReserve, loop.UpdateWindow{})
 	if err != nil {
 		return nil, nil, true, err
 	}

@@ -57,8 +57,8 @@ type GraphPort interface {
 	// false when the id resolves to nothing.
 	Node(ctx context.Context, id int64) (anchor Anchor, found bool, err error)
 
-	// Recall returns up to limit candidates in the graph's own rank order, never re-sorted; an empty scope ranks the whole graph.
-	Recall(ctx context.Context, query string, limit int, scope []int64) ([]Candidate, error)
+	// Recall returns up to limit candidates in the graph's own rank order, never re-sorted; an empty scope ranks the whole graph. A non-zero window bounds the request to nodes last updated inside it; a zero window is unbounded.
+	Recall(ctx context.Context, query string, limit int, scope []int64, window UpdateWindow) ([]Candidate, error)
 
 	// Neighbours returns the other endpoint of every edge incident to id, ascending and deduplicated.
 	Neighbours(ctx context.Context, id int64) ([]int64, error)
@@ -136,16 +136,16 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		return t.failed(subject, started, ErrSubjectNotFound)
 	}
 
-	queries, derivationError := t.derive(ctx, input, subject)
+	now := t.now()
 
-	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, CandidateLimit, RecallScopeReserve)
+	queries, window, derivationError := t.derive(ctx, input, subject, now)
+
+	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, CandidateLimit, RecallScopeReserve, window)
 	if err != nil {
 		return t.failed(subject, started, fmt.Errorf("%w: %v", ErrGraphUnavailable, err))
 	}
 
 	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget)
-
-	now := t.now().UTC()
 
 	record := Record{
 		Input:           input,
@@ -154,6 +154,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		Query:           input,
 		Queries:         queries,
 		DerivationError: derivationError,
+		Window:          window,
 		Anchor:          summarizeAnchor(anchor),
 		Candidates:      dispositions,
 		Block:           block,
@@ -166,7 +167,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		},
 	}
 
-	judged, err := t.judge(ctx, block, input, now)
+	judged, err := t.judge(ctx, block, input, now, window)
 	if err != nil {
 		return t.failed(subject, started, err)
 	}
@@ -189,19 +190,19 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 	return record, receipt, nil
 }
 
-func (t *Turn) derive(ctx context.Context, input string, subject int64) ([]string, string) {
+func (t *Turn) derive(ctx context.Context, input string, subject int64, now time.Time) ([]string, UpdateWindow, string) {
 	started := time.Now()
-	derived, err := DeriveQueries(ctx, t.Model, input)
+	derived, window, err := DeriveQueries(ctx, t.Model, input, now)
 	elapsed := time.Since(started)
 
 	if err != nil {
 		t.log().Warn("the query set fell back to the raw input alone", "subject", subject, "elapsed", elapsed, "error", err)
-		return []string{input}, BoundCause(err.Error())
+		return []string{input}, UpdateWindow{}, BoundCause(err.Error())
 	}
 
 	queries := MergeQueries(input, derived)
 	t.log().Info("queries derived", "subject", subject, "derived", len(derived), "queries", len(queries), "elapsed", elapsed)
-	return queries, ""
+	return queries, window, ""
 }
 
 func (t *Turn) failed(subject int64, started time.Time, err error) (Record, WriteReceipt, error) {
@@ -276,7 +277,7 @@ type judgement struct {
 	provider   Provider
 }
 
-func (t *Turn) judge(ctx context.Context, block, input string, now time.Time) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, window UpdateWindow) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -289,6 +290,7 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time) (j
 			Input:      input,
 			PriorTools: exchanges,
 			Now:        now,
+			Window:     window,
 		})
 		if jerr != nil {
 			return judgement{}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
@@ -311,7 +313,7 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time) (j
 			break
 		}
 
-		exchange := t.dispatch(ctx, result, &judged.workspace)
+		exchange := t.dispatch(ctx, result, &judged.workspace, window)
 		exchange.ToolSource = result.ToolSource
 		exchanges = append(exchanges, exchange)
 	}
@@ -345,11 +347,11 @@ func cappedExchange(result JudgeResult) ToolExchange {
 	}
 }
 
-func (t *Turn) dispatch(ctx context.Context, result JudgeResult, workspace *string) ToolExchange {
+func (t *Turn) dispatch(ctx context.Context, result JudgeResult, workspace *string, window UpdateWindow) ToolExchange {
 	if result.Reason == WantsWrite {
 		return t.dispatchWrite(ctx, result, workspace)
 	}
-	return t.dispatchRecall(ctx, result)
+	return t.dispatchRecall(ctx, result, window)
 }
 
 func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace *string) ToolExchange {
@@ -396,12 +398,12 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 	return exchange
 }
 
-func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult) ToolExchange {
+func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window UpdateWindow) ToolExchange {
 	if result.ToolError != "" {
 		return ToolExchange{Tool: ToolRecall, Error: BoundCause(result.ToolError), Dispositions: []Disposition{}}
 	}
 
-	candidates, err := t.Graph.Recall(ctx, result.RecallQuery, CandidateLimit, nil)
+	candidates, err := t.Graph.Recall(ctx, result.RecallQuery, CandidateLimit, nil, window)
 	if err != nil {
 		t.log().Error("supplementary recall failed", "query", result.RecallQuery, "error", err)
 		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}

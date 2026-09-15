@@ -13,7 +13,7 @@ type probeGraph struct{ recallN int }
 func (g *probeGraph) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) {
 	return loop.Anchor{ID: id, Type: "documentation", Name: "S", Content: "anchor"}, true, nil
 }
-func (g *probeGraph) Recall(ctx context.Context, q string, limit int, scope []int64) ([]loop.Candidate, error) {
+func (g *probeGraph) Recall(ctx context.Context, q string, limit int, scope []int64, _ loop.UpdateWindow) ([]loop.Candidate, error) {
 	if len(scope) > 0 {
 		return nil, nil
 	}

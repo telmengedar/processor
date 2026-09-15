@@ -35,8 +35,9 @@ type fakeGraph struct {
 
 	recallCalls []recallCall
 
-	recallQuery string
-	recallLimit int
+	recallQuery  string
+	recallLimit  int
+	recallWindow UpdateWindow
 
 	neighbours      []int64
 	neighboursErr   error
@@ -49,9 +50,10 @@ type fakeGraph struct {
 }
 
 type recallCall struct {
-	Query string
-	Limit int
-	Scope []int64
+	Query  string
+	Limit  int
+	Scope  []int64
+	Window UpdateWindow
 }
 
 const primaryRecallCalls = 2
@@ -68,10 +70,11 @@ func (f *fakeGraph) Node(_ context.Context, _ int64) (Anchor, bool, error) {
 	return f.node, f.nodeFound, f.nodeErr
 }
 
-func (f *fakeGraph) Recall(_ context.Context, query string, limit int, scope []int64) ([]Candidate, error) {
+func (f *fakeGraph) Recall(_ context.Context, query string, limit int, scope []int64, window UpdateWindow) ([]Candidate, error) {
 	f.recallQuery = query
 	f.recallLimit = limit
-	f.recallCalls = append(f.recallCalls, recallCall{Query: query, Limit: limit, Scope: scope})
+	f.recallWindow = window
+	f.recallCalls = append(f.recallCalls, recallCall{Query: query, Limit: limit, Scope: scope, Window: window})
 
 	if len(scope) > 0 {
 		return f.scopedCandidates, f.scopedErr
@@ -1428,6 +1431,36 @@ func TestTheSupplementaryRecallSendsTheModelsOwnQueryUnscopedAsExactlyOneCall(t 
 	}
 	if len(supplementary.Scope) != 0 {
 		t.Fatalf("the supplementary recall carried scope %v, want none: the model asks for what the subject's own neighbourhood did not supply, so confining its one follow-up to that neighbourhood is the surest way to return the block it already has", supplementary.Scope)
+	}
+}
+
+func TestTheSupplementaryRecallCarriesTheRunsWindow(t *testing.T) {
+	t.Parallel()
+
+	graph := &fakeGraph{nodeFound: true, node: Anchor{ID: 7, Type: "documentation", Name: "S", Content: "anchor"}}
+	model := &fakeModel{
+		derivedText: "DATES: 2026-09-12..2026-09-12\nthe derived question?",
+		results: []JudgeResult{
+			{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the query the model composed"},
+			{Answer: "done", Reason: Answered, RawReason: "stop"},
+		},
+	}
+	turn := NewTurn(graph, model, nil, "system text", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "the input", 7)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if record.Window.IsZero() {
+		t.Fatalf("test setup error: record.Window is zero, so this run derived no window to check the supplementary recall against")
+	}
+
+	supplementary := graph.recallCalls[len(graph.recallCalls)-1]
+	if supplementary.Query != "the query the model composed" {
+		t.Fatalf("supplementary recall query = %q, want the model's own text verbatim", supplementary.Query)
+	}
+	if supplementary.Window != record.Window {
+		t.Fatalf("supplementary recall window = %+v, want the run's own %+v: the model supplies only a query string, so a window observed here can only have come from the turn", supplementary.Window, record.Window)
 	}
 }
 
