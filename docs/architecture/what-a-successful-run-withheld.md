@@ -66,10 +66,10 @@ a substance range between sets, and this rule is the same refusal applied to the
 challenged — which is where the first version of this document slipped (QA #13680 W-1).
 
 **The load-bearing fact, verified in code rather than inferred from the answer text.** `renderBlock`
-(`assemble.go:108`) writes one `ANCHOR` section and then one `CANDIDATE` section **per admitted row**
-(`assemble.go:116`). Its parameters are `(anchor Anchor, admitted []Candidate)`, and **`Candidate`
-(`types.go:14`) carries neither `Included` nor `CutReason`** — those live only on `Disposition`
-(`types.go:62-63`), which goes to the record. **The renderer is structurally incapable of disclosing a
+(`assemble.go:127`) writes one `ANCHOR` section and then one `CANDIDATE` section **per admitted row**
+(`assemble.go:135-136`). Its parameters are `(anchor Anchor, admitted []Candidate)`, and **`Candidate`
+(`types.go:27`) carries neither `Included` nor `CutReason`** — those live only on `Disposition`
+(`types.go:75-76`), which goes to the record. **The renderer is structurally incapable of disclosing a
 cut, because nothing it receives records one.**
 
 So the model was not withholding a caveat. **It was never told**, and from inside the block the six
@@ -323,9 +323,9 @@ component, no new port, no new type, no new constant, no new persisted field.
 | component | gains | still does not own |
 |---|---|---|
 | **`logFinished` (`turn.go:166`)** | one WARN: the rank-1 candidate was dropped for the byte budget. | Deciding admission; reading the block; any reason other than the byte budget. Self-produced cuts belong to #13601's WARN and are explicitly not this one's (§11). |
-| **`RenderToolResult` (`assemble.go:84`)** | the ability to distinguish *recall returned nothing* from *recall returned rows and admission cut all of them*. | Naming which rows, or their ids — the model cannot fetch by id (C3), so ids would be budget spent on something unusable. |
-| **`admit` (`assemble.go:30`)** | **nothing.** | — |
-| **`renderBlock` (`assemble.go:108`)** | **nothing.** | — |
+| **`RenderToolResult` (`assemble.go:100`)** | the ability to distinguish *recall returned nothing* from *recall returned rows and admission cut all of them*. | Naming which rows, or their ids — the model cannot fetch by id (C3), so ids would be budget spent on something unusable. |
+| **`admit` (`assemble.go:31`)** | **nothing.** | — |
+| **`renderBlock` (`assemble.go:127`)** | **nothing.** | — |
 | **`Record` / `Disposition` / `runResponse`** | **nothing.** | — |
 
 ---
@@ -494,11 +494,12 @@ inventory.**
 |---|---|---|---|---|
 | **G-1** | I-1, I-2 | `TestTurnRunWarnsWhenTheTopRankedCandidateWasDroppedForTheByteBudget` | The fixture's **rank-1** candidate is oversize while **lower-ranked** rows are admitted. An implementation that only counts cuts, or only fires on a shutout, stays silent here — which is the #13591 shape exactly. | **No runnable falsifier established.** The mutation (delete the WARN site) is not run by the author; the implementer quotes its output. |
 | **G-2** | I-1 | `TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasAdmittedEvenThoughOthersWereCut` | The fixture admits rank 1 **and cuts several lower rows on size** — the #13598 shape, 9 cuts and a correct answer. **A guard without the "even though others were cut" clause passes against the any-cut rule §12.1 rejects.** | **No runnable falsifier established.** |
-| **G-3** | I-3 | `TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasCutAsSelfProduced` | `admit` reaches its self-produced arm **before** the budget arm (`assemble.go:52` precedes `:54`), so a rank-1 record carries the self-produced reason and no size was ever charged. An implementation keyed on `!Included` rather than on the reason string (`assemble.go:12-13`) reddens. | **No runnable falsifier established.** |
+| **G-3** | I-3 | `TestTheTopCutWarnIsSilentWhenTheTopCandidateWasCutAsSelfProduced` | `admit` reaches its self-produced arm (`assemble.go:53`) **before** the budget arm (`:55`), so a rank-1 row cut as self-produced carries that reason and **was never charged for bytes**. **The fixture must therefore carry a `Size` strictly greater than the remaining budget:** with `Anchor.Size` 100 and `AssemblyByteBudget` 60,000, remaining is **59,900**, so `Size: 70_000`. Below that threshold the byte-budget condition is unreachable, the guard passes on arithmetic alone, and it separates nothing — see §14b. Built by hand against `logFinished`, because the case is unreachable through `Turn.Run` and that is the invariant working, not a defect; the name no longer claims `Turn.Run` because the assertion cannot carry it (P-20). | **Established, and its output is quoted.** QA #13947 probed `logFinished` with a self-produced rank-1 disposition at `Size: 70000` against `remaining = 59900`: `MISATTRIBUTES: self-produced row at Size=70000 (> remaining 59900) raised the BYTE-BUDGET warn`. A reason-reading implementation stays green on that fixture; one keyed on `!Included && Size > remaining` reddens. |
 | **G-4** | I-4 | `TestTurnRunRaisesBothTheShutoutAndTheDroppedTopCandidateRecordsWhenNothingWasAdmitted` | Every candidate oversize: the shutout condition and the rank-1 condition are **both** true. An implementation that treats the new record as an `else` branch of the shutout reddens. | **No runnable falsifier established.** |
 | **G-5** | I-5 | `TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped` | Compares the record and block against the pre-change golden for the same fixture. **This is the guard that makes "zero cost" checkable** rather than asserted. | **No runnable falsifier established.** |
 | **G-6** | I-6 | `TestRenderToolResultSaysResultsWereFoundAndNoneWereIncludedWhenAdmissionCutThemAll` | The exchange carries **empty `Results` and non-empty `Dispositions`** — the `turn.go:359-360` shape. A renderer reading only `Results` cannot tell this from the empty case and reddens. | **Live, and its output is quoted:** at `872156e`, `git grep -n "no additional results found" -- 'internal/**'` returns `internal/loop/assemble.go:92` and `internal/loop/toolresult_test.go:34`. G-6 requires a third site to exist and the `assemble.go:92` branch to be conditional. |
 | **G-7** | I-6 | `TestRenderToolResultRendersARecallThatFoundNothingAsOneSentenceRatherThanAnEmptyString` — **exists**, `toolresult_test.go:29` | It constructs a `ToolExchange` with **no dispositions at all**, so it distinguishes *fix the empty branch* from *replace the empty branch*. **Must stay green unmodified.** | **Live:** it is in the tree today and passes; a fix that rewrites the genuinely-empty message reddens it. |
+| **G-9** | I-3, §14a | `TestTheAssembledBlockIsAFunctionOfTheAdmittedRowsAlone` | Calls `Assemble` twice with the same anchor and budget: once with the full candidate list, once with **only the rows the first call admitted**. The two blocks must be **byte-identical**. Any disclosure of a withheld row — its reason, its id, its size, or the bare fact that it exists — makes them differ, **whatever field it is spelled with and whatever function emits it**. | **Established.** §14a's probe appends a withheld-count manifest inside `Assemble`; of every instrument this design relied on, G-9 is the only one that reddens against it. |
 | **G-8** | I-7 | `TestRenderToolResultNamesNoUnadmittedNodeInTheAllCutSentence` | C3: the model cannot fetch by id, so an id in that sentence is budget spent on an unusable fact. A renderer that lists the cut rows reddens. | **No runnable falsifier established.** |
 
 > **Corrected 2026-09-11 during Unit 2's implementation (QA #13697 CF-1).** G-6's name above read
@@ -521,23 +522,69 @@ inventory.**
 > nil` would pass while breaking production silently. The second of those is what satisfies G-6's
 > falsifier: it supplies the third `"no additional results found"` site the column requires.
 
-**Structural fact usable as a pre-submit check, stated with the command exactly as it was run.**
+### 14a. RETRACTED 2026-09-15 — both instruments this section named are unsound, and the replacement is G-9
 
-```
-git grep -n "CutReason" -- 'internal/loop/*.go' ':!internal/loop/*_test.go'
-```
+**This section previously made §5.2's elective half mechanically checkable two ways. Neither works, and
+the measurement is below.** §18's Unit 1 acceptance criterion built on the first of them is retired in
+the same amendment.
 
-At `872156e` this returns **four** lines: two writes (`assemble.go:53`, `:59`), one production read
-(`summary.go:244`, the record summary), one declaration (`types.go:63`). **No production read on the
-model-facing path.** This design must leave that output **unchanged** — it is the mechanical statement
-that §5.2's elective half was not smuggled in.
+**What it said.** A pre-submit grep — `git grep -n "CutReason" -- 'internal/loop/*.go'
+':!internal/loop/*_test.go'` — whose output this design had to leave unchanged at four lines; and,
+named as strictly stronger, a type-level fact: *"`renderBlock`'s signature is `(anchor Anchor, admitted
+[]Candidate)` and `Candidate` declares no `CutReason` and no `Included`. **Disclosure to the model is
+impossible without changing that signature or that type.**"*
 
-**And the limit of that command, because a grep expresses a property about spellings and not about
-calls:** a manifest implemented through a differently-named field would not appear in it. **The
-stronger instrument is free and type-level:** `renderBlock`'s signature is
-`(anchor Anchor, admitted []Candidate)` and `Candidate` (`types.go:14`) declares no `CutReason` and no
-`Included`. **Disclosure to the model is impossible without changing that signature or that type**, and
-that is a fact about the program, not about its spelling.
+**That sentence is false.** Measured in a detached worktree at `fb48f66`: `Assemble` (`assemble.go:18`)
+holds **both** the dispositions and the rendered block, and returns `renderBlock(anchor, admitted)`. A
+`withheldManifest` helper appended to that return value discloses to the model how many rows were
+withheld, and:
+
+| instrument | result |
+|---|---|
+| `renderBlock`'s signature | **unchanged** (`assemble.go:127`) |
+| `Candidate` (`types.go:27`) | **unchanged** — no diff in `types.go` at all |
+| §18's nine bounce conditions | **0 changed lines**, each |
+| the whole suite | **13/13 `ok`** |
+| §18's grep | **the same four sites, no fifth** |
+
+The manifest counts `!d.Included` and never names a reason, so no spelling of `CutReason` appears; it
+lives in `Assemble`, which is on neither the signature nor the bounce list. **Every instrument this
+design owned passed a change that puts withheld-row information directly into the model's block.**
+
+**So the grep is retired, and the type-level claim is withdrawn rather than relied on.** The grep was
+also wrong in the other direction, which is how this was found: it pins *spellings across files*, so it
+forbids a **read** on the operator-log path — which cannot reach the model and which the property
+permits. It bounced a compliant implementation and cost a real mechanism change (#13944), and it is the
+*fires-on-compliant-code* shape this repo has now recorded four times. A third defect, minor but worth
+naming: *"the same four lines"* is ambiguous between the four **sites** and their **line numbers**, and
+under the literal reading any unrelated edit to `assemble.go` fails it.
+
+**The replacement is behavioural, and it is one guard.** **G-9** asserts that the block `Assemble`
+returns is a function of the admitted rows alone — assemble twice, once with everything and once with
+only what was admitted, and require byte-identical output. It reddens against the manifest above by
+construction, and it does so without caring what field carries the disclosure, which function emits it,
+or how anything is spelled. **That is the property §5.2's elective half would violate**, stated directly
+instead of through two proxies for it.
+
+> **Why `Assemble` is not simply added to §18's forbidden list instead.** A longer list of names is the
+> same instrument that just failed — it protects the sites someone thought of. G-9 protects the
+> property. Per #1136 §4 the list does not grow when one guard subsumes it.
+
+### 14b. Why G-3's fixture value is the whole of G-3
+
+`admit` charges no bytes against a row it cuts as self-produced, so the byte-budget condition
+`!Included && Size > remaining` is **false by default** on any self-produced fixture whose size is
+small. The shipped Unit 1 fixture used `Size: 500` against `remaining = 59900` — 119× below the
+threshold — so the guard passed without consulting the reason at all. QA measured all three
+consequences: deleting `CutReason: cutReasonSelfProduced` from the fixture left it **green**; breaking
+`appendUnseen` reddened **seven** other tests and left it **green**; and the same guard at `Size: 70000`
+**reddens** against the shipped implementation.
+
+**A guard whose stated job is to reject an approach, which that approach passes, is decoration** — and
+the cost here was not the guard: it was that the round's one source of information about the collision
+stayed green, so the design bounce (§18) was never triggered and the resolution was made under a gate
+that should not have existed. **A fixture below the threshold at which a guard can discriminate is a
+defect in the guard, not a detail of it.**
 
 ---
 
@@ -691,10 +738,20 @@ cut.* Sweep `turn.go`'s run-summary block for that property; **the site below is
 
 - Known occurrence: `turn.go:166-193`, `logFinished`, beside the shutout WARN at `:189`.
 
-**Acceptance:** G-1 … G-5 exist and pass, and the `git grep -n "CutReason" -- 'internal/loop/*.go'
-':!internal/loop/*_test.go'` command in §14 returns the **same four lines** it returns at `872156e`.
-**Not acceptance:** any product run, and §15.2's sweep figure — that is **reported**, and gates
-nothing.
+**Acceptance:** G-1 … G-5 and **G-9** exist and pass, with **G-3 carrying the fixture §14 specifies**
+(`Size: 70_000`, strictly above the remaining budget) — a G-3 below that threshold is not acceptance,
+it is decoration. **Not acceptance:** any product run, and §15.2's sweep figure — that is **reported**,
+and gates nothing.
+
+**RETIRED 2026-09-15 — the `CutReason` grep is no longer an acceptance criterion.** It forbade a read
+on the operator-log path that the property permits, and it passed a model-facing disclosure that G-9
+catches; §14a carries the measurement. **Consequence, and it is the point of retiring it:** the WARN
+**reads `Disposition.CutReason`** to decide that the top row was cut for the byte budget. It is a claim
+about a *reason*, so it reads the reason. Deriving it arithmetically from `!Included && Size >
+remaining` is equivalent on every input reachable today — QA verified that end to end — but only
+because `fuse`/`appendUnseen` (`retrieve.go:90`) drops self-produced rows before `Assemble` sees them,
+which is a cross-file invariant that **no test couples to this inference** (#13943). The equivalence is
+contingent; the field is not. Read the field.
 
 ### What neither unit may do
 
