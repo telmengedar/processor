@@ -71,7 +71,8 @@ of one — never `MaxModelCalls`** — and **its own 30 s bound**. Any outcome t
 degrades to today's exact behaviour, and the record carries **the cause, bounded — not a boolean**.
 
 **And it switches a mechanism on, which is the part easy to miss.** Reciprocal-rank fusion over a single
-list is order-preserving, so **a turn today performs no fusion at all** (#11398, re-derived in §2.2). This
+list is order-preserving, so **a turn at `0df5c14` performs no fusion at all** (#11398, re-derived in §2.2).
+This
 is the first time the product ranks the way its instrument has been scoring — not more input to a running
 mechanism. Risk **F-9**.
 
@@ -192,11 +193,12 @@ identity**. *The premise that makes that discriminate: it holds exactly while no
 a node id — a repeat would accumulate score and promote it. `Recall` returns distinct nodes, so the identity
 holds today.*
 
-**Therefore, in a turn today, there is no fusion.** Positions 1–17 are the unscoped recall's plain
+**Therefore, in a turn at `0df5c14`, there is no fusion.** Positions 1–17 are the unscoped recall's plain
 similarity order; **at most** three further slots go to the scope reserve (`fuse`, `retrieve.go:77-118`,
 `limit − reserve = 17`) — *at most*, because `fuse` backfills from the fused list when the scoped list holds
 fewer than three unseen rows. The
-machinery is not *running on* a one-element slice — it is **inert**.
+machinery is not *running on* a one-element slice — it is **inert**. **This held until `3489a2d` shipped this
+design; on `main` the turn passes up to six queries and fusion is live.**
 
 **So the accurate statement of this change is not that it feeds more input to a running mechanism. It
 activates, in the product, a ranking behaviour the product has never performed.** Three consequences carried
@@ -276,9 +278,9 @@ derivation call runs under; and the parity contract between the product's query 
 
 1. **`loop.Retrieve`, fusion, the scope reserve, `admit`, the byte budget, the block layout.** #11235 §4.2
    measured the combiner and #11235 §11 steps 1–3 shipped it. **Not one line inside that function
-   changes.** But say the behavioural half too, because the code half alone misleads: since fusion is inert
-   at one query (§2.2, #11398), changing the input is what makes the fusion step **start doing work in a
-   turn**. *No code in scope; a behaviour that is.* §13 F-9 carries the risk that follows.
+   changes.** But say the behavioural half too, because the code half alone misleads: since fusion was inert
+   at one query (§2.2, #11398) **until `3489a2d`**, changing the input is what made the fusion step **start
+   doing work in a turn**. *No code in scope; a behaviour that is.* §13 F-9 carries the risk that follows.
 2. **The supplementary recall** (`turn.go:348-361`). Its query is the model's own tool argument, already a
    derived query by a different route, and #11263 ruled that call site stays direct.
 3. **Retrieval or admission tuning of any kind.** #13534 §5 demotes it until a designed input exists; this
@@ -664,24 +666,31 @@ wider claim to R-2.)* Appended today they land past the cap and are
 invisible to the search that would retrieve them. **This field does not, and the arithmetic is re-derived
 here from invariant 1 rather than from a figure:**
 
-The JSON preceding the field is `input`, `subject`, `query` and `queries`. Writing **L** for the input's
-length and **D** for the derived queries' joined length, and applying **invariant 1 — `queries[0]` is the
-raw input on every path** — those four cost:
+The JSON preceding the field is `input`, `subject`, `now`, `query` and `queries`. Writing **L** for the
+input's length and **D** for the derived queries' joined length, and applying **invariant 1 — `queries[0]` is
+the raw input on every path** — those five cost:
 
 | field | length | why |
 |---|---|---|
 | `input` | **L** | — |
 | `subject` | ~10 | an int64 |
+| `now` | **~29** | `,"now":"2026-09-15T10:26:36Z"` — added at `6c8a1df`, after `subject` and before `query`. Constant: `omitzero`, but `Run` sets it on every real run |
 | `query` | **L** | a copy of `input` (§9) |
 | `queries` | **L + D** | invariant 1 puts the input **inside** `queries`, then the derived set |
 | field names, quotes, commas | ~100 | — |
 
-**So the offset is `3L + D + ~100` characters — not `2L + D + 100`.** The input appears **three** times, and
-the third appearance is the one invariant 1 guarantees.
+**So the offset is `3L + D + C` characters — not `2L + D + 100`.** The input appears **three** times, and the
+third appearance is the one invariant 1 guarantees. **`C` is the record's fixed preamble — the field names,
+quotes and commas plus any constant-width member ahead of `derivationError`. It is `~129` at `6c8a1df`** (the
+~100 above plus `now`'s ~29) **and it grows by roughly 30 with every member added ahead of `derivationError`.**
+It is written as a named constant pinned to a commit rather than inlined, because this line has already been
+corrected twice — once for substituting into it wrongly (#13590 §5) and once for losing a term when
+`now` arrived — and an inlined literal makes the next member's arrival silent.
 
-- **At the median it makes no difference:** `3(123) + 297 + 100 = 766` characters, comfortably inside
+- **At the median it makes no difference:** `3(123) + 297 + 129 = 795` characters, comfortably inside
   #13472's measured 7,880-character content budget.
-- **At the threshold it makes a large one.** Solving `3L + 297 + 100 = 7880` gives **L ≈ 2,494**.
+- **At the threshold it makes a large one.** Solving `3L + 297 + 129 = 7880` gives **L ≈ 2,485** at `6c8a1df`
+  (it was 2,494 before `now` existed — the term moved the threshold by 9).
 
 **The condition, corrected: an input longer than roughly 2,500 characters pushes the field past the cap**,
 and `maxRequestBodyBytes = 1 MiB` (`routes.go:53`) permits one.
@@ -943,7 +952,7 @@ unacceptable, the two levers are `MaxDerivedQueries` and parallel recalls, both 
 | **F-6** | **`derivationError` lands past the embedding cap for a long input** | §7.5 derives the offset from invariant 1 and states its condition rather than asserting a guarantee | An input over **~2,500** characters (`3L + D + 100 > 7880`). The field is still on the record and still in the HTTP response; only search reachability is lost — the state #13564 lives with for every field after `candidates`. |
 | **F-7** | **A future adapter forgets `Derive`** | Go's type system: `var _ loop.ModelPort = (*Client)(nil)` fails to compile. #10466's *"Adding a model provider"* archetype gains a step, as #13345 §11 added one for `RenderToolResult` | A third adapter that compiles without it — impossible by construction, which is the point. |
 | **F-8** | **This unit is built and Toni still cannot run a task**, because the container is on a branch | Nothing here depends on the container; #13534 §8 sequences them | Stated, not mitigated. §2.6 measures it. |
-| **F-9** | **Fusion becoming operative demotes a node that only one query finds.** New in this revision, and it exists *because* §2.2 establishes fusion is inert today. **#11365 §8 measured it on the sweep's six-query arm:** r13, r16 and r23 are *"single-list, demoted **by the fusion** — one query finds them, five do not; RRF scores **agreement**, and five queries derived from one input agree about that input's concrete surface."* So widening the query set can **lose** a row the raw input alone would have surfaced — and today's product, having no fusion, cannot lose one this way | **None is designed, and that is the ruling, not an oversight.** The arm being adopted is the arm the instrument already scores, demotions included; suppressing them would produce a fourth arm nothing has measured (§4.3 ground 3, same reasoning). The mitigation is that it is **visible**: `Disposition.Sources` already records which query returned each node at what rank, so a demotion is readable per candidate rather than inferred | **`Record.Queries` plus `Disposition.Sources` on any run where the expected node is absent**: if it appears in exactly one query's list at a good rank and still misses the cut, that is this mechanism and not a bad derivation. **Premise:** `Sources` is populated per query in `sourcesOf` (`retrieve.go:39-53`) and carried into every `Disposition`, so the two causes — *never retrieved* and *retrieved by one query and out-voted* — are distinguishable on the record without a new field. **Net direction is measured and is positive but not uniformly so:** the pinned arm beats the raw arm by +2 overall (§12), while #11365 §9 records the per-query split as *"on r17, r19, r22 the raw input beats every derived query; on r13, r14, r16, r20, r23 a derivation wins"* — 3 against 5 at n=11, on a set its own author calls burned. |
+| **F-9** | **Fusion becoming operative demotes a node that only one query finds.** New in this revision, and it exists *because* §2.2 establishes fusion was inert at this document's baseline. **The condition is now met: this design shipped at `3489a2d`, so the risk is live rather than prospective, and the detector this row's last column names runs on every real turn.** **#11365 §8 measured it on the sweep's six-query arm:** r13, r16 and r23 are *"single-list, demoted **by the fusion** — one query finds them, five do not; RRF scores **agreement**, and five queries derived from one input agree about that input's concrete surface."* So widening the query set can **lose** a row the raw input alone would have surfaced — and the product before `3489a2d`, having no fusion, could not lose one this way | **None is designed, and that is the ruling, not an oversight.** The arm being adopted is the arm the instrument already scores, demotions included; suppressing them would produce a fourth arm nothing has measured (§4.3 ground 3, same reasoning). The mitigation is that it is **visible**: `Disposition.Sources` already records which query returned each node at what rank, so a demotion is readable per candidate rather than inferred | **`Record.Queries` plus `Disposition.Sources` on any run where the expected node is absent**: if it appears in exactly one query's list at a good rank and still misses the cut, that is this mechanism and not a bad derivation. **Premise:** `Sources` is populated per query in `sourcesOf` (`retrieve.go:39-53`) and carried into every `Disposition`, so the two causes — *never retrieved* and *retrieved by one query and out-voted* — are distinguishable on the record without a new field. **Net direction is measured and is positive but not uniformly so:** the pinned arm beats the raw arm by +2 overall (§12), while #11365 §9 records the per-query split as *"on r17, r19, r22 the raw input beats every derived query; on r13, r14, r16, r20, r23 a derivation wins"* — 3 against 5 at n=11, on a set its own author calls burned. |
 
 ---
 

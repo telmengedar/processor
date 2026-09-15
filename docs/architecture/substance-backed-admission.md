@@ -35,7 +35,9 @@ merely mitigated by this choice; it is **bounded by construction**. That is a st
 versus adaptive", and it is the argument this design rests on.
 
 **Why generation is offline.** #11414 records that retrieval "runs before the model and is deterministic
-given the graph", and #11365's entire method rests on two sweeps being "byte-identical candidate list for
+given the graph" — quoted as written, and **narrowed since `3489a2d`**: query *selection* now precedes
+retrieval and does call a model, while **admission and assembly** still run with no model call, which is the
+half this argument rests on, and #11365's entire method rests on two sweeps being "byte-identical candidate list for
 candidate list". **In-turn generation destroys that property.** The same row swept twice would produce
 different blocks, and every A/B this project has run or will run rests on the baseline that destroys. That
 is not a latency cost to be weighed against a benefit; it is the loss of the project's only instrument. The

@@ -184,8 +184,8 @@ pins. The finding's remedy and the coverage gap point at the same function, from
 
 | test | pins | what mutation reddens it |
 |---|---|---|
-| `internal/loop/usercontent_test.go` — `TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy` (and its sibling) | **the layout**, against `"===== INPUT ====="` written as a literal on the expected side (`:18-20`) | changing the shared function's output |
-| `internal/ollama/usercontent_test.go:41` and `internal/openaicompat/usercontent_test.go:41` — `… ByteEqualToRenderUserContentOfTheSameBlockAndInput` | **that the adapter's emitted bytes equal the shared function's output** for the same input, by comparing the captured request body against `loop.RenderUserContent(block, input)` | any adapter-side composition whose bytes **differ** — and **not** a byte-identical one, which is the correction below |
+| `internal/loop/usercontent_test.go` — `TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy` (and its sibling) | **the layout**, against `"===== INPUT ====="` written as a literal on the expected side (`:23-26`) | changing the shared function's output |
+| `internal/ollama/usercontent_test.go:48` and `internal/openaicompat/usercontent_test.go:48` — `… ByteEqualToRenderUserContentOfTheSameBlockAndInput` | **that the adapter's emitted bytes equal the shared function's output** for the same input, by comparing the captured request body against `loop.RenderUserContent` | any adapter-side composition whose bytes **differ** — and **not** a byte-identical one, which is the correction below |
 
 The adapter-side test **cannot** pin the layout — mutating the shared function moves both sides of its
 comparison together — and is not meant to. This division is exactly #10466's *"use literals on the
@@ -783,7 +783,7 @@ One unit, one PR. Ordered so that each step's guard exists before the step it gu
    empty-recall sentence, and quote the output.
 3. **Delete both adapters' copies** and call `loop.RenderToolResult` from each `buildMessages`.
 4. **Add the byte-equality test to each adapter** (G-2, G-3), in the shape of that package's existing
-   `usercontent_test.go:41`. **Observe each red** by inlining a `fmt.Sprintf` at the call site that
+   `usercontent_test.go:48`. **Observe each red** by inlining a `fmt.Sprintf` at the call site that
    produces **different** text. **Not an equivalent one:** *producing the same text cannot redden a
    byte-equality assertion*, by construction, so an equivalent inline copy is observed green and reads
    as a dead guard. That is §9's corrected mutation; this step prescribed the version §9 retired,
