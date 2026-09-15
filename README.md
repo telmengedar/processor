@@ -83,8 +83,9 @@ words; that document carries the argument.
 - `internal/server` — the HTTP route table and the serve/drain lifecycle
   (`docs/architecture/m0-service-skeleton.md`).
 - `internal/loop` — the turn: mechanical context assembly (`Assemble`, a pure function — no I/O, no
-  clock, no randomness) and its sequencing (`Turn.Run`): fetch, assemble, judge — dispatching the two
-  tools as the model asks for them, up to a call cap — then write the record back. The tools are
+  clock, no randomness) and its sequencing (`Turn.Run`): fetch the subject, derive the query set and the
+  retrieval window from the input, retrieve, assemble, judge — dispatching the two tools as the model
+  asks for them, up to a call cap — then write the record back. The tools are
   supplementary recall and one file write; both go through the same round, so a run record carries them
   in one `toolCalls` list, each entry naming which tool it was. See
   `docs/architecture/m1-skeleton-loop.md` §9.
@@ -255,7 +256,8 @@ below. The ranked lists are fused by reciprocal rank; the last three of the twen
 held for the neighbourhood list, so a node ranked past the cap can still arrive while the nodes already
 at the top keep the ranks they had.
 
-The turn: fetch the subject and recall candidates, assemble a byte-budgeted context block (anchor first,
+The turn: fetch the subject, derive the query set and window described above, recall candidates against
+them, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
 model, dispatch a tool each time the model asks for one (up to a **judgement**-call cap of 6, so at most 5
 tool dispatches per run — the capping call's request is counted but never dispatched; the derivation call
@@ -586,8 +588,11 @@ flags it.
   already returned in rank order (**#10883**). The retrieval window is pinned at the same wire level: a
   non-zero window sends `updatedFrom`/`updatedTo` as RFC 3339, and a **zero** window sends an encoded
   query string byte-identical to one from before the parameter existed, so an un-windowed run cannot
-  silently acquire a filter. **Not** verified live against the graph — the wire spelling is pinned by the
-  suite and by the design's own probe, not by a filtered-versus-unfiltered control on `divoid.mamgo.io`.
+  silently acquire a filter. The wire spelling is established **both** by the suite and by a
+  filtered-versus-unfiltered control run against `divoid.mamgo.io` — #13721's table, which carries three
+  inert parameter names as negative controls and is reproduced in PR #77's body. **What has not been
+  done** is running *this project's own client* against the live graph under that control: the probe was
+  raw REST, so the suite is the only thing coupling the spelling to `internal/divoid`.
 - **The judgement step and write-back (`POST /runs`, unit B):** `internal/openaicompat` is pinned at the
   wire level against a local test server — the exact request shape (model, messages, `max_tokens`, the one
   tool declaration), the `Authorization` header sent only when a key is configured, decoding of a
