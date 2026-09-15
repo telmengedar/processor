@@ -774,13 +774,41 @@ other and disagreed with the tree. The first check is sound and structurally bli
 `git diff <the row's ref>..HEAD -- <the guard's test file>` is non-empty, that row is **due
 re-measurement** and may not be relied on until it has been.
 
-**The trigger applies to rows that carry a measurement, and §14's table is not yet uniform — stated rather
-than asserted, because this paragraph was itself written claiming otherwise and the check above caught
-it.** Of the guard rows, **three claim a measurement**: G-3, G-9 and G-10. **Only G-10 carries a commit
-ref**; G-3 cites a QA node and G-9 cites *"§14a's probe"*, neither of which fixes a tree. So the trigger is
-runnable for G-10 today, and **G-3 and G-9 are due a ref**. The remaining rows read *"No runnable
-falsifier established"*, which needs no trigger: there is no measurement in them to go stale. **A row that
-names a measurement must carry its ref; a row that names none must not pretend to.**
+**The trigger applies to rows that carry a measurement, and §14's table is not yet uniform.** Enumerated
+**by row** — every falsifier cell read, none matched for a phrase:
+
+| | rows | ref |
+|---|---|---|
+| claims a measurement | **G-3**, **G-6**, **G-7**, **G-9**, **G-10** | G-6 `872156e`, G-10 `274dcc8`/`e343870`; **G-3, G-7 and G-9 carry none** |
+| claims none | G-1, G-2, G-4, G-5, G-8 | not applicable — nothing in them can go stale |
+
+**Five and five.** G-3 cites a QA node and G-9 cites *"§14a's probe"*; neither fixes a tree. **G-7 is the
+worst of the three** — *"it is in the tree **today** and passes"* is a measurement with no ref and an
+explicitly relative word, the exact form the rule above forbids. So the trigger is runnable for **G-6 and
+G-10**, and **G-3, G-7 and G-9 are due a ref**.
+
+> **A row that names a measurement must carry its ref; a row that names none must not pretend to.**
+
+**An earlier revision of this paragraph said three and one.** It was built by matching the falsifier cells
+for *"Established"* and *"No runnable falsifier established"*, and the two rows it missed — G-6 and G-7 —
+are the two that say ***"Live"***. That is **#11034 §8, P-52's first sharpening** — *"Enumerate by ROW,
+never by phrase"* — reproduced inside the paragraph that installs a row-integrity check.
+
+**So the trigger is not self-sustaining yet, and this is the honest grade.** The trigger itself is
+mechanical: pointed at a row it fires with no judgement. But **it is fed by a hand list built by phrase,
+and a mechanical trigger fed by a hand list inherits the list's method** — which is this document's own
+cheap-half / expensive-half distinction applied to the wrong pair. The property still owed:
+
+> **The set of rows carrying a measurement must be decidable from the table itself, without reading any
+> cell for a phrase**, so a row worded in a way nobody anticipated cannot fall silently outside the
+> trigger's scope.
+
+**The shape that would deliver it, specified and not yet applied:** every falsifier cell **opens** with
+either a commit ref in backticks or the literal token `none`, so the classification is the cell's first
+token rather than its prose. Then a novel wording cannot escape, because the marker is required by shape
+and a cell without one is visibly malformed — the same move §14b makes for a fixture value. **Applying it
+touches G-6's row, which is filed debt this branch does not open (#14000)**, so it is specified here and
+left for the unit that owns that row.
 
 **Two halves, and a row must say which it has.** The cheap half is mechanical — the named test resolves,
 and it still has the shape the row assumes (`TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries` has
