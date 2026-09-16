@@ -86,21 +86,7 @@ func TestTheDerivationPromptCarriesTheInstructionsBothExemplarsAndEndsWithTheInp
 	}
 
 	if !strings.HasSuffix(prompt, "\n\n===== REQUEST =====\n"+input) {
-		t.Fatalf("the derivation prompt does not end with the input; a request buried above the exemplars is answered as one of them")
-	}
-}
-
-// TestTheDerivationPromptMarksWhereTheRequestBegins guards #14163: without a banner before the
-// input, the final line is structurally indistinguishable from a third exemplar whose answer is
-// missing, and the model has to infer that it is the live request rather than being told.
-func TestTheDerivationPromptMarksWhereTheRequestBegins(t *testing.T) {
-	t.Parallel()
-
-	const input = "what did the split change"
-	prompt := DerivationPrompt(input, derivationPromptTestNow)
-
-	if !strings.HasSuffix(prompt, "\n\n===== REQUEST =====\n"+input) {
-		t.Fatalf("the derivation prompt does not mark the input with a ===== REQUEST ===== banner, so the model cannot tell the request apart from a third, unanswered exemplar")
+		t.Fatalf("the derivation prompt does not end with the input behind a ===== REQUEST ===== banner; a request buried above the exemplars, or left unmarked, is answered as one of them")
 	}
 }
 
