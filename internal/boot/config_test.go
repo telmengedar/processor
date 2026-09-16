@@ -593,7 +593,7 @@ func TestLoadModelUsesModelKeyVerbatimWhenPresent(t *testing.T) {
 	}
 }
 
-func TestLoadModelDefaultsTemperatureToZeroWhenAbsent(t *testing.T) {
+func TestLoadModelDefaultsTemperatureToPointTwoWhenAbsent(t *testing.T) {
 	t.Parallel()
 
 	env := validEnv(nil)
@@ -603,8 +603,8 @@ func TestLoadModelDefaultsTemperatureToZeroWhenAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("loadModel: %v", err)
 	}
-	if cfg.Temperature == nil || *cfg.Temperature != 0 {
-		t.Fatalf("modelTemperature = %v, want a pointer to 0 (the deterministic default) when PROCESSOR_MODEL_TEMPERATURE is absent", cfg.Temperature)
+	if cfg.Temperature == nil || *cfg.Temperature != 0.2 {
+		t.Fatalf("modelTemperature = %v, want a pointer to 0.2 (a little sampling range) when PROCESSOR_MODEL_TEMPERATURE is absent", cfg.Temperature)
 	}
 }
 
