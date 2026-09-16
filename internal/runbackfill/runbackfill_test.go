@@ -2,6 +2,7 @@ package runbackfill
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -190,4 +191,62 @@ func (g *movedContentGraph) NodeWithSubstance(_ context.Context, id int64) (Node
 
 func (g *movedContentGraph) Content(_ context.Context, id int64) (string, bool, error) {
 	return g.live, true, nil
+}
+
+func TestBackfillOneBacksUpTheLiveConfirmedBytesBeforeAnyWriteReachesTheGraph(t *testing.T) {
+	graph := &fakeGraph{nodes: map[int64]Node{
+		6: {
+			ID:          6,
+			Type:        divoid.RunNodeType,
+			Name:        `processor-run 2026-09-02T11:35:08Z — do the thing`,
+			ContentType: "application/json",
+			Content:     legacyRecordJSON,
+		},
+	}}
+
+	var backedUp Node
+	var contentAlreadyWrittenAtBackupTime bool
+	opts := Options{Backup: func(_ context.Context, node Node) error {
+		backedUp = node
+		_, contentAlreadyWrittenAtBackupTime = graph.contentWrites[6]
+		return nil
+	}}
+
+	result := Run(context.Background(), graph, []int64{6}, opts, time.Now)
+
+	if len(result.Skipped) != 0 {
+		t.Fatalf("unexpected skips: %+v", result.Skipped)
+	}
+	if backedUp.Content != legacyRecordJSON {
+		t.Fatalf("backed-up content = %q, want the original bytes about to be overwritten", backedUp.Content)
+	}
+	if backedUp.ContentType != "application/json" {
+		t.Fatalf("backed-up content type = %q, want the node's own", backedUp.ContentType)
+	}
+	if contentAlreadyWrittenAtBackupTime {
+		t.Fatalf("the graph write happened before the backup, want the backup first")
+	}
+}
+
+func TestBackfillOneRefusesToWriteWhenTheBackupFails(t *testing.T) {
+	graph := &fakeGraph{nodes: map[int64]Node{
+		7: {
+			ID:      7,
+			Type:    divoid.RunNodeType,
+			Name:    `processor-run 2026-09-02T11:35:08Z — do the thing`,
+			Content: legacyRecordJSON,
+		},
+	}}
+
+	opts := Options{Backup: func(context.Context, Node) error {
+		return fmt.Errorf("disk full")
+	}}
+	result := Run(context.Background(), graph, []int64{7}, opts, time.Now)
+
+	if len(result.Skipped) != 1 || result.Skipped[0].Reason != skipBackupFailed {
+		t.Fatalf("want a single %q skip, got %+v", skipBackupFailed, result.Skipped)
+	}
+	if len(graph.contentWrites) != 0 || len(graph.substanceWrites) != 0 {
+		t.Fatalf("a failed backup must produce no write, got content=%v substance=%v", graph.contentWrites, graph.substanceWrites)
+	}
 }

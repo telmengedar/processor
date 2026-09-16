@@ -62,18 +62,18 @@ func run(args []string, machine, human io.Writer) int {
 	client := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 	graph := &graphAdapter{client: client}
 
-	if opts.backupDir != "" {
-		if err := backupNodes(context.Background(), client, opts.ids, opts.backupDir); err != nil {
+	runOpts := runbackfill.Options{Force: opts.force, DryRun: opts.dryRun}
+	if !opts.dryRun {
+		if err := os.MkdirAll(opts.backupDir, 0o755); err != nil {
 			logger.Error("backup", "error", err)
 			return exitError
 		}
-		fmt.Fprintf(human, "backed up %d node(s) to %s before touching any of them\n\n", len(opts.ids), opts.backupDir)
-	} else if !opts.dryRun {
-		fmt.Fprintln(human, "-backup-dir is required for a live (non-dry-run) pass — refusing to write without a rollback capture")
-		return exitUsage
+		runOpts.Backup = func(_ context.Context, node runbackfill.Node) error {
+			return writeBackupFile(opts.backupDir, node)
+		}
 	}
 
-	result := runbackfill.Run(context.Background(), graph, opts.ids, runbackfill.Options{Force: opts.force, DryRun: opts.dryRun}, time.Now)
+	result := runbackfill.Run(context.Background(), graph, opts.ids, runOpts, time.Now)
 
 	if err := runbackfill.Render(result, machine, human); err != nil {
 		logger.Error("render", "error", err)
@@ -86,46 +86,31 @@ func run(args []string, machine, human io.Writer) int {
 	return 0
 }
 
-func backupNodes(ctx context.Context, client *divoid.Client, ids []int64, dir string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("create backup dir %s: %w", dir, err)
+func writeBackupFile(dir string, node runbackfill.Node) error {
+	rec := backupRecord{
+		Node:        node.ID,
+		Type:        node.Type,
+		Name:        node.Name,
+		ContentType: node.ContentType,
+		Content:     node.Content,
+		Substance:   node.Substance,
+		CapturedAt:  time.Now().UTC().Format(time.RFC3339),
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, id := range ids {
-		row, found, err := client.NodeWithSubstance(ctx, id)
-		if err != nil {
-			return fmt.Errorf("read node %d for backup: %w", id, err)
-		}
-		if !found {
-			return fmt.Errorf("node %d not found while backing up", id)
-		}
-
-		rec := backupRecord{
-			Node:        row.ID,
-			Type:        row.Type,
-			Name:        row.Name,
-			ContentType: row.ContentType,
-			Content:     row.Content,
-			Substance:   row.Substance,
-			CapturedAt:  now,
-		}
-
-		path := filepath.Join(dir, strconv.FormatInt(id, 10)+".json")
-		f, err := os.Create(path)
-		if err != nil {
-			return fmt.Errorf("create backup file %s: %w", path, err)
-		}
-		enc := json.NewEncoder(f)
-		enc.SetIndent("", "  ")
-		encErr := enc.Encode(rec)
-		closeErr := f.Close()
-		if encErr != nil {
-			return fmt.Errorf("write backup file %s: %w", path, encErr)
-		}
-		if closeErr != nil {
-			return fmt.Errorf("close backup file %s: %w", path, closeErr)
-		}
+	path := filepath.Join(dir, strconv.FormatInt(node.ID, 10)+".json")
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create backup file %s: %w", path, err)
+	}
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	encErr := enc.Encode(rec)
+	closeErr := f.Close()
+	if encErr != nil {
+		return fmt.Errorf("write backup file %s: %w", path, encErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close backup file %s: %w", path, closeErr)
 	}
 	return nil
 }
@@ -145,6 +130,11 @@ func parseFlags(args []string, human io.Writer) (options, bool) {
 	parsed, err := parseIDs(*ids)
 	if err != nil {
 		fmt.Fprintln(human, err)
+		return options{}, false
+	}
+
+	if *backupDir == "" && !*dryRun {
+		fmt.Fprintln(human, "-backup-dir is required for a live (non-dry-run) pass — refusing to write without a rollback capture")
 		return options{}, false
 	}
 

@@ -22,6 +22,7 @@ const (
 	skipNameUnparseable      = "node name does not carry a parseable timestamp"
 	skipReadFailed           = "graph read failed"
 	skipContentMoved         = "content changed since it was read, write refused"
+	skipBackupFailed         = "backup failed, write refused"
 	skipWriteContentFailed   = "content write failed"
 	skipWriteSubstanceFailed = "substance write failed (content was written)"
 )
@@ -51,10 +52,11 @@ type GraphPort interface {
 	SetSubstance(ctx context.Context, id int64, substance string) error
 }
 
-// Options are the two switches the pass takes: re-derive over an already-backfilled record, and run without writing.
+// Options are the pass's switches: re-derive over an already-backfilled record, run without writing, and where to capture a node's bytes before they are overwritten.
 type Options struct {
 	Force  bool
 	DryRun bool
+	Backup func(ctx context.Context, node Node) error
 }
 
 // Provenance is one node's recompose, including the rendered account.
@@ -178,6 +180,13 @@ func backfillOne(ctx context.Context, graph GraphPort, id int64, opts Options) (
 	}
 	if !found || live != node.Content {
 		return nil, &Skip{Node: id, Reason: skipContentMoved}
+	}
+
+	if opts.Backup != nil {
+		backedUp := Node{ID: id, Type: node.Type, Name: node.Name, ContentType: node.ContentType, Content: live, Substance: node.Substance}
+		if err := opts.Backup(ctx, backedUp); err != nil {
+			return nil, &Skip{Node: id, Reason: skipBackupFailed, Detail: err.Error()}
+		}
 	}
 
 	if err := graph.SetRunContent(ctx, id, newContent); err != nil {
