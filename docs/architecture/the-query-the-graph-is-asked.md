@@ -825,7 +825,7 @@ strictly more than the boolean #11235 asked for.
 **Success path, one turn.**
 
 1. `Graph.Node(subject)` → anchor. *(unchanged)*
-2. `DerivationPrompt(input)` → ~2,623 B for a median input.
+2. `DerivationPrompt(input)` → ~3,343 B for a median input (corrected 2026-09-16 from the stale 2,623 B script figure; §18.5).
 3. `ModelPort.Derive` under a 30 s bound → completion text, ~297 B for five queries.
 4. `ParseDerivation` → up to 5 strings; `MergeQueries` → up to 6, input first.
 5. `Retrieve` issues **6 unscoped recalls + 1 `Neighbours` + 1 scoped recall** (`retrieve.go:18-31`),
@@ -1517,7 +1517,7 @@ trigger is evaluated against would refute it. On `d2d5b38` it does not.
 
 | figure | sourced from | where it stands now |
 |---|---|---|
-| system prompt **1,790 B**, few-shot **710 B** | the script at `0df5c14` | **Historical.** Resolve at `0df5c14` or `main` `d2d5b38`. The product's counterpart is a **2,507 B** fixed part |
+| system prompt **1,790 B**, few-shot **710 B** | the script at `0df5c14` | **Historical.** Resolve at `0df5c14` or `main` `d2d5b38`. The product's counterpart was a **2,507 B** fixed part |
 | **assembled prompt 2,623 B** | 1,790 + 710 + the 123 B median input | **Corrected wherever it was read as the product's, twice.** 2026-09-12: the TL;DR's Cost line and §2.4's ratio moved to **2,630 B** (`loop.DerivationPrompt` at `e967204`); §2.4 keeps 2,623 B as the *script's* figure, labelled. 2026-09-16: both moved again, to **3,343 B** — task #14163's `===== REQUEST =====` banner plus pre-existing drift the first correction never caught. §18.5 |
 | latency **~0.4 s/row**, model `ai/qwen3-coder` | **#11348**; the runtime attribution from the script `:62` / `:79` | **Historical, and #11348 still carries it** — the script citation corroborates #11348, it is not its source. Resolve `:62` / `:79` at `0df5c14` |
 | `QUERIES_PER_ROW = 5` (`:80`) | the script | **Live under a new carrier:** `loop.MaxDerivedQueries = 5`. §14 Q7 |
