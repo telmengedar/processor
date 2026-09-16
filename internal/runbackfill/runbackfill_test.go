@@ -16,19 +16,23 @@ type fakeGraph struct {
 	substanceWrites map[int64]string
 	setContentErr   error
 	setSubstanceErr error
+	calls           []string
 }
 
 func (g *fakeGraph) NodeWithSubstance(_ context.Context, id int64) (Node, bool, error) {
+	g.calls = append(g.calls, "NodeWithSubstance")
 	n, ok := g.nodes[id]
 	return n, ok, nil
 }
 
 func (g *fakeGraph) Content(_ context.Context, id int64) (string, bool, error) {
+	g.calls = append(g.calls, "Content")
 	n, ok := g.nodes[id]
 	return n.Content, ok, nil
 }
 
 func (g *fakeGraph) SetRunContent(_ context.Context, id int64, content []byte) error {
+	g.calls = append(g.calls, "SetRunContent")
 	if g.setContentErr != nil {
 		return g.setContentErr
 	}
@@ -43,6 +47,7 @@ func (g *fakeGraph) SetRunContent(_ context.Context, id int64, content []byte) e
 }
 
 func (g *fakeGraph) SetSubstance(_ context.Context, id int64, substance string) error {
+	g.calls = append(g.calls, "SetSubstance")
 	if g.setSubstanceErr != nil {
 		return g.setSubstanceErr
 	}
@@ -193,7 +198,7 @@ func (g *movedContentGraph) Content(_ context.Context, id int64) (string, bool, 
 	return g.live, true, nil
 }
 
-func TestBackfillOneBacksUpTheLiveConfirmedBytesBeforeAnyWriteReachesTheGraph(t *testing.T) {
+func TestBackfillOneCallsContentThenBackupThenSetRunContentInThatOrder(t *testing.T) {
 	graph := &fakeGraph{nodes: map[int64]Node{
 		6: {
 			ID:          6,
@@ -205,10 +210,9 @@ func TestBackfillOneBacksUpTheLiveConfirmedBytesBeforeAnyWriteReachesTheGraph(t 
 	}}
 
 	var backedUp Node
-	var contentAlreadyWrittenAtBackupTime bool
 	opts := Options{Backup: func(_ context.Context, node Node) error {
+		graph.calls = append(graph.calls, "Backup")
 		backedUp = node
-		_, contentAlreadyWrittenAtBackupTime = graph.contentWrites[6]
 		return nil
 	}}
 
@@ -217,14 +221,22 @@ func TestBackfillOneBacksUpTheLiveConfirmedBytesBeforeAnyWriteReachesTheGraph(t 
 	if len(result.Skipped) != 0 {
 		t.Fatalf("unexpected skips: %+v", result.Skipped)
 	}
+
+	want := []string{"NodeWithSubstance", "Content", "Backup", "SetRunContent", "SetSubstance"}
+	if len(graph.calls) != len(want) {
+		t.Fatalf("call order = %v, want %v", graph.calls, want)
+	}
+	for i := range want {
+		if graph.calls[i] != want[i] {
+			t.Fatalf("call order = %v, want %v", graph.calls, want)
+		}
+	}
+
 	if backedUp.Content != legacyRecordJSON {
 		t.Fatalf("backed-up content = %q, want the original bytes about to be overwritten", backedUp.Content)
 	}
 	if backedUp.ContentType != "application/json" {
 		t.Fatalf("backed-up content type = %q, want the node's own", backedUp.ContentType)
-	}
-	if contentAlreadyWrittenAtBackupTime {
-		t.Fatalf("the graph write happened before the backup, want the backup first")
 	}
 }
 
