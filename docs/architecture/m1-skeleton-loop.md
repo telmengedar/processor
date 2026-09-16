@@ -1302,17 +1302,21 @@ which is deterministic, which is why provider-agnosticism costs the test strateg
 
 **Why sampling is two parameters under two different unset rules — added 2026-09-05 (#11401), the home for
 3a's correction.** `temperature` has a default and is always sent; `top_p` has no default and is **omitted
-from the request** when the operator configures nothing. The asymmetry is not an oversight. `temperature: 0`
-is the conventional spelling of greedy decoding, so a value exists that is both meaningful and
-maximally reproducible, and sending it is benign. `top_p: 0` has no such standing: its behaviour
-is *endpoint-dependent* — the OpenAI-compatible protocol does not specify what a runtime must do
-with it, and runtimes differ — and a configuration value whose meaning varies by runtime is
-precisely what a change made for reproducibility must not introduce. Asserting `1.0` instead
-would be worse than silence: it claims knowledge of an endpoint §6.6 deliberately refuses to
-model, and it newly sends a parameter whose handling the protocol leaves open.
-So the pointer's `nil` is the wire's *absence*, not a zero, and the default configuration carries exactly
-one determinism lever rather than two overlapping ones — at `temperature: 0` the distribution is already
-collapsed and `top_p` is a no-op at best. **What the record can therefore claim, and what it cannot:** it
+from the request** when the operator configures nothing. The asymmetry is not an oversight. Temperature is
+the standard sampling-distribution parameter and means the same thing at every endpoint, so a numeric default
+exists and sending it is benign — **the shipped default is `0.2`, a little sampling range rather than none
+(#14154); this section described `temperature: 0` before that decision, and the reasoning below is corrected
+for the value that actually ships.** `top_p: 0` has no comparable standing: its behaviour is
+*endpoint-dependent* — the OpenAI-compatible protocol does not specify what a runtime must do with it, and
+runtimes differ — and a configuration value whose meaning varies by runtime is precisely what a change made
+for reproducibility must not introduce. Asserting `1.0` instead would be worse than silence: it claims
+knowledge of an endpoint §6.6 deliberately refuses to model, and it newly sends a parameter whose handling
+the protocol leaves open.
+So the pointer's `nil` is the wire's *absence*, not a zero, and the default configuration sends exactly one
+sampling parameter rather than two — **not** because the unset one would be redundant (at the shipped
+default the distribution is narrowed, not collapsed, so `top_p` is no longer a guaranteed no-op the way it
+was when the default was `temperature: 0`), but because `top_p` has no value that carries temperature's
+cross-endpoint meaning, and none is invented. **What the record can therefore claim, and what it cannot:** it
 reports the sampling **as sent**, never what the endpoint applied. A clamping or ignoring runtime yields a
 record that is true about the request and false about the generation; the near side of the wire is the only
 side this design can pin, and §9.1 row 3a is the statement of why.

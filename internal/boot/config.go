@@ -28,7 +28,7 @@ const (
 	envWorkspaceDir = "PROCESSOR_WORKSPACE_DIR"
 
 	envModelTemperature     = "PROCESSOR_MODEL_TEMPERATURE"
-	defaultModelTemperature = 0.0
+	defaultModelTemperature = 0.2
 
 	envModelTopP = "PROCESSOR_MODEL_TOP_P"
 
