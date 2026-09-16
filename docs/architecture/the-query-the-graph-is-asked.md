@@ -1529,6 +1529,19 @@ script assembled **2,623 B** and the product assembles **2,630 B**. Measured at 
 `len(DerivationPrompt(""))` returns `2507` and `len(DerivationPrompt(strings.Repeat("q", 123)))` returns
 `2630`; the prompt is exactly `2507 + len(input)`, because the input is appended as the last block.
 
+**Correction, 2026-09-16 — the "appended as the last block" premise no longer holds, structurally.** Task
+#14163 measured that 16 of 40 derivations on the shipped path were not six lines, most of them the model
+failing to locate the request — because nothing marks where the request begins, so the final line reads as
+a third, unanswered exemplar. The fix (`internal/loop/derive.go`, `DerivationPrompt`) puts a
+`===== REQUEST =====\n` banner immediately before the input, the same `=====` idiom the `NOW` span already
+uses. The input is no longer literally the last block; the banner is, with the input inside it. Measured:
+`printf '===== REQUEST =====\n' | wc -c` is **20 B**, so the formula's shape becomes `fixed + 20 + len(input)`
+rather than `fixed + len(input)`. **This note does not re-derive `fixed`.** The `2507` figure above is dated
+to `e967204` and, per this section's own re-derivation rule, is very likely stale for reasons unrelated to
+this change — PR #79's `DATES` instruction and PR #83's directive-recognition rules both grew
+`derivationInstructions` after `e967204`. A reader who needs the current byte cost should re-measure
+`len(DerivationPrompt("", time.Time{}))` rather than trust either `2507` or this note's `+20`.
+
 **The ratio against the 71,800 B judgement call is unchanged at one decimal** — 3.66 % against 3.65 % — so
 no conclusion in §2.4 or §12 moves. **The defect was attribution, not arithmetic**, and that is the class a
 reader cannot catch by reading: 2,623 B sat under a heading asking *what a derivation-shaped call costs* and

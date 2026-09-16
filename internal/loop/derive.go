@@ -83,7 +83,7 @@ const dateLinePrefix = "DATES:"
 
 var dateRangePattern = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$`)
 
-// DerivationPrompt renders the derivation instructions, the stated instant, the two format-only exemplars and input as one prompt.
+// DerivationPrompt renders the derivation instructions, the stated instant, the two format-only exemplars and the input as one prompt, with the input marked by a ===== REQUEST ===== banner so it is not mistaken for a third, unanswered exemplar.
 func DerivationPrompt(input string, now time.Time) string {
 	blocks := make([]string, 0, len(derivationExemplars)+3)
 	blocks = append(blocks, fmt.Sprintf(derivationInstructions, MaxDerivedQueries, derivationTotalLines, MaxDerivedQueries-1, derivationTotalLines))
@@ -96,7 +96,7 @@ func DerivationPrompt(input string, now time.Time) string {
 		blocks = append(blocks, exemplar.input+"\n"+dateLinePrefix+" "+exemplar.dates+"\n"+strings.Join(exemplar.queries, "\n"))
 	}
 
-	return strings.Join(append(blocks, input), "\n\n")
+	return strings.Join(append(blocks, "===== REQUEST =====\n"+input), "\n\n")
 }
 
 // ParseDerivation reads text as query lines with an optional DATES directive among them, dropping reasoning artifacts, list decoration, blanks, repeats and case-folded echoes of input, capped at MaxDerivedQueries. loc resolves the window.
