@@ -726,7 +726,7 @@ func TestFuseExcludesExactlyWhatAdmitWouldCutAsSelfProduced(t *testing.T) {
 		}
 	}
 
-	_, dispositions := admit(candidates, AssemblyByteBudget)
+	_, dispositions := admit(candidates, AssemblyByteBudget, RelevanceFloor)
 	refused := make([]int64, 0, len(dispositions))
 	for _, d := range dispositions {
 		if d.CutReason == cutReasonSelfProduced {

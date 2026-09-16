@@ -571,7 +571,7 @@ func TestTheMachineResultCarriesTheRetainedCandidateSetUnderItsOwnWireKey(t *tes
 func TestTheMachineResultKeepsARowThatSweptNothingDistinctFromARowThatNeverSwept(t *testing.T) {
 	t.Parallel()
 
-	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget)
+	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget, 0)
 	swept := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 	neverSwept := RowResult{Row: "r99", Stratum: StratumLabelled, Subject: 999, Error: "subject not found"}
 

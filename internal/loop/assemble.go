@@ -12,23 +12,24 @@ import (
 const (
 	cutReasonByteBudget   = "byte budget exceeded"
 	cutReasonSelfProduced = "self-produced"
+	cutReasonBelowFloor   = "below relevance floor"
 )
 
 // Assemble is a pure function: no I/O, no clock, no randomness.
-func Assemble(anchor Anchor, candidates []Candidate, budget int) (block string, dispositions []Disposition) {
+func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64) (block string, dispositions []Disposition) {
 	remaining := budget - len(anchor.Content)
 	if remaining < 0 {
 		remaining = 0
 	}
 
-	admitted, dispositions := admit(candidates, remaining)
+	admitted, dispositions := admit(candidates, remaining, floor)
 
 	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
 
-	return renderBlock(anchor, admitted), dispositions
+	return renderBlock(anchor, admitted, len(candidates) > 0), dispositions
 }
 
-func admit(candidates []Candidate, budget int) (admitted []Candidate, dispositions []Disposition) {
+func admit(candidates []Candidate, budget int, floor float64) (admitted []Candidate, dispositions []Disposition) {
 	dispositions = make([]Disposition, len(candidates))
 	admitted = make([]Candidate, 0, len(candidates))
 
@@ -52,6 +53,8 @@ func admit(candidates []Candidate, budget int) (admitted []Candidate, dispositio
 		switch {
 		case c.SelfProduced:
 			d.CutReason = cutReasonSelfProduced
+		case c.Similarity < floor:
+			d.CutReason = cutReasonBelowFloor
 		case cumulative+size <= budget:
 			cumulative += size
 			d.Included = true
@@ -124,7 +127,7 @@ func RenderToolResult(r ToolExchange) string {
 // renderBlock renders the fixed layout of design §6.3: the anchor first
 // (the run's stable subject), then the admitted candidates ascending by
 // id (the volatile part).
-func renderBlock(anchor Anchor, admitted []Candidate) string {
+func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool) string {
 	var b strings.Builder
 
 	b.WriteString("===== ANCHOR =====\n")
@@ -137,6 +140,10 @@ func renderBlock(anchor Anchor, admitted []Candidate) string {
 		fmt.Fprintf(&b, "id: %d\ntype: %s\nname: %s\n\n", c.ID, c.Type, c.Name)
 		b.WriteString(c.Content)
 		b.WriteString("\n")
+	}
+
+	if len(admitted) == 0 && consideredAny {
+		b.WriteString("\nresults were found, but none were included.\n")
 	}
 
 	return b.String()

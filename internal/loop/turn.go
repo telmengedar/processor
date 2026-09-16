@@ -17,6 +17,8 @@ const (
 	MaxModelCalls           = 6
 	SupplementaryByteBudget = 20_000
 	MaxOutputTokens         = 4_096
+	// RelevanceFloor is 0.63: the well-answered corpus keeps 13/25 required documents at this value.
+	RelevanceFloor = 0.63
 )
 
 const (
@@ -145,7 +147,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		return t.failed(subject, started, fmt.Errorf("%w: %v", ErrGraphUnavailable, err))
 	}
 
-	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget)
+	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget, RelevanceFloor)
 
 	record := Record{
 		Input:           input,
@@ -164,6 +166,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 			SupplementaryByteBudget: SupplementaryByteBudget,
 			MaxModelCalls:           MaxModelCalls,
 			MaxOutputTokens:         MaxOutputTokens,
+			RelevanceFloor:          RelevanceFloor,
 		},
 	}
 
@@ -424,7 +427,7 @@ func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window Up
 		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}
 	}
 
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget)
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, RelevanceFloor)
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions}
 }
 

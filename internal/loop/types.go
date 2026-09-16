@@ -166,13 +166,14 @@ type WriteReceipt struct {
 	NodeID int64      `json:"nodeId,omitempty"`
 }
 
-// Limits records the five constants that governed one run.
+// Limits records the six constants that governed one run.
 type Limits struct {
-	CandidateLimit          int `json:"candidateLimit"`
-	AssemblyByteBudget      int `json:"assemblyByteBudget"`
-	SupplementaryByteBudget int `json:"supplementaryByteBudget"`
-	MaxModelCalls           int `json:"maxModelCalls"`
-	MaxOutputTokens         int `json:"maxOutputTokens"`
+	CandidateLimit          int     `json:"candidateLimit"`
+	AssemblyByteBudget      int     `json:"assemblyByteBudget"`
+	SupplementaryByteBudget int     `json:"supplementaryByteBudget"`
+	MaxModelCalls           int     `json:"maxModelCalls"`
+	MaxOutputTokens         int     `json:"maxOutputTokens"`
+	RelevanceFloor          float64 `json:"relevanceFloor"`
 }
 
 // Sampling records one run's model-call sampling parameters, nil where left to the endpoint's default.

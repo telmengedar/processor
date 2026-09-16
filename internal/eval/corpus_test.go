@@ -228,7 +228,7 @@ func TestLoadAcceptsAsARequiredHashTheContentHashAssembleProduces(t *testing.T) 
 	_, dispositions := loop.Assemble(
 		loop.Anchor{ID: 100, Type: "documentation", Name: "the anchor", Content: "the anchor body"},
 		[]loop.Candidate{{ID: 200, Type: "documentation", Name: "the required node", Content: "the body it carried when it was labelled"}},
-		1000)
+		1000, 0)
 	produced := dispositions[0].ContentHash
 
 	body := strings.Replace(validCorpus, `"hash": "5da7e2b28e10a231e97b202dd241d9df0e4a897ac6f5ccb5169c0b8492908cd6"`, `"hash": "`+produced+`"`, 1)

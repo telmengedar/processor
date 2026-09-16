@@ -272,7 +272,7 @@ func TestSweepFlagsAStaleRequiredNodeAndStillScoresItsRow(t *testing.T) {
 	t.Parallel()
 
 	graph := newFakeGraph(t)
-	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+	graph.candidates = []loop.Candidate{{ID: 200, Similarity: 0.9, Content: requiredNodeBody}}
 
 	row := labelledRow("r01", eval.Required{Node: 200, Hash: "the-hash-it-carried-when-it-was-labelled", Why: "w"})
 	result := mustSweep(t, graph, corpusOf(row))
