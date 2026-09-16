@@ -56,7 +56,7 @@ func (c *Client) WriteRun(ctx context.Context, record loop.Record) loop.WriteRec
 
 	at := c.now()
 	account := loop.RenderSummary(record, at)
-	content := composeRunContent(account, recordJSON)
+	content := ComposeRunContent(account, recordJSON)
 
 	id, err := c.createRunNode(ctx, c.runName(record, at))
 	if err != nil {
@@ -82,13 +82,19 @@ func (c *Client) WriteRun(ctx context.Context, record loop.Record) loop.WriteRec
 	return loop.WriteReceipt{State: loop.Stored, NodeID: id}
 }
 
-func composeRunContent(account string, record []byte) []byte {
+// ComposeRunContent composes account and record exactly as WriteRun's own composition does.
+func ComposeRunContent(account string, record []byte) []byte {
 	var b strings.Builder
 	b.WriteString(account)
 	b.WriteString(runContentFenceOpen)
 	b.Write(record)
 	b.WriteString(runContentFenceClose)
 	return []byte(b.String())
+}
+
+// SetRunContent posts content to an existing run node with WriteRun's own content type.
+func (c *Client) SetRunContent(ctx context.Context, id int64, content []byte) error {
+	return c.post(ctx, fmt.Sprintf("/api/nodes/%d/content", id), runContentType, content, nil)
 }
 
 func (c *Client) discardShell(ctx context.Context, id int64) {
