@@ -244,6 +244,92 @@ func TestFusionRanksTheNodeBothQueriesReturnedAboveEveryNodeOnlyOneReturnedDespi
 	}
 }
 
+func TestACandidateCarriesItsBestSimilarityAcrossEveryQueryThatReturnedIt(t *testing.T) {
+	t.Parallel()
+
+	lists := [][]Candidate{
+		{{ID: 300, Similarity: 0.10}},
+		{{ID: 300, Similarity: 0.90}},
+	}
+
+	got := fuseByReciprocalRank(lists)
+
+	if len(got) != 1 || got[0].Similarity != 0.90 {
+		t.Fatalf("fuseByReciprocalRank returned %+v, want one row at similarity 0.90: node 300 arrived first at the lower of its two readings, and keeping the first-seen struct instead of the greater similarity is exactly the defect this guard exists to catch", got)
+	}
+}
+
+func TestTheBestSimilarityCorrectionLeavesTheFusedOrderExactlyAsItWas(t *testing.T) {
+	t.Parallel()
+
+	lists := [][]Candidate{
+		{
+			{ID: 10, Similarity: 0.99},
+			{ID: 20, Similarity: 0.50},
+			{ID: 30, Similarity: 0.40},
+		},
+		{
+			{ID: 30, Similarity: 0.98},
+		},
+	}
+
+	got := fuseByReciprocalRank(lists)
+
+	want := []int64{30, 10, 20}
+	if !slices.Equal(candidateIDs(got), want) {
+		t.Fatalf("fuseByReciprocalRank returned %v, want %v: node 30 carries the higher reciprocal-rank score because two lists returned it, even though its corrected similarity (0.98) sits just under node 10's (0.99); an implementation that re-sorted by the corrected similarity instead of leaving the unchanged reciprocal-rank score in charge of order would return %v instead", candidateIDs(got), want, []int64{10, 30, 20})
+	}
+}
+
+func TestAScopedRecallsSimilarityLiftsAFusedCandidateWhenItIsTheGreater(t *testing.T) {
+	t.Parallel()
+
+	fused := []Candidate{{ID: 300, Similarity: 0.20}}
+	scoped := []Candidate{{ID: 300, Similarity: 0.85}}
+
+	reconcileScopedSimilarity(fused, scoped)
+
+	if fused[0].Similarity != 0.85 {
+		t.Fatalf("fused[0].Similarity = %v, want 0.85: the scoped recall read this node at a higher similarity than every query list did, and a fused entry left at the lower reading treats the scoped recall as though it never saw the row", fused[0].Similarity)
+	}
+}
+
+func TestAFusedCandidatesSimilarityLiftsTheMatchingScopedRowWhenItIsTheGreater(t *testing.T) {
+	t.Parallel()
+
+	fused := []Candidate{{ID: 300, Similarity: 0.85}}
+	scoped := []Candidate{{ID: 300, Similarity: 0.20}}
+
+	reconcileScopedSimilarity(fused, scoped)
+
+	if scoped[0].Similarity != 0.85 {
+		t.Fatalf("scoped[0].Similarity = %v, want 0.85: this row can be admitted through the scope reserve carrying the scoped recall's own reading, and leaving that reading at the lower value repeats the exact defect this unit fixes, one recall over", scoped[0].Similarity)
+	}
+}
+
+func TestARowAdmittedThroughTheReserveCarriesTheGreaterOfItsFusedAndScopedSimilarity(t *testing.T) {
+	t.Parallel()
+
+	graph := &fusionGraph{
+		lists: map[string][]Candidate{"input": {
+			{ID: 810, Similarity: 0.9}, {ID: 220, Similarity: 0.8}, {ID: 640, Similarity: 0.7},
+			{ID: 130, Similarity: 0.6}, {ID: 970, Similarity: 0.5}, {ID: 300, Similarity: 0.1},
+		}},
+		scoped: []Candidate{{ID: 300, Similarity: 0.95}},
+	}
+
+	got := mustRetrieveCandidates(t, graph, []string{"input"}, 6, 1)
+
+	similarity := make(map[int64]float64, len(got))
+	for _, c := range got {
+		similarity[c.ID] = c.Similarity
+	}
+
+	if similarity[300] != 0.95 {
+		t.Fatalf("node 300 carries similarity %v, want 0.95: it stands last in the fused order and reaches the aperture only through the scope reserve, so its recorded similarity must be the scoped recall's own reading and not the low rank it held in the fused list", similarity[300])
+	}
+}
+
 func reserveGraph() *fusionGraph {
 	return &fusionGraph{
 		lists:  map[string][]Candidate{"input": ranked(810, 220, 640, 130, 970, 350, 480, 760, 590, 20)},

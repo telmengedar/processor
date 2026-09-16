@@ -81,6 +81,7 @@ func RecallScope(ctx context.Context, graph GraphPort, subject int64) ([]int64, 
 
 func fuse(lists [][]Candidate, scoped []Candidate, anchor int64, limit, reserve int) []Candidate {
 	fused := fuseByReciprocalRank(lists)
+	reconcileScopedSimilarity(fused, scoped)
 	reserve = min(max(reserve, 0), limit)
 
 	taken := map[int64]bool{anchor: true}
@@ -124,16 +125,17 @@ func fuse(lists [][]Candidate, scoped []Candidate, anchor int64, limit, reserve 
 
 func fuseByReciprocalRank(lists [][]Candidate) []Candidate {
 	scores := make(map[int64]float64)
-	seen := make(map[int64]bool)
+	seen := make(map[int64]int)
 	order := make([]Candidate, 0)
 
 	for _, list := range lists {
 		for rank, candidate := range list {
 			scores[candidate.ID] += 1 / float64(fusionRankConstant+rank+1)
-			if seen[candidate.ID] {
+			if idx, ok := seen[candidate.ID]; ok {
+				order[idx].Similarity = max(order[idx].Similarity, candidate.Similarity)
 				continue
 			}
-			seen[candidate.ID] = true
+			seen[candidate.ID] = len(order)
 			order = append(order, candidate)
 		}
 	}
@@ -143,4 +145,21 @@ func fuseByReciprocalRank(lists [][]Candidate) []Candidate {
 	})
 
 	return order
+}
+
+func reconcileScopedSimilarity(fused []Candidate, scoped []Candidate) {
+	index := make(map[int64]int, len(fused))
+	for i, c := range fused {
+		index[c.ID] = i
+	}
+
+	for i, c := range scoped {
+		idx, ok := index[c.ID]
+		if !ok {
+			continue
+		}
+		best := max(fused[idx].Similarity, c.Similarity)
+		fused[idx].Similarity = best
+		scoped[i].Similarity = best
+	}
 }
