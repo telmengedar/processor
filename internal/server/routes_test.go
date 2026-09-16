@@ -346,7 +346,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 	graph := stubGraph{
 		anchor:       loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
 		found:        true,
-		candidates:   []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}},
+		candidates:   []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.9, Content: "candidate body"}},
 		writeReceipt: loop.WriteReceipt{State: loop.Stored, NodeID: 4242},
 	}
 	temperature := 0.4
@@ -391,8 +391,8 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 	if got.ToolCalls[0].Query != "the missing thing" {
 		t.Fatalf("record.toolCalls[0].query = %q, want %q", got.ToolCalls[0].Query, "the missing thing")
 	}
-	if len(got.ToolCalls[0].Results) != 1 || got.ToolCalls[0].Results[0].ID != 7 || got.ToolCalls[0].Results[0].Similarity != 0.5 {
-		t.Fatalf("record.toolCalls[0].results = %+v, want [{7 0.5 ...}]", got.ToolCalls[0].Results)
+	if len(got.ToolCalls[0].Results) != 1 || got.ToolCalls[0].Results[0].ID != 7 || got.ToolCalls[0].Results[0].Similarity != 0.9 {
+		t.Fatalf("record.toolCalls[0].results = %+v, want [{7 0.9 ...}]", got.ToolCalls[0].Results)
 	}
 	if !got.ToolCalls[0].Results[0].Included {
 		t.Fatal("record.toolCalls[0].results[0].included = false, want true — the tiny fixture body is well under SupplementaryByteBudget")
@@ -534,7 +534,7 @@ func TestRunsToolCallsResultsCutReasonIsPopulatedAtTheWireLevel(t *testing.T) {
 		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
 		found:  true,
 		candidates: []loop.Candidate{
-			{ID: 7, Type: "task", Name: "Small", Content: "small body"},
+			{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
 			{ID: 8, Type: "task", Name: "Large", Content: strings.Repeat("x", 21_000)},
 		},
 	}

@@ -347,7 +347,7 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	if record.CapReached {
 		t.Fatal("record.CapReached = true, want false — the model answered on the first call, the cap never fired")
 	}
-	wantLimits := Limits{CandidateLimit: 20, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, MaxOutputTokens: 4_096}
+	wantLimits := Limits{CandidateLimit: 20, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, MaxOutputTokens: 4_096, RelevanceFloor: 0.63}
 	if record.Limits != wantLimits {
 		t.Fatalf("record.Limits = %+v, want %+v", record.Limits, wantLimits)
 	}
@@ -901,7 +901,7 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 			{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", 9_000)},
 			{ID: 92, Similarity: 0.8, Content: strings.Repeat("b", 9_000)},
 			{ID: 93, Similarity: 0.7, Content: strings.Repeat("c", 5_000)},
-			{ID: 94, Similarity: 0.6, Content: strings.Repeat("d", 100)},
+			{ID: 94, Similarity: 0.65, Content: strings.Repeat("d", 100)},
 		}},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -1035,7 +1035,7 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
-		{Candidates: []Candidate{{ID: 91, Content: strings.Repeat("a", SupplementaryByteBudget)}}},
+		{Candidates: []Candidate{{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", SupplementaryByteBudget)}}},
 	}
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
@@ -1337,7 +1337,7 @@ func TestTurnRunWarnsWhenTheTopRankedCandidateWasDroppedForTheByteBudget(t *test
 	graph := baseGraph()
 	graph.candidates = []Candidate{
 		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-		{ID: 101, Type: "task", Name: "Small", Similarity: 0.5, Content: "small body"},
+		{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
@@ -1453,7 +1453,7 @@ func TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped
 	graph := baseGraph()
 	graph.candidates = []Candidate{
 		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-		{ID: 101, Type: "task", Name: "Small", Similarity: 0.5, Content: "small body"},
+		{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
@@ -1463,7 +1463,7 @@ func TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped
 		t.Fatalf("Run: %v", err)
 	}
 
-	wantBlock, wantDispositions := Assemble(graph.node, graph.candidates, AssemblyByteBudget)
+	wantBlock, wantDispositions := Assemble(graph.node, graph.candidates, AssemblyByteBudget, RelevanceFloor)
 	if record.Block != wantBlock {
 		t.Fatalf("record.Block changed when the top candidate was dropped:\ngot  %q\nwant %q", record.Block, wantBlock)
 	}
@@ -1489,7 +1489,7 @@ func TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries(t *testing.T) {
 			name: "partial admission",
 			candidates: []Candidate{
 				{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-				{ID: 101, Type: "task", Name: "Small", Similarity: 0.5, Content: "small body"},
+				{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
 			},
 		},
 		{
@@ -1720,6 +1720,23 @@ func TestTheTurnHoldsThreeOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *t
 	want := []int64{2001, 2002, 2003}
 	if !slices.Equal(neighbourhood, want) {
 		t.Fatalf("the run admitted neighbourhood candidates %v of the five on offer, want %v: the whole-graph ranking already fills the cap on its own, so the number of neighbourhood rows that reach the block is the number of slots withheld from it and nothing else", neighbourhood, want)
+	}
+}
+
+func TestTheRecordCarriesTheFloorThatGovernedTheRun(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if record.Limits.RelevanceFloor != RelevanceFloor {
+		t.Fatalf("record.Limits.RelevanceFloor = %v, want %v", record.Limits.RelevanceFloor, RelevanceFloor)
 	}
 }
 

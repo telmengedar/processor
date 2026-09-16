@@ -56,7 +56,7 @@ func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row, de
 		return nil, nil, true, err
 	}
 
-	_, dispositions := loop.Assemble(anchor, candidates, loop.AssemblyByteBudget)
+	_, dispositions := loop.Assemble(anchor, candidates, loop.AssemblyByteBudget, loop.RelevanceFloor)
 	return queries, dispositions, true, nil
 }
 

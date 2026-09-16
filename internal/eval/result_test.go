@@ -24,7 +24,7 @@ func TestSweepReportsAShutoutWhenEveryCandidateWasOversized(t *testing.T) {
 		{ID: 200, Content: strings.Repeat("x", loop.AssemblyByteBudget+1)},
 		{ID: 201, Content: strings.Repeat("y", loop.AssemblyByteBudget+1)},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
 
 	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -45,7 +45,7 @@ func TestSweepReportsAShutoutWhenEveryCandidateWasOversized(t *testing.T) {
 func TestSweepReportsNoShutoutWhenTheCandidateSetItselfWasEmpty(t *testing.T) {
 	t.Parallel()
 
-	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget)
+	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget, 0)
 
 	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -61,7 +61,7 @@ func TestSweepRecordsThatTheAnchorAlsoAppearedAmongTheCandidates(t *testing.T) {
 		{ID: 100, Content: "the subject body"},
 		{ID: 201, Content: "another body"},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
 
 	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -80,7 +80,7 @@ func TestSweepRecordsAnAnchorCandidateTheBudgetCutAsPresentButNotAdmitted(t *tes
 		{ID: 100, Content: strings.Repeat("x", loop.AssemblyByteBudget)},
 		{ID: 201, Content: "another body"},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
 
 	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -96,7 +96,7 @@ func TestSweepRecordsNoAnchorDuplicationWhenTheSubjectIsNotAmongTheCandidates(t 
 	t.Parallel()
 
 	candidates := []loop.Candidate{{ID: 201, Content: "another body"}}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
 
 	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -113,7 +113,7 @@ func TestSweepRecordsTheAdmittedByteTotalBesideTheBudget(t *testing.T) {
 		{ID: 200, Content: "aaaa"},
 		{ID: 201, Content: "bbbbb"},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
 
 	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -136,7 +136,7 @@ func TestSweepCountsOnlyRunRecordsAsSelfProducedAndNotOtherSessionLogs(t *testin
 		{ID: 201, Type: divoid.RunNodeType, Name: "a session log another agent wrote", Content: "b"},
 		{ID: 202, Type: "documentation", Name: divoid.RunNamePrefix + " lookalike", Content: "c"},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
 
 	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -152,7 +152,7 @@ func TestSweepRecordsTheTopSimilarityOfTheCandidateSet(t *testing.T) {
 		{ID: 200, Similarity: 0.6388, Content: "a"},
 		{ID: 201, Similarity: 0.6704, Content: "b"},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
 
 	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -335,7 +335,7 @@ func TestSweepRetainsEveryCandidateItSawInRankOrderIncludingTheOnesTheBudgetCut(
 		{ID: 403, Similarity: 0.77, Content: strings.Repeat("x", loop.AssemblyByteBudget)},
 		{ID: 404, Similarity: 0.48, Content: strings.Repeat("c", loop.AssemblyByteBudget)},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
 
 	got := BuildRow(labelledRow(Required{Node: 403, Hash: "h", Why: "w"}), nil, dispositions)
 
