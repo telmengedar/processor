@@ -621,7 +621,8 @@ flags it.
   complete record and issues no `DELETE`, and a discard that itself fails still reports `notStored` while
   naming the surviving node on stderr. The two-artifact relationship (`cmd/processor/artifacts_test.go`)
   is asserted end-to-end: one turn through the real handler and the real graph adapter, both byte
-  sequences taken, and the stored body compared key-for-key against the response minus `written`.
+  sequences taken, the record extracted from the stored body's last fenced `json` block, and that
+  record compared key-for-key against the response minus `written`.
   **Since verified live, which the suite structurally could not do** — every success fixture was written
   from the same reading of the protocol that produced the decoder, so a misreading would be reproduced on
   both sides: two real turns against a real OpenAI-compatible endpoint, in a container, covering the

@@ -101,6 +101,68 @@ class ParseRunRecordTests(unittest.TestCase):
         self.assertIsNone(compare.parse_run_record("not json at all"))
 
 
+class SelectPriorRunTests(unittest.TestCase):
+    """The row-filtering half of find_prior_run, split out so the wiring between the type/name
+    filter, parse_run_record and the input comparison is exercisable without a graph. Every case
+    here asserts the id a matching row returns, never only that nothing raised."""
+
+    def test_finds_a_composed_body_row_whose_input_matches(self):
+        name = compare.RUN_NAME_PREFIX + " 2026-09-16T12:00:00Z -- earlier task"
+        rows = [{
+            "id": 777,
+            "type": compare.RUN_NODE_TYPE,
+            "name": name,
+            "content": "account text\n---\n```json\n{\"input\": \"the exact task text\"}\n```\n",
+        }]
+        self.assertEqual(compare.select_prior_run(rows, "the exact task text"), (777, name))
+
+    def test_finds_an_un_backfilled_row_with_no_fence_too(self):
+        name = compare.RUN_NAME_PREFIX + " 2026-09-16T12:00:00Z -- earlier task"
+        rows = [{
+            "id": 555,
+            "type": compare.RUN_NODE_TYPE,
+            "name": name,
+            "content": '{"input": "the exact task text"}',
+        }]
+        self.assertEqual(compare.select_prior_run(rows, "the exact task text"), (555, name))
+
+    def test_returns_none_when_no_row_matches(self):
+        rows = [{
+            "id": 1,
+            "type": compare.RUN_NODE_TYPE,
+            "name": compare.RUN_NAME_PREFIX + " x",
+            "content": '{"input": "a different task"}',
+        }]
+        self.assertIsNone(compare.select_prior_run(rows, "the exact task text"))
+
+    def test_skips_rows_that_are_not_run_records(self):
+        rows = [{
+            "id": 2,
+            "type": "documentation",
+            "name": "unrelated node",
+            "content": '{"input": "the exact task text"}',
+        }]
+        self.assertIsNone(compare.select_prior_run(rows, "the exact task text"))
+
+    def test_skips_a_row_whose_content_does_not_parse_and_keeps_looking(self):
+        good_name = compare.RUN_NAME_PREFIX + " good"
+        rows = [
+            {
+                "id": 3,
+                "type": compare.RUN_NODE_TYPE,
+                "name": compare.RUN_NAME_PREFIX + " broken",
+                "content": "not json at all",
+            },
+            {
+                "id": 4,
+                "type": compare.RUN_NODE_TYPE,
+                "name": good_name,
+                "content": '{"input": "the exact task text"}',
+            },
+        ]
+        self.assertEqual(compare.select_prior_run(rows, "the exact task text"), (4, good_name))
+
+
 class RouteTests(unittest.TestCase):
     """route() is the whole axis split (DiVoid #11333): one comparison, node == anchor.id."""
 

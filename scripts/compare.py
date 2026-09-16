@@ -255,6 +255,21 @@ def parse_run_record(content):
         return None
 
 
+def select_prior_run(rows, task_text):
+    """Return (nodeId, name) of the first row in rows that is a run record whose input is
+    task_text verbatim, or None. The row-filtering half of find_prior_run, split out so it is
+    exercisable without a graph: rows is the parsed "result" array of a GET /api/nodes response."""
+    for row in rows:
+        if row.get("type") != RUN_NODE_TYPE or not str(row.get("name", "")).startswith(RUN_NAME_PREFIX):
+            continue
+        record = parse_run_record(row.get("content") or "")
+        if record is None:
+            continue
+        if record.get("input") == task_text:
+            return row.get("id"), row.get("name")
+    return None
+
+
 def find_prior_run(divoid_url, divoid_key, task_text):
     """Return (nodeId, name) of an existing run record whose input is task_text verbatim, or None.
 
@@ -298,15 +313,7 @@ def find_prior_run(divoid_url, divoid_key, task_text):
             f"checking for a prior run of this task"
         ) from err
 
-    for row in wire.get("result") or []:
-        if row.get("type") != RUN_NODE_TYPE or not str(row.get("name", "")).startswith(RUN_NAME_PREFIX):
-            continue
-        record = parse_run_record(row.get("content") or "")
-        if record is None:
-            continue
-        if record.get("input") == task_text:
-            return row.get("id"), row.get("name")
-    return None
+    return select_prior_run(wire.get("result") or [], task_text)
 
 
 def refuse_repeats_against_graph(tasks, divoid_url, divoid_key):
