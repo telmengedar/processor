@@ -9,3 +9,6 @@
 
 # Python bytecode from scripts/
 __pycache__/
+
+# Agent scratch (per-repo scratch root; never committed)
+.claude/tmp/
