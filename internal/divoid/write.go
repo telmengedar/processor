@@ -91,6 +91,16 @@ func composeRunContent(account string, record []byte) []byte {
 	return []byte(b.String())
 }
 
+// ComposeRunContent composes account and record exactly as WriteRun's own composition does.
+func ComposeRunContent(account string, record []byte) []byte {
+	return composeRunContent(account, record)
+}
+
+// SetRunContent posts content to an existing run node with WriteRun's own content type.
+func (c *Client) SetRunContent(ctx context.Context, id int64, content []byte) error {
+	return c.post(ctx, fmt.Sprintf("/api/nodes/%d/content", id), runContentType, content, nil)
+}
+
 func (c *Client) discardShell(ctx context.Context, id int64) {
 	if err := c.remove(ctx, fmt.Sprintf("/api/nodes/%d", id)); err != nil {
 		c.log().Error(logUncollectedShell, "node", id, "error", err)
