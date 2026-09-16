@@ -3,6 +3,9 @@
 > **Repo path `docs/architecture/what-a-run-record-is.md`, DiVoid node #14054.** The two carry the same
 > document byte for byte; an edit to one is not finished until the other matches it.
 > **Source task:** DiVoid **#13602**, named by **#13601 §19 row 1** and deliberately not designed there.
+> The *"this task ends the over-fetch bridge"* expectation this document falsifies (§13.3) is **#13602's
+> own framing**, built on **#13601 §13.2**'s enumeration of three routes — not on §19 row 1, which carries
+> no bridge claim.
 > **Baseline:** `main` at **`e8a10b1`**, clean tree. Every `file:line` in this document was resolved
 > against that tree before submission.
 > **Live measurements:** taken 2026-09-16 against the production graph, in memory, reported as counts,
@@ -26,11 +29,11 @@ record in a fenced ` ```json ` block. Content type becomes `text/markdown`.
 account is already computed one line below it (`:68`). A one-off, deterministic, re-runnable backfill
 re-composes the **39** records already in the graph from their own stored bytes — no model, no cost.
 
-**Why, measured.** DiVoid embeds `name + content` truncated to ~8,000 characters. Today a run's own
-outcome sits at character ~70,000 and is not embedded at all: three natural-language questions about a
-run's outcome return the record **nowhere in the top 60**. With the account leading the content the same
-three return it at ranks **7, 48, 8**. The record is not un-admitted because admission refuses it; it is
-worthless because nothing in it is reachable.
+**Why, measured.** DiVoid embeds `name + content` truncated to ~8,000 characters, and a run's own
+`answer` is outside that window on **39 of 39** records in the graph. So three natural-language questions
+about a run's outcome return the record **nowhere in the top 60**. With the account leading the content
+the same three return it at ranks **7, 48, 8**. The record is not un-admitted because admission refuses
+it; it is worthless because nothing in it is reachable.
 
 **Cost, non-zero.** Crowding gets **worse**, measured: the account-led node scores **+0.027** similarity
 on a repeat of its own input. So the aperture exclusion stays and this design **extends** #13601's
@@ -162,9 +165,25 @@ Per-key share of the whole 2,837,179-byte corpus, by the encoded size of each to
 | everything else (17 keys) | 108,541 | 3.8 % |
 
 **The run's own conclusion is 1.1 % of what the run stores about itself.** And per A1 the ranked surface
-is the first ~7,880 characters of content, where `answer` never appears at all — resolved on six records
-this session, `answer` begins at offsets **65,075 – 76,104**, and `block` at **5,457 – 8,852**. This
-reproduces #13480 §5.2 independently.
+is the first ~7,880 characters of content, where `answer` never appears at all. **Resolved across all 39
+records**, each against its own content budget (8,000 − its name − 2, giving 7,880 – 7,910):
+
+| | measured, 39 / 39 |
+|---|---|
+| records whose `answer` begins **inside** the budget | **0 of 39** |
+| records whose `block` begins **inside** the budget | **17 of 39**, at offsets 5,457 – 7,151 |
+| records whose `block` begins outside it | 22 of 39, at offsets 8,250 – 10,476 |
+
+The `answer` row reproduces **#13480 §5.2** independently and widens it from one specimen to the corpus.
+
+> **The `block` row does not reproduce a companion claim, and the disagreement is stated rather than
+> smoothed over.** #13480 §5.4 and #13238 §9.5 clause 1 both rest on `block` contributing *"exactly zero"*
+> to the embedding. That is measured on **#13472**, where `block` begins at 8,360, and it holds for the
+> **22** records shaped like it; on the other **17** a tail of `block` is inside the window. **This does
+> not reopen #13238 §9.5 reason 4** — clause 2 fails independently of clause 1, on #13480 §5.4's own
+> arithmetic — but *"exactly zero"* is a property of one record's shape rather than of run records, and
+> §20 carries it back. This document's decisive specimen #13718 has `block` at **10,476**, outside on
+> both counts.
 
 ### 4.3 What each shape costs against the two byte budgets
 
@@ -180,59 +199,130 @@ reproduces #13480 §5.2 independently.
 the identity fields occupy **890 – 6,096 B, median 1,778** against a content budget of ~7,880 characters:
 **39 / 39 fit**, the largest at 77 % of budget.
 
-### 4.4 The decisive experiment — five shapes of one record, name held constant
+### 4.4 The decisive experiment — seven shapes of one record, name held constant
 
-**Method, published as run.** Five nodes were created with **#13718's exact name** (so the name's
-contribution to the embedding is identical across arms) and differing content, DiVoid re-embedded each on
-content upload (A4), four queries were issued against `GET /api/nodes?query=…&count=60`, and **all five
-probe nodes were then deleted**. The corpus was verified back at exactly 39 run records afterwards.
+**Method, published as run, and every arm is published as a recipe so every one is rebuildable.** Nodes
+were created carrying **#13718's exact name** (so the name's contribution to the embedding is identical
+across arms) and differing content; DiVoid re-embedded each on content upload (A4); four queries were
+issued against `GET /api/nodes?query=…&count=60`; **every probe node was then deleted and the corpus
+verified back at exactly 39 run records.**
+
+**Probe accounting, in full.** This re-run allocated **7** ids (14063–14069, one per arm — including A,
+so that every arm sits in the same population) and the cliff check in finding 1 a further **1** (14070).
+An earlier round allocated **7** more, spanning three experiments rather than one: **14047–14048** on a
+different specimen (#13034, a reordering test whose results this document does not carry), **14049, 14050,
+14052, 14053** for arms B, C, D and E on #13718, and **14051** for §4.5's prose twin of #13599 — in that
+round arm A was read from the live node rather than probed. **Fifteen node writes to the shared graph
+across this design, every one deleted, the corpus verified at 39 after each round.**
+
+*An earlier revision of this section said "all five probe nodes were then deleted" — it was counting the
+arms in its own table rather than the writes it had made. The cleanup was complete and the accounting was
+not, and the accounting is what a reader quotes.*
 
 **#13718 is the specimen because its outcome is distinctive**: `stopReason: wantsRecall`, 6 model calls,
-**empty answer** — a run that spent its call cap still asking for a tool.
+**empty answer** — a run that spent its call cap still asking for a tool. Its stored content is
+**107,460 B**.
 
-| arm | content | size |
-|---|---|---|
-| **A** | as stored today | 78 kB JSON |
-| **B** | the account's fields, still as JSON | 1.7 kB |
-| **C** | the account as prose (`RenderSummary`'s own output, taken from the node's substance) | 3.1 kB |
-| **D** | **the account as prose, then the full record fenced** | 110 kB |
-| **E** | the account as prose, then the record with `block` removed | 52 kB |
+#### The arms, each as a recipe
 
-| query | A | B | C | D | E |
-|---|---|---|---|---|---|
-| *"a run that used up all six model calls and still wanted another recall, producing no answer at all"* | **not in top 60** | 0.6491 | **0.6869** | 0.6701 | 0.6678 |
-| *"which runs ended by hitting the model call cap instead of answering"* | **not in top 60** | **not in top 60** | **0.6586** | 0.6399 | 0.6391 |
-| *"a run where twenty candidates were retrieved and only seven were admitted, thirteen cut"* | **not in top 60** | **not in top 60** | **0.6782** | 0.6763 | 0.6735 |
-| a **verbatim repeat of the run's own input** | 0.7451 | 0.7671 | 0.7626 | **0.7717** | 0.7710 |
+Let `rec` be #13718's stored content parsed as a `Record`, `sub` its stored substance, and
 
-Ranks at the last pass (all five arms present): outcome-distinctive **C 3, D 7, E 9, B 28**; outcome-cheaper
-**C 12, D 48, E 49**; assembly **C 6, D 8, E 10**; input repeat **D 1, E 2, C 4, A 5**.
+```
+ACCOUNT = input, subject, now, query, queries, derivationError, window, anchor,
+          answer, stopReason, model, provider, modelCalls, capReached, workspace,
+          usage, limits, sampling
+```
 
-> **Ranks are stated with the probe set they were taken in and similarities are not.** Adding arm E moved
-> A from rank 4 to rank 5 and C from 3 to 4 while **both similarities were identical to four decimal
-> places**. A rank is a property of the population; a similarity is a property of the pair. Quote the
-> similarity.
+— every top-level key of `Record` **except** `candidates`, `toolCalls` and `block`, in that order. On
+#13718 four of the eighteen (`now`, `derivationError`, `window`, `workspace`) are absent from the stored
+record and are therefore absent from the arm.
 
-**Three findings, and the second is the one that constrains the design:**
+| arm | recipe | size | sha256 (first 12) |
+|---|---|---|---|
+| **A** | #13718's stored content, byte for byte | **107,460 B** | `caed978ba109` |
+| **B** | `ACCOUNT` re-serialized as one JSON object in that key order, with `", "` / `": "` separators | **1,725 B** | `23a7ec3d1845` |
+| **B-0** | the same, with compact `","` / `":"` separators — **what Go's `encoding/json` actually emits** | 1,645 B | `3bf582c56f25` |
+| **B-plus** | `ACCOUNT` **plus `candidates` and `toolCalls`**, same serializer as B | 48,848 B | `026cc8e6ab08` |
+| **C** | `sub` — `RenderSummary`'s own output, taken from the node's substance | 3,110 B | `6be3e3e431f3` |
+| **D** | `sub`, then a `---` line, then A inside a ` ```json ` fence | 110,590 B | `0884e6ad4976` |
+| **E** | as D, with `block` replaced by `blockBytes` in the fenced record | 51,999 B | `d1b38d876e9e` |
 
-1. **Form decides findability, not order and not size.** Arm B is the same facts as C, reordered to the
-   head of the window and 45× smaller than A — and it reaches one of three outcome queries, at rank 28.
-   Arm C reaches all three, top 12. **JSON key–value pairs do not embed against a natural-language
-   question about what happened**; `"stopReason":{"reason":"wantsRecall"},"modelCalls":6` is not near
-   *"hit the model call cap"*. And `"answer":""` is an **absence**, which has no text to embed at all.
-   A design that merely reordered the struct would have been measured and wrong.
-2. **Every new shape crowds *more* on a repeat of its own input, not less.** A → C is **+0.0175**;
-   A → D is **+0.0266**. Dilution was doing protective work. §12 and §13 are built on this.
-3. **`block`'s presence is worth ≤ 0.003 similarity on all four queries** (D vs E). This independently
-   reproduces #13480's finding that `block` starts past the cap — measured here on the composed shape
-   rather than by arithmetic on offsets.
+> **Arm B is published as a recipe because an earlier revision published only its size**, and a reviewer's
+> good-faith reconstruction at 1,741 B then disagreed with it on one query (#14062 CF-2). Arm B is the only
+> thing standing between this design and the cheap alternative, so it owed the same reconstructibility the
+> other four already had. **The re-run below settles the disagreement**; the recipe is what stops anyone
+> needing to reconstruct it again.
+
+#### The results, re-run 2026-09-16 with all seven arms present
+
+| query | A | B | B-0 | B-plus | C | D | E |
+|---|---|---|---|---|---|---|---|
+| **Q1** *"a run that used up all six model calls and still wanted another recall, producing no answer at all"* | — | 0.6491 | — | — | **0.6869** | 0.6701 | 0.6678 |
+| **Q2** *"which runs ended by hitting the model call cap instead of answering"* | — | — | — | — | **0.6586** | 0.6399 | 0.6391 |
+| **Q3** *"a run where twenty candidates were retrieved and only seven were admitted, thirteen cut"* | — | — | — | 0.6573 | **0.6782** | 0.6763 | 0.6735 |
+| **Q4** a **verbatim repeat of the run's own input** | 0.7451 | 0.7671 | **0.7810** | 0.7592 | 0.7626 | 0.7717 | 0.7710 |
+
+**`—` means the arm was not among the 60 rows the query returned.** Ranks in that pass: Q1 — C 3, D 7,
+E 9, B 29; Q2 — C 12, D 48, E 49; Q3 — C 6, D 8, E 10, B-plus 58; Q4 — B-0 1, D 2, E 3, B 4, C 5,
+B-plus 6, A 8.
+
+> **Ranks are stated with the probe set they were taken in and similarities are not.** Arm B sat at rank
+> 28 with five arms present, 29 with seven and 30 with eight, while its similarity stayed **0.6491** at
+> four decimal places throughout. A rank is a property of the population; a similarity is a property of
+> the pair. **Quote the similarity.**
+
+**Every cell of the earlier five-arm revision reproduced to four decimal places** — A, B, C, D and E on
+all four queries — on a fresh set of probe nodes. The reviewer independently reproduced A, C and D to the
+same precision, with arm A bit-identical to the live record.
+
+#### Three findings, and the second is the one that constrains the design
+
+1. **Form decides findability, not order and not size.** Arm B is the account's own fields hoisted to the
+   head of the window, **62.3x smaller than A** (107,460 / 1,725) — and it reaches **one** of three outcome
+   queries. Arm C reaches all three, inside rank 12. **JSON key–value pairs do not embed against a
+   natural-language question about what happened**; `"stopReason":{"reason":"wantsRecall"},"modelCalls":6`
+   is not near *"hit the model call cap"*, and `"answer":""` is an **absence**, which has no text to embed
+   at all. A design that merely reordered the struct would have been measured and wrong.
+
+   **And the faithful version of that alternative is worse, not better.** Arm B used Python's default
+   `", "` / `": "` separators; **Go emits compact JSON**, which is arm **B-0** — and B-0 reaches **zero** of
+   the three outcome queries while posting **the highest crowding figure of all seven arms** (0.7810,
+   rank 1, on a repeat of its own input). Measured as the code would actually produce it, R-2 is strictly
+   worse than the arm originally used to reject it.
+
+   **What was tested against the reviewer's contrary reconstruction, and what it showed.** Three
+   constructions neighbouring B were measured: compact separators (**B-0**, above); `ACCOUNT` plus the four
+   zero-valued keys Go omits (+145 B — Q1 moved +0.0008 to 0.6499, Q3 still absent); and `ACCOUNT` plus the
+   assembly arrays (**B-plus**, 48,848 B — Q3 at **0.6573, rank 58**, inside the set and still 0.0209 below
+   arm C). **None reaches Q3 above rank 58**, and the +145 B perturbation shows Q3 is not sitting on a cliff
+   that a small body change tips. So the reconstruction that scored 0.6841 at rank 4 carried material no
+   reading of *"the account's fields, still as JSON"* produces — **the divergence is in the reconstruction,
+   not in the arm.** Which bytes differed I cannot know, and the recipe above is what makes the question
+   unnecessary rather than answerable.
+
+   **The reviewer's numerals hypothesis, measured rather than inherited.** #14062 CF-2 asks whether Q3's
+   numerals (`20`, `7`, `13`) place it inside the falsifying class §17 names for this document's own
+   universal. **Arm B contains neither 7 nor 13** — the admitted and cut counts exist only inside
+   `candidates`, which B excludes; B carries only `limits.candidateLimit: 20`. **B-plus carries all three
+   and reaches Q3 at rank 58.** So numerals in JSON do measurably help on Q3 and come nowhere near the
+   prose arm. §17 carries the consequence.
+2. **Every new shape crowds *more* on a repeat of its own input, not less.** A to C is **+0.0175**; A to D
+   is **+0.0266**; A to B-0 is **+0.0359**, the largest of the set. Dilution was doing protective work.
+   §12 and §13 are built on this.
+3. **`block`'s presence is worth ≤ 0.003 similarity on all four queries** (D vs E: 0.0023, 0.0008, 0.0028,
+   0.0007). On **#13718** that is because `block` begins at character 10,476, outside the window — but §4.2
+   measures that this holds for only 22 of 39 records, so the finding is stated of this specimen and not of
+   run records generally.
 
 ### 4.5 A second specimen, because one is one sample
 
 Arms A and C were repeated on **#13599** — the record that ranks **first** on the ill-matched input the
-product briefing §11 measured (*"write 17 × 23 into a file"*). Same name, content swapped for the account:
+product briefing §11 measured (*"write 17 × 23 into a file"*). **Same recipes as §4.4**, same name, content
+swapped for the account: A is #13599's stored content, **38,638 B**, read from the live node; C is its
+stored substance, **1,654 B** (1,626 characters), written to one probe node — **#14051**, inside the
+14047–14053 block accounted for in §4.4.
 
-| query | A (38 kB JSON) | C (1.6 kB prose) | delta |
+| query | A (38,638 B JSON) | C (1,654 B prose) | delta |
 |---|---|---|---|
 | the ill-matched input | 0.6641 | 0.7929 | **+0.1288** |
 | a verbatim repeat of #13599's own input | 0.6933 | 0.8206 | **+0.1272** |
@@ -267,7 +357,7 @@ answer is not uniform over the record:
 |---|---|---|
 | **the run's own account** — what was asked, what was retrieved, what was admitted and cut and why, how it ended, what it concluded | today: JSON fields at offsets 65,000–76,000, **outside the ranked window**, rendered to a reader as a struct | **Yes — and unreachable.** Three questions about it return the record nowhere in the top 60 (§4.4) |
 | **`block`** — 77.4 % of the corpus | verbatim bodies of nodes the record itself addresses by id | **No.** Toni: *"duplicating content in a graph in general is complete nonsense — that's what edges are for."* Already ruled: #13238 §9.5 |
-| **`candidates` + `toolCalls`** — 17.8 % | ids, similarities, hashes and **twenty other nodes' names** | **Not as memory.** It is instrument output, and it is 93.2 % of the embedded window today (#13480 §5.3) — so the record's semantic identity is a summary of the twenty nodes it looked at |
+| **`candidates` + `toolCalls`** — 17.8 % | ids, similarities, hashes and **twenty other nodes' names** | **Not as memory.** It is instrument output, and `candidates` alone fills **93.2 % of the embedded content budget** today (#13480 §5.3 — 93.2 % is against the 7,880-character *budget*; against the 8,000-character *window* it is 91.8 %, and §5.3's own [R2] correction exists because those two were once quoted against each other. `toolCalls` sits outside the window entirely, per #13480 §5.2) — so the record's semantic identity is a summary of the twenty nodes it looked at |
 
 **So the quote's own test separates the artifact into two.** A run record is *one node holding two
 artifacts*: an **account**, which is memory, and a **measurement**, which is an instrument's output. A
@@ -457,8 +547,17 @@ holds both shapes, which is the intended operating mode rather than a migration 
 **Property to sweep for, rather than the two sites I found** (#1220's 2026-09-10 addendum): *every reader
 that turns a run record node's content into structured data must go through the fence*. I located two —
 `compare.py:280` and the invariant test at `artifacts_test.go:163`. **Do not trust that list to be
-complete**; re-derive it with `grep -rn "json.loads\|json.Unmarshal\|JSONDecodeError" scripts/ cmd/ internal/`
-and by reading every call site that reaches a `session-log` body.
+complete**; re-derive it with
+
+```
+grep -rnE "json\.(loads|Unmarshal|NewDecoder|Decoder|Delim)|JSONDecodeError" scripts/ cmd/ internal/
+```
+
+and by reading every call site that reaches a `session-log` body. **Run at `e8a10b1` this returns 103 rows
+and reaches both named sites.** *An earlier revision published this without the decoder alternatives; that
+form returns 94 rows and **zero** from `cmd/processor/artifacts_test.go`, which parses with
+`json.NewDecoder` / `dec.Decode` / `json.Delim` (`:133`–`:154`) and matches none of the three original
+patterns — so the published command could not see one of the two sites this very section names.*
 
 ---
 
@@ -526,7 +625,7 @@ what was concluded"* is, on a repeat, **the single most on-point thing the graph
 is not a defect of the ranking; it is the ranking working. That is Toni's ruling read literally: *memory is
 always worth something, and self-produced is not worth less.*
 
-**The falsifying input class, named in the same paragraph** (#1220 §5): the repeat is being asked
+**The falsifying input class, and it is the paragraph you are reading** (#1220 §5): the repeat is being asked
 *because the first run's answer was wrong*, or because the graph has changed since. Then a top-ranked
 record teaches the model the stale answer with the authority of memory. **Two things bound it, and only
 the second is delivered by this design:**
@@ -597,21 +696,31 @@ relevance floor in §20, and it is a gate on the *aperture*, not on the record.
 
 ### 13.3 Does this end #13601's over-fetch bridge? No — it extends it, and the premise that it would end it is falsified
 
-#13601 §13.2 names three things that end the bridge and this task is one of them. **The measurement says
-otherwise, and the finding belongs back at #13601 rather than only here.**
+**#13601 §13.2** enumerates three routes that would end the bridge — a graph-side negation predicate, a
+change to what a run record is, or a two-phase fetch — and adds *"None of them is this task"*, meaning none
+was #13601's own scope. **#13602** then takes that enumeration and states the expectation directly: *"this
+task is one of the three things that ends it."* **That is the sentence the measurement falsifies, and it is
+#13602's, not #13601 §19 row 1's** — row 1 carries the record-size and admit-vs-produce fork and no bridge
+claim at all. The finding belongs back at both nodes rather than only here.
 
 The premise is that a better-shaped record becomes admissible, so nothing needs excluding, so no over-fetch
 is needed. **The premise's first half holds and its second does not:** the better-shaped record is a
 *stronger* competitor (§4.4 finding 2), so the exclusion becomes more load-bearing, not less — and the
 over-fetch that makes the exclusion affordable stays with it.
 
-**What this design does give the bridge is time, measured rather than assumed.** #13601 sized its
-remaining life at **2.2 days** on a 20-runs-per-day peak. Four days have passed and the corpus grew by
-**two** (37 → 39, §4.1), an observed rate of **0.5/day** — which puts the 44-record headroom at ~88 days
-on the realised rate. **Both figures are honest and they answer different questions**: 2.2 days is what a
-burst can do, 88 days is what has happened. A bridge sized against bursts is sized correctly; a bridge
-*reported* as having 2.2 days left when it has not moved in four is a figure that will be quoted into a
-brief. #13601's WARN detector is what makes either number safe to be wrong about.
+**What this design does give the bridge is time, measured rather than assumed.** #13601 §13.2 sized the
+remaining life at **2.2 days** on a 20-runs-per-day peak, against its own falsifier — *an input for which
+more than 80 of the top 100 rows are run records*, which needs **81 records** in the graph. Four days have
+passed and the corpus grew by **two** (37 → 39, §4.1), an observed rate of **0.5/day**; the **42 further
+records** that falsifier now needs are **~84 days** away at that rate. **Both figures are honest and they
+answer different questions**: 2.2 days is what a burst can do, 84 days is what has happened.
+*(#13601 §13.2 also states a separate figure — an over-fetch headroom of **80 rows**, being fetch 100 minus
+limit 20. An earlier revision of this paragraph fused the two into a "44-record headroom", which is neither
+document's quantity: 44 was the record shortfall measured when 37 existed, not a headroom.)*
+
+A bridge sized against bursts is sized correctly; a bridge *reported* as having 2.2 days left when it has
+not moved in four is a figure that will be quoted into a brief. #13601's WARN detector is what makes
+either number safe to be wrong about.
 
 ---
 
@@ -635,8 +744,8 @@ brief. #13601's WARN detector is what makes either number safe to be wrong about
 
 | # | Alternative | Why not |
 |---|---|---|
-| **R-1** | **Keep only the account; drop the record from the graph** (arm C — the best outcome ranks by a clear margin: 3, 12, 6) | It discards the original at the capture point, which #1220's *capture the original, derive the compressed form* ruling forbids in terms. The account is computable from the record forever; the record is not recoverable from the account. And it is not consumer-free: `compare.py:280` reads the stored record (A8), and #10904 §9.4 obligation 1 makes the dispositions the reason recall@k is computable retroactively at all. **Cost of rejecting it, stated: 3 outcome ranks, 0.017–0.019 similarity** |
-| **R-2** | **Reorder `Record`'s struct fields so the account's data leads the JSON** (arm B) — free, lossless, one struct | **Measured insufficient.** It reaches one of three outcome queries, at rank 28. Form decides findability, not order (§4.4 finding 1). This is the alternative a reasoning-only design would have chosen, and the probe is why it was not |
+| **R-1** | **Keep only the account; drop the record from the graph** (arm C — the best outcome ranks by a clear margin: 3, 12, 6) | It discards the original at the capture point, which #1220's *capture the original, derive the compressed form* ruling forbids in terms. The account is computable from the record forever; the record is not recoverable from the account. And it is not consumer-free: `compare.py:280` reads the stored record (A8), and #10904 §9.4 obligation 1 makes the dispositions the reason recall@k is computable retroactively at all. **Cost of rejecting it, stated per query rather than as a range: C − D on the three outcome queries is 0.0168, 0.0187 and 0.0019** — three ranks on each, and the third is an order of magnitude smaller than the other two. *An earlier revision stated this as "0.017–0.019", which is the two larger deltas rounded and silently drops the third. The error ran **against** this design's own position — it overstates the price of the alternative the design rejects — which is why nothing internal caught it, and correcting it moves Q1's balance toward R-1.* |
+| **R-2** | **Reorder `Record`'s struct fields so the account's data leads the JSON** (arms B and B-0) — free, lossless, one struct | **Measured insufficient, and the faithful form is worse.** Arm B reaches **one** of three outcome queries; arm **B-0**, which uses the compact separators Go's `encoding/json` actually emits, reaches **none** — while posting the highest crowding figure of all seven arms (0.7810). Form decides findability, not order (§4.4 finding 1). This is the alternative a reasoning-only design would have chosen, and the probe is why it was not. **Both arms are published as recipes in §4.4** so this rejection is re-runnable |
 | **R-3** | **Put the record in the node's `substance`**, which is not embedded, and the account in the content | Inverts `substance`'s graph-wide meaning — DiVoid defines it as the *condensed* form of the content, and every other agent and #13238's own form rule reads it that way. A local dodge that breaks a shared contract |
 | **R-4** | **Declare a content type outside DiVoid's embeddable allowlist** so the node ranks on its name alone | Two objections and either is fatal: it is a false declaration about bytes that really are JSON, and it makes a Processor decision by mis-stating a fact to a shared substrate. If run-record content should not be embedded, that is a DiVoid-side rule to propose openly (§20) |
 | **R-5** | **Cap how many self-produced rows may hold aperture slots** | It is still a provenance rule, and it is aimed at the wrong quantity. §12.2's measurement says the binding defect is relevance, not authorship — and a cap would leave the same 19 bad rows in place on an ill-matched input, just fewer of them |
@@ -693,13 +802,23 @@ argument (#1220 §5):
 > records; the same facts rendered as prose can.*
 
 **Bounded to what was measured:** three questions, one specimen, one embedding model
-(`gemini-embedding-001`, #6115), four arms. Arm B — the same facts, as JSON, at the head of the window —
-reached one query at rank 28; arm C reached all three inside rank 12.
+(`gemini-embedding-001`, #6115), seven arms. Arm B — the account's fields as JSON at the head of the
+window — reached one query; arm B-0, the same in the compact form Go emits, reached none; arm C reached
+all three inside rank 12.
 
 **The input class that would break it:** a question phrased in the struct's own vocabulary — *"a record
-whose stopReason reason is wantsRecall with modelCalls 6"*. That query would likely favour the JSON arm,
-and **it was not tested.** It is also not the query anyone asks, which is why the bounded claim is the
-useful one — but a design that said *"JSON is never retrievable"* would be false, and this one does not.
+whose stopReason reason is wantsRecall with modelCalls 6"*. That query would likely favour a JSON arm, and
+**it was not tested.** It is also not the query anyone asks, which is why the bounded claim is the useful
+one — but a design that said *"JSON is never retrievable"* would be false, and this one does not.
+
+**One of the three questions sits nearer that class than the other two, and it was measured rather than
+argued.** Q3 names three counts — twenty, seven, thirteen — so a JSON arm carrying them as numerals has
+the class's own vocabulary in its window. **Arm B does not carry seven or thirteen** (they live only in
+`candidates`, which B excludes), so Q3 is outside the class *for the arm the universal is stated against*.
+**Arm B-plus does carry all three, and reaches Q3 at 0.6573, rank 58** — measurably helped, and 0.0209
+below the prose arm. So the numerals matter and they do not overturn the claim; what they do is narrow it:
+**on a question phrased in the struct's vocabulary the gap shrinks, and this document has one data point
+for how far.** Raised by #14062 CF-2 as a hypothesis and settled here by measuring it.
 
 **Which direction the error runs, and it is the quiet one.** An over-broad claim here produces a design
 that renders prose where JSON would have done — visible, cheap, self-correcting. An under-broad one
@@ -789,9 +908,10 @@ argued.
 |---|---|---|
 | 1 | **The aperture has no relevance floor.** On an input the graph answers badly, the top 20 is 19 run records at 0.6164–0.6641 and the ranking returns its best twenty regardless. DiVoid's listing route already supports `minSimilarity` (#6115) and the product does not use it. **This is the gate on ever relaxing the self-produced exclusion** (§13.2) | **#14055**, open, linked to this design and to #13601 |
 | 2 | **DiVoid embeds `application/json`.** Q2 | **#14056**, open, DiVoid-side, linked to this design and to #6115 |
-| 3 | **`block` still leaves the record** — #13238 §9.5, decided, unimplemented. Independent of this design and composable in either order (§10.3). Measured worth ≤0.003 similarity to the embedding (§4.4 finding 3), which **narrows its retrieval value to nil and leaves reasons 1–3 untouched** | #13238 |
+| 3 | **`block` still leaves the record** — #13238 §9.5, decided, unimplemented. Independent of this design and composable in either order (§10.3). Measured worth ≤0.003 similarity to the embedding (§4.4 finding 3) — **an independent confirmation on a second specimen, not a narrowing**: #13238 §9.5 reason 4 was already struck FALSIFIED on 2026-09-10 from #13480, in both clauses, so there was nothing left to narrow. Reasons 1–3 are untouched | #13238 |
 | 4 | **The name still carries the input** — #13480, decided, unimplemented. Orthogonal; §11.4 | #13480 |
-| 5 | **#13601 §19 row 1's expectation that this task ends the over-fetch bridge is falsified** (§13.3), and #13601 §13.2's *2.2 days* has not been borne out by four days of observation | to be carried back to #13601 as a dated note |
+| 4a | **`block` contributes "exactly zero" to the embedding on 22 of 39 records and not on the other 17** (§4.2). #13480 §5.4 and #13238 §9.5 clause 1 both state it unqualified, measured on #13472. **This does not reopen reason 4** — clause 2 fails on its own — but the claim is a property of one record's shape rather than of run records | to be carried back to **#13480 §5.4** and **#13238 §9.5** as dated notes |
+| 5 | **#13602's expectation that this task ends the over-fetch bridge is falsified** (§13.3) — the expectation is #13602's own sentence, resting on #13601 §13.2's three routes, not on #13601 §19 row 1. And #13601 §13.2's *2.2 days* has not been borne out by four days of observation | to be carried back to **#13602** and **#13601 §13.2** as dated notes |
 
 ---
 
