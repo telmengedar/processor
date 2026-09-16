@@ -81,6 +81,7 @@ func RecallScope(ctx context.Context, graph GraphPort, subject int64) ([]int64, 
 
 func fuse(lists [][]Candidate, scoped []Candidate, anchor int64, limit, reserve int) []Candidate {
 	fused := fuseByReciprocalRank(lists)
+	scoped = slices.Clone(scoped)
 	reconcileScopedSimilarity(fused, scoped)
 	reserve = min(max(reserve, 0), limit)
 

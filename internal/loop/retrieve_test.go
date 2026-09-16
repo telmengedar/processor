@@ -313,9 +313,9 @@ func TestARowAdmittedThroughTheReserveCarriesTheGreaterOfItsFusedAndScopedSimila
 	graph := &fusionGraph{
 		lists: map[string][]Candidate{"input": {
 			{ID: 810, Similarity: 0.9}, {ID: 220, Similarity: 0.8}, {ID: 640, Similarity: 0.7},
-			{ID: 130, Similarity: 0.6}, {ID: 970, Similarity: 0.5}, {ID: 300, Similarity: 0.1},
+			{ID: 130, Similarity: 0.6}, {ID: 970, Similarity: 0.5}, {ID: 300, Similarity: 0.95},
 		}},
-		scoped: []Candidate{{ID: 300, Similarity: 0.95}},
+		scoped: []Candidate{{ID: 300, Similarity: 0.10}},
 	}
 
 	got := mustRetrieveCandidates(t, graph, []string{"input"}, 6, 1)
@@ -326,7 +326,7 @@ func TestARowAdmittedThroughTheReserveCarriesTheGreaterOfItsFusedAndScopedSimila
 	}
 
 	if similarity[300] != 0.95 {
-		t.Fatalf("node 300 carries similarity %v, want 0.95: it stands last in the fused order and reaches the aperture only through the scope reserve, so its recorded similarity must be the scoped recall's own reading and not the low rank it held in the fused list", similarity[300])
+		t.Fatalf("node 300 carries similarity %v, want 0.95: its rank in the fused list is low enough to fall outside the fused prefix, so it reaches the aperture through the scope reserve carrying the scoped recall's own struct, and only a write-back from the fused reading into that struct can leave the greater value on the row this path actually admits", similarity[300])
 	}
 }
 
