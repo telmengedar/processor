@@ -439,60 +439,260 @@ func TestParseDerivationResolvesADayRangeInTheLocationItIsGiven(t *testing.T) {
 	}
 }
 
-func TestNoDerivedQueryContainsADate(t *testing.T) {
-	t.Parallel()
+type directiveSpelling struct {
+	name string
+	line func(value string) string
+}
 
-	datePattern := regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
-
-	texts := []string{
-		"DATES: 2026-09-12..2026-09-12\nhow does the split change work?\nsecond question?\ndense keyword line",
-		"DATES: none\nhow does the split change work?\nsecond question?\ndense keyword line",
-		"DATES: 2026-13-40..2026-13-40\nhow does the split change work?\nsecond question?\ndense keyword line",
-		"DATES: 2026-09-15..2026-09-10\nhow does the split change work?\nsecond question?\ndense keyword line",
-		"DATES: 2026-09-12\nhow does the split change work?\nsecond question?\ndense keyword line",
-	}
-
-	for _, text := range texts {
-		got, _ := ParseDerivation(text, "what did the split change", time.UTC)
-		for _, query := range got {
-			if datePattern.MatchString(query) {
-				t.Fatalf("ParseDerivation(%q) returned query %q carrying a date: the DATES line must never leak into the query set the parser hands back", text, query)
-			}
-		}
+func directiveSpellings() []directiveSpelling {
+	return []directiveSpelling{
+		{"bare", func(v string) string { return "DATES: " + v }},
+		{"bullet dash", func(v string) string { return "- DATES: " + v }},
+		{"bullet star", func(v string) string { return "* DATES: " + v }},
+		{"bullet dot", func(v string) string { return "• DATES: " + v }},
+		{"numbered dot", func(v string) string { return "1. DATES: " + v }},
+		{"numbered paren", func(v string) string { return "1) DATES: " + v }},
+		{"quote straight", func(v string) string { return "\"DATES: " + v + "\"" }},
+		{"quote curly", func(v string) string { return "“DATES: " + v + "”" }},
+		{"quote single", func(v string) string { return "'DATES: " + v + "'" }},
+		{"lower-case", func(v string) string { return "dates: " + v }},
+		{"mixed-case", func(v string) string { return "Dates: " + v }},
 	}
 }
 
-func TestTheDatesLineNeverAppearsInTheQuerySetWhateverItsValue(t *testing.T) {
+type directiveLeakFixture struct {
+	name        string
+	text        string
+	mustSurvive []string
+}
+
+func directiveLeakFixtures() []directiveLeakFixture {
+	const value = "2026-09-12..2026-09-12"
+
+	place := map[string]func(line string) string{
+		"first":  func(line string) string { return line + "\nfirst question?\nsecond question?" },
+		"middle": func(line string) string { return "first question?\n" + line + "\nsecond question?" },
+		"last":   func(line string) string { return "first question?\nsecond question?\n" + line },
+	}
+	placements := []string{"first", "middle", "last"}
+
+	var fixtures []directiveLeakFixture
+	for _, placement := range placements {
+		for _, spelling := range directiveSpellings() {
+			fixtures = append(fixtures, directiveLeakFixture{
+				name:        placement + " placement, " + spelling.name + " spelling",
+				text:        place[placement](spelling.line(value)),
+				mustSurvive: []string{"first question?", "second question?"},
+			})
+		}
+	}
+
+	fixtures = append(fixtures,
+		directiveLeakFixture{
+			name:        "two directives, first valid on line one",
+			text:        "DATES: 2026-09-12..2026-09-12\nDATES: 2026-09-15..2026-09-15\nfirst question?",
+			mustSurvive: []string{"first question?"},
+		},
+		directiveLeakFixture{
+			name:        "three directives, mixed spelling",
+			text:        "DATES: 2026-09-12..2026-09-12\nDATES: none\ndates: 2026-09-20..2026-09-21\nfirst question?",
+			mustSurvive: []string{"first question?"},
+		},
+	)
+
+	for _, v := range []struct{ name, value string }{
+		{"none", "none"},
+		{"garbage value", "sometime soon"},
+		{"inverted range", "2026-09-15..2026-09-10"},
+		{"invalid calendar date", "2026-13-40..2026-13-40"},
+		{"one bound only", "2026-09-12"},
+		{"valid range", "2026-09-12..2026-09-12"},
+	} {
+		fixtures = append(fixtures, directiveLeakFixture{
+			name:        "value: " + v.name,
+			text:        "DATES: " + v.value + "\nfirst question?",
+			mustSurvive: []string{"first question?"},
+		})
+	}
+
+	return fixtures
+}
+
+func queryStillLooksLikeADirective(query string) bool {
+	return len(query) >= len(dateLinePrefix) && strings.EqualFold(query[:len(dateLinePrefix)], dateLinePrefix)
+}
+
+func TestTheDatesLineNeverAppearsInTheQuerySetWhateverItsValuePlacementOrSpelling(t *testing.T) {
+	t.Parallel()
+
+	for _, fixture := range directiveLeakFixtures() {
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := ParseDerivation(fixture.text, "what did the split change", time.UTC)
+
+			for _, query := range got {
+				if queryStillLooksLikeADirective(query) {
+					t.Fatalf("ParseDerivation(%q) returned query %q: a recognised directive survived into the query set", fixture.text, query)
+				}
+			}
+			for _, want := range fixture.mustSurvive {
+				if !slices.Contains(got, want) {
+					t.Fatalf("ParseDerivation(%q) returned %q, want it still to carry %q: only a recognised directive line is ever excluded", fixture.text, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestADoublyDecoratedDirectiveIsNotRecognisedAndStaysAQuery(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name string
-		text string
+		name          string
+		firstLine     string
+		wantSurviving string
 	}{
-		{name: "valid range", text: "DATES: 2026-09-12..2026-09-12\nfirst question?"},
-		{name: "none", text: "DATES: none\nfirst question?"},
-		{name: "garbage value with no digits at all", text: "DATES: sometime soon\nfirst question?"},
-		{name: "inverted range", text: "DATES: 2026-09-15..2026-09-10\nfirst question?"},
-		{name: "invalid calendar date", text: "DATES: 2026-13-40..2026-13-40\nfirst question?"},
-		{name: "one bound only", text: "DATES: 2026-09-12\nfirst question?"},
+		{"double bullet dash", "- - DATES: 2026-09-12..2026-09-12", "- DATES: 2026-09-12..2026-09-12"},
+		{"double bullet star", "* * DATES: 2026-09-12..2026-09-12", "* DATES: 2026-09-12..2026-09-12"},
+		{"double bullet dot", "• • DATES: 2026-09-12..2026-09-12", "• DATES: 2026-09-12..2026-09-12"},
+		{"double numbered dot", "1. 1. DATES: 2026-09-12..2026-09-12", "1. DATES: 2026-09-12..2026-09-12"},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, _ := ParseDerivation(tc.text, "what did the split change", time.UTC)
-
-			for _, query := range got {
-				if strings.HasPrefix(query, dateLinePrefix) {
-					t.Fatalf("ParseDerivation(%q) returned query %q: the DATES line survived into the query set, so a date-shaped string reaches the graph as a semantic query and matches nothing", tc.text, query)
-				}
+			got, window := ParseDerivation(tc.firstLine+"\nfirst question?", "what did the split change", time.UTC)
+			if !window.IsZero() {
+				t.Fatalf("window = %+v, want zero: only one decoration token is stripped, so this line does not reduce to a recognised directive", window)
 			}
-			if !slices.Contains(got, "first question?") {
-				t.Fatalf("ParseDerivation(%q) returned %q, want it still to carry %q: only the DATES line is ever excluded", tc.text, got, "first question?")
+			if !slices.Contains(got, tc.wantSurviving) {
+				t.Fatalf("ParseDerivation returned %q, want it to still carry %q: a line the parser does not recognise as the directive is a query, decoration and all", got, tc.wantSurviving)
 			}
 		})
 	}
+}
+
+func TestADateReachesTheQuerySetOnlyFromALineTheParserDoesNotRecogniseAsTheDirective(t *testing.T) {
+	t.Parallel()
+
+	datePattern := regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
+
+	t.Run("a model-authored query line legitimately carrying a date survives behind DATES: none", func(t *testing.T) {
+		t.Parallel()
+
+		got, _ := ParseDerivation("DATES: none\nwhat changed on 2026-09-12?\nsecond question?", "what did the split change", time.UTC)
+		if !slices.ContainsFunc(got, datePattern.MatchString) {
+			t.Fatalf("ParseDerivation returned %q, want a surviving query carrying 2026-09-12: dropping it enforces derive.go's rule at the parse boundary, which L8 rules against", got)
+		}
+	})
+
+	t.Run("a directive wearing decoration this file does not strip survives, date and all", func(t *testing.T) {
+		t.Parallel()
+
+		got, window := ParseDerivation("**DATES: 2026-09-12..2026-09-12**\nfirst question?", "what did the split change", time.UTC)
+		if !window.IsZero() {
+			t.Fatalf("window = %+v, want zero: an unrecognised directive must not name a window either", window)
+		}
+		if !slices.ContainsFunc(got, datePattern.MatchString) {
+			t.Fatalf("ParseDerivation returned %q, want the mangled directive line to survive carrying its date: L9 is an accepted limit, not a silently fixed one", got)
+		}
+	})
+
+	for _, fixture := range directiveLeakFixtures() {
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := ParseDerivation(fixture.text, "what did the split change", time.UTC)
+			for _, query := range got {
+				if datePattern.MatchString(query) {
+					t.Fatalf("ParseDerivation(%q) returned query %q carrying a date: a recognised directive must never leak its date into the query set", fixture.text, query)
+				}
+			}
+		})
+	}
+}
+
+func TestOnlyAFirstContentLineDirectiveNamesTheWindowAndNoneDoesWhenTwoAppear(t *testing.T) {
+	t.Parallel()
+
+	wantRange := UpdateWindow{
+		From: time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC),
+		To:   time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC),
+	}
+
+	t.Run("a directive that is not the first content line yields zero", func(t *testing.T) {
+		t.Parallel()
+
+		_, window := ParseDerivation("first question?\nDATES: 2026-09-12..2026-09-12", "what did the split change", time.UTC)
+		if !window.IsZero() {
+			t.Fatalf("window = %+v, want zero: a directive that is not the first content line may be a candidate the model discarded, not its answer", window)
+		}
+	})
+
+	t.Run("two directive lines yield zero even when the first is valid on line one", func(t *testing.T) {
+		t.Parallel()
+
+		_, window := ParseDerivation("DATES: 2026-09-12..2026-09-12\nDATES: 2026-09-15..2026-09-15\nfirst question?", "what did the split change", time.UTC)
+		if !window.IsZero() {
+			t.Fatalf("window = %+v, want zero: the output does not say which of two directives is the answer — a first-wins implementation fails here", window)
+		}
+	})
+
+	t.Run("a decorated directive on line one yields its range", func(t *testing.T) {
+		t.Parallel()
+
+		_, window := ParseDerivation("- DATES: 2026-09-12..2026-09-12\nfirst question?", "what did the split change", time.UTC)
+		if window != wantRange {
+			t.Fatalf("window = %+v, want %+v: decoration this file already strips must not hide the directive from the window gate", window, wantRange)
+		}
+	})
+
+	t.Run("a lower-case directive on line one yields its range", func(t *testing.T) {
+		t.Parallel()
+
+		_, window := ParseDerivation("dates: 2026-09-12..2026-09-12\nfirst question?", "what did the split change", time.UTC)
+		if window != wantRange {
+			t.Fatalf("window = %+v, want %+v: case must not hide the directive from the window gate", window, wantRange)
+		}
+	})
+
+	t.Run("zero directive lines yield zero", func(t *testing.T) {
+		t.Parallel()
+
+		_, window := ParseDerivation("first question?\nsecond question?", "what did the split change", time.UTC)
+		if !window.IsZero() {
+			t.Fatalf("window = %+v, want zero: there is no directive to name one from", window)
+		}
+	})
+
+	t.Run("a decoration-only line before the directive still yields its range", func(t *testing.T) {
+		t.Parallel()
+
+		_, window := ParseDerivation("-\nDATES: 2026-09-12..2026-09-12\nfirst question?", "what did the split change", time.UTC)
+		if window != wantRange {
+			t.Fatalf("window = %+v, want %+v: a line that reduces to nothing is not a content line, so it cannot block the directive from being the first one", window, wantRange)
+		}
+	})
+
+	t.Run("a code fence before the directive yields zero", func(t *testing.T) {
+		t.Parallel()
+
+		_, window := ParseDerivation("```\nDATES: 2026-09-12..2026-09-12\nfirst question?", "what did the split change", time.UTC)
+		if !window.IsZero() {
+			t.Fatalf("window = %+v, want zero: a code fence is content — neither decoration nor a quote character — so it is the first content line and the directive is not", window)
+		}
+	})
+
+	t.Run("a line of listed characters that does not reduce to empty still counts as content", func(t *testing.T) {
+		t.Parallel()
+
+		_, window := ParseDerivation("- -\nDATES: 2026-09-12..2026-09-12\nfirst question?", "what did the split change", time.UTC)
+		if !window.IsZero() {
+			t.Fatalf("window = %+v, want zero: \"- -\" reduces to \"-\", which is non-empty, so it is a content line and the directive on the next line is not the first one — an implementation that skips any line built only from listed characters fails here", window)
+		}
+	})
 }
 
 func TestDeriveQueriesRefusesATextThatParsesToNoQueryAtAll(t *testing.T) {

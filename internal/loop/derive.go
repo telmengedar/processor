@@ -99,27 +99,59 @@ func DerivationPrompt(input string, now time.Time) string {
 	return strings.Join(append(blocks, input), "\n\n")
 }
 
-// ParseDerivation reads text as an optional DATES directive followed by one query per line, dropping reasoning artifacts, list decoration, blanks, repeats and case-folded echoes of input, capped at MaxDerivedQueries. loc resolves the directive; any line that lacks it, or carries an unrecognised or malformed value, yields a zero window rather than a guessed one.
+// ParseDerivation reads text as query lines with an optional DATES directive among them, dropping reasoning artifacts, list decoration, blanks, repeats and case-folded echoes of input, capped at MaxDerivedQueries. loc resolves the window.
 func ParseDerivation(text, input string, loc *time.Location) ([]string, UpdateWindow) {
 	lines := strings.Split(derivationThinkBlock.ReplaceAllString(text, ""), "\n")
-	window, lines := extractDatesLine(lines, loc)
-	return parseQueryLines(lines, input), window
-}
+	window := windowFromDirectiveLines(lines, loc)
 
-func extractDatesLine(lines []string, loc *time.Location) (UpdateWindow, []string) {
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
+	remaining := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if _, ok := directiveValue(reduceDerivationLine(line)); ok {
 			continue
 		}
-		value, ok := strings.CutPrefix(trimmed, dateLinePrefix)
-		if !ok {
-			return UpdateWindow{}, lines
-		}
-		rest := slices.Delete(slices.Clone(lines), i, i+1)
-		return resolveDatesValue(strings.TrimSpace(value), loc), rest
+		remaining = append(remaining, line)
 	}
-	return UpdateWindow{}, lines
+
+	return parseQueryLines(remaining, input), window
+}
+
+func windowFromDirectiveLines(lines []string, loc *time.Location) UpdateWindow {
+	directiveCount := 0
+	firstContentIsDirective := false
+	firstContentSeen := false
+	var value string
+
+	for _, line := range lines {
+		reduced := reduceDerivationLine(line)
+		if reduced == "" {
+			continue
+		}
+		v, ok := directiveValue(reduced)
+		if !firstContentSeen {
+			firstContentSeen = true
+			firstContentIsDirective = ok
+		}
+		if ok {
+			directiveCount++
+			value = v
+		}
+	}
+
+	if directiveCount != 1 || !firstContentIsDirective {
+		return UpdateWindow{}
+	}
+	return resolveDatesValue(value, loc)
+}
+
+func reduceDerivationLine(line string) string {
+	return strings.Trim(derivationLinePrefix.ReplaceAllString(strings.TrimSpace(line), ""), derivationQuoteCutset)
+}
+
+func directiveValue(reduced string) (string, bool) {
+	if len(reduced) < len(dateLinePrefix) || !strings.EqualFold(reduced[:len(dateLinePrefix)], dateLinePrefix) {
+		return "", false
+	}
+	return strings.TrimSpace(reduced[len(dateLinePrefix):]), true
 }
 
 func resolveDatesValue(value string, loc *time.Location) UpdateWindow {
@@ -157,7 +189,7 @@ func parseQueryLines(lines []string, input string) []string {
 			break
 		}
 
-		query := strings.Trim(derivationLinePrefix.ReplaceAllString(strings.TrimSpace(line), ""), derivationQuoteCutset)
+		query := reduceDerivationLine(line)
 		key := derivationKey(query)
 		if key == "" || seen[key] {
 			continue
