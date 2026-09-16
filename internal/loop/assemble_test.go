@@ -720,7 +720,7 @@ func TestTheAssembledBlockDisclosesOnlyTheAdmittedRowsAndWhetherAnythingWasWithh
 		}
 		shutoutB := []Candidate{
 			{ID: 900, SelfProduced: true, Content: "a different self produced body"},
-			{ID: 901, Content: strings.Repeat("v", 500)},
+			{ID: 901, Similarity: 0.9, Content: strings.Repeat("v", 500)},
 			{ID: 902, Similarity: 0.1, Content: "below the floor"},
 		}
 		const budget = 20
@@ -729,15 +729,26 @@ func TestTheAssembledBlockDisclosesOnlyTheAdmittedRowsAndWhetherAnythingWasWithh
 		blockA, dispositionsA := Assemble(anchor, shutoutA, budget, 0)
 		blockB, dispositionsB := Assemble(anchor, shutoutB, budget, floor)
 
+		reasonsA := make(map[string]bool)
 		for _, d := range dispositionsA {
 			if d.Included {
 				t.Fatalf("test setup error: shutout A admitted id %d, want a genuine shutout — every candidate cut", d.ID)
 			}
+			reasonsA[d.CutReason] = true
 		}
+		if !reasonsA[cutReasonSelfProduced] || !reasonsA[cutReasonByteBudget] {
+			t.Fatalf("test setup error: shutout A's cut reasons were %v, want both self-produced and byte-budget represented", reasonsA)
+		}
+
+		reasonsB := make(map[string]bool)
 		for _, d := range dispositionsB {
 			if d.Included {
 				t.Fatalf("test setup error: shutout B admitted id %d, want a genuine shutout — every candidate cut", d.ID)
 			}
+			reasonsB[d.CutReason] = true
+		}
+		if !reasonsB[cutReasonSelfProduced] || !reasonsB[cutReasonByteBudget] || !reasonsB[cutReasonBelowFloor] {
+			t.Fatalf("test setup error: shutout B's cut reasons were %v, want self-produced, byte-budget and below-floor all represented, so the two shutouts genuinely differ in why each row was withheld", reasonsB)
 		}
 
 		if blockA != blockB {

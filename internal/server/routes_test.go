@@ -535,7 +535,7 @@ func TestRunsToolCallsResultsCutReasonIsPopulatedAtTheWireLevel(t *testing.T) {
 		found:  true,
 		candidates: []loop.Candidate{
 			{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
-			{ID: 8, Type: "task", Name: "Large", Content: strings.Repeat("x", 21_000)},
+			{ID: 8, Type: "task", Name: "Large", Similarity: 0.9, Content: strings.Repeat("x", 21_000)},
 		},
 	}
 	model := &stubModel{results: []loop.JudgeResult{

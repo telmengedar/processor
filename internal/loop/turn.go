@@ -17,7 +17,7 @@ const (
 	MaxModelCalls           = 6
 	SupplementaryByteBudget = 20_000
 	MaxOutputTokens         = 4_096
-	// RelevanceFloor is 0.63: the well-answered corpus keeps 13/25 required documents at this value while the ill-matched arm's 20 admitted rows fall to 2; 0.638, the zero-cost maximum, was rejected as fitted to one control row's fourth decimal.
+	// RelevanceFloor is 0.63: the well-answered corpus keeps 13/25 required documents at this value; 0.638, the zero-cost maximum, was rejected as fitted to one control row's fourth decimal.
 	RelevanceFloor = 0.63
 )
 
