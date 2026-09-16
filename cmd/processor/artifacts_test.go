@@ -160,7 +160,27 @@ func topLevelMembers(t *testing.T, b []byte) ([]string, map[string]string) {
 	return order, values
 }
 
-func TestTheStoredBodyIsTheResponseBodyMinusTheWriteReceiptAndNothingElse(t *testing.T) {
+func extractJSONFence(t *testing.T, b []byte) []byte {
+	t.Helper()
+
+	s := string(b)
+	const openMarker = "```json\n"
+	const closeMarker = "\n```"
+
+	start := strings.LastIndex(s, openMarker)
+	if start == -1 {
+		t.Fatalf("content carries no %q fence; content=%s", openMarker, s)
+	}
+	start += len(openMarker)
+
+	rel := strings.Index(s[start:], closeMarker)
+	if rel == -1 {
+		t.Fatalf("content carries no closing fence after its opening; content=%s", s)
+	}
+	return []byte(s[start : start+rel])
+}
+
+func TestTheRecordInsideTheStoredFenceIsTheResponseBodyMinusTheWriteReceiptAndNothingElse(t *testing.T) {
 	t.Parallel()
 
 	rec, stored := runOneTurn(t, "")
@@ -169,7 +189,7 @@ func TestTheStoredBodyIsTheResponseBodyMinusTheWriteReceiptAndNothingElse(t *tes
 	}
 
 	responseOrder, responseValues := topLevelMembers(t, rec.Body.Bytes())
-	storedOrder, storedValues := topLevelMembers(t, stored)
+	storedOrder, storedValues := topLevelMembers(t, extractJSONFence(t, stored))
 
 	const receiptKey = "written"
 
@@ -202,7 +222,7 @@ func TestTheStoredBodyCarriesNoWriteReceiptWhileTheResponseDoes(t *testing.T) {
 
 	rec, stored := runOneTurn(t, "")
 
-	_, storedValues := topLevelMembers(t, stored)
+	_, storedValues := topLevelMembers(t, extractJSONFence(t, stored))
 	if _, present := storedValues["written"]; present {
 		t.Fatalf("stored body carries a written key: %s", stored)
 	}
@@ -225,7 +245,7 @@ func TestAnUnlinkedRecordIsStoredWholeAndTheResponseNamesTheNodeHoldingIt(t *tes
 		t.Fatalf("response written = %s, want %s", responseValues["written"], wantReceipt)
 	}
 
-	_, storedValues := topLevelMembers(t, stored)
+	_, storedValues := topLevelMembers(t, extractJSONFence(t, stored))
 	if storedValues["answer"] != `"the answer the model gave"` {
 		t.Fatalf("stored answer = %s, want the complete record kept despite the missing edge", storedValues["answer"])
 	}

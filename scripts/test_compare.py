@@ -70,6 +70,99 @@ def capture(fn, *args, **kwargs):
     return buf.getvalue()
 
 
+class ExtractLastJSONFenceTests(unittest.TestCase):
+    """A run record's content is now an account followed by the record in a fenced json block.
+    extract_last_json_fence is what every reader of that content must go through to reach
+    structured data again -- these tests pin its two shapes and its fallback."""
+
+    def test_extracts_the_fenced_block(self):
+        content = "some account text\n---\n```json\n{\"a\": 1}\n```\n"
+        self.assertEqual(compare.extract_last_json_fence(content), '{"a": 1}')
+
+    def test_falls_back_to_the_whole_body_when_there_is_no_fence(self):
+        content = '{"a": 1}'
+        self.assertEqual(compare.extract_last_json_fence(content), content)
+
+    def test_uses_the_last_fence_when_more_than_one_opening_marker_is_present(self):
+        content = "an account that happens to mention ```json as text\n---\n```json\n{\"a\": 2}\n```\n"
+        self.assertEqual(compare.extract_last_json_fence(content), '{"a": 2}')
+
+
+class ParseRunRecordTests(unittest.TestCase):
+    def test_parses_a_fenced_record(self):
+        content = "account\n---\n```json\n{\"input\": \"hello\"}\n```\n"
+        self.assertEqual(compare.parse_run_record(content), {"input": "hello"})
+
+    def test_parses_an_un_backfilled_record_with_no_fence(self):
+        content = '{"input": "hello"}'
+        self.assertEqual(compare.parse_run_record(content), {"input": "hello"})
+
+    def test_returns_none_rather_than_raising_on_content_that_is_neither_shape(self):
+        self.assertIsNone(compare.parse_run_record("not json at all"))
+
+
+class SelectPriorRunTests(unittest.TestCase):
+    """The row-filtering half of find_prior_run, split out so the wiring between the type/name
+    filter, parse_run_record and the input comparison is exercisable without a graph. Every case
+    here asserts the id a matching row returns, never only that nothing raised."""
+
+    def test_finds_a_composed_body_row_whose_input_matches(self):
+        name = compare.RUN_NAME_PREFIX + " 2026-09-16T12:00:00Z -- earlier task"
+        rows = [{
+            "id": 777,
+            "type": compare.RUN_NODE_TYPE,
+            "name": name,
+            "content": "account text\n---\n```json\n{\"input\": \"the exact task text\"}\n```\n",
+        }]
+        self.assertEqual(compare.select_prior_run(rows, "the exact task text"), (777, name))
+
+    def test_finds_an_un_backfilled_row_with_no_fence_too(self):
+        name = compare.RUN_NAME_PREFIX + " 2026-09-16T12:00:00Z -- earlier task"
+        rows = [{
+            "id": 555,
+            "type": compare.RUN_NODE_TYPE,
+            "name": name,
+            "content": '{"input": "the exact task text"}',
+        }]
+        self.assertEqual(compare.select_prior_run(rows, "the exact task text"), (555, name))
+
+    def test_returns_none_when_no_row_matches(self):
+        rows = [{
+            "id": 1,
+            "type": compare.RUN_NODE_TYPE,
+            "name": compare.RUN_NAME_PREFIX + " x",
+            "content": '{"input": "a different task"}',
+        }]
+        self.assertIsNone(compare.select_prior_run(rows, "the exact task text"))
+
+    def test_skips_rows_that_are_not_run_records(self):
+        rows = [{
+            "id": 2,
+            "type": "documentation",
+            "name": "unrelated node",
+            "content": '{"input": "the exact task text"}',
+        }]
+        self.assertIsNone(compare.select_prior_run(rows, "the exact task text"))
+
+    def test_skips_a_row_whose_content_does_not_parse_and_keeps_looking(self):
+        good_name = compare.RUN_NAME_PREFIX + " good"
+        rows = [
+            {
+                "id": 3,
+                "type": compare.RUN_NODE_TYPE,
+                "name": compare.RUN_NAME_PREFIX + " broken",
+                "content": "not json at all",
+            },
+            {
+                "id": 4,
+                "type": compare.RUN_NODE_TYPE,
+                "name": good_name,
+                "content": '{"input": "the exact task text"}',
+            },
+        ]
+        self.assertEqual(compare.select_prior_run(rows, "the exact task text"), (4, good_name))
+
+
 class RouteTests(unittest.TestCase):
     """route() is the whole axis split (DiVoid #11333): one comparison, node == anchor.id."""
 

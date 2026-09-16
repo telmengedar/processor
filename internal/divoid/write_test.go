@@ -147,14 +147,34 @@ func TestWriteRunSetsContentTypeOnTheContentPOST(t *testing.T) {
 
 	c.WriteRun(context.Background(), sampleRecord(42))
 
-	const wantContentType = "application/json"
+	const wantContentType = "text/markdown; charset=utf-8"
 	contentCall := (*calls)[1]
 	if contentCall.ContentType != wantContentType {
 		t.Fatalf("content POST Content-Type = %q, want %q", contentCall.ContentType, wantContentType)
 	}
 }
 
-func TestWriteRunContentBodyIsTheRecordAsJSON(t *testing.T) {
+func extractLastJSONFence(t *testing.T, b []byte) []byte {
+	t.Helper()
+
+	s := string(b)
+	const openMarker = "```json\n"
+	const closeMarker = "\n```"
+
+	start := strings.LastIndex(s, openMarker)
+	if start == -1 {
+		t.Fatalf("content carries no %q fence; content=%s", openMarker, s)
+	}
+	start += len(openMarker)
+
+	rel := strings.Index(s[start:], closeMarker)
+	if rel == -1 {
+		t.Fatalf("content carries no closing fence after its opening; content=%s", s)
+	}
+	return []byte(s[start : start+rel])
+}
+
+func TestWriteRunTheLastJSONFenceInTheContentRoundTripsToTheCompleteRecord(t *testing.T) {
 	t.Parallel()
 
 	srv, calls := writeServer(t, 1)
@@ -163,12 +183,89 @@ func TestWriteRunContentBodyIsTheRecordAsJSON(t *testing.T) {
 	record := sampleRecord(42)
 	c.WriteRun(context.Background(), record)
 
+	fenced := extractLastJSONFence(t, (*calls)[1].Body)
+
 	var decoded loop.Record
-	if err := json.Unmarshal((*calls)[1].Body, &decoded); err != nil {
-		t.Fatalf("decode content body as loop.Record: %v; body=%s", err, (*calls)[1].Body)
+	if err := json.Unmarshal(fenced, &decoded); err != nil {
+		t.Fatalf("decode fenced content as loop.Record: %v; fence=%s", err, fenced)
 	}
-	if decoded.Answer != record.Answer || decoded.Subject != record.Subject {
-		t.Fatalf("decoded content body = %+v, want it to carry the record's fields", decoded)
+
+	reencoded, err := json.Marshal(decoded)
+	if err != nil {
+		t.Fatalf("re-encode decoded record: %v", err)
+	}
+	want, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("encode original record: %v", err)
+	}
+	if string(reencoded) != string(want) {
+		t.Fatalf("record inside the fence round-trips to %s, want %s — every top-level member must survive the fence", reencoded, want)
+	}
+}
+
+func TestWriteRunContentBeginsWithTheRenderedAccountAndNothingElse(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 10525)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	fixed := time.Date(2026, 9, 7, 15, 20, 1, 0, time.UTC)
+	c.clock = func() time.Time { return fixed }
+
+	record := sampleRecord(42)
+	c.WriteRun(context.Background(), record)
+
+	account := loop.RenderSummary(record, fixed)
+	content := string((*calls)[1].Body)
+	if !strings.HasPrefix(content, account) {
+		t.Fatalf("content does not begin with the rendered account; account=%q content=%.200s...", account, content)
+	}
+}
+
+func TestWriteRunTheDividerIsPrecededByABlankLineRatherThanBecomingASetextHeadingUnderline(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 1)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	c.WriteRun(context.Background(), sampleRecord(42))
+
+	content := string((*calls)[1].Body)
+	lines := strings.Split(content, "\n")
+
+	dividerIndex := -1
+	for i, line := range lines {
+		if line == "---" {
+			dividerIndex = i
+			break
+		}
+	}
+	if dividerIndex == -1 {
+		t.Fatalf("content carries no %q divider line; content=%.200s...", "---", content)
+	}
+	if dividerIndex == 0 || lines[dividerIndex-1] != "" {
+		t.Fatalf("the line before the divider is %q, want a blank line — a CommonMark renderer reads text directly above %q as a setext heading underline, not a thematic break, and swallows that line into a heading", lines[dividerIndex-1], "---")
+	}
+}
+
+func TestWriteRunAccountInTheContentAndInTheSubstanceAreTheSameString(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 10525)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	c.WriteRun(context.Background(), sampleRecord(42))
+
+	content := string((*calls)[1].Body)
+	substance := substancePatchValue(t, (*calls)[2])
+
+	i := strings.Index(content, runContentFenceOpen)
+	if i == -1 {
+		t.Fatalf("content carries no %q separator; content=%.200s...", runContentFenceOpen, content)
+	}
+	accountInContent := content[:i]
+
+	if accountInContent != substance {
+		t.Fatalf("account in content %q != account in substance %q — the two copies must come from one RenderSummary call and cannot drift", accountInContent, substance)
 	}
 }
 
