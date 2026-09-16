@@ -723,6 +723,8 @@ the instrument, which both runs share entirely.)* `corpusHash ffa291d5`, limits
 | **pinned at 25/25** — `derivationHash` **`2ec61afc`** | **11/23 = 0.48** | **9/23 = 0.39** | 2/2 = 1.00 |
 
 > **The 25/25 sidecar's hash was written after the line endings were fixed, not before.** The generator
+> — **`scripts/generate_derivations.py`, which is what this document means by *the generator* throughout,
+> and which is deleted at `e967204`; `cmd/derive` replaces it (#13585 §18)** —
 > originally wrote CRLF, so the hash the first sweeps printed was a hash of **the working tree** rather than
 > of what a fresh checkout produces — `38349b3c` was the LF hash of the queries-only file, and it is what the
 > loader reported on a normalised file at that point. It was measured through `LoadDerivations` on the
@@ -1129,8 +1131,13 @@ cost with nothing measured behind it (P-3).
    **Closed 2026-09-05, later the same day.** The recommendation was followed in order: **(c) shipped as PR
    #30** and **(b) as PR #32**. The sidecar is 25/25 and every option in this list is now either done or ruled
    out. **What (b) cost:** one generation run — twelve rows at roughly 0.4 s each, 5/5 valid distinct queries
-   on the first attempt for every row, 120 insertions and 0 deletions, plus a re-runnable generator kept in
-   the tree. *(The preferred 32B model would not load — a CUDA KV-cache allocation failed outright — and the
+   on the first attempt for every row, 120 insertions and 0 deletions, plus ~~a re-runnable generator kept
+   in the tree~~ *(**corrected 2026-09-12.** That generator was `scripts/generate_derivations.py` — the name
+   this document means wherever it says "the generator" — and it is **deleted** at `e967204`, the commit that
+   landed `cmd/derive`. The capability survived the carrier: `cmd/derive` regenerates a row's query set by
+   running the product's own `loop.DerivationPrompt` and `loop.ParseDerivation`, which the Python script
+   could not. See `docs/architecture/the-query-the-graph-is-asked.md` §18 / #13585.)*
+   *(The preferred 32B model would not load — a CUDA KV-cache allocation failed outright — and the
    run fell back to a 30B coder. Worth recording, because the result below is that model's and not the
    preferred one's.)* **What it bought:** **one row.** r12 moved `notRetrieved` → admitted; eleven of twelve
    changed nothing (§9.2). **So the headline answer to "was it worth it" is *barely* — and the headline is the
@@ -1140,7 +1147,12 @@ cost with nothing measured behind it (P-3).
 
    **What this implies for the framing if the corpus grows again.** **(b) is the default and the question is
    settled** — the generator exists, the run is minutes, and its blindness is structural rather than a matter
-   of the author's care, which is the only form that survives a deadline. **(a) is not merely disfavoured but
+   of the author's care, which is the only form that survives a deadline. *(**Still true 2026-09-12, under a
+   new carrier.** The Python generator is deleted at `e967204`; `cmd/derive` replaces it, the run is still
+   minutes, and the blindness is now pinned by a byte comparison — two corpora agreeing on `id` and `input`
+   but differing in every other field must put identical bytes on the wire — rather than by the script's
+   construction. Nothing in this ruling moves; only the name of the thing it rests on. #13585 §18.)*
+   **(a) is not merely disfavoured but
    positively ruled out by what (b) measured:** hand-authoring **would be expected to** convert more of the
    twelve — an author who has read the required node can write a query that reaches it — and every conversion
    so bought would have been uninterpretable. *(**Expected**, not established, and the difference is the one
