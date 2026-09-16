@@ -263,7 +263,11 @@ then admitted candidates sorted by node id ascending, never by score), judge it 
 model, dispatch a tool each time the model asks for one (up to a **judgement**-call cap of 6, so at most 5
 tool dispatches per run — the capping call's request is counted but never dispatched; the derivation call
 above is not charged to this cap, so a turn makes up to **seven** model calls in all), then write the
-record back to the graph as one `session-log` node linked to the subject.
+record back to the graph as one `session-log` node linked to the subject. The node's content is
+`text/markdown; charset=utf-8`: the run's own account first (the same prose `RenderSummary` renders, in
+`internal/loop/summary.go`), then a blank line, a line reading exactly `---`, then the complete record as
+one fenced ` ```json ` block. The record — described next — is recovered by taking the content's last
+fenced `json` block and parsing it.
 
 Two tools are offered on every call: `recall`, which searches the same graph, and `write_file`, which
 writes one file into the run's working directory. Neither is urged — the system text names each in one
@@ -313,8 +317,10 @@ record can be honest about only the near side of the wire, and this is that side
 
 The response carries **one key more than the record**: `written`, the write receipt, which says where the
 record was filed. It is not a member of the record and never reaches the stored copy — a stored record is
-at the node it would be naming. **The stored node's body is the response body minus that one key, and
-nothing else differs** (`docs/architecture/run-record-fate.md` §8.1).
+at the node it would be naming. **The record inside the stored node's last fenced `json` block is the
+response body minus that one key, and nothing else differs** (`docs/architecture/run-record-fate.md`
+§8.1) — the account and the fence wrapped around the record are additions to the stored body, not a
+difference within the record itself.
 
 | `written.state` | `written.nodeId` | Meaning | What the caller does |
 |---|---|---|---|

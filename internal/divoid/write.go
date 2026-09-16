@@ -17,10 +17,13 @@ const RunNodeType = "session-log"
 const RunNamePrefix = "processor-run"
 
 const (
-	runContentType = "application/json"
+	runContentType = "text/markdown; charset=utf-8"
 
 	runNameInputRunes = 80
 )
+
+const runContentFenceOpen = "\n---\n```json\n"
+const runContentFenceClose = "\n```\n"
 
 const (
 	logWriteBackFailed  = "write-back failed"
@@ -45,13 +48,15 @@ type createNodeResponse struct {
 
 // WriteRun files the record as one node linked to the subject and reports how far it got.
 func (c *Client) WriteRun(ctx context.Context, record loop.Record) loop.WriteReceipt {
-	body, err := json.Marshal(record)
+	recordJSON, err := json.Marshal(record)
 	if err != nil {
 		c.log().Error(logWriteBackFailed, "subject", record.Subject, "error", fmt.Errorf("divoid: encode run record: %w", err))
 		return loop.WriteReceipt{State: loop.NotStored}
 	}
 
 	at := c.now()
+	account := loop.RenderSummary(record, at)
+	content := composeRunContent(account, recordJSON)
 
 	id, err := c.createRunNode(ctx, c.runName(record, at))
 	if err != nil {
@@ -59,13 +64,13 @@ func (c *Client) WriteRun(ctx context.Context, record loop.Record) loop.WriteRec
 		return loop.WriteReceipt{State: loop.NotStored}
 	}
 
-	if err := c.post(ctx, fmt.Sprintf("/api/nodes/%d/content", id), runContentType, body, nil); err != nil {
+	if err := c.post(ctx, fmt.Sprintf("/api/nodes/%d/content", id), runContentType, content, nil); err != nil {
 		c.log().Error(logWriteBackFailed, "subject", record.Subject, "node", id, "error", fmt.Errorf("divoid: set run node content: %w", err))
 		c.discardShell(ctx, id)
 		return loop.WriteReceipt{State: loop.NotStored}
 	}
 
-	if err := c.SetSubstance(ctx, id, loop.RenderSummary(record, at)); err != nil {
+	if err := c.SetSubstance(ctx, id, account); err != nil {
 		c.log().Error(logSummaryNotStored, "node", id, "subject", record.Subject, "error", err)
 	}
 
@@ -75,6 +80,15 @@ func (c *Client) WriteRun(ctx context.Context, record loop.Record) loop.WriteRec
 	}
 
 	return loop.WriteReceipt{State: loop.Stored, NodeID: id}
+}
+
+func composeRunContent(account string, record []byte) []byte {
+	var b strings.Builder
+	b.WriteString(account)
+	b.WriteString(runContentFenceOpen)
+	b.Write(record)
+	b.WriteString(runContentFenceClose)
+	return []byte(b.String())
 }
 
 func (c *Client) discardShell(ctx context.Context, id int64) {

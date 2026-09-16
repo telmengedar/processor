@@ -70,6 +70,37 @@ def capture(fn, *args, **kwargs):
     return buf.getvalue()
 
 
+class ExtractLastJSONFenceTests(unittest.TestCase):
+    """A run record's content is now an account followed by the record in a fenced json block.
+    extract_last_json_fence is what every reader of that content must go through to reach
+    structured data again -- these tests pin its two shapes and its fallback."""
+
+    def test_extracts_the_fenced_block(self):
+        content = "some account text\n---\n```json\n{\"a\": 1}\n```\n"
+        self.assertEqual(compare.extract_last_json_fence(content), '{"a": 1}')
+
+    def test_falls_back_to_the_whole_body_when_there_is_no_fence(self):
+        content = '{"a": 1}'
+        self.assertEqual(compare.extract_last_json_fence(content), content)
+
+    def test_uses_the_last_fence_when_more_than_one_opening_marker_is_present(self):
+        content = "an account that happens to mention ```json as text\n---\n```json\n{\"a\": 2}\n```\n"
+        self.assertEqual(compare.extract_last_json_fence(content), '{"a": 2}')
+
+
+class ParseRunRecordTests(unittest.TestCase):
+    def test_parses_a_fenced_record(self):
+        content = "account\n---\n```json\n{\"input\": \"hello\"}\n```\n"
+        self.assertEqual(compare.parse_run_record(content), {"input": "hello"})
+
+    def test_parses_an_un_backfilled_record_with_no_fence(self):
+        content = '{"input": "hello"}'
+        self.assertEqual(compare.parse_run_record(content), {"input": "hello"})
+
+    def test_returns_none_rather_than_raising_on_content_that_is_neither_shape(self):
+        self.assertIsNone(compare.parse_run_record("not json at all"))
+
+
 class RouteTests(unittest.TestCase):
     """route() is the whole axis split (DiVoid #11333): one comparison, node == anchor.id."""
 

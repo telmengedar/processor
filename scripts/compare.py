@@ -230,6 +230,31 @@ def graph_credentials():
     return url.rstrip("/"), key
 
 
+def extract_last_json_fence(content):
+    """Return the text inside the last ```json fenced block in content, or content unchanged
+    when it carries no such fence -- a record the write path composed carries one; a record from
+    before that path shipped does not, and the whole body is its own JSON."""
+    marker = "```json\n"
+    start = content.rfind(marker)
+    if start == -1:
+        return content
+    start += len(marker)
+    end = content.find("\n```", start)
+    if end == -1:
+        return content[start:]
+    return content[start:end]
+
+
+def parse_run_record(content):
+    """Parse a run record node's content as a Record, extracting it from its last ```json fence
+    and falling back to the whole body when there is none. Returns None rather than raising when
+    neither shape is valid JSON."""
+    try:
+        return json.loads(extract_last_json_fence(content))
+    except json.JSONDecodeError:
+        return None
+
+
 def find_prior_run(divoid_url, divoid_key, task_text):
     """Return (nodeId, name) of an existing run record whose input is task_text verbatim, or None.
 
@@ -276,9 +301,8 @@ def find_prior_run(divoid_url, divoid_key, task_text):
     for row in wire.get("result") or []:
         if row.get("type") != RUN_NODE_TYPE or not str(row.get("name", "")).startswith(RUN_NAME_PREFIX):
             continue
-        try:
-            record = json.loads(row.get("content") or "")
-        except json.JSONDecodeError:
+        record = parse_run_record(row.get("content") or "")
+        if record is None:
             continue
         if record.get("input") == task_text:
             return row.get("id"), row.get("name")
