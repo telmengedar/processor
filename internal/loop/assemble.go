@@ -22,7 +22,9 @@ const (
 	nudgeThin = "Seems like your knowledge is still thin on the topic - your focus might be too narrow; try approaching the question from a different angle.\n"
 )
 
-const nudgeEscalate = "You have looked and found little - time to actually gain the knowledge: research it first, and fall back to experimentation only if research does not get you there.\n"
+const nudgeNarrowQuery = "The graph has matches for this, but they did not fit the budget - narrow the query and ask for a smaller slice.\n"
+
+const nudgeEscalate = "This does not appear to be in the graph - say so plainly and name what is missing, rather than repeating the same recall.\n"
 
 // Assemble is a pure function: no I/O, no clock, no randomness.
 func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64) (block string, dispositions []Disposition) {
@@ -117,10 +119,17 @@ func RenderToolResult(r ToolExchange) string {
 		return fmt.Sprintf("wrote %d bytes to %s", r.Bytes, r.Path)
 	}
 	if len(r.Results) == 0 {
+		base := "no additional results found."
 		if len(r.Dispositions) > 0 {
-			return "results were found, but none were included.\n" + nudgeEscalate
+			base = "results were found, but none were included."
 		}
-		return "no additional results found.\n" + nudgeEscalate
+		if r.Tool != ToolRecall {
+			return base
+		}
+		if anyCutForByteBudget(r.Dispositions) {
+			return base + "\n" + nudgeNarrowQuery
+		}
+		return base + "\n" + nudgeEscalate
 	}
 
 	var b strings.Builder
@@ -131,6 +140,15 @@ func RenderToolResult(r ToolExchange) string {
 		fmt.Fprintf(&b, "===== RESULT =====\nid: %d\ntype: %s\nname: %s\n\n%s\n", c.ID, c.Type, c.Name, c.Content)
 	}
 	return b.String()
+}
+
+func anyCutForByteBudget(dispositions []Disposition) bool {
+	for _, d := range dispositions {
+		if d.CutReason == cutReasonByteBudget {
+			return true
+		}
+	}
+	return false
 }
 
 // renderBlock renders the fixed layout of design §6.3: the anchor first
