@@ -52,6 +52,8 @@ type: task
 name: Charlie
 
 charlie body
+
+Seems like your knowledge is still thin on the topic - you should explore more.
 `
 
 	if block != wantBlock {
@@ -643,7 +645,7 @@ func TestDispositionSubstanceFieldsSerializeEvenAtTheZeroValue(t *testing.T) {
 	}
 }
 
-func TestAssembleEmptyCandidatesRendersAnchorOnly(t *testing.T) {
+func TestAssembleEmptyCandidatesRendersAnchorAndTheKnowNothingNudge(t *testing.T) {
 	t.Parallel()
 
 	anchor := Anchor{ID: 1, Type: "t", Name: "solo", Content: "just the anchor"}
@@ -658,7 +660,7 @@ func TestAssembleEmptyCandidatesRendersAnchorOnly(t *testing.T) {
 	if dispositions == nil {
 		t.Fatal("dispositions is nil for no candidates, want a non-nil empty slice (JSON null vs [])")
 	}
-	const want = "===== ANCHOR =====\nid: 1\ntype: t\nname: solo\n\njust the anchor\n"
+	const want = "===== ANCHOR =====\nid: 1\ntype: t\nname: solo\n\njust the anchor\n\n" + nudgeNone
 	if block != want {
 		t.Fatalf("block = %q, want %q", block, want)
 	}
@@ -892,5 +894,105 @@ func TestTheBlockStatesThatNothingWasAdmittedRatherThanRenderingTheAnchorAlone(t
 	const want = "results were found, but none were included."
 	if !strings.Contains(block, want) {
 		t.Fatalf("block = %q, want it to contain %q when the floor admits nothing", block, want)
+	}
+}
+
+func namedCandidates(n int) []Candidate {
+	candidates := make([]Candidate, n)
+	for i := range n {
+		candidates[i] = Candidate{ID: int64(i + 1), Type: "t", Name: fmt.Sprintf("c%d", i+1), Similarity: 1, Content: "body"}
+	}
+	return candidates
+}
+
+func TestRenderBlockNudgesKnowNothingWhenNothingWasEvenConsidered(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Content: "anchor body"}
+
+	block, dispositions := Assemble(anchor, nil, 60_000, 0)
+
+	if len(dispositions) != 0 {
+		t.Fatalf("test setup error: got %d dispositions, want 0 admitted for this boundary", len(dispositions))
+	}
+	if !strings.HasSuffix(block, nudgeNone) {
+		t.Fatalf("block = %q, want it to end with the know-nothing nudge %q", block, nudgeNone)
+	}
+	if strings.Contains(block, "results were found") {
+		t.Fatalf("block = %q, contains the cut-reason sentence although nothing was even considered", block)
+	}
+	if strings.Contains(block, nudgeThin) {
+		t.Fatalf("block = %q, contains the thin-knowledge nudge as well as the know-nothing nudge; only one may fire", block)
+	}
+}
+
+func TestRenderBlockComposesTheCutSentenceWithTheKnowNothingNudge(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Content: "anchor body"}
+	candidates := []Candidate{{ID: 10, Similarity: 0.1, Content: "small"}}
+	const floor = 0.63
+
+	block, dispositions := Assemble(anchor, candidates, 60_000, floor)
+
+	if len(dispositions) == 0 || dispositions[0].Included {
+		t.Fatal("test setup error: the candidate was not cut, so this boundary is not exercised")
+	}
+
+	const cutSentence = "results were found, but none were included."
+	cutAt := strings.Index(block, cutSentence)
+	nudgeAt := strings.Index(block, nudgeNone)
+	if cutAt < 0 || nudgeAt < 0 {
+		t.Fatalf("block = %q, want both %q and %q present", block, cutSentence, nudgeNone)
+	}
+	if nudgeAt < cutAt {
+		t.Fatalf("block = %q, want the cut-reason sentence before the know-nothing nudge, got the nudge first", block)
+	}
+}
+
+func TestRenderBlockNudgesThinKnowledgeAtFourAdmitted(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Content: "anchor body"}
+	candidates := namedCandidates(4)
+
+	block, dispositions := Assemble(anchor, candidates, 60_000, 0)
+
+	admitted := 0
+	for _, d := range dispositions {
+		if d.Included {
+			admitted++
+		}
+	}
+	if admitted != 4 {
+		t.Fatalf("test setup error: admitted %d candidates, want exactly 4 for this boundary", admitted)
+	}
+	if !strings.HasSuffix(block, nudgeThin) {
+		t.Fatalf("block = %q, want it to end with the thin-knowledge nudge %q at 4 admitted", block, nudgeThin)
+	}
+	if strings.Contains(block, nudgeNone) {
+		t.Fatalf("block = %q, contains the know-nothing nudge although 4 candidates were admitted", block)
+	}
+}
+
+func TestRenderBlockAddsNoNudgeAtFiveAdmitted(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Content: "anchor body"}
+	candidates := namedCandidates(5)
+
+	block, dispositions := Assemble(anchor, candidates, 60_000, 0)
+
+	admitted := 0
+	for _, d := range dispositions {
+		if d.Included {
+			admitted++
+		}
+	}
+	if admitted != 5 {
+		t.Fatalf("test setup error: admitted %d candidates, want exactly 5 for this boundary", admitted)
+	}
+	if strings.Contains(block, nudgeNone) || strings.Contains(block, nudgeThin) {
+		t.Fatalf("block = %q, contains a nudge although 5 candidates were admitted", block)
 	}
 }
