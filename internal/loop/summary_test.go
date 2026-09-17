@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func summaryInstant() time.Time {
@@ -52,7 +53,7 @@ func summaryRecord() Record {
 			SupplementaryByteBudget: 20000,
 			MaxModelCalls:           6,
 			MaxOutputTokens:         4096,
-			MaxFills:                2,
+			MaxFills:                MaxFills,
 			FillSizeFloor:           8000,
 			MaxFillContentBytes:     100000,
 		},
@@ -742,9 +743,13 @@ func TestRenderSummarySaysNoneAdmittedWhenEveryRecallResultWasCut(t *testing.T) 
 	}
 }
 
-func TestRenderSummaryOfTheLargestRunTheseLimitsPermitStaysUnderFourKilobytes(t *testing.T) {
-	t.Parallel()
+func summaryCarriedCauseOfFourByteRunes(id int64) string {
+	head := fmt.Sprintf("node #%d refused: ", id)
+	runes := []rune(head + strings.Repeat("\U00010348", CarriedCauseRunes))
+	return string(runes[:CarriedCauseRunes])
+}
 
+func summaryWorstCaseRecord() Record {
 	temperature, topP := 0.2, 0.95
 	record := summaryRecord()
 	record.Workspace = "/runs/2026-09-07T15-20-01Z"
@@ -774,7 +779,7 @@ func TestRenderSummaryOfTheLargestRunTheseLimitsPermitStaysUnderFourKilobytes(t 
 	for i := range record.Limits.CandidateLimit {
 		reason := fillRefusalReasons[i%len(fillRefusalReasons)]
 		if i < record.Limits.MaxFills {
-			reason = strings.Repeat("an upstream error body the condenser carried back ", CarriedCauseRunes)[:CarriedCauseRunes]
+			reason = summaryCarriedCauseOfFourByteRunes(int64(100 + i))
 		}
 		record.Fills = append(record.Fills, FillOutcome{ID: int64(100 + i), Reason: reason})
 	}
@@ -789,11 +794,27 @@ func TestRenderSummaryOfTheLargestRunTheseLimitsPermitStaysUnderFourKilobytes(t 
 		})
 	}
 
+	return record
+}
+
+func summaryWorstCaseBound(limits Limits) int {
+	const everythingButTheCarriedCauses = 4096
+	const perCarriedCause = len("  ") + len(" (999):") + len("\n") + len("    ") + len("#9223372036854775807") + len("\n")
+
+	return everythingButTheCarriedCauses + limits.MaxFills*(summaryFillRunes*utf8.UTFMax+perCarriedCause)
+}
+
+func TestRenderSummaryOfTheLargestRunTheseLimitsPermitStaysUnderTheBoundTheseLimitsImply(t *testing.T) {
+	t.Parallel()
+
+	record := summaryWorstCaseRecord()
+
 	summary := RenderSummary(record, summaryInstant())
 
-	const bound = 4096
+	bound := summaryWorstCaseBound(record.Limits)
 	if len(summary) > bound {
-		t.Fatalf("the summary of the largest run these limits permit is %d B, above the %d B bound.\nsummary:\n%s", len(summary), bound, summary)
+		t.Fatalf("the summary of the largest run these limits permit is %d B, above the %d B bound its %d fills imply.\nsummary:\n%s",
+			len(summary), bound, record.Limits.MaxFills, summary)
 	}
 }
 
