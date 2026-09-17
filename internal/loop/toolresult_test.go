@@ -174,6 +174,35 @@ func TestRenderToolResultNarrowsTheQueryWhenTheCutSetMixesByteBudgetWithAnotherR
 	}
 }
 
+func TestRenderToolResultNarrowsTheQueryWhenEveryHitWasRefusedForItsSize(t *testing.T) {
+	t.Parallel()
+
+	candidates := []Candidate{
+		{ID: 1, Type: "documentation", Name: "Five", Similarity: 0.9, Content: strings.Repeat("x", 5_000)},
+		{ID: 2, Type: "documentation", Name: "Nine", Similarity: 0.8, Content: strings.Repeat("y", 9_000)},
+	}
+
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, RelevanceFloor, testBlockOccupancy)
+
+	if len(admitted) != 0 {
+		t.Fatalf("test setup error: %d rows were admitted, want none so the empty-result branch is the one under test", len(admitted))
+	}
+	for i, d := range dispositions {
+		if d.CutReason != cutReasonOversized {
+			t.Fatalf("test setup error: dispositions[%d] = %+v, want it refused for its size against the supplementary ceiling", i, d)
+		}
+	}
+
+	got := RenderToolResult(ToolExchange{Tool: ToolRecall, Query: "the query", Dispositions: dispositions})
+
+	if strings.Contains(got, nudgeEscalate) {
+		t.Fatalf("tool result = %q, tells the model the topic is not in the graph although recall returned %d matches and admission refused them for their size alone", got, len(dispositions))
+	}
+	if !strings.HasSuffix(got, nudgeNarrowQuery) {
+		t.Fatalf("tool result = %q, want it to end with %q: rows the graph found and the block had no room for are matches, not absence", got, nudgeNarrowQuery)
+	}
+}
+
 func TestRenderToolResultEscalatesWhenTheCutSetIsAllBelowFloor(t *testing.T) {
 	t.Parallel()
 

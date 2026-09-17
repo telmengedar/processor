@@ -82,8 +82,8 @@ type Disposition struct {
 	// SubstanceSize is that substance's byte length, zero when SubstanceAvailable is false.
 	SubstanceSize int `json:"substanceSize"`
 
-	// PayloadCap is the per-candidate rendered-payload ceiling in force when this row was judged.
-	PayloadCap int `json:"payloadCap"`
+	// PayloadCap is the per-candidate rendered-payload ceiling in force when this row was judged, absent when no ceiling was.
+	PayloadCap int `json:"payloadCap,omitempty"`
 }
 
 // TerminalReason is the loop's own closed set of ways a judgement step can end.

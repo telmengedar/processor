@@ -73,11 +73,7 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 	graph := &poisoningGraph{
 		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "the subject body"},
 		base: []loop.Candidate{
-			{ID: 7, Type: "documentation", Name: "A real document", Similarity: 0.81, Content: strings.Repeat("r", 11_800)},
-			{ID: 71, Type: "documentation", Name: "A second real document", Similarity: 0.80, Content: strings.Repeat("s", 11_800)},
-			{ID: 72, Type: "documentation", Name: "A third real document", Similarity: 0.79, Content: strings.Repeat("t", 11_800)},
-			{ID: 73, Type: "documentation", Name: "A fourth real document", Similarity: 0.78, Content: strings.Repeat("u", 11_800)},
-			{ID: 74, Type: "documentation", Name: "A fifth real document", Similarity: 0.77, Content: strings.Repeat("v", 11_800)},
+			{ID: 7, Type: "documentation", Name: "A real document", Similarity: 0.81, Content: strings.Repeat("r", 59_000)},
 			{ID: 8, Type: divoid.RunNodeType, Name: "a session log another agent wrote", Similarity: 0.74, Content: strings.Repeat("h", 900)},
 		},
 	}
@@ -91,8 +87,8 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 	if graph.lastErr != nil {
 		t.Fatalf("the double could not serialise the record it was handed: %v", graph.lastErr)
 	}
-	if admittedCount(first.Candidates) != 6 {
-		t.Fatalf("test setup error: turn 1 admitted %d of %d candidates, want all of them", admittedCount(first.Candidates), len(first.Candidates))
+	if admittedCount(first.Candidates) != 2 {
+		t.Fatalf("test setup error: turn 1 admitted %d of %d candidates, want both", admittedCount(first.Candidates), len(first.Candidates))
 	}
 
 	recordID, recordSize := graph.written[0].ID, len(graph.written[0].Content)
@@ -109,10 +105,10 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 	if slices.Contains(ids, recordID) {
 		t.Fatalf("turn 2's candidate set is %v and still carries #%d, the record turn 1 wrote: the graph ranks it first, admission refuses it before reading a byte of it, and a slot spent on it is a slot no row the run could have read ever reached", ids, recordID)
 	}
-	if want := []int64{7, 71, 72, 73, 74, 8}; !slices.Equal(ids, want) {
+	if want := []int64{7, 8}; !slices.Equal(ids, want) {
 		t.Fatalf("turn 2's candidate set is %v, want %v: dropping the record must leave the rows ranked behind it standing, in the order the graph reported them — and #8 is a session log another agent wrote, carrying the record's own node type, so a predicate that keys on the type alone loses it from this set too", ids, want)
 	}
-	if got, want := admittedCount(second.Candidates), 6; got != want {
+	if got, want := admittedCount(second.Candidates), 2; got != want {
 		t.Fatalf("turn 2 admitted %d of %d candidates, want %d — both real rows", got, len(second.Candidates), want)
 	}
 }
