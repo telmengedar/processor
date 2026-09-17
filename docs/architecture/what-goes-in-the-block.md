@@ -720,6 +720,81 @@ make a turn's reasoning budget depend on how condensed the graph happens to be, 
 coupling this project keeps eliminating elsewhere. **Separate counter, separate ceiling, both in the
 record.**
 
+#### 7.4.3.1 G3's retirement condition, written down here because it ships in this change
+
+**`MaxFills = 2` is a transition instrument, and this is what ends it.** §7.4.3 says the condition belongs
+in the same commit that introduces the ceiling and §16 Unit 2 step 5 repeats it, so it is stated here in a
+form that can be checked rather than argued.
+
+**Raise it when both of these hold, and not before:**
+
+1. **Substance coverage over the retrieved working set is at or above 50 %** — the fraction of dispositions
+   carrying `substanceAvailable: true` in a sweep's machine report, measured over the candidates retrieval
+   actually returns rather than over the graph at large. That is Q5's metric and the instrument already
+   exists (PR #58). Today the figure is ~0.3 % (§4.1), which is why the ceiling is 2. **50 % is a stake in
+   the ground rather than a derived number** — it is chosen to be checkable, and F-8's distribution is what
+   should replace it once F-8 has run.
+2. **F-4 reports zero fills on a second run over the same area.** Until a second run fires none, the cache
+   §7.4.1 rests on is unproven on this path, and a higher ceiling would raise the worst case without
+   bounding it.
+
+**Raise it to F-8's observed per-turn fill count, not to a round number** — and never past what §7.4.3.2's
+relation affords. At the shipped `FillBound` the run bound pays for **two** fills, so raising G3 to three
+requires lowering `FillBound`, raising `runBound`, or both, **in the same change** — otherwise the
+relation's test reddens. That is the intended behaviour: the count and the clock are one decision, not two.
+
+**Delete it only together with `FillBound`.** G3 is the only factor bounding the fill phase's *total* wall
+clock (§7.4.3.2). Deleting the constant while that relation stands would remove the bound rather than
+retire it.
+
+**The fill fires at initial assembly only, and that is deliberate.** `admit` has two call sites — initial
+assembly and the model's own `recall` round — and the fill is attached to the first alone. A supplementary
+candidate that lacked a substance and was cut for bytes therefore produces no `FillOutcome` row. This is
+what keeps G3 honest: a per-turn ceiling counted across an unbounded number of recall rounds is a ceiling on
+nothing. The cost is that §7.4.4's refusal contract is complete for initial assembly and silent for the
+supplementary round, and `Record.Fills` says so in its own doc comment rather than leaving a reader to infer
+it from two call sites.
+
+#### 7.4.3.2 G3 bounds a count; the turn also needs a bound on the clock
+
+**As first shipped, G3 bounded the wrong quantity.** §7.4.3 states its purpose in time units — *"it bounds
+one cold-start turn, so a first run into unexplored memory cannot spend ten minutes"* — but a ceiling on the
+*number* of fills bounds latency only if each fill is itself bounded, and nothing bounded one. The fill runs
+synchronously before any judgement call, on the turn's own context; both model adapters default to a
+five-minute client bound when no http client is supplied; the run bound is ten minutes. **Two fills at the
+default consume the entire run**, and the turn is cancelled having produced two fill rows and zero judgement
+calls — in exactly the regime the fill exists for, since §7.4.2 says the graph is 100 % cold. It is a
+contract violation rather than a tuning question, and *"the fill ships off by default"* is not a defence
+when the plan is for enabling it to become a config change.
+
+**The remedy is a per-fill deadline**, `FillBound`, applied inside the attempt, with the relation between
+the constants pinned by a test rather than left as arithmetic in a comment:
+
+> `DerivationBound + MaxFills × FillBound + one judgement call at the adapter's own default < runBound`
+
+At the shipped values that is `30 s + 2 × 90 s + 5 min = 8 min 30 s` against a ten-minute run bound, leaving
+90 s — six times the graph's own read timeout — for retrieval and the rest of the turn. The test follows the
+shape of the one that derives `shutdownGrace` from `runBound` plus the measured write-back ceiling.
+
+**Why per-fill rather than one deadline around the whole phase.** A phase deadline bounds the same total and
+is marginally simpler, but it lets one pathological fill spend the entire phase budget, so the second
+candidate gets refused for what is really the first candidate's fault — and the recorded reason then
+misattributes it. The per-fill bound composes with G3 without introducing a second concept: the phase bound
+is `MaxFills × FillBound`, derived rather than declared, which is what makes §7.4.3.1's *"raise G3 only as
+far as the relation affords"* a computation instead of a judgement call. What the phase deadline would have
+bought is one fewer constant, and that is the whole of it.
+
+**It does not require the adapters' client timeout to be made configurable.** The deadline is a context
+deadline, and both adapters build their request with `http.NewRequestWithContext`, so it pre-empts the
+client's own `Timeout` on every path through `condense.Run`. The five-minute default stays what it was: the
+floor this relation reserves for a *judgement* call, which is constructed the same way and is not otherwise
+bounded.
+
+**A fill that overruns its bound is a refusal like any other** (§7.4.4): it is recorded under its own stated
+reason rather than surfacing the adapter's account of an expired context, so the trace shape stays stable.
+A fill ended by the *enclosing* run's cancellation is not reported as the fill's own bound — the two are
+distinguished by the context's cause, the same way the derivation step distinguishes them.
+
 #### 7.4.4 The seam, and why the instrument stays clean
 
 This is #12955's **primary** objection to in-turn generation, and it was never latency — it was
@@ -1731,7 +1806,9 @@ what was built. **Nothing in this unit is work for the next agent.**
 4. Wire it in `cmd/processor` **only**. `cmd/eval` must keep a closure with no model adapter — that is not a
    convention to remember, it is the guarantee (A13), and a test asserting the closure is cheap.
 5. Implement the three gates (§7.4.3) as a single decision with a recorded outcome per candidate: filled,
-   or the reason it was not. **G3 ships with its retirement condition written down** (Q8).
+   or the reason it was not. **G3 ships with its retirement condition written down** (Q8) — **it is
+   §7.4.3.1**, and it ships alongside §7.4.3.2's per-fill deadline, because a ceiling on the count of
+   fills bounds a turn's latency only once each fill is itself bounded.
 6. **Fills get their own counter and their own ceiling**, never `MaxModelCalls`.
 7. **Add a fifth boot loader for the condensation model** — its own `PROCESSOR_CONDENSE_MODEL_*` members,
    read at the one environment site like everything else. **No fallback to `PROCESSOR_MODEL_*`**: absent

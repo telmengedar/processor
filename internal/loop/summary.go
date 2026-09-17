@@ -15,6 +15,7 @@ const (
 	summaryTypeRunes   = 13
 	summaryNameRunes   = 46
 	summaryAnswerRunes = 180
+	summaryFillRunes   = 72
 	summaryLineRunes   = 96
 	summaryErrorRunes  = 200
 )
@@ -30,11 +31,17 @@ const (
 	summaryNoTool           = "[tool not recorded]"
 	summaryAnsweredYetEmpty = "  <-- terminal reason says answered"
 	summaryBlockOmitted     = "not rendered here"
+	summaryNoFillModel      = "[model not recorded]"
 )
 
 type cutGroup struct {
 	reason string
 	rows   []Disposition
+}
+
+type fillGroup struct {
+	reason string
+	ids    []string
 }
 
 // RenderSummary projects one run record onto a compact summary of that run, reading only fields the record carries and never the assembled block.
@@ -43,6 +50,7 @@ func RenderSummary(record Record, at time.Time) string {
 
 	renderSummaryHeader(&b, record, at)
 	renderSummaryAssembly(&b, record)
+	renderSummaryFills(&b, record)
 	renderSummaryTools(&b, record)
 	renderSummaryOutcome(&b, record)
 
@@ -109,8 +117,10 @@ func renderSummaryAssembly(b *strings.Builder, record Record) {
 
 func renderCutGroup(b *strings.Builder, group cutGroup, indent string) {
 	head := fmt.Sprintf("%s%s (%d, %s):", indent, group.reason, len(group.rows), summaryBytes(sumDispositionSizes(group.rows)))
-	ids := dispositionIDs(group.rows)
+	renderIDGroup(b, head, dispositionIDs(group.rows), indent)
+}
 
+func renderIDGroup(b *strings.Builder, head string, ids []string, indent string) {
 	if oneLine := head + " " + strings.Join(ids, " "); len([]rune(oneLine)) <= summaryLineRunes {
 		b.WriteString(oneLine + "\n")
 		return
@@ -128,6 +138,48 @@ func renderCutGroup(b *strings.Builder, group cutGroup, indent string) {
 	if strings.TrimSpace(line) != "" {
 		b.WriteString(strings.TrimRight(line, " ") + "\n")
 	}
+}
+
+func renderSummaryFills(b *strings.Builder, record Record) {
+	filled, refused := splitFills(record.Fills)
+
+	limits := record.Limits
+	fmt.Fprintf(b, "\nFILLS  %d filled / %d refused  (ceiling %d, floor %s, max %s)\n",
+		len(filled), len(record.Fills)-len(filled), limits.MaxFills, summaryBytes(limits.FillSizeFloor), summaryBytes(limits.MaxFillContentBytes))
+
+	for _, f := range filled {
+		model := f.Model
+		if model == "" {
+			model = summaryNoFillModel
+		}
+		fmt.Fprintf(b, "  #%d written by %s\n", f.ID, summaryTrunc(model, summaryFillRunes))
+	}
+
+	for _, group := range refused {
+		head := fmt.Sprintf("  %s (%d):", summaryTrunc(group.reason, summaryFillRunes), len(group.ids))
+		renderIDGroup(b, head, group.ids, "  ")
+	}
+}
+
+func splitFills(fills []FillOutcome) (filled []FillOutcome, refused []fillGroup) {
+	at := make(map[string]int, len(fills))
+
+	for _, f := range fills {
+		if f.Filled {
+			filled = append(filled, f)
+			continue
+		}
+
+		id := "#" + strconv.FormatInt(f.ID, 10)
+		if i, seen := at[f.Reason]; seen {
+			refused[i].ids = append(refused[i].ids, id)
+			continue
+		}
+		at[f.Reason] = len(refused)
+		refused = append(refused, fillGroup{reason: f.Reason, ids: []string{id}})
+	}
+
+	return filled, refused
 }
 
 func renderSummaryTools(b *strings.Builder, record Record) {

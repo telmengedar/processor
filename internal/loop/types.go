@@ -205,7 +205,7 @@ type Record struct {
 	Window     UpdateWindow  `json:"window,omitzero"`
 	Anchor     AnchorSummary `json:"anchor"`
 	Candidates []Disposition `json:"candidates"`
-	// Fills is one entry per candidate that lacked a substance this turn: filled, or the reason it was not.
+	// Fills is one entry per candidate that lacked a substance at initial assembly, never the supplementary round: filled, or the reason it was not.
 	Fills []FillOutcome `json:"fills"`
 	Block string        `json:"block"`
 

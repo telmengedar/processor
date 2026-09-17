@@ -12,6 +12,15 @@ func summaryInstant() time.Time {
 	return time.Date(2026, 9, 7, 15, 20, 1, 0, time.UTC)
 }
 
+var fillRefusalReasons = []string{
+	"below size floor",
+	"no pressure",
+	"fill port absent",
+	"per-turn ceiling reached",
+	"oversized",
+	"fill bound expired",
+}
+
 func summaryRecord() Record {
 	return Record{
 		Input:   "Generate a new barebones webpage and a repo for it.",
@@ -43,6 +52,12 @@ func summaryRecord() Record {
 			SupplementaryByteBudget: 20000,
 			MaxModelCalls:           6,
 			MaxOutputTokens:         4096,
+			MaxFills:                2,
+			FillSizeFloor:           8000,
+			MaxFillContentBytes:     100000,
+		},
+		Fills: []FillOutcome{
+			{ID: 15, Filled: true, Model: "gemma-3-12b-it"},
 		},
 	}
 }
@@ -753,6 +768,15 @@ func TestRenderSummaryOfTheLargestRunTheseLimitsPermitStaysUnderFourKilobytes(t 
 			Included:   i < 8,
 			CutReason:  "byte budget exceeded",
 		})
+	}
+
+	record.Fills = nil
+	for i := range record.Limits.CandidateLimit {
+		reason := fillRefusalReasons[i%len(fillRefusalReasons)]
+		if i < record.Limits.MaxFills {
+			reason = strings.Repeat("an upstream error body the condenser carried back ", CarriedCauseRunes)[:CarriedCauseRunes]
+		}
+		record.Fills = append(record.Fills, FillOutcome{ID: int64(100 + i), Reason: reason})
 	}
 
 	record.ToolCalls = nil

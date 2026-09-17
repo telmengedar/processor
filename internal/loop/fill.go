@@ -1,6 +1,10 @@
 package loop
 
-import "context"
+import (
+	"context"
+	"errors"
+	"time"
+)
 
 // FillPort is the seam between the loop and substance generation; declared here because internal/loop cannot import internal/condense, and nil refuses every call with a recorded reason.
 type FillPort interface {
@@ -26,12 +30,17 @@ const (
 	// FillSizeFloor is the size below which a candidate is not worth a fill attempt.
 	FillSizeFloor = 8_000
 
-	// MaxFills is the transition-only ceiling on fills attempted in one turn.
+	// MaxFills is the transition-only ceiling on fills attempted in one turn; design §7.4.3.1 states what retires it.
 	MaxFills = 2
 
 	// MaxFillContentBytes refuses a fill attempt before it ever calls the model.
 	MaxFillContentBytes = 100_000
 )
+
+// FillBound is one fill attempt's own deadline; MaxFills of them must still leave a judgement call reachable inside the run bound.
+const FillBound = 90 * time.Second
+
+var errFillBound = errors.New("fill bound")
 
 const (
 	fillReasonBelowSizeGate  = "below size floor"
@@ -39,6 +48,7 @@ const (
 	fillReasonPortAbsent     = "fill port absent"
 	fillReasonCeilingReached = "per-turn ceiling reached"
 	fillReasonOversized      = "oversized"
+	fillReasonBoundExpired   = "fill bound expired"
 )
 
 func (t *Turn) fill(ctx context.Context, dispositions []Disposition) []FillOutcome {
@@ -63,22 +73,32 @@ func (t *Turn) fill(ctx context.Context, dispositions []Disposition) []FillOutco
 			outcomes = append(outcomes, FillOutcome{ID: d.ID, Reason: fillReasonOversized})
 		default:
 			fired++
-			outcomes = append(outcomes, t.attemptFill(ctx, d.ID))
+			outcomes = append(outcomes, t.attemptFill(ctx, d.ID, FillBound))
 		}
 	}
 
 	return outcomes
 }
 
-func (t *Turn) attemptFill(ctx context.Context, id int64) FillOutcome {
-	result, err := t.Fill.Fill(ctx, id)
-	if err != nil {
-		t.log().Error("fill failed", "id", id, "error", err)
-		return FillOutcome{ID: id, Reason: BoundCause(err.Error())}
-	}
+func (t *Turn) attemptFill(ctx context.Context, id int64, bound time.Duration) FillOutcome {
+	bounded, cancel := context.WithTimeoutCause(ctx, bound, errFillBound)
+	defer cancel()
+
+	started := time.Now()
+	result, err := t.Fill.Fill(bounded, id)
+	elapsed := time.Since(started).Round(time.Millisecond)
+
 	if result.Written {
-		t.log().Info("fill wrote a substance", "id", id, "model", result.Model)
+		t.log().Info("fill wrote a substance", "id", id, "model", result.Model, "elapsed", elapsed)
 		return FillOutcome{ID: id, Filled: true, Model: result.Model}
 	}
-	return FillOutcome{ID: id, Reason: result.Reason}
+	if errors.Is(context.Cause(bounded), errFillBound) {
+		t.log().Warn("fill exceeded its own bound", "id", id, "bound", bound, "elapsed", elapsed)
+		return FillOutcome{ID: id, Reason: fillReasonBoundExpired}
+	}
+	if err != nil {
+		t.log().Error("fill failed", "id", id, "elapsed", elapsed, "error", err)
+		return FillOutcome{ID: id, Reason: BoundCause(err.Error())}
+	}
+	return FillOutcome{ID: id, Reason: BoundCause(result.Reason)}
 }

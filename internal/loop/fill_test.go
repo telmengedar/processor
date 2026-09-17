@@ -174,7 +174,7 @@ func TestFillRecordsTheProducingModelOnASuccessfulWrite(t *testing.T) {
 	}
 }
 
-func TestFillSurfacesTheCondensersOwnRefusalReasonVerbatim(t *testing.T) {
+func TestFillSurfacesTheCondensersOwnRefusalReasonWhenItFitsTheCarriedCauseBound(t *testing.T) {
 	t.Parallel()
 
 	fill := &fakeFill{results: map[int64]FillResult{1: {Reason: "self-produced"}}}
