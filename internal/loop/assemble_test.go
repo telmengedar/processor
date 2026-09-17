@@ -660,7 +660,7 @@ func TestAssembleEmptyCandidatesRendersAnchorAndTheKnowNothingNudge(t *testing.T
 	if dispositions == nil {
 		t.Fatal("dispositions is nil for no candidates, want a non-nil empty slice (JSON null vs [])")
 	}
-	const want = "===== ANCHOR =====\nid: 1\ntype: t\nname: solo\n\njust the anchor\n\n" + nudgeNone
+	const want = "===== ANCHOR =====\nid: 1\ntype: t\nname: solo\n\njust the anchor\n\nSeems you know nothing about this topic, you should research/explore what it is about.\n"
 	if block != want {
 		t.Fatalf("block = %q, want %q", block, want)
 	}
@@ -939,14 +939,9 @@ func TestRenderBlockComposesTheCutSentenceWithTheKnowNothingNudge(t *testing.T) 
 		t.Fatal("test setup error: the candidate was not cut, so this boundary is not exercised")
 	}
 
-	const cutSentence = "results were found, but none were included."
-	cutAt := strings.Index(block, cutSentence)
-	nudgeAt := strings.Index(block, nudgeNone)
-	if cutAt < 0 || nudgeAt < 0 {
-		t.Fatalf("block = %q, want both %q and %q present", block, cutSentence, nudgeNone)
-	}
-	if nudgeAt < cutAt {
-		t.Fatalf("block = %q, want the cut-reason sentence before the know-nothing nudge, got the nudge first", block)
+	const composed = "\nresults were found, but none were included.\nSeems you know nothing about this topic, you should research/explore what it is about.\n"
+	if !strings.Contains(block, composed) {
+		t.Fatalf("block = %q, want the cut-reason sentence directly followed by the know-nothing nudge with no blank line between them: %q", block, composed)
 	}
 }
 
