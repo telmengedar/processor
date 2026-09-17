@@ -112,11 +112,12 @@ This
 is the first time the product ranks the way its instrument has been scoring — not more input to a running
 mechanism. Risk **F-9**.
 
-**Cost.** One model call, assembled prompt **2,630 B** — **3.7 %** of the 71,800 B judgement call it
+**Cost.** One model call, assembled prompt **3,343 B** — **4.7 %** of the 71,800 B judgement call it
 precedes. **Five extra unscoped recalls: 4 graph calls before judgement become 9**, and their wall-clock
 cost is **unmeasured** (F-3). One new record string field, empty on the success path. Full figures and their
-provenance: §2.4. *(2,630 B corrected from 2,623 B on 2026-09-12 — 2,623 was the script's prompt, not the
-product's; §18.5.)*
+provenance: §2.4. *(3,343 B corrected from 2,630 B on 2026-09-16 — task #14163's `===== REQUEST =====`
+banner accounts for 20 B of the move; the rest is pre-existing drift the 2026-09-12 correction never
+caught; §18.5.)*
 
 **What it buys, and it is small — stated here rather than only 400 lines down.** On the pinned sidecar,
 **9/23 → 11/23 retrieved: +2 rows, and one of the two is contaminated — so one row of uncontaminated
@@ -279,13 +280,14 @@ product's own figure is the last row, and it is the one to quote:
 | **assembled prompt, median input** | **2,623 B** |
 | output, five queries | 239–395 B, **median 297 B** |
 | generation latency, twelve rows, `ai/qwen3-coder` | **~0.4 s/row**, 5/5 valid distinct queries on the first attempt for every row (#11348, verbatim) — *the runtime attribution (Docker Model Runner) is not #11348's; it is source-provable from `scripts/generate_derivations.py:62` and `:79`, both resolved at `0df5c14`* |
-| **the product's own assembled prompt, median input** *(added 2026-09-12)* | **2,630 B** — `loop.DerivationPrompt` at `e967204`: a 2,507 B fixed part plus the 123 B input. **This is the figure to quote for the product**; the script's fixed part was 2,500 B, so the two differ by 7 B. Measured, not derived — `len(DerivationPrompt(strings.Repeat("q", 123)))` returns `2630`. |
+| **the product's own assembled prompt, median input** *(re-measured 2026-09-16, §18.5)* | **3,343 B** — `len(DerivationPrompt(strings.Repeat("q", 123), derivationPromptTestNow))`, measured against this PR's tip. Supersedes the `e967204` figure of **2,630 B**, a gap of **713 B (27 %)** — mostly pre-existing drift unrelated to this PR (PR #79's `DATES` instruction, PR #83's directive-recognition rules), of which task #14163's `===== REQUEST =====` banner contributes exactly **20 B** (the same call with the banner removed measures 3,323 B). **This is the figure to quote for the product.** |
 
 Against the judgement call it precedes: **71,800 B / 19,687 prompt tokens**, and **both figures are of one
 request** — #13091 §5(b)'s byte-identical seq2/seq3 call 1, sha256 `bf6b122498c52765…`, whose
-`prompt_eval_count` is 19,687 in both trajectories. The derivation prompt is **3.7 %** of it by bytes
-(**2,630** / 71,800 = 3.66 %; the 2,623 that stood here is the *script's* prompt — corrected 2026-09-12,
-§18.5). *(Bytes, not tokens: nothing in this product tokenizes, so a token ratio would be
+`prompt_eval_count` is 19,687 in both trajectories. The derivation prompt is **4.7 %** of it by bytes
+(**3,343** / 71,800 = 4.66 %; **2,630** stood here from 2026-09-12 to 2026-09-16 and was itself already
+stale by then; the 2,623 before that was the *script's* prompt, not the product's — §18.5). *(Bytes, not
+tokens: nothing in this product tokenizes, so a token ratio would be
 a fabricated one — the same P-51 constraint #13564 A2 states. The token count is quoted only to size the
 call, never divided into.)*
 
@@ -824,7 +826,7 @@ strictly more than the boolean #11235 asked for.
 **Success path, one turn.**
 
 1. `Graph.Node(subject)` → anchor. *(unchanged)*
-2. `DerivationPrompt(input)` → ~2,623 B for a median input.
+2. `DerivationPrompt(input)` → ~3,343 B for a median input (corrected 2026-09-16 from the stale 2,623 B script figure; §18.5).
 3. `ModelPort.Derive` under a 30 s bound → completion text, ~297 B for five queries.
 4. `ParseDerivation` → up to 5 strings; `MergeQueries` → up to 6, input first.
 5. `Retrieve` issues **6 unscoped recalls + 1 `Neighbours` + 1 scoped recall** (`retrieve.go:18-31`),
@@ -1517,8 +1519,8 @@ trigger is evaluated against would refute it. On `d2d5b38` it does not.
 
 | figure | sourced from | where it stands now |
 |---|---|---|
-| system prompt **1,790 B**, few-shot **710 B** | the script at `0df5c14` | **Historical.** Resolve at `0df5c14` or `main` `d2d5b38`. The product's counterpart is a **2,507 B** fixed part |
-| **assembled prompt 2,623 B** | 1,790 + 710 + the 123 B median input | **Corrected wherever it was read as the product's:** the TL;DR's Cost line and §2.4's ratio now quote **2,630 B** (`loop.DerivationPrompt` at `e967204`). §2.4 keeps 2,623 B as the *script's* figure, labelled |
+| system prompt **1,790 B**, few-shot **710 B** | the script at `0df5c14` | **Historical.** Resolve at `0df5c14` or `main` `d2d5b38`. The product's counterpart was a **2,507 B** fixed part |
+| **assembled prompt 2,623 B** | 1,790 + 710 + the 123 B median input | **Corrected wherever it was read as the product's, twice.** 2026-09-12: the TL;DR's Cost line and §2.4's ratio moved to **2,630 B** (`loop.DerivationPrompt` at `e967204`); §2.4 keeps 2,623 B as the *script's* figure, labelled. 2026-09-16: both moved again, to **3,343 B** — task #14163's `===== REQUEST =====` banner plus pre-existing drift the first correction never caught. §18.5 |
 | latency **~0.4 s/row**, model `ai/qwen3-coder` | **#11348**; the runtime attribution from the script `:62` / `:79` | **Historical, and #11348 still carries it** — the script citation corroborates #11348, it is not its source. Resolve `:62` / `:79` at `0df5c14` |
 | `QUERIES_PER_ROW = 5` (`:80`) | the script | **Live under a new carrier:** `loop.MaxDerivedQueries = 5`. §14 Q7 |
 | `MAX_FILL_ATTEMPTS = 4` (`:81`) | the script | **Retired.** Nothing in this project retries a derivation. §4.5, §18.2 |
@@ -1535,7 +1537,32 @@ script assembled **2,623 B** and the product assembles **2,630 B**. Measured at 
 no conclusion in §2.4 or §12 moves. **The defect was attribution, not arithmetic**, and that is the class a
 reader cannot catch by reading: 2,623 B sat under a heading asking *what a derivation-shaped call costs* and
 was quoted in the TL;DR's **Cost** line, where every neighbouring figure is the product's. It was found by
-measuring the replacement, which is the only instrument that reaches this class.
+measuring the replacement, which is the only instrument that reaches this class. *(This paragraph is dated
+to the 2026-09-12 event above; the correction immediately below supersedes its conclusion — the ratio does
+move now.)*
+
+**Correction, 2026-09-16 — re-measured, not inherited; the ratio above no longer holds.** Task #14163
+measured that 16 of 40 derivations on the shipped path were not six lines, most of them the model failing to
+locate the request — because nothing marks where the request begins, so the final line reads as a third,
+unanswered exemplar. The fix (`internal/loop/derive.go`, `DerivationPrompt`) puts a
+`===== REQUEST =====\n` banner immediately before the input, the same `=====` idiom the `NOW` span already
+uses — so the input is no longer literally the last block; the banner is, with the input inside it.
+
+**Re-derived, against this PR's tip, in place of trusting the `e967204` figures above:**
+
+- `len(DerivationPrompt("", time.Time{}))` returns **3182** (the `2507` figure above is stale — PR #79's
+  `DATES` instruction and PR #83's directive-recognition rules both grew `derivationInstructions` after
+  `e967204`, unrelated to this PR).
+- `len(DerivationPrompt(strings.Repeat("q", 123), derivationPromptTestNow))` returns **3343** (the `2630`
+  figure above is stale for the same reason, plus this PR's banner).
+- The same call with the banner reverted (`append(blocks, input)` instead of
+  `append(blocks, "===== REQUEST =====\n"+input)`) returns **3323** — so this PR's own contribution is
+  exactly **3343 − 3323 = 20 B**, matching `printf '===== REQUEST =====\n' | wc -c`. The remaining
+  **693 B** of the **713 B** gap from `2630` predates this PR.
+- **713 B is 27 % of 2,630.** The ratio against the 71,800 B judgement call moves from the stated
+  **3.66 %** to **4.66 %** (`3343 / 71800`) — a full percentage point, so §2.4's and the TL;DR's Cost-line
+  conclusions **do** move, unlike the 2026-09-12 correction above. Both sites, and the ledger row naming
+  them, are updated to `3,343 B` / `4.66 %`.
 
 ### 18.6 The sweep that produced this section, and what it structurally cannot reach
 

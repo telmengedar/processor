@@ -85,8 +85,8 @@ func TestTheDerivationPromptCarriesTheInstructionsBothExemplarsAndEndsWithTheInp
 		}
 	}
 
-	if !strings.HasSuffix(prompt, "\n\n"+input) {
-		t.Fatalf("the derivation prompt does not end with the input; a request buried above the exemplars is answered as one of them")
+	if !strings.HasSuffix(prompt, "\n\n===== REQUEST =====\n"+input) {
+		t.Fatalf("the derivation prompt does not end with the input behind a ===== REQUEST ===== banner; a request buried above the exemplars, or left unmarked, is answered as one of them")
 	}
 }
 
