@@ -29,12 +29,13 @@ func TestRenderToolResultRendersAWriteRoundAsAReceiptNamingTheByteCountAndThePat
 	}
 }
 
-func TestRenderToolResultRendersARecallThatFoundNothingAsOneSentenceRatherThanAnEmptyString(t *testing.T) {
+func TestRenderToolResultNudgesEscalationWhenARecallFoundNothingAtAll(t *testing.T) {
 	t.Parallel()
 
 	got := RenderToolResult(ToolExchange{Tool: ToolRecall, Query: "nothing matches this"})
 
-	want := "no additional results found."
+	want := "no additional results found.\n" +
+		"This does not appear to be in the graph - say so plainly and name what is missing, rather than repeating the same recall.\n"
 
 	if got != want {
 		t.Fatalf("tool result = %q, want %q", got, want)
@@ -78,7 +79,7 @@ func TestRenderToolResultPutsExactlyOneNewlineBetweenTwoRecalledCandidatesSectio
 	}
 }
 
-func TestRenderToolResultSaysResultsWereFoundAndNoneWereIncludedWhenAdmissionCutThemAll(t *testing.T) {
+func TestRenderToolResultNarrowsTheQueryWhenEveryRowWasCutForByteBudget(t *testing.T) {
 	t.Parallel()
 
 	got := RenderToolResult(ToolExchange{
@@ -90,7 +91,8 @@ func TestRenderToolResultSaysResultsWereFoundAndNoneWereIncludedWhenAdmissionCut
 		},
 	})
 
-	want := "results were found, but none were included."
+	want := "results were found, but none were included.\n" +
+		"The graph has matches for this, but they did not fit the budget - narrow the query.\n"
 
 	if got != want {
 		t.Fatalf("tool result = %q, want %q", got, want)
@@ -109,7 +111,8 @@ func TestRenderToolResultSaysResultsWereFoundWhenEveryRowWasCutAsSelfProducedRat
 		},
 	})
 
-	want := "results were found, but none were included."
+	want := "results were found, but none were included.\n" +
+		"This does not appear to be in the graph - say so plainly and name what is missing, rather than repeating the same recall.\n"
 
 	if got != want {
 		t.Fatalf("tool result = %q, want %q", got, want)
@@ -140,10 +143,68 @@ func TestRenderToolResultSaysNothingWasFoundWhenAnEmptyRecallCarriedAnEmptyDispo
 
 	got := RenderToolResult(ToolExchange{Tool: ToolRecall, Query: "nothing matches this", Dispositions: []Disposition{}})
 
-	want := "no additional results found."
+	want := "no additional results found.\n" +
+		"This does not appear to be in the graph - say so plainly and name what is missing, rather than repeating the same recall.\n"
 
 	if got != want {
 		t.Fatalf("tool result = %q, want %q", got, want)
+	}
+}
+
+func TestRenderToolResultNarrowsTheQueryWhenTheCutSetMixesByteBudgetWithAnotherReason(t *testing.T) {
+	t.Parallel()
+
+	got := RenderToolResult(ToolExchange{
+		Tool:  ToolRecall,
+		Query: "the query",
+		Dispositions: []Disposition{
+			{Rank: 1, ID: 1, Type: "documentation", Name: "Over Budget", Size: 20_001, CutReason: cutReasonByteBudget},
+			{Rank: 2, ID: 2, Type: "run-record", Name: "Self", Size: 100, CutReason: cutReasonSelfProduced},
+		},
+	})
+
+	if strings.Contains(got, nudgeNone) || strings.Contains(got, nudgeThin) {
+		t.Fatalf("tool result = %q, contains a tier-1 nudge although the model already tried recall", got)
+	}
+	if !strings.HasSuffix(got, nudgeNarrowQuery) {
+		t.Fatalf("tool result = %q, want it to end with the narrow-the-query nudge %q when any row was cut for byte budget", got, nudgeNarrowQuery)
+	}
+	if strings.Contains(got, nudgeEscalate) {
+		t.Fatalf("tool result = %q, contains the escalation nudge although a byte-budget cut was present", got)
+	}
+}
+
+func TestRenderToolResultEscalatesWhenTheCutSetIsAllBelowFloor(t *testing.T) {
+	t.Parallel()
+
+	got := RenderToolResult(ToolExchange{
+		Tool:  ToolRecall,
+		Query: "the query",
+		Dispositions: []Disposition{
+			{Rank: 1, ID: 1, Type: "documentation", Name: "Faint", Size: 10, CutReason: cutReasonBelowFloor},
+		},
+	})
+
+	if strings.Contains(got, nudgeNone) || strings.Contains(got, nudgeThin) {
+		t.Fatalf("tool result = %q, contains a tier-1 nudge although the model already tried recall", got)
+	}
+	if !strings.HasSuffix(got, nudgeEscalate) {
+		t.Fatalf("tool result = %q, want it to end with the escalation nudge %q", got, nudgeEscalate)
+	}
+	if strings.Contains(got, nudgeNarrowQuery) {
+		t.Fatalf("tool result = %q, contains the narrow-the-query nudge although no row was cut for byte budget", got)
+	}
+}
+
+func TestRenderToolResultAddsNoNudgeWhenTheToolIsNotRecall(t *testing.T) {
+	t.Parallel()
+
+	got := RenderToolResult(ToolExchange{Tool: "someOtherTool", Query: "the query"})
+
+	want := "no additional results found."
+
+	if got != want {
+		t.Fatalf("tool result = %q, want %q - no nudge should attach to a tool other than recall", got, want)
 	}
 }
 

@@ -18,9 +18,13 @@ const (
 const thinKnowledgeThreshold = 5
 
 const (
-	nudgeNone = "Seems you know nothing about this topic, you should research/explore what it is about.\n"
-	nudgeThin = "Seems like your knowledge is still thin on the topic - you should explore more.\n"
+	nudgeNone = "Seems you know nothing about this topic - or maybe you are asking the wrong question; try looking at it from a different angle.\n"
+	nudgeThin = "Seems like your knowledge is still thin on the topic - your focus might be too narrow; try approaching the question from a different angle.\n"
 )
+
+const nudgeNarrowQuery = "The graph has matches for this, but they did not fit the budget - narrow the query.\n"
+
+const nudgeEscalate = "This does not appear to be in the graph - say so plainly and name what is missing, rather than repeating the same recall.\n"
 
 // Assemble is a pure function: no I/O, no clock, no randomness.
 func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64) (block string, dispositions []Disposition) {
@@ -115,10 +119,17 @@ func RenderToolResult(r ToolExchange) string {
 		return fmt.Sprintf("wrote %d bytes to %s", r.Bytes, r.Path)
 	}
 	if len(r.Results) == 0 {
+		base := "no additional results found."
 		if len(r.Dispositions) > 0 {
-			return "results were found, but none were included."
+			base = "results were found, but none were included."
 		}
-		return "no additional results found."
+		if r.Tool != ToolRecall {
+			return base
+		}
+		if anyCutForByteBudget(r.Dispositions) {
+			return base + "\n" + nudgeNarrowQuery
+		}
+		return base + "\n" + nudgeEscalate
 	}
 
 	var b strings.Builder
@@ -129,6 +140,15 @@ func RenderToolResult(r ToolExchange) string {
 		fmt.Fprintf(&b, "===== RESULT =====\nid: %d\ntype: %s\nname: %s\n\n%s\n", c.ID, c.Type, c.Name, c.Content)
 	}
 	return b.String()
+}
+
+func anyCutForByteBudget(dispositions []Disposition) bool {
+	for _, d := range dispositions {
+		if d.CutReason == cutReasonByteBudget {
+			return true
+		}
+	}
+	return false
 }
 
 // renderBlock renders the fixed layout of design §6.3: the anchor first

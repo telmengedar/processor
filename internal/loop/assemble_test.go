@@ -53,7 +53,7 @@ name: Charlie
 
 charlie body
 
-Seems like your knowledge is still thin on the topic - you should explore more.
+Seems like your knowledge is still thin on the topic - your focus might be too narrow; try approaching the question from a different angle.
 `
 
 	if block != wantBlock {
@@ -660,7 +660,7 @@ func TestAssembleEmptyCandidatesRendersAnchorAndTheKnowNothingNudge(t *testing.T
 	if dispositions == nil {
 		t.Fatal("dispositions is nil for no candidates, want a non-nil empty slice (JSON null vs [])")
 	}
-	const want = "===== ANCHOR =====\nid: 1\ntype: t\nname: solo\n\njust the anchor\n\nSeems you know nothing about this topic, you should research/explore what it is about.\n"
+	const want = "===== ANCHOR =====\nid: 1\ntype: t\nname: solo\n\njust the anchor\n\nSeems you know nothing about this topic - or maybe you are asking the wrong question; try looking at it from a different angle.\n"
 	if block != want {
 		t.Fatalf("block = %q, want %q", block, want)
 	}
@@ -924,6 +924,9 @@ func TestRenderBlockNudgesKnowNothingWhenNothingWasEvenConsidered(t *testing.T) 
 	if strings.Contains(block, nudgeThin) {
 		t.Fatalf("block = %q, contains the thin-knowledge nudge as well as the know-nothing nudge; only one may fire", block)
 	}
+	if strings.Contains(block, nudgeEscalate) {
+		t.Fatalf("block = %q, contains the tier-2 escalation nudge although the model has not acted yet", block)
+	}
 }
 
 func TestRenderBlockComposesTheCutSentenceWithTheKnowNothingNudge(t *testing.T) {
@@ -939,7 +942,7 @@ func TestRenderBlockComposesTheCutSentenceWithTheKnowNothingNudge(t *testing.T) 
 		t.Fatal("test setup error: the candidate was not cut, so this boundary is not exercised")
 	}
 
-	const composed = "\nresults were found, but none were included.\nSeems you know nothing about this topic, you should research/explore what it is about.\n"
+	const composed = "\nresults were found, but none were included.\nSeems you know nothing about this topic - or maybe you are asking the wrong question; try looking at it from a different angle.\n"
 	if !strings.Contains(block, composed) {
 		t.Fatalf("block = %q, want the cut-reason sentence directly followed by the know-nothing nudge with no blank line between them: %q", block, composed)
 	}
@@ -968,6 +971,9 @@ func TestRenderBlockNudgesThinKnowledgeAtFourAdmitted(t *testing.T) {
 	if strings.Contains(block, nudgeNone) {
 		t.Fatalf("block = %q, contains the know-nothing nudge although 4 candidates were admitted", block)
 	}
+	if strings.Contains(block, nudgeEscalate) {
+		t.Fatalf("block = %q, contains the tier-2 escalation nudge although the model has not acted yet", block)
+	}
 }
 
 func TestRenderBlockAddsNoNudgeAtFiveAdmitted(t *testing.T) {
@@ -987,7 +993,7 @@ func TestRenderBlockAddsNoNudgeAtFiveAdmitted(t *testing.T) {
 	if admitted != 5 {
 		t.Fatalf("test setup error: admitted %d candidates, want exactly 5 for this boundary", admitted)
 	}
-	if strings.Contains(block, nudgeNone) || strings.Contains(block, nudgeThin) {
+	if strings.Contains(block, nudgeNone) || strings.Contains(block, nudgeThin) || strings.Contains(block, nudgeEscalate) {
 		t.Fatalf("block = %q, contains a nudge although 5 candidates were admitted", block)
 	}
 }
