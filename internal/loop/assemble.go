@@ -15,6 +15,13 @@ const (
 	cutReasonBelowFloor   = "below relevance floor"
 )
 
+const thinKnowledgeThreshold = 5
+
+const (
+	nudgeNone = "Seems you know nothing about this topic, you should research/explore what it is about.\n"
+	nudgeThin = "Seems like your knowledge is still thin on the topic - you should explore more.\n"
+)
+
 // Assemble is a pure function: no I/O, no clock, no randomness.
 func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64) (block string, dispositions []Disposition) {
 	remaining := budget - len(anchor.Content)
@@ -144,6 +151,17 @@ func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool) string
 
 	if len(admitted) == 0 && consideredAny {
 		b.WriteString("\nresults were found, but none were included.\n")
+	}
+
+	switch {
+	case len(admitted) == 0 && consideredAny:
+		b.WriteString(nudgeNone)
+	case len(admitted) == 0:
+		b.WriteString("\n")
+		b.WriteString(nudgeNone)
+	case len(admitted) < thinKnowledgeThreshold:
+		b.WriteString("\n")
+		b.WriteString(nudgeThin)
 	}
 
 	return b.String()
