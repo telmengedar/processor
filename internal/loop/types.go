@@ -256,6 +256,9 @@ type ToolExchange struct {
 	Error        string
 	Results      []Candidate
 	Dispositions []Disposition
+
+	// SubstanceRatioThreshold is the dial this round's admission charged at, and the one its results render at.
+	SubstanceRatioThreshold SubstanceRatio
 }
 
 // JudgeInput is everything one judgement step needs.

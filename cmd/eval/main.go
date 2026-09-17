@@ -107,5 +107,10 @@ func parseFlags(args []string, human io.Writer) (corpusPath, derivationsPath str
 		flags.Usage()
 		return "", "", 0, false
 	}
+	if !(*ratio >= 0 && *ratio <= 1) {
+		fmt.Fprintf(human, "-substance-ratio is %v, and a ratio of a substance's bytes to its content's lies between 0 and 1: a dial outside that range renders a form no measured ratio selected\n", *ratio)
+		flags.Usage()
+		return "", "", 0, false
+	}
 	return *corpus, *derivations, loop.SubstanceRatio(*ratio), true
 }

@@ -157,7 +157,8 @@ func RenderToolResult(r ToolExchange) string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "===== RESULT =====\nid: %d\ntype: %s\nname: %s\n\n%s\n", c.ID, c.Type, c.Name, c.Content)
+		_, rendered := renderedForm(c, r.SubstanceRatioThreshold)
+		fmt.Fprintf(&b, "===== RESULT =====\nid: %d\ntype: %s\nname: %s\n\n%s\n", c.ID, c.Type, c.Name, rendered)
 	}
 	return b.String()
 }

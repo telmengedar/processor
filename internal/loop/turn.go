@@ -437,8 +437,9 @@ func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window Up
 		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}
 	}
 
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, RelevanceFloor, SubstanceRatioThreshold)
-	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions}
+	threshold := SubstanceRatioThreshold
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, RelevanceFloor, threshold)
+	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions, SubstanceRatioThreshold: threshold}
 }
 
 func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {

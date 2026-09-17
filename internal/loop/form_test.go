@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -340,5 +341,130 @@ func TestAssembleRendersContentForAZeroLengthSubstanceSoTheOffPositionNeverRende
 				t.Fatalf("the block does not carry the content at a threshold of %v; a zero-length substance rendered in its place", threshold)
 			}
 		})
+	}
+}
+
+func TestTurnRunRendersTheBlockAtTheDialItsOwnRecordDeclares(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Repeat("x", 1000)
+	substance := strings.Repeat("z", 300)
+	graph := baseGraph()
+	graph.candidates = []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Similarity: 0.9, Content: content, Substance: substance}}
+	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, nil, "the system text", "test-model-id", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(record.Candidates) != 1 || !record.Candidates[0].Included {
+		t.Fatalf("test setup error: record.Candidates = %+v, want the one candidate admitted; a cut row renders nothing and this test can then observe no form at all", record.Candidates)
+	}
+	if !record.Candidates[0].SubstanceAvailable {
+		t.Fatal("test setup error: the candidate reached admission carrying no substance, so this turn never read a dial and pins nothing")
+	}
+
+	wantBlock, _ := Assemble(graph.node, graph.candidates, AssemblyByteBudget, RelevanceFloor, record.Limits.SubstanceRatioThreshold)
+	if record.Block != wantBlock {
+		t.Fatalf("the run rendered a block its own record cannot account for at the dial the record states (%v):\ngot  %q\nwant %q", record.Limits.SubstanceRatioThreshold, record.Block, wantBlock)
+	}
+	if record.Candidates[0].Form != FormContent || record.Candidates[0].RenderedSize != 1000 {
+		t.Fatalf("Form = %q at RenderedSize %d, want %q at 1000 - the shipped dial is off and a turn renders content for every candidate whatever substance arrived beside it", record.Candidates[0].Form, record.Candidates[0].RenderedSize, FormContent)
+	}
+	if !strings.Contains(record.Block, content) {
+		t.Fatal("the block does not carry the candidate's content at the dial's off position")
+	}
+	if strings.Contains(record.Block, substance) {
+		t.Fatal("the block carries the candidate's substance at the dial's off position, and the record states a dial of zero beside it")
+	}
+}
+
+func TestTurnRunRendersASupplementaryHitAtTheDialItsAdmissionCharged(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Repeat("x", 1000)
+	substance := strings.Repeat("z", 300)
+	graph := baseGraph()
+	graph.recallQueue = []recallResponse{
+		{Candidates: []Candidate{{ID: 1, Similarity: 0.9, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Similarity: 0.9, Content: content, Substance: substance}}},
+	}
+	model := &fakeModel{results: []JudgeResult{
+		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+		{Answer: "final", Reason: Answered, RawReason: "stop"},
+	}}
+	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(record.ToolCalls) != 1 || len(record.ToolCalls[0].Results) != 1 {
+		t.Fatalf("test setup error: record.ToolCalls = %+v, want one round carrying the one supplementary hit", record.ToolCalls)
+	}
+
+	charged := record.ToolCalls[0].Results[0]
+	if !charged.Included || !charged.SubstanceAvailable {
+		t.Fatalf("test setup error: the supplementary hit was admitted %v carrying a substance %v, want both true or the round read no dial", charged.Included, charged.SubstanceAvailable)
+	}
+	if charged.Form != FormContent || charged.RenderedSize != 1000 {
+		t.Fatalf("the round charged Form %q at RenderedSize %d, want %q at 1000 - the supplementary path runs the same dial as the block and it ships off", charged.Form, charged.RenderedSize, FormContent)
+	}
+
+	if len(model.calls) < 2 || len(model.calls[1].PriorTools) != 1 {
+		t.Fatalf("test setup error: the second judgement carries %d completed rounds, want 1", len(model.calls[1].PriorTools))
+	}
+	rendered := RenderToolResult(model.calls[1].PriorTools[0])
+	if !strings.Contains(rendered, content) {
+		t.Fatal("the tool result does not carry the content the round charged for")
+	}
+	if strings.Contains(rendered, substance) {
+		t.Fatal("the tool result carries the substance although the round charged the content; the supplementary path must not charge one form and render another")
+	}
+}
+
+func TestRenderToolResultRendersTheFormItsAdmissionChargedForAtTheSameDial(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Repeat("x", 1000)
+	substance := strings.Repeat("z", 300)
+	candidates := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
+
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, formRuleTestThreshold)
+	if !dispositions[0].Included || dispositions[0].Form != FormSubstance {
+		t.Fatalf("test setup error: the candidate was admitted %v as Form %q, want admitted as %q or the divergence this test looks for cannot arise", dispositions[0].Included, dispositions[0].Form, FormSubstance)
+	}
+
+	got := RenderToolResult(ToolExchange{
+		Tool:                    ToolRecall,
+		Query:                   "q",
+		Results:                 admitted,
+		Dispositions:            dispositions,
+		SubstanceRatioThreshold: formRuleTestThreshold,
+	})
+
+	want := "===== RESULT =====\nid: 91\ntype: documentation\nname: Bravo\n\n" + substance + "\n"
+	if got != want {
+		t.Fatalf("a round that charged %d bytes rendered:\n%q\nwant:\n%q", dispositions[0].RenderedSize, got, want)
+	}
+}
+
+func TestRenderToolResultRendersTheContentAtTheOffPositionForAResultCarryingASubstance(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Repeat("x", 1000)
+	substance := strings.Repeat("z", 300)
+
+	got := RenderToolResult(ToolExchange{
+		Tool:    ToolRecall,
+		Query:   "q",
+		Results: []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}},
+	})
+
+	want := "===== RESULT =====\nid: 91\ntype: documentation\nname: Bravo\n\n" + content + "\n"
+	if got != want {
+		t.Fatalf("at the dial's off position the tool result rendered:\n%q\nwant:\n%q", got, want)
 	}
 }
