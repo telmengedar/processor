@@ -44,6 +44,12 @@ func run() int {
 		return 1
 	}
 
+	condenseCfg, condenseConfigured, err := boot.LoadCondenseModel()
+	if err != nil {
+		logger.Error("boot configuration", "error", err)
+		return 1
+	}
+
 	workspaceDir, err := boot.LoadWorkspaceDir()
 	if err != nil {
 		logger.Error("boot configuration", "error", err)
@@ -71,6 +77,16 @@ func run() int {
 
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 	turn := loop.NewTurn(graph, model, files, systemText, modelCfg.ID, logger)
+
+	fillPort, err := newFillPort(condenseCfg, condenseConfigured, graph)
+	if err != nil {
+		logger.Error("boot configuration", "error", err)
+		return 1
+	}
+	turn.Fill = fillPort
+	if fillPort == nil {
+		logger.Info("the fill is off: no PROCESSOR_CONDENSE_MODEL_* configuration was found")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

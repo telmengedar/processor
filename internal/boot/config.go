@@ -32,6 +32,13 @@ const (
 
 	envModelTopP = "PROCESSOR_MODEL_TOP_P"
 
+	envCondenseModelProtocol    = "PROCESSOR_CONDENSE_MODEL_PROTOCOL"
+	envCondenseModelURL         = "PROCESSOR_CONDENSE_MODEL_URL"
+	envCondenseModelID          = "PROCESSOR_CONDENSE_MODEL_ID"
+	envCondenseModelKey         = "PROCESSOR_CONDENSE_MODEL_KEY"
+	envCondenseModelTemperature = "PROCESSOR_CONDENSE_MODEL_TEMPERATURE"
+	envCondenseModelTopP        = "PROCESSOR_CONDENSE_MODEL_TOP_P"
+
 	apiPathSuffix   = "/api"
 	nodesPathSuffix = "/api/nodes"
 )
@@ -78,6 +85,11 @@ func LoadGraph() (GraphConfig, error) {
 // LoadModel returns the model half of the boot configuration.
 func LoadModel() (ModelConfig, error) {
 	return loadModel(lookupEnv)
+}
+
+// LoadCondenseModel returns the fill's model configuration and whether one is configured at all; PROCESSOR_CONDENSE_MODEL_URL absent means configured is false, with a nil error and no fallback to PROCESSOR_MODEL_*.
+func LoadCondenseModel() (cfg ModelConfig, configured bool, err error) {
+	return loadCondenseModel(lookupEnv)
 }
 
 // LoadWorkspaceDir returns the root for run working directories, empty when the variable is absent.
@@ -150,7 +162,7 @@ func rejectAPIBase(divoidURL string) error {
 }
 
 func loadModel(lookup lookupFunc) (ModelConfig, error) {
-	protocol, err := loadModelProtocol(lookup)
+	protocol, err := loadProtocol(lookup, envModelProtocol)
 	if err != nil {
 		return ModelConfig{}, err
 	}
@@ -170,12 +182,12 @@ func loadModel(lookup lookupFunc) (ModelConfig, error) {
 		return ModelConfig{}, err
 	}
 
-	temperature, err := loadModelTemperature(lookup)
+	temperature, err := loadTemperature(lookup, envModelTemperature)
 	if err != nil {
 		return ModelConfig{}, err
 	}
 
-	topP, err := loadModelTopP(lookup)
+	topP, err := optionalFloatEnv(lookup, envModelTopP)
 	if err != nil {
 		return ModelConfig{}, err
 	}
@@ -183,23 +195,60 @@ func loadModel(lookup lookupFunc) (ModelConfig, error) {
 	return ModelConfig{Protocol: protocol, URL: url, ID: id, Key: key, Temperature: temperature, TopP: topP}, nil
 }
 
-func loadModelProtocol(lookup lookupFunc) (string, error) {
-	protocol, present := lookup(envModelProtocol)
+func loadCondenseModel(lookup lookupFunc) (ModelConfig, bool, error) {
+	url, present := lookup(envCondenseModelURL)
+	if !present {
+		return ModelConfig{}, false, nil
+	}
+	if url == "" {
+		return ModelConfig{}, false, fmt.Errorf("%s is set but empty", envCondenseModelURL)
+	}
+
+	protocol, err := loadProtocol(lookup, envCondenseModelProtocol)
+	if err != nil {
+		return ModelConfig{}, false, err
+	}
+
+	id, err := requireEnv(lookup, envCondenseModelID)
+	if err != nil {
+		return ModelConfig{}, false, err
+	}
+
+	key, err := optionalEnv(lookup, envCondenseModelKey)
+	if err != nil {
+		return ModelConfig{}, false, err
+	}
+
+	temperature, err := loadTemperature(lookup, envCondenseModelTemperature)
+	if err != nil {
+		return ModelConfig{}, false, err
+	}
+
+	topP, err := optionalFloatEnv(lookup, envCondenseModelTopP)
+	if err != nil {
+		return ModelConfig{}, false, err
+	}
+
+	return ModelConfig{Protocol: protocol, URL: url, ID: id, Key: key, Temperature: temperature, TopP: topP}, true, nil
+}
+
+func loadProtocol(lookup lookupFunc, key string) (string, error) {
+	protocol, present := lookup(key)
 	if !present {
 		return ProtocolOpenAICompat, nil
 	}
 	if protocol == "" {
-		return "", fmt.Errorf("%s is set but empty", envModelProtocol)
+		return "", fmt.Errorf("%s is set but empty", key)
 	}
 	if protocol != ProtocolOpenAICompat && protocol != ProtocolOllama {
 		return "", fmt.Errorf("%s is %q, which is not a protocol this service has an adapter for; set it to %q or %q, or leave it unset for %q",
-			envModelProtocol, protocol, ProtocolOpenAICompat, ProtocolOllama, ProtocolOpenAICompat)
+			key, protocol, ProtocolOpenAICompat, ProtocolOllama, ProtocolOpenAICompat)
 	}
 	return protocol, nil
 }
 
-func loadModelTemperature(lookup lookupFunc) (*float64, error) {
-	val, err := optionalFloatEnv(lookup, envModelTemperature)
+func loadTemperature(lookup lookupFunc, key string) (*float64, error) {
+	val, err := optionalFloatEnv(lookup, key)
 	if err != nil {
 		return nil, err
 	}
@@ -208,10 +257,6 @@ func loadModelTemperature(lookup lookupFunc) (*float64, error) {
 		return &d, nil
 	}
 	return val, nil
-}
-
-func loadModelTopP(lookup lookupFunc) (*float64, error) {
-	return optionalFloatEnv(lookup, envModelTopP)
 }
 
 func optionalFloatEnv(lookup lookupFunc, key string) (*float64, error) {

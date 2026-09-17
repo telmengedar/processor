@@ -95,6 +95,9 @@ type Turn struct {
 	// Files is the working directory writes go to; nil refuses every write.
 	Files FilePort
 
+	// Fill is the condensation behaviour that derives a candidate's substance on demand; nil refuses every fill with a recorded reason.
+	Fill FillPort
+
 	// System is the system text sent with every judgement step.
 	System string
 
@@ -149,6 +152,8 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 
 	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget, RelevanceFloor)
 
+	fills := t.fill(ctx, dispositions)
+
 	record := Record{
 		Input:           input,
 		Subject:         subject,
@@ -159,6 +164,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		Window:          window,
 		Anchor:          summarizeAnchor(anchor),
 		Candidates:      dispositions,
+		Fills:           fills,
 		Block:           block,
 		Limits: Limits{
 			CandidateLimit:          CandidateLimit,
@@ -167,6 +173,9 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 			MaxModelCalls:           MaxModelCalls,
 			MaxOutputTokens:         MaxOutputTokens,
 			RelevanceFloor:          RelevanceFloor,
+			MaxFills:                MaxFills,
+			FillSizeFloor:           FillSizeFloor,
+			MaxFillContentBytes:     MaxFillContentBytes,
 		},
 	}
 
