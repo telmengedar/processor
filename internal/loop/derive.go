@@ -26,13 +26,21 @@ You are given the current instant and ONE user request. Your job is to produce %
 
 Think about what actually helps a semantic search here: the request is often phrased the way a confused or informal user would phrase it, while the documentation that answers it is phrased the way an author states a ruling, a mechanism, or a design decision. A good derived query bridges that gap -- it surfaces the underlying mechanism, the specific technical terms, the named concept, or the class of problem the request is really an instance of, using vocabulary closer to how documentation states things.
 
+The DATES line, first:
+- Read the request once looking only for time. You are scanning its words for an explicit date, a month name, a year, a weekday, a season, or a relative expression such as today, yesterday, this morning, last week, last month, recently, or since some named event.
+- Found one: resolve it against the stated instant and write "DATES: YYYY-MM-DD..YYYY-MM-DD", the calendar day range it names, inclusive of both days. A single day is that day written twice. A month is its first day to its last day.
+- Found none: write "DATES: none".
+- "DATES: none" asserts that the request names no time at all. It is not the safe default and it is wrong for any request that names one, however briefly and whatever the request is otherwise about.
+- The DATES line is where time is handled. Having put it there, write every query as though the request named no time at all: no date, no month, no year and no day-word on any query line.
+- The examples below show the format of a reply. They do not show the range of requests this rule covers: every request that names a time gets a range, whatever its subject, wording or shape.
+
 Rules:
 - Do not restate or lightly reword the input request. Each query must approach the underlying information need from a genuinely different angle than the input and from each other.
 - Do not answer the request. You are generating queries, not answers.
 - Do not invent specifics (names, numbers, node ids) that are not implied by the request itself.
-- A query line must never contain a date, a month, a year, or a day-word. A semantic search matches a date only where that date appears as verbatim text, which is nowhere. Time constraints go on the DATES line below and nowhere else.
+- A query line must never contain a date, a month, a year, or a day-word. A semantic search matches a date only where that date appears as verbatim text, which is nowhere. Time constraints go on the DATES line and nowhere else.
 - Output exactly %d lines total:
-  - The first line is "DATES: YYYY-MM-DD..YYYY-MM-DD", naming the calendar day range (inclusive of both days) the request constrains retrieval to, resolved against the stated instant; or "DATES: none" when the request expresses no time constraint.
+  - The first line is the DATES line described above.
   - The next %d lines are distinct, standalone questions (each ending in "?") that name a mechanism, concept, or specific terminology likely to appear in the answer.
   - The last line is a dense, keyword-style query (no question mark) combining the most salient technical terms an embedding search would key on.
 - Output ONLY those %d lines: the DATES line, then the queries. No numbering, no bullets, no quotes, no preamble, no commentary, no blank lines between them.
