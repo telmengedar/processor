@@ -29,8 +29,8 @@ const nudgeEscalate = "This does not appear to be in the graph - say so plainly 
 // SubstanceRatio is a substance's byte length as a fraction of its content's.
 type SubstanceRatio float64
 
-// SubstanceRatioThreshold is the ratio a substance must stay below to count as materially smaller than its content.
-const SubstanceRatioThreshold SubstanceRatio = 0.592
+// SubstanceRatioThreshold is the form rule's shipped dial, zero: no ratio is below it, so every candidate renders as content until a later change raises it.
+const SubstanceRatioThreshold SubstanceRatio = 0
 
 const formHeaderKey = "form"
 

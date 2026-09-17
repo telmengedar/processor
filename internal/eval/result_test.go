@@ -9,6 +9,8 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
+const formRuleTestThreshold loop.SubstanceRatio = 0.592
+
 func anchorNode() loop.Anchor {
 	return loop.Anchor{ID: 100, Type: "documentation", Name: "Subject", Content: "the subject body"}
 }
@@ -371,7 +373,7 @@ func TestBuildRowAdmittedBytesCountsTheRenderedFormNotTheContent(t *testing.T) {
 		{ID: 201, Content: strings.Repeat("y", 500)},
 	}
 
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0, loop.SubstanceRatioThreshold)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0, formRuleTestThreshold)
 
 	got := BuildRow(Row{ID: "r01", Stratum: StratumLabelled, Subject: 100}, nil, dispositions)
 

@@ -376,8 +376,8 @@ func TestParseFlagsDefaultsTheSubstanceRatioToTheShippedDial(t *testing.T) {
 	if !ok {
 		t.Fatalf("parseFlags refused a corpus-only invocation: %s", human.String())
 	}
-	if threshold != 0.592 {
-		t.Fatalf("threshold = %v with no flag given, want 0.592", threshold)
+	if threshold != loop.SubstanceRatioThreshold {
+		t.Fatalf("threshold = %v with no flag given, want %v - a sweep given no dial must sweep the dial the loop itself ships", threshold, loop.SubstanceRatioThreshold)
 	}
 }
 

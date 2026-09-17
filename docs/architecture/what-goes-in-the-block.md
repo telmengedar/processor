@@ -1020,6 +1020,31 @@ concern:
 set by the curve, not by taste. A defensible starting point is the midpoint of the two measured strata; the
 measurement, not this document, decides it (§11, F-3).
 
+#### 8.1.1 What the rule ships at, and what the dial moves to later
+
+**The rule ships with its dial at zero — the off position, since no ratio is below zero.** The mechanism
+lands whole: the form decision, the `form` and `renderedSize` dispositions, the sweep dial, and the guards
+over all of them. The block it renders stays byte-identical to the block rendered before the rule existed.
+That is the same property that let the unit before this one ship its recording alone, and it is what makes
+the regression check runnable without a second code path.
+
+**The value a later change starts the dial from is `0.592`**, the midpoint of §4.2's two measured stratum
+medians — `0.886` for content below 4 KB and `0.298` for content at or above 8 KB. It is not today's default,
+for a reason that is not about the form rule at all: **greedy first-fit admission is non-monotone under item
+shrinkage.** Bytes the rule frees are captured by the next large *unfilled* row in rank order, which can
+consume the whole remaining budget and cost the block rows it admits today. This is structural, not a
+coverage artefact — a worked counterexample at 100 % substance coverage still loses a row — so it is not
+waited out.
+
+The remedy is the per-candidate size cap specified in `what-a-block-is-worth-per-byte.md`, measured there to
+take a block from 8 admitted rows to 14 and its largest single share from 77.2 % to 16.4 %. **The dial leaves
+zero only after that cap ships and F-3 is re-run against the capped allocator**, which is what selects the
+value the dial then takes — `0.592` is the starting point of that sweep, not its conclusion.
+
+**`0.370` is not a candidate**, although it is the midpoint of the *live* corpus's own stratum medians. Those
+medians are computed over the 67 substances whose trustworthiness is the open audit question of §4.5 and R1.
+Deriving the dial from the population being audited is circular.
+
 **Why a ratio and not a size.** Size is a proxy; the ratio is the thing. #12984's #11084 is 3,587 B with a
 ratio of **0.983** — a small node where condensation did nothing — and its #11228 is 6,820 B at **0.971**.
 A size rule would mis-handle both. The ratio is available for free: both representations are in hand.

@@ -33,7 +33,7 @@ func resultWith(rows ...RowResult) Result {
 			CandidateLimit:          loop.CandidateLimit,
 			AssemblyByteBudget:      loop.AssemblyByteBudget,
 			RecallScopeReserve:      loop.RecallScopeReserve,
-			SubstanceRatioThreshold: loop.SubstanceRatioThreshold,
+			SubstanceRatioThreshold: formRuleTestThreshold,
 		},
 		RowCount: len(rows),
 		Rows:     rows,

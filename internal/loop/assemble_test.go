@@ -562,7 +562,7 @@ func TestAssembleRecordsSubstanceForACutCandidateToo(t *testing.T) {
 		t.Fatalf("test setup error: candidate 10 is %d bytes and candidate 20's substance is %d bytes against budget %d; both must exceed it for the second to be cut in whichever form it renders as", len(candidates[0].Content), len(candidates[1].Substance), budget)
 	}
 
-	_, dispositions := Assemble(anchor, candidates, budget, 0, SubstanceRatioThreshold)
+	_, dispositions := Assemble(anchor, candidates, budget, 0, formRuleTestThreshold)
 
 	cut := dispositions[1]
 	if cut.Included {
@@ -593,7 +593,7 @@ func TestAssembleChargesContentBytesWhenTheSubstanceIsNotMateriallySmaller(t *te
 		t.Fatalf("test setup error: content+substance combined is %d bytes, want it over budget %d, or this test cannot distinguish charging substance from not", len(candidates[0].Content)+len(candidates[0].Substance), budget)
 	}
 
-	_, dispositions := Assemble(anchor, candidates, budget, 0, SubstanceRatioThreshold)
+	_, dispositions := Assemble(anchor, candidates, budget, 0, formRuleTestThreshold)
 
 	for i := range dispositions {
 		if !dispositions[i].Included {
@@ -616,8 +616,8 @@ func TestAssembleRendersIdenticalBlockWhenTheSubstanceIsNotMateriallySmaller(t *
 				{ID: 10, Type: "documentation", Name: "Bravo", Content: content, Substance: strings.Repeat("condensed", 50)},
 			}
 
-			blockWithout, _ := Assemble(anchor, withoutSubstance, 60_000, 0, SubstanceRatioThreshold)
-			blockWith, _ := Assemble(anchor, withSubstance, 60_000, 0, SubstanceRatioThreshold)
+			blockWithout, _ := Assemble(anchor, withoutSubstance, 60_000, 0, formRuleTestThreshold)
+			blockWith, _ := Assemble(anchor, withSubstance, 60_000, 0, formRuleTestThreshold)
 
 			if blockWith != blockWithout {
 				t.Fatalf("block changed when a candidate carried a substance:\nwithout=%q\nwith=%q", blockWithout, blockWith)
