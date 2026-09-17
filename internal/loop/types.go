@@ -166,7 +166,7 @@ type WriteReceipt struct {
 	NodeID int64      `json:"nodeId,omitempty"`
 }
 
-// Limits records the six constants that governed one run.
+// Limits records the constants that governed one run.
 type Limits struct {
 	CandidateLimit          int     `json:"candidateLimit"`
 	AssemblyByteBudget      int     `json:"assemblyByteBudget"`
@@ -174,6 +174,13 @@ type Limits struct {
 	MaxModelCalls           int     `json:"maxModelCalls"`
 	MaxOutputTokens         int     `json:"maxOutputTokens"`
 	RelevanceFloor          float64 `json:"relevanceFloor"`
+
+	// MaxFills is the turn's own fill ceiling, never MaxModelCalls.
+	MaxFills int `json:"maxFills"`
+	// FillSizeFloor is the fill's size gate.
+	FillSizeFloor int `json:"fillSizeFloor"`
+	// MaxFillContentBytes is the fast-refusal ceiling for oversized content.
+	MaxFillContentBytes int `json:"maxFillContentBytes"`
 }
 
 // Sampling records one run's model-call sampling parameters, nil where left to the endpoint's default.
@@ -198,7 +205,9 @@ type Record struct {
 	Window     UpdateWindow  `json:"window,omitzero"`
 	Anchor     AnchorSummary `json:"anchor"`
 	Candidates []Disposition `json:"candidates"`
-	Block      string        `json:"block"`
+	// Fills is one entry per candidate that lacked a substance at initial assembly, never the supplementary round: filled, or the reason it was not.
+	Fills []FillOutcome `json:"fills"`
+	Block string        `json:"block"`
 
 	Answer string `json:"answer"`
 	Model  string `json:"model"`

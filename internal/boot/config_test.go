@@ -863,3 +863,193 @@ func TestLoadModelKeyStaysOptionalUnderTheOllamaProtocolBecauseALocalHostNeedsNo
 		t.Fatalf("Key = %q, want empty", cfg.Key)
 	}
 }
+
+func TestLoadCondenseModelIsUnconfiguredWhenOnlyTheTurnsModelIsSet(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(nil)
+
+	cfg, configured, err := loadCondenseModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadCondenseModel: %v", err)
+	}
+	if configured {
+		t.Fatal("configured = true with no PROCESSOR_CONDENSE_MODEL_* set, want false — the turn's own model must never be a fallback")
+	}
+	if cfg != (ModelConfig{}) {
+		t.Fatalf("cfg = %+v, want the zero value when unconfigured", cfg)
+	}
+}
+
+func TestLoadCondenseModelErrorsWhenURLPresentButEmpty(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_CONDENSE_MODEL_URL": ""})
+
+	_, configured, err := loadCondenseModel(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadCondenseModel returned nil error for an empty PROCESSOR_CONDENSE_MODEL_URL, want an error")
+	}
+	if configured {
+		t.Fatal("configured = true alongside an error, want false")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_CONDENSE_MODEL_URL") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_CONDENSE_MODEL_URL", err.Error())
+	}
+}
+
+func TestLoadCondenseModelIsConfiguredOnceItsURLIsSet(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{
+		"PROCESSOR_CONDENSE_MODEL_URL": "https://condense.example/v1",
+		"PROCESSOR_CONDENSE_MODEL_ID":  "gemma-3-12b-it",
+	})
+
+	cfg, configured, err := loadCondenseModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadCondenseModel: %v", err)
+	}
+	if !configured {
+		t.Fatal("configured = false with PROCESSOR_CONDENSE_MODEL_URL and _ID set, want true")
+	}
+	if cfg.URL != "https://condense.example/v1" || cfg.ID != "gemma-3-12b-it" {
+		t.Fatalf("cfg = %+v, want the URL and ID used verbatim", cfg)
+	}
+	if cfg.Protocol != ProtocolOpenAICompat {
+		t.Fatalf("cfg.Protocol = %q, want the default %q", cfg.Protocol, ProtocolOpenAICompat)
+	}
+	if cfg.Temperature == nil || *cfg.Temperature != 0.2 {
+		t.Fatalf("cfg.Temperature = %v, want a pointer to 0.2 by default, exactly like the turn's own model", cfg.Temperature)
+	}
+}
+
+func TestLoadCondenseModelErrorsWhenIDAbsentEvenThoughURLIsSet(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{"PROCESSOR_CONDENSE_MODEL_URL": "https://condense.example/v1"})
+
+	_, configured, err := loadCondenseModel(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadCondenseModel returned nil error with the URL set but no ID, want an error — a half-configured fill is a misconfiguration, not an off switch")
+	}
+	if configured {
+		t.Fatal("configured = true alongside an error, want false")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_CONDENSE_MODEL_ID") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_CONDENSE_MODEL_ID", err.Error())
+	}
+}
+
+func TestLoadCondenseModelNeverFallsBackToTheTurnsOwnModelFields(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{
+		"PROCESSOR_CONDENSE_MODEL_URL": "https://condense.example/v1",
+		"PROCESSOR_CONDENSE_MODEL_ID":  "gemma-3-12b-it",
+		"PROCESSOR_MODEL_URL":          "https://turn.example/v1",
+		"PROCESSOR_MODEL_ID":           "qwen3-coder:30b",
+		"PROCESSOR_MODEL_KEY":          "turn-key",
+	})
+
+	cfg, configured, err := loadCondenseModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadCondenseModel: %v", err)
+	}
+	if !configured {
+		t.Fatal("configured = false, want true")
+	}
+	if cfg.URL == "https://turn.example/v1" || cfg.ID == "qwen3-coder:30b" || cfg.Key == "turn-key" {
+		t.Fatalf("cfg = %+v, want the condense-only fields, never the turn's PROCESSOR_MODEL_* values", cfg)
+	}
+	if cfg.URL != "https://condense.example/v1" || cfg.ID != "gemma-3-12b-it" {
+		t.Fatalf("cfg = %+v, want its own configured URL and ID", cfg)
+	}
+}
+
+func TestLoadCondenseModelCarriesTheOllamaProtocolWhenTheVariableSelectsIt(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{
+		"PROCESSOR_CONDENSE_MODEL_URL":      "http://gangolf:11434",
+		"PROCESSOR_CONDENSE_MODEL_ID":       "gemma3",
+		"PROCESSOR_CONDENSE_MODEL_PROTOCOL": "ollama",
+	})
+
+	cfg, configured, err := loadCondenseModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadCondenseModel: %v", err)
+	}
+	if !configured {
+		t.Fatal("configured = false, want true")
+	}
+	if cfg.Protocol != ProtocolOllama {
+		t.Fatalf("cfg.Protocol = %q, want %q", cfg.Protocol, ProtocolOllama)
+	}
+}
+
+func TestLoadCondenseModelErrorsWhenTheProtocolNamesNoAdapter(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{
+		"PROCESSOR_CONDENSE_MODEL_URL":      "https://condense.example/v1",
+		"PROCESSOR_CONDENSE_MODEL_ID":       "m",
+		"PROCESSOR_CONDENSE_MODEL_PROTOCOL": "anthropic",
+	})
+
+	_, configured, err := loadCondenseModel(fixedLookup(env))
+	if err == nil {
+		t.Fatal("loadCondenseModel returned nil error for a protocol with no adapter, want an error")
+	}
+	if configured {
+		t.Fatal("configured = true alongside an error, want false")
+	}
+	if !strings.Contains(err.Error(), "PROCESSOR_CONDENSE_MODEL_PROTOCOL") {
+		t.Fatalf("error = %q, want it to name PROCESSOR_CONDENSE_MODEL_PROTOCOL", err.Error())
+	}
+}
+
+func TestLoadCondenseModelUsesTemperatureAndTopPVerbatimWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{
+		"PROCESSOR_CONDENSE_MODEL_URL":         "https://condense.example/v1",
+		"PROCESSOR_CONDENSE_MODEL_ID":          "m",
+		"PROCESSOR_CONDENSE_MODEL_TEMPERATURE": "0",
+		"PROCESSOR_CONDENSE_MODEL_TOP_P":       "0.9",
+	})
+
+	cfg, configured, err := loadCondenseModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadCondenseModel: %v", err)
+	}
+	if !configured {
+		t.Fatal("configured = false, want true")
+	}
+	if cfg.Temperature == nil || *cfg.Temperature != 0 {
+		t.Fatalf("cfg.Temperature = %v, want a pointer to 0", cfg.Temperature)
+	}
+	if cfg.TopP == nil || *cfg.TopP != 0.9 {
+		t.Fatalf("cfg.TopP = %v, want a pointer to 0.9", cfg.TopP)
+	}
+}
+
+func TestLoadCondenseModelKeyStaysOptional(t *testing.T) {
+	t.Parallel()
+
+	env := validEnv(map[string]string{
+		"PROCESSOR_CONDENSE_MODEL_URL": "https://condense.example/v1",
+		"PROCESSOR_CONDENSE_MODEL_ID":  "m",
+	})
+
+	cfg, configured, err := loadCondenseModel(fixedLookup(env))
+	if err != nil {
+		t.Fatalf("loadCondenseModel: %v", err)
+	}
+	if !configured {
+		t.Fatal("configured = false, want true")
+	}
+	if cfg.Key != "" {
+		t.Fatalf("cfg.Key = %q, want empty", cfg.Key)
+	}
+}
