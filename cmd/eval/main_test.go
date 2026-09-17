@@ -365,3 +365,33 @@ func TestRunRefusesToSweepWhenTheSidecarNamesARowTheCorpusDoesNotCarry(t *testin
 		t.Fatalf("the machine stream carries a result for a sweep that never ran:\n%s", machine.String())
 	}
 }
+
+func TestParseFlagsDefaultsTheSubstanceRatioToTheShippedDial(t *testing.T) {
+	t.Parallel()
+
+	var human strings.Builder
+
+	_, _, threshold, ok := parseFlags([]string{"-corpus", "some.json"}, &human)
+
+	if !ok {
+		t.Fatalf("parseFlags refused a corpus-only invocation: %s", human.String())
+	}
+	if threshold != 0.592 {
+		t.Fatalf("threshold = %v with no flag given, want 0.592", threshold)
+	}
+}
+
+func TestParseFlagsTakesTheSubstanceRatioFromTheFlagWhenOneIsGiven(t *testing.T) {
+	t.Parallel()
+
+	var human strings.Builder
+
+	_, _, threshold, ok := parseFlags([]string{"-corpus", "some.json", "-substance-ratio", "0.25"}, &human)
+
+	if !ok {
+		t.Fatalf("parseFlags refused the invocation: %s", human.String())
+	}
+	if threshold != 0.25 {
+		t.Fatalf("threshold = %v, want 0.25 - the sweep must be able to move the dial without a code change", threshold)
+	}
+}

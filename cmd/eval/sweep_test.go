@@ -104,7 +104,7 @@ func sweptAt() time.Time {
 func mustSweep(t *testing.T, graph loop.GraphPort, corpus eval.Corpus) eval.Result {
 	t.Helper()
 
-	result, err := sweep(context.Background(), graph, corpus, eval.Derivations{}, sweptAt())
+	result, err := sweep(context.Background(), graph, corpus, eval.Derivations{}, sweptAt(), loop.SubstanceRatioThreshold)
 	if err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 		t.Fatalf("Turn.Run: %v", err)
 	}
 
-	queries, dispositions, found, err := rowDispositions(context.Background(), graph, row, eval.Derivations{})
+	queries, dispositions, found, err := rowDispositions(context.Background(), graph, row, eval.Derivations{}, loop.SubstanceRatioThreshold)
 	if err != nil {
 		t.Fatalf("rowDispositions: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestSweepIssuesOneWholeGraphRecallPerPinnedDerivationBesideTheRawInput(t *t
 		"r01": {"why would a mutation leave the suite green", "what does a non-zero exit code mean"},
 	}}
 
-	if _, err := sweep(context.Background(), graph, corpusOf(row), derivations, sweptAt()); err != nil {
+	if _, err := sweep(context.Background(), graph, corpusOf(row), derivations, sweptAt(), loop.SubstanceRatioThreshold); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
 
@@ -380,7 +380,7 @@ func TestSweepAbortsRatherThanReportingAnEmptyMeasurementWhenTheGraphReadFails(t
 	graph := newFakeGraph(t)
 	graph.nodeErr = errors.New("graph unavailable")
 
-	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt())
+	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt(), loop.SubstanceRatioThreshold)
 	if err == nil {
 		t.Fatal("sweep returned a nil error while the graph was unreachable, want an error rather than a plausible zero score")
 	}
@@ -395,7 +395,7 @@ func TestSweepAbortsWhenRecallItselfFails(t *testing.T) {
 	graph := newFakeGraph(t)
 	graph.recallErr = errors.New("graph unavailable")
 
-	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt())
+	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt(), loop.SubstanceRatioThreshold)
 	if err == nil {
 		t.Fatal("sweep returned a nil error while recall was failing, want an error")
 	}

@@ -11,11 +11,11 @@ import (
 
 const rowErrorSubjectNotFound = "subject not found"
 
-func sweep(ctx context.Context, graph loop.GraphPort, corpus eval.Corpus, derivations eval.Derivations, sweptAt time.Time) (eval.Result, error) {
-	result := eval.NewResult(corpus, derivations, sweptAt)
+func sweep(ctx context.Context, graph loop.GraphPort, corpus eval.Corpus, derivations eval.Derivations, sweptAt time.Time, threshold loop.SubstanceRatio) (eval.Result, error) {
+	result := eval.NewResult(corpus, derivations, sweptAt, threshold)
 
 	for _, row := range corpus.Rows {
-		rowResult, err := sweepRow(ctx, graph, row, derivations)
+		rowResult, err := sweepRow(ctx, graph, row, derivations, threshold)
 		if err != nil {
 			return eval.Result{}, fmt.Errorf("row %s: %w", row.ID, err)
 		}
@@ -25,8 +25,8 @@ func sweep(ctx context.Context, graph loop.GraphPort, corpus eval.Corpus, deriva
 	return result, nil
 }
 
-func sweepRow(ctx context.Context, graph loop.GraphPort, row eval.Row, derivations eval.Derivations) (eval.RowResult, error) {
-	queries, dispositions, found, err := rowDispositions(ctx, graph, row, derivations)
+func sweepRow(ctx context.Context, graph loop.GraphPort, row eval.Row, derivations eval.Derivations, threshold loop.SubstanceRatio) (eval.RowResult, error) {
+	queries, dispositions, found, err := rowDispositions(ctx, graph, row, derivations, threshold)
 	if err != nil {
 		return eval.RowResult{}, err
 	}
@@ -43,7 +43,7 @@ func sweepRow(ctx context.Context, graph loop.GraphPort, row eval.Row, derivatio
 	return result, nil
 }
 
-func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row, derivations eval.Derivations) ([]string, []loop.Disposition, bool, error) {
+func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row, derivations eval.Derivations, threshold loop.SubstanceRatio) ([]string, []loop.Disposition, bool, error) {
 	anchor, found, err := graph.Node(ctx, row.Subject)
 	if err != nil || !found {
 		return nil, nil, found, err
@@ -56,7 +56,7 @@ func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row, de
 		return nil, nil, true, err
 	}
 
-	_, dispositions := loop.Assemble(anchor, candidates, loop.AssemblyByteBudget, loop.RelevanceFloor)
+	_, dispositions := loop.Assemble(anchor, candidates, loop.AssemblyByteBudget, loop.RelevanceFloor, threshold)
 	return queries, dispositions, true, nil
 }
 

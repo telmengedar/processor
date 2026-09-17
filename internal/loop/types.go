@@ -81,7 +81,23 @@ type Disposition struct {
 
 	// SubstanceSize is that substance's byte length, zero when SubstanceAvailable is false.
 	SubstanceSize int `json:"substanceSize"`
+
+	// Form is the representation the form rule selected for this candidate.
+	Form Form `json:"form"`
+
+	// RenderedSize is the byte length of the selected form, and it is what admission charged.
+	RenderedSize int `json:"renderedSize"`
 }
+
+// Form is the closed set of representations a block can render a candidate as.
+type Form string
+
+const (
+	// FormContent is the candidate's full content.
+	FormContent Form = "content"
+	// FormSubstance is the candidate's condensed substance.
+	FormSubstance Form = "substance"
+)
 
 // TerminalReason is the loop's own closed set of ways a judgement step can end.
 type TerminalReason string
@@ -181,6 +197,9 @@ type Limits struct {
 	FillSizeFloor int `json:"fillSizeFloor"`
 	// MaxFillContentBytes is the fast-refusal ceiling for oversized content.
 	MaxFillContentBytes int `json:"maxFillContentBytes"`
+
+	// SubstanceRatioThreshold is the form rule's dial as this run was configured.
+	SubstanceRatioThreshold SubstanceRatio `json:"substanceRatioThreshold"`
 }
 
 // Sampling records one run's model-call sampling parameters, nil where left to the endpoint's default.
