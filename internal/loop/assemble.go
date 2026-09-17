@@ -22,7 +22,7 @@ const (
 	nudgeThin = "Seems like your knowledge is still thin on the topic - your focus might be too narrow; try approaching the question from a different angle.\n"
 )
 
-const nudgeNarrowQuery = "The graph has matches for this, but they did not fit the budget - narrow the query and ask for a smaller slice.\n"
+const nudgeNarrowQuery = "The graph has matches for this, but they did not fit the budget - narrow the query.\n"
 
 const nudgeEscalate = "This does not appear to be in the graph - say so plainly and name what is missing, rather than repeating the same recall.\n"
 

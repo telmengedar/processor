@@ -92,7 +92,7 @@ func TestRenderToolResultNarrowsTheQueryWhenEveryRowWasCutForByteBudget(t *testi
 	})
 
 	want := "results were found, but none were included.\n" +
-		"The graph has matches for this, but they did not fit the budget - narrow the query and ask for a smaller slice.\n"
+		"The graph has matches for this, but they did not fit the budget - narrow the query.\n"
 
 	if got != want {
 		t.Fatalf("tool result = %q, want %q", got, want)
@@ -163,6 +163,9 @@ func TestRenderToolResultNarrowsTheQueryWhenTheCutSetMixesByteBudgetWithAnotherR
 		},
 	})
 
+	if strings.Contains(got, nudgeNone) || strings.Contains(got, nudgeThin) {
+		t.Fatalf("tool result = %q, contains a tier-1 nudge although the model already tried recall", got)
+	}
 	if !strings.HasSuffix(got, nudgeNarrowQuery) {
 		t.Fatalf("tool result = %q, want it to end with the narrow-the-query nudge %q when any row was cut for byte budget", got, nudgeNarrowQuery)
 	}
@@ -182,6 +185,9 @@ func TestRenderToolResultEscalatesWhenTheCutSetIsAllBelowFloor(t *testing.T) {
 		},
 	})
 
+	if strings.Contains(got, nudgeNone) || strings.Contains(got, nudgeThin) {
+		t.Fatalf("tool result = %q, contains a tier-1 nudge although the model already tried recall", got)
+	}
 	if !strings.HasSuffix(got, nudgeEscalate) {
 		t.Fatalf("tool result = %q, want it to end with the escalation nudge %q", got, nudgeEscalate)
 	}

@@ -97,6 +97,11 @@ func TestJudgeSendsAToolResultByteEqualToRenderToolResultOfTheSameExchange(t *te
 func TestJudgeCarriesTheBlockNudgeAndEveryToolResultNudgeInOneRequestWhenRecallKeepsComingUpEmpty(t *testing.T) {
 	t.Parallel()
 
+	const (
+		blockNudge      = "Seems you know nothing about this topic - or maybe you are asking the wrong question; try looking at it from a different angle.\n"
+		toolResultNudge = "This does not appear to be in the graph - say so plainly and name what is missing, rather than repeating the same recall.\n"
+	)
+
 	anchor := loop.Anchor{ID: 1, Type: "t", Name: "solo", Content: "anchor body"}
 	block, _ := loop.Assemble(anchor, nil, 60_000, 0)
 
@@ -127,6 +132,9 @@ func TestJudgeCarriesTheBlockNudgeAndEveryToolResultNudgeInOneRequestWhenRecallK
 	if len(got.Messages) != 8 {
 		t.Fatalf("messages has %d entries, want 8 (system, user, 3x(assistant, tool))", len(got.Messages))
 	}
+	if n := strings.Count(got.Messages[1].Content, blockNudge); n != 1 {
+		t.Fatalf("messages[1].Content states the block nudge %d times, want exactly once; content=%q", n, got.Messages[1].Content)
+	}
 	if !strings.Contains(got.Messages[1].Content, block) {
 		t.Fatalf("messages[1].Content = %q, want it to embed the block byte-exact: %q", got.Messages[1].Content, block)
 	}
@@ -138,6 +146,9 @@ func TestJudgeCarriesTheBlockNudgeAndEveryToolResultNudgeInOneRequestWhenRecallK
 			continue
 		}
 		toolMessages++
+		if !strings.Contains(m.Content, toolResultNudge) {
+			t.Fatalf("tool message content = %q, want it to state the tool-result nudge %q", m.Content, toolResultNudge)
+		}
 		if m.Content != wantToolContent {
 			t.Fatalf("tool message content = %q, want %q byte-exact", m.Content, wantToolContent)
 		}

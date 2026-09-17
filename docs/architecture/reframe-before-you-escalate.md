@@ -4,8 +4,10 @@
 > Not published to the graph. Parity is published at merge; this file is the canonical copy until then.
 > Project: **#10422**.
 >
-> Written on `feat/reframe-before-you-escalate`, after PR #98 (commit `87a0ad2`) was rejected by QA with
-> four criticals (CF-1..CF-4) and two warnings (W-1, W-3). This document is the fix round's design
+> Written on `feat/reframe-before-you-escalate`, after PR #98's first round was rejected by QA with four
+> criticals (CF-1..CF-4) and three warnings (W-1, W-2, W-3). QA reviewed that round as an uncommitted
+> working tree on top of `af3e3d6`; the same content was committed afterwards as `87a0ad2`, which is the
+> only commit on this branch carrying the rejected wording. This document is the fix round's design
 > record — the `## Decisions taken autonomously` list that CF-4 said belonged in the repo, not only in a
 > PR body. It also serves the retroactive role the original round skipped: the nudge shipped in PR #97
 > and split into two tiers in PR #98 without a design document at either step, which is itself the
@@ -96,6 +98,12 @@ self-produced). Given a mixed batch, telling the model to narrow the query is st
 half of the truth; there is no scenario in this design where "some of what you asked for was too big"
 should be suppressed in favour of "nothing is here."
 
+`nudgeNarrowQuery` names **only the lever the tool actually has**. `recall` takes exactly one argument,
+`query` (`internal/openaicompat/wire.go`, `internal/ollama/wire.go` — *"Takes one argument: query"*, and the
+JSON schema carries that one property); there is no slice, limit, offset or size parameter. Advice to "ask
+for a smaller slice" would be the same defect as CF-3 relocated to the other branch — naming a lever the
+loop does not expose — so the sentence stops at *narrow the query*.
+
 `base` is the pre-existing report sentence (*"results were found, but none were included."* / *"no
 additional results found."*), unchanged from PR #97 and untouched by this round's `admit`, relevance
 floor, or cut-reason constraints — CF-2/CF-3 only changed what gets **appended** after it, and only for
@@ -171,8 +179,10 @@ a tool result never contains a tier-1 nudge — and none of them claim anything 
 new test, `TestJudgeCarriesTheBlockNudgeAndEveryToolResultNudgeInOneRequestWhenRecallKeepsComingUpEmpty`
 (`internal/openaicompat/usercontent_test.go`), asserts the co-presence directly: a thin block plus three
 empty `recall` exchanges produces one 8-message request carrying the block's nudge once and the tool
-nudge three times. That test is the record of this decision — it fails, not passes, if a later change
-tries to make the tiers mutually exclusive across a turn without an explicit design change here.
+nudge three times. It asserts those two counts against **literal** nudge sentences, not against values
+re-derived from `Assemble` and `RenderToolResult` — a derived expectation moves with the code and would
+pin nothing. That test is the record of this decision — it fails, not passes, if a later change tries to
+make the tiers mutually exclusive across a turn without an explicit design change here.
 
 ## 7. Where the state comes from (both rounds)
 
@@ -197,3 +207,9 @@ the preceding equality check had already forced them false). `TestRenderToolResu
 TheCutSetMixesByteBudgetWithAnotherReason` and `TestRenderToolResultEscalatesWhenTheCutSetIsAllBelowFloor`
 are the two replacement guards; both were confirmed live by swapping `nudgeNarrowQuery` and
 `nudgeEscalate` in the production branch and observing both redden (reverted, `sha256` checked).
+
+Both of those guards also carry the **tier-1-exclusion** assertion that certifies §6's *"a tool result
+never contains a tier-1 nudge"*. They sit **before** their test's `HasSuffix` check and there is no
+exact-equality assertion on the same value anywhere in either test, so neither can be forced constant the
+way CF-1 found the round-1 versions were. Confirmed live by appending `nudgeNone` to both tier-2 returns
+and observing the guard line itself — not a later assertion — report the failure in each test.
