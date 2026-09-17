@@ -898,9 +898,12 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 	graph.recallQueue = []recallResponse{
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
 		{Candidates: []Candidate{
-			{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", 9_000)},
-			{ID: 92, Similarity: 0.8, Content: strings.Repeat("b", 9_000)},
-			{ID: 93, Similarity: 0.7, Content: strings.Repeat("c", 5_000)},
+			{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", 3_900)},
+			{ID: 92, Similarity: 0.85, Content: strings.Repeat("b", 3_900)},
+			{ID: 97, Similarity: 0.84, Content: strings.Repeat("e", 3_900)},
+			{ID: 98, Similarity: 0.83, Content: strings.Repeat("f", 3_900)},
+			{ID: 99, Similarity: 0.82, Content: strings.Repeat("g", 3_900)},
+			{ID: 93, Similarity: 0.7, Content: strings.Repeat("c", 3_900)},
 			{ID: 94, Similarity: 0.65, Content: strings.Repeat("d", 100)},
 		}},
 	}
@@ -918,11 +921,11 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 		t.Fatalf("record.ToolCalls has %d entries, want 1", len(record.ToolCalls))
 	}
 	round := record.ToolCalls[0]
-	if len(round.Results) != 4 {
-		t.Fatalf("round.Results has %d entries, want 4 — every row the round returned, admitted or cut", len(round.Results))
+	if len(round.Results) != 7 {
+		t.Fatalf("round.Results has %d entries, want 7 — every row the round returned, admitted or cut", len(round.Results))
 	}
-	wantIncluded := []bool{true, true, false, true}
-	wantOrder := []int64{91, 92, 93, 94}
+	wantIncluded := []bool{true, true, true, true, true, false, true}
+	wantOrder := []int64{91, 92, 97, 98, 99, 93, 94}
 	for i, want := range wantIncluded {
 		if round.Results[i].ID != wantOrder[i] {
 			t.Fatalf("round.Results[%d].ID = %d, want %d — position stays rank order, not id order (design §6.4a)", i, round.Results[i].ID, wantOrder[i])
@@ -931,19 +934,25 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 			t.Fatalf("round.Results[%d] (id %d) Included = %v, want %v", i, wantOrder[i], round.Results[i].Included, want)
 		}
 	}
-	if !round.Results[3].Included {
+	if !round.Results[6].Included {
 		t.Fatal("rank 4 fits the leftover budget rank 3 could not use and was cut anyway; admission must skip, not stop, exactly like the block (design §6.4a)")
 	}
-	if round.Results[2].CutReason == "" {
+	if round.Results[5].CutReason == "" {
 		t.Fatal("a cut supplementary hit has an empty CutReason, want it recorded")
 	}
-	if round.Results[2].Size != 5_000 {
-		t.Fatalf("round.Results[2].Size = %d, want 5000 — a cut row must still carry the size that caused the cut", round.Results[2].Size)
+	if round.Results[5].Size != 3_900 {
+		t.Fatalf("round.Results[5].Size = %d, want 3900 — a cut row must still carry the size that caused the cut", round.Results[5].Size)
 	}
 
 	seen := model.calls[1].PriorTools[0].Results
-	if len(seen) != 3 || seen[0].ID != 91 || seen[1].ID != 92 || seen[2].ID != 94 {
-		t.Fatalf("PriorTools[0].Results = %+v, want the three admitted candidates [91 92 94], in rank order", seen)
+	wantSeen := []int64{91, 92, 97, 98, 99, 94}
+	if len(seen) != len(wantSeen) {
+		t.Fatalf("PriorTools[0].Results = %+v, want the six admitted candidates %v, in rank order", seen, wantSeen)
+	}
+	for i, want := range wantSeen {
+		if seen[i].ID != want {
+			t.Fatalf("PriorTools[0].Results = %+v, want the six admitted candidates %v, in rank order", seen, wantSeen)
+		}
 	}
 }
 
@@ -1035,7 +1044,13 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
 		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
-		{Candidates: []Candidate{{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", SupplementaryByteBudget)}}},
+		{Candidates: []Candidate{
+			{ID: 91, Similarity: 0.94, Content: strings.Repeat("a", 4_000)},
+			{ID: 92, Similarity: 0.93, Content: strings.Repeat("b", 4_000)},
+			{ID: 93, Similarity: 0.92, Content: strings.Repeat("c", 4_000)},
+			{ID: 94, Similarity: 0.91, Content: strings.Repeat("d", 4_000)},
+			{ID: 95, Similarity: 0.90, Content: strings.Repeat("e", 4_000)},
+		}},
 	}
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
@@ -1048,8 +1063,13 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	round := record.ToolCalls[0]
-	if len(round.Results) != 1 || !round.Results[0].Included {
-		t.Fatalf("round.Results = %+v, want the hit exactly at SupplementaryByteBudget included", round.Results)
+	if len(round.Results) != 5 {
+		t.Fatalf("round.Results = %+v, want five hits whose last lands exactly on SupplementaryByteBudget", round.Results)
+	}
+	for i, d := range round.Results {
+		if !d.Included {
+			t.Fatalf("round.Results[%d] = %+v, want every hit up to and including the one exactly at SupplementaryByteBudget admitted", i, d)
+		}
 	}
 }
 
@@ -1335,8 +1355,9 @@ func TestTurnRunWarnsWhenTheTopRankedCandidateWasDroppedForTheByteBudget(t *test
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	graph := baseGraph()
+	graph.node.Content = strings.Repeat("a", 55_000)
 	graph.candidates = []Candidate{
-		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", 10_000)},
 		{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
@@ -1358,7 +1379,7 @@ func TestTurnRunWarnsWhenTheTopRankedCandidateWasDroppedForTheByteBudget(t *test
 		t.Fatalf("no top-cut record for a run whose rank-1 candidate was dropped for the byte budget; log:\n%s", logBuf.String())
 	}
 	wantRemaining := AssemblyByteBudget - len(graph.node.Content)
-	for _, want := range []string{"level=WARN", "subject=42", "candidateId=100", "candidateName=BigDoc", fmt.Sprintf("candidateSize=%d", AssemblyByteBudget+1), fmt.Sprintf("remaining=%d", wantRemaining)} {
+	for _, want := range []string{"level=WARN", "subject=42", "candidateId=100", "candidateName=BigDoc", "candidateSize=10000", fmt.Sprintf("remaining=%d", wantRemaining)} {
 		if !strings.Contains(warning, want) {
 			t.Fatalf("the top-cut record does not carry %q; it was:\n%s", want, warning)
 		}
@@ -1424,9 +1445,10 @@ func TestTurnRunRaisesBothTheShutoutAndTheDroppedTopCandidateRecordsWhenNothingW
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	graph := baseGraph()
+	graph.node.Content = strings.Repeat("a", 55_000)
 	graph.candidates = []Candidate{
-		{ID: 100, Type: "documentation", Name: "Big1", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-		{ID: 101, Type: "documentation", Name: "Big2", Similarity: 0.8, Content: strings.Repeat("y", AssemblyByteBudget+1)},
+		{ID: 100, Type: "documentation", Name: "Big1", Similarity: 0.9, Content: strings.Repeat("x", 10_000)},
+		{ID: 101, Type: "documentation", Name: "Big2", Similarity: 0.8, Content: strings.Repeat("y", 10_000)},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", logger)

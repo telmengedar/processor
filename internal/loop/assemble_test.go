@@ -95,12 +95,15 @@ func TestAssembleCutsWhatDoesNotFitAndBackFillsASmallerCandidateBehindIt(t *test
 	anchor := Anchor{ID: 1, Type: "t", Name: "a"}
 
 	candidates := []Candidate{
-		{ID: 10, Content: strings.Repeat("x", 40)},
-		{ID: 20, Content: strings.Repeat("y", 40)},
-		{ID: 30, Content: strings.Repeat("z", 40)},
-		{ID: 40, Content: strings.Repeat("w", 5)},
+		{ID: 10, Content: strings.Repeat("a", 180)},
+		{ID: 20, Content: strings.Repeat("b", 180)},
+		{ID: 30, Content: strings.Repeat("c", 180)},
+		{ID: 40, Content: strings.Repeat("d", 180)},
+		{ID: 50, Content: strings.Repeat("e", 180)},
+		{ID: 60, Content: strings.Repeat("f", 180)},
+		{ID: 70, Content: strings.Repeat("g", 100)},
 	}
-	const budget = 100
+	const budget = 1_000
 
 	total := 0
 	for _, c := range candidates {
@@ -118,8 +121,11 @@ func TestAssembleCutsWhatDoesNotFitAndBackFillsASmallerCandidateBehindIt(t *test
 	}{
 		{10, true},
 		{20, true},
-		{30, false},
+		{30, true},
 		{40, true},
+		{50, true},
+		{60, false},
+		{70, true},
 	}
 	for i, w := range want {
 		if dispositions[i].ID != w.id {
@@ -130,10 +136,10 @@ func TestAssembleCutsWhatDoesNotFitAndBackFillsASmallerCandidateBehindIt(t *test
 		}
 	}
 
-	if !dispositions[3].Included {
-		t.Fatal("candidate 40 fits the budget candidate 30 could not use and was cut anyway; admission must skip, not stop (design §6.3, corrected)")
+	if !dispositions[6].Included {
+		t.Fatal("candidate 70 fits the budget candidate 60 could not use and was cut anyway; admission must skip, not stop (design §6.3, corrected)")
 	}
-	if dispositions[2].CutReason == "" {
+	if dispositions[5].CutReason == "" {
 		t.Fatal("a cut candidate has an empty CutReason, want it recorded")
 	}
 }
@@ -143,11 +149,11 @@ func TestAssembleAdmitsCandidatesBehindOneThatDoesNotFit(t *testing.T) {
 
 	anchor := Anchor{ID: 1}
 	candidates := []Candidate{
-		{ID: 10, Content: strings.Repeat("x", 200)},
+		{ID: 10, Content: strings.Repeat("x", 2_000)},
 		{ID: 20, Content: strings.Repeat("y", 40)},
 		{ID: 30, Content: strings.Repeat("z", 30)},
 	}
-	const budget = 100
+	const budget = 1_000
 
 	if len(candidates[0].Content) <= budget {
 		t.Fatalf("test setup error: rank 1 is %d bytes against a budget of %d, so it does not exceed the whole budget and this test cannot discriminate", len(candidates[0].Content), budget)
@@ -175,11 +181,14 @@ func TestAssembleCutsSelfProducedCandidatesWithoutChargingTheBudget(t *testing.T
 
 	anchor := Anchor{ID: 1}
 	candidates := []Candidate{
-		{ID: 10, Content: strings.Repeat("x", 40), SelfProduced: true},
-		{ID: 20, Content: strings.Repeat("y", 40)},
-		{ID: 30, Content: strings.Repeat("z", 40)},
+		{ID: 10, Content: strings.Repeat("x", 180), SelfProduced: true},
+		{ID: 20, Content: strings.Repeat("a", 180)},
+		{ID: 30, Content: strings.Repeat("b", 180)},
+		{ID: 40, Content: strings.Repeat("c", 180)},
+		{ID: 50, Content: strings.Repeat("d", 180)},
+		{ID: 60, Content: strings.Repeat("e", 180)},
 	}
-	const budget = 100
+	const budget = 1_000
 
 	if len(candidates[0].Content) > budget {
 		t.Fatalf("test setup error: the self-produced row is %d bytes against a budget of %d, so the byte rule would cut it anyway", len(candidates[0].Content), budget)
@@ -190,9 +199,9 @@ func TestAssembleCutsSelfProducedCandidatesWithoutChargingTheBudget(t *testing.T
 	if dispositions[0].Included {
 		t.Fatal("dispositions[0] (id 10) is self-produced and was admitted, want it cut")
 	}
-	for _, i := range []int{1, 2} {
+	for _, i := range []int{1, 2, 3, 4, 5} {
 		if !dispositions[i].Included {
-			t.Fatalf("dispositions[%d] (id %d) was cut; two 40-byte rows fit a 100-byte budget only if the self-produced row's 40 bytes were never charged", i, dispositions[i].ID)
+			t.Fatalf("dispositions[%d] (id %d) was cut; five 180-byte rows fit a 1000-byte budget only if the self-produced row's 180 bytes were never charged", i, dispositions[i].ID)
 		}
 	}
 }
@@ -335,7 +344,7 @@ func TestAssembleDispositionsRecordSimilarity(t *testing.T) {
 		{ID: 10, Similarity: 0.734521, Content: "included"},
 		{ID: 20, Similarity: 0.100001, Content: strings.Repeat("z", 1000)},
 	}
-	const budget = 20 // only candidate 10 fits; candidate 20 is cut
+	const budget = 1_000
 
 	_, dispositions := Assemble(anchor, candidates, budget, 0)
 
@@ -359,11 +368,11 @@ func TestAssembleDispositionsRecordSimilarity(t *testing.T) {
 func TestAssembleAdmitsACandidateThatExactlyFillsTheRemainingBudget(t *testing.T) {
 	t.Parallel()
 
-	anchor := Anchor{ID: 1}
+	anchor := Anchor{ID: 1, Content: strings.Repeat("a", 850)}
 	candidates := []Candidate{
-		{ID: 10, Content: strings.Repeat("x", 100)},
+		{ID: 10, Content: strings.Repeat("x", 150)},
 	}
-	const budget = 100 // exactly the candidate's size
+	const budget = 1_000
 
 	_, dispositions := Assemble(anchor, candidates, budget, 0)
 
@@ -397,11 +406,11 @@ func TestAssembleChargesTheAnchorBodyAgainstTheBudgetBeforeAnyCandidate(t *testi
 func TestAssembleAdmitsACandidateIntoTheRoomLeftAfterTheAnchor(t *testing.T) {
 	t.Parallel()
 
-	anchor := Anchor{ID: 1, Content: strings.Repeat("a", 40)}
+	anchor := Anchor{ID: 1, Content: strings.Repeat("a", 850)}
 	candidates := []Candidate{
-		{ID: 10, Content: strings.Repeat("x", 60)},
+		{ID: 10, Content: strings.Repeat("x", 150)},
 	}
-	const budget = 100
+	const budget = 1_000
 
 	_, dispositions := Assemble(anchor, candidates, budget, 0)
 
@@ -466,9 +475,9 @@ func sha256Hex(s string) string {
 func TestAssembleCutReasonHasTheExactWording(t *testing.T) {
 	t.Parallel()
 
-	anchor := Anchor{ID: 1}
-	candidates := []Candidate{{ID: 10, Content: strings.Repeat("x", 200)}}
-	const budget = 10
+	anchor := Anchor{ID: 1, Content: strings.Repeat("a", 900)}
+	candidates := []Candidate{{ID: 10, Content: strings.Repeat("x", 150)}}
+	const budget = 1_000
 
 	_, dispositions := Assemble(anchor, candidates, budget, 0)
 
@@ -584,7 +593,7 @@ func TestAssembleAdmissionChargesOnlyContentBytesNeverSubstanceBytes(t *testing.
 		{ID: 10, Content: strings.Repeat("x", 40), Substance: strings.Repeat("s", 10_000)},
 		{ID: 20, Content: strings.Repeat("y", 40)},
 	}
-	const budget = 100
+	const budget = 1_000
 
 	if len(candidates[0].Content)+len(candidates[1].Content) > budget {
 		t.Fatalf("test setup error: budget %d must fit both 40-byte contents", budget)
@@ -674,12 +683,15 @@ func TestTheAssembledBlockDisclosesOnlyTheAdmittedRowsAndWhetherAnythingWasWithh
 
 		anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Content: "anchor body"}
 		candidates := []Candidate{
-			{ID: 10, Content: strings.Repeat("x", 40)},
-			{ID: 20, Content: strings.Repeat("y", 40)},
+			{ID: 10, Content: strings.Repeat("a", 180)},
+			{ID: 20, Content: strings.Repeat("b", 180)},
 			{ID: 900, SelfProduced: true, Content: "self produced body"},
-			{ID: 30, Content: strings.Repeat("z", 40)},
+			{ID: 30, Content: strings.Repeat("c", 180)},
+			{ID: 40, Content: strings.Repeat("d", 180)},
+			{ID: 50, Content: strings.Repeat("e", 180)},
+			{ID: 60, Content: strings.Repeat("f", 180)},
 		}
-		const budget = 90
+		const budget = 1_000
 
 		fullBlock, dispositions := Assemble(anchor, candidates, budget, 0)
 
@@ -715,17 +727,17 @@ func TestTheAssembledBlockDisclosesOnlyTheAdmittedRowsAndWhetherAnythingWasWithh
 	t.Run("two shutouts with different withheld rows render the same block", func(t *testing.T) {
 		t.Parallel()
 
-		anchor := Anchor{ID: 2, Type: "t", Name: "anchor", Content: "anchor body"}
+		anchor := Anchor{ID: 2, Type: "t", Name: "anchor", Content: strings.Repeat("a", 900)}
 		shutoutA := []Candidate{
 			{ID: 40, SelfProduced: true, Content: "self produced body"},
-			{ID: 50, Content: strings.Repeat("w", 200)},
+			{ID: 50, Content: strings.Repeat("w", 150)},
 		}
 		shutoutB := []Candidate{
 			{ID: 900, SelfProduced: true, Content: "a different self produced body"},
-			{ID: 901, Similarity: 0.9, Content: strings.Repeat("v", 500)},
+			{ID: 901, Similarity: 0.9, Content: strings.Repeat("v", 150)},
 			{ID: 902, Similarity: 0.1, Content: "below the floor"},
 		}
-		const budget = 20
+		const budget = 1_000
 		const floor = 0.63
 
 		blockA, dispositionsA := Assemble(anchor, shutoutA, budget, 0)
@@ -784,10 +796,10 @@ func TestARowCutBelowTheFloorChargesNothingAgainstTheByteBudget(t *testing.T) {
 
 	anchor := Anchor{ID: 1}
 	candidates := []Candidate{
-		{ID: 10, Similarity: 0.5, Content: strings.Repeat("x", 80)},
+		{ID: 10, Similarity: 0.5, Content: strings.Repeat("x", 1_100)},
 		{ID: 20, Similarity: 0.9, Content: strings.Repeat("y", 40)},
 	}
-	const budget = 50
+	const budget = 1_000
 	const floor = 0.63
 
 	if len(candidates[0].Content) <= budget {
@@ -803,7 +815,7 @@ func TestARowCutBelowTheFloorChargesNothingAgainstTheByteBudget(t *testing.T) {
 		t.Fatalf("dispositions[0].CutReason = %q, want %q", dispositions[0].CutReason, cutReasonBelowFloor)
 	}
 	if !dispositions[1].Included {
-		t.Fatal("dispositions[1] (id 20) was cut; a 40-byte row fits a 50-byte budget only if the below-floor row's 80 bytes were never charged")
+		t.Fatal("dispositions[1] (id 20) was cut; a 40-byte row fits a 1000-byte budget only if the below-floor row's 1100 bytes were never charged")
 	}
 }
 

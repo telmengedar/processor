@@ -13,7 +13,10 @@ const (
 	cutReasonByteBudget   = "byte budget exceeded"
 	cutReasonSelfProduced = "self-produced"
 	cutReasonBelowFloor   = "below relevance floor"
+	cutReasonOversized    = "oversized"
 )
+
+const minBlockOccupancy = 5
 
 const thinKnowledgeThreshold = 5
 
@@ -28,25 +31,27 @@ const nudgeEscalate = "This does not appear to be in the graph - say so plainly 
 
 // Assemble is a pure function: no I/O, no clock, no randomness.
 func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64) (block string, dispositions []Disposition) {
-	remaining := budget - len(anchor.Content)
-	if remaining < 0 {
-		remaining = 0
-	}
-
-	admitted, dispositions := admit(candidates, remaining, floor)
+	admitted, dispositions := admit(candidates, budget, len(anchor.Content), floor)
 
 	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
 
 	return renderBlock(anchor, admitted, len(candidates) > 0), dispositions
 }
 
-func admit(candidates []Candidate, budget int, floor float64) (admitted []Candidate, dispositions []Disposition) {
+func admit(candidates []Candidate, budget, spent int, floor float64) (admitted []Candidate, dispositions []Disposition) {
+	remaining := budget - spent
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	capBytes := payloadCap(budget)
+
 	dispositions = make([]Disposition, len(candidates))
 	admitted = make([]Candidate, 0, len(candidates))
 
 	cumulative := 0
 	for i, c := range candidates {
-		size := len(c.Content)
+		payload := len(renderedPayload(c))
 
 		d := Disposition{
 			Rank:               i + 1,
@@ -54,11 +59,12 @@ func admit(candidates []Candidate, budget int, floor float64) (admitted []Candid
 			Type:               c.Type,
 			Name:               c.Name,
 			Similarity:         c.Similarity,
-			Size:               size,
+			Size:               len(c.Content),
 			ContentHash:        contentHash(c.Content),
 			Sources:            c.Sources,
 			SubstanceAvailable: c.Substance != "",
 			SubstanceSize:      len(c.Substance),
+			PayloadCap:         capBytes,
 		}
 
 		switch {
@@ -66,8 +72,10 @@ func admit(candidates []Candidate, budget int, floor float64) (admitted []Candid
 			d.CutReason = cutReasonSelfProduced
 		case c.Similarity < floor:
 			d.CutReason = cutReasonBelowFloor
-		case cumulative+size <= budget:
-			cumulative += size
+		case payload > capBytes:
+			d.CutReason = cutReasonOversized
+		case cumulative+payload <= remaining:
+			cumulative += payload
 			d.Included = true
 			admitted = append(admitted, c)
 		default:
@@ -78,6 +86,14 @@ func admit(candidates []Candidate, budget int, floor float64) (admitted []Candid
 	}
 
 	return admitted, dispositions
+}
+
+func payloadCap(budget int) int {
+	return budget / minBlockOccupancy
+}
+
+func renderedPayload(c Candidate) string {
+	return c.Content
 }
 
 // RenderUserContent composes the user message: the request, the instant it states and the window it was bounded to when one applied, the assembled block, then the same request again.

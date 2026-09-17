@@ -9,7 +9,11 @@ import (
 func fillPressureGraph() *fakeGraph {
 	graph := baseGraph()
 	graph.candidates = []Candidate{
-		{ID: 91, Type: "documentation", Name: "admitted", Similarity: 0.9, Content: strings.Repeat("a", AssemblyByteBudget-len(graph.node.Content))},
+		{ID: 91, Type: "documentation", Name: "admitted", Similarity: 0.9, Content: strings.Repeat("a", 11_900)},
+		{ID: 93, Type: "documentation", Name: "also admitted", Similarity: 0.89, Content: strings.Repeat("c", 11_900)},
+		{ID: 94, Type: "documentation", Name: "also admitted", Similarity: 0.88, Content: strings.Repeat("d", 11_900)},
+		{ID: 95, Type: "documentation", Name: "also admitted", Similarity: 0.87, Content: strings.Repeat("e", 11_900)},
+		{ID: 96, Type: "documentation", Name: "also admitted", Similarity: 0.86, Content: strings.Repeat("f", 11_900)},
 		{ID: 92, Type: "documentation", Name: "wants to be pushed", Similarity: 0.8, Content: strings.Repeat("b", FillSizeFloor)},
 	}
 	return graph

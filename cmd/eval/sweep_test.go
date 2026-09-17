@@ -127,7 +127,7 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 	graph := newFakeGraph(t)
 	graph.writeAllowed = true
 	graph.candidates = []loop.Candidate{
-		{ID: 200, Type: "documentation", Name: "Alpha", Similarity: 0.81, Content: strings.Repeat("a", loop.AssemblyByteBudget/2)},
+		{ID: 200, Type: "documentation", Name: "Alpha", Similarity: 0.81, Content: strings.Repeat("a", 11_000)},
 		{ID: 201, Type: "documentation", Name: "Bravo", Similarity: 0.79, Content: strings.Repeat("b", loop.AssemblyByteBudget/2)},
 		{ID: 202, Type: "documentation", Name: "Charlie", Similarity: 0.77, Content: strings.Repeat("c", loop.AssemblyByteBudget/2)},
 	}
