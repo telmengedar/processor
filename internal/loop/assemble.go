@@ -18,9 +18,11 @@ const (
 const thinKnowledgeThreshold = 5
 
 const (
-	nudgeNone = "Seems you know nothing about this topic, you should research/explore what it is about.\n"
-	nudgeThin = "Seems like your knowledge is still thin on the topic - you should explore more.\n"
+	nudgeNone = "Seems you know nothing about this topic - or maybe you are asking the wrong question; try looking at it from a different angle.\n"
+	nudgeThin = "Seems like your knowledge is still thin on the topic - your focus might be too narrow; try approaching the question from a different angle.\n"
 )
+
+const nudgeEscalate = "You have looked and found little - time to actually gain the knowledge: research it first, and fall back to experimentation only if research does not get you there.\n"
 
 // Assemble is a pure function: no I/O, no clock, no randomness.
 func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64) (block string, dispositions []Disposition) {
@@ -116,9 +118,9 @@ func RenderToolResult(r ToolExchange) string {
 	}
 	if len(r.Results) == 0 {
 		if len(r.Dispositions) > 0 {
-			return "results were found, but none were included."
+			return "results were found, but none were included.\n" + nudgeEscalate
 		}
-		return "no additional results found."
+		return "no additional results found.\n" + nudgeEscalate
 	}
 
 	var b strings.Builder

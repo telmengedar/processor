@@ -29,15 +29,19 @@ func TestRenderToolResultRendersAWriteRoundAsAReceiptNamingTheByteCountAndThePat
 	}
 }
 
-func TestRenderToolResultRendersARecallThatFoundNothingAsOneSentenceRatherThanAnEmptyString(t *testing.T) {
+func TestRenderToolResultNudgesEscalationWhenARecallFoundNothingAtAll(t *testing.T) {
 	t.Parallel()
 
 	got := RenderToolResult(ToolExchange{Tool: ToolRecall, Query: "nothing matches this"})
 
-	want := "no additional results found."
+	want := "no additional results found.\n" +
+		"You have looked and found little - time to actually gain the knowledge: research it first, and fall back to experimentation only if research does not get you there.\n"
 
 	if got != want {
 		t.Fatalf("tool result = %q, want %q", got, want)
+	}
+	if strings.Contains(got, nudgeNone) || strings.Contains(got, nudgeThin) {
+		t.Fatalf("tool result = %q, contains a tier-1 nudge although the model already tried recall", got)
 	}
 }
 
@@ -90,10 +94,14 @@ func TestRenderToolResultSaysResultsWereFoundAndNoneWereIncludedWhenAdmissionCut
 		},
 	})
 
-	want := "results were found, but none were included."
+	want := "results were found, but none were included.\n" +
+		"You have looked and found little - time to actually gain the knowledge: research it first, and fall back to experimentation only if research does not get you there.\n"
 
 	if got != want {
 		t.Fatalf("tool result = %q, want %q", got, want)
+	}
+	if strings.Contains(got, nudgeNone) || strings.Contains(got, nudgeThin) {
+		t.Fatalf("tool result = %q, contains a tier-1 nudge although the model already tried recall", got)
 	}
 }
 
@@ -109,7 +117,8 @@ func TestRenderToolResultSaysResultsWereFoundWhenEveryRowWasCutAsSelfProducedRat
 		},
 	})
 
-	want := "results were found, but none were included."
+	want := "results were found, but none were included.\n" +
+		"You have looked and found little - time to actually gain the knowledge: research it first, and fall back to experimentation only if research does not get you there.\n"
 
 	if got != want {
 		t.Fatalf("tool result = %q, want %q", got, want)
@@ -140,7 +149,8 @@ func TestRenderToolResultSaysNothingWasFoundWhenAnEmptyRecallCarriedAnEmptyDispo
 
 	got := RenderToolResult(ToolExchange{Tool: ToolRecall, Query: "nothing matches this", Dispositions: []Disposition{}})
 
-	want := "no additional results found."
+	want := "no additional results found.\n" +
+		"You have looked and found little - time to actually gain the knowledge: research it first, and fall back to experimentation only if research does not get you there.\n"
 
 	if got != want {
 		t.Fatalf("tool result = %q, want %q", got, want)
