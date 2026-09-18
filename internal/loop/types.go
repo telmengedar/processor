@@ -1,7 +1,10 @@
 // Package loop implements the Processor turn: context assembly, judgement, and write-back.
 package loop
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // UpdateWindow is a closed instant range over the graph's last-update field, resolved in the run's own zone; both bounds zero means unbounded.
 type UpdateWindow struct {
@@ -87,6 +90,23 @@ type Disposition struct {
 
 	// RenderedSize is the byte length of the selected form, and it is what admission charged.
 	RenderedSize int `json:"renderedSize"`
+}
+
+// UnmarshalJSON decodes one disposition, restoring the rendered size on a record written before the form rule existed: such a record carries no rendered size at all, and every candidate in it was charged its content's own byte length.
+func (d *Disposition) UnmarshalJSON(data []byte) error {
+	type wire Disposition
+
+	var decoded wire
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+
+	if decoded.RenderedSize == 0 && decoded.Size != 0 {
+		decoded.RenderedSize = decoded.Size
+	}
+
+	*d = Disposition(decoded)
+	return nil
 }
 
 // Form is the closed set of representations a block can render a candidate as.
