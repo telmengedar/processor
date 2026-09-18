@@ -134,8 +134,11 @@ Derived from the measurement record's own published figures for `r01` (cap = 12,
 3. **Only the composition keeps everything** — all eight of today's rows, the blocker refused, and
    genuinely reclaimed budget for ranks 12+.
 
-*(End of the struck section. The composition claim itself survives and was later confirmed on live data;
-the row counts above did not.)*
+*(End of the struck section. The composition claim itself survives — on the **mechanism**, not on a
+measurement: its advantage over the cap alone does not depend on the arithmetic being right about how many
+rows each admits. **The composition has never been run as a composition; that is the pending gate.** What a
+live sweep did confirm is the **cap-alone** column, at 11 rows where this table predicted 7 — which is the
+number that was wrong, and wrong in the direction that flattered the recommendation.)*
 
 ## 5. F-3's curve is flat because the instrument is saturated
 
@@ -166,7 +169,7 @@ until the allocator stops swallowing the savings.
 | # | Ruling | Why |
 |---|---|---|
 | **D1** | **§8.1 unchanged.** No size conjunct, no coverage conjunct, no fill conjunct, no provenance conjunct. | Every proposal that amends it either fails to close the mechanism or buys closure with a worse rule. |
-| **D2** | ~~**Ship the cap first**~~ — **WITHDRAWN, see the header.** exactly as §7 specifies: after form choice, before the byte budget, one new cut reason, charging zero, carrying the cap in force on the disposition. | It is measured to remove the inversion on both live arms *today*. **Shipping Unit 3 first ships a measured regression in exchange for an unmeasured benefit.** |
+| **D2** | ~~**Ship the cap first**~~ — **WITHDRAWN, see the header.** | ~~*It is measured to remove the inversion on both live arms today.*~~ **The measurement it rested on was taken over an empty set.** |
 | **D3** | **Land the form rule at the dial's off position.** | Unit 1's precedent: *"the block is byte-identical whether or not a candidate carries a substance"* — the property that made it safe to ship alone. |
 
 ### 6.1 The reclamation invariant — the named fallback, not adopted now
