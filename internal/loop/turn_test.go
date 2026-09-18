@@ -1321,7 +1321,7 @@ func shutoutLogLine(log string) string {
 
 func topCutLogLine(log string) string {
 	for _, line := range strings.Split(log, "\n") {
-		if strings.Contains(line, `msg="the top-ranked candidate was cut for the byte budget`) {
+		if strings.Contains(line, `msg="the top-ranked candidate was cut for want of room`) {
 			return line
 		}
 	}
@@ -1358,7 +1358,7 @@ func TestTurnRunWarnsWhenTheTopRankedCandidateWasDroppedForTheByteBudget(t *test
 		t.Fatalf("no top-cut record for a run whose rank-1 candidate was dropped for the byte budget; log:\n%s", logBuf.String())
 	}
 	wantRemaining := AssemblyByteBudget - len(graph.node.Content)
-	for _, want := range []string{"level=WARN", "subject=42", "candidateId=100", "candidateName=BigDoc", fmt.Sprintf("candidateSize=%d", AssemblyByteBudget+1), fmt.Sprintf("remaining=%d", wantRemaining)} {
+	for _, want := range []string{"level=WARN", "subject=42", "candidateId=100", "candidateName=BigDoc", fmt.Sprintf("candidateSize=%d", AssemblyByteBudget+1), `cutReason="byte budget exceeded"`, fmt.Sprintf("remaining=%d", wantRemaining)} {
 		if !strings.Contains(warning, want) {
 			t.Fatalf("the top-cut record does not carry %q; it was:\n%s", want, warning)
 		}
@@ -1390,6 +1390,36 @@ func TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasAdmittedEvenThoughOthersW
 
 	if warning := topCutLogLine(logBuf.String()); warning != "" {
 		t.Fatalf("a run whose rank-1 candidate was admitted raised the top-cut alarm even though lower rows were cut:\n%s", warning)
+	}
+}
+
+func TestTheTopCutWarnFiresWhenTheTopCandidateWasRefusedForItsSize(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	turn := &Turn{logger: logger}
+
+	record := Record{
+		Subject: 42,
+		Anchor:  AnchorSummary{Size: 100},
+		Limits:  Limits{AssemblyByteBudget: AssemblyByteBudget},
+		Candidates: []Disposition{
+			{Rank: 1, ID: 900, Name: "BigDoc", CutReason: cutReasonOversized, Included: false, Size: 43_000},
+			{Rank: 2, ID: 901, Name: "Doc", Included: true, Size: 200},
+		},
+	}
+
+	turn.logFinished(record, WriteReceipt{}, 0)
+
+	warning := topCutLogLine(logBuf.String())
+	if warning == "" {
+		t.Fatalf("a run whose rank-1 candidate was refused for its size raised no top-cut alarm: the best match the graph found did not reach the model and nothing said so; log:\n%s", logBuf.String())
+	}
+	for _, want := range []string{"candidateId=900", "candidateSize=43000", "cutReason=oversized"} {
+		if !strings.Contains(warning, want) {
+			t.Fatalf("the top-cut record does not carry %q; it was:\n%s", want, warning)
+		}
 	}
 }
 

@@ -63,7 +63,7 @@ func (t *Turn) fill(ctx context.Context, dispositions []Disposition) []FillOutco
 		switch {
 		case d.Size < FillSizeFloor:
 			outcomes = append(outcomes, FillOutcome{ID: d.ID, Reason: fillReasonBelowSizeGate})
-		case d.CutReason != cutReasonByteBudget:
+		case !cutForWantOfRoom(d.CutReason):
 			outcomes = append(outcomes, FillOutcome{ID: d.ID, Reason: fillReasonNoPressure})
 		case t.Fill == nil:
 			outcomes = append(outcomes, FillOutcome{ID: d.ID, Reason: fillReasonPortAbsent})

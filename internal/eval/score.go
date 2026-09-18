@@ -8,7 +8,7 @@ type Verdict string
 // Admitted means the node was retrieved and rendered into the block the model saw.
 const Admitted Verdict = "admitted"
 
-// Cut means the node was retrieved and the byte budget discarded it.
+// Cut means the node was retrieved and admission did not carry it into the block.
 const Cut Verdict = "cut"
 
 // NotRetrieved means the node appeared in no candidate row.

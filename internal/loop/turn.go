@@ -19,6 +19,8 @@ const (
 	MaxOutputTokens         = 4_096
 	// RelevanceFloor is 0.63: the well-answered corpus keeps 13/25 required documents at this value.
 	RelevanceFloor = 0.63
+	// BlockOccupancy is how many rows the per-candidate payload ceiling reserves room for in the byte budget; zero leaves no ceiling in force.
+	BlockOccupancy = 0
 )
 
 const (
@@ -248,10 +250,10 @@ func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Dur
 		t.log().Warn("assembly admitted no candidate: the block carried the anchor alone", "subject", record.Subject, "candidates", len(record.Candidates))
 	}
 
-	if top, ok := topRankedDisposition(record.Candidates); ok && top.CutReason == cutReasonByteBudget {
+	if top, ok := topRankedDisposition(record.Candidates); ok && cutForWantOfRoom(top.CutReason) {
 		remaining := summaryRemainingAfterAnchor(record.Limits, record.Anchor.Size)
-		t.log().Warn("the top-ranked candidate was cut for the byte budget: the best match the graph found did not reach the model",
-			"subject", record.Subject, "candidateId", top.ID, "candidateName", top.Name, "candidateSize", top.Size, "remaining", remaining)
+		t.log().Warn("the top-ranked candidate was cut for want of room: the best match the graph found did not reach the model",
+			"subject", record.Subject, "candidateId", top.ID, "candidateName", top.Name, "candidateSize", top.Size, "cutReason", top.CutReason, "remaining", remaining)
 	}
 
 	if len(record.Candidates) < record.Limits.CandidateLimit {
@@ -436,7 +438,7 @@ func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window Up
 		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}
 	}
 
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, RelevanceFloor)
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, RelevanceFloor, BlockOccupancy)
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions}
 }
 
