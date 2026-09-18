@@ -1,5 +1,28 @@
 # The Reclaimed Budget Has No Owner — ruling §8 after F-2 and F-3
 
+> ## ⚠️ PARTIALLY SUPERSEDED by `a-falsifier-measured-on-an-empty-set.md`
+>
+> **Withdrawn from this document:**
+>
+> - **"The per-candidate size cap, shipped first"** (the remedy row below, and §6's D2). The cap now lands
+>   at its **off position**; `k` and the form rule's dial move **together, later**, gated on a restated
+>   F-CAP measured on the composition. **Do not brief an implementer off the ordering below.**
+> - **"already designed, measured and unshipped"**, and every citation of
+>   `what-a-block-is-worth-per-byte.md` §7 as a *measurement*. **Every `0.0000` in that document's plateau
+>   table is `max(∅)`** — the inversion reads zero precisely when its byte-budget-cut set is empty, not
+>   when the boundary is clean. Twelve cells, exact correlation. **That document never measured the
+>   property it claimed**, so the ordering below rests on a result that was never taken.
+> - **§4's composition table.** Struck, not amended — it predicted 7 admitted rows where a live sweep gives
+>   11. The mechanism it illustrates survives; the arithmetic does not, and one wrong cell condemns the
+>   method rather than the cell.
+>
+> **What stands:** §8.1 is correct and the defect is allocation rather than form (§1–§2, including the
+> counterexample at full coverage); the four seams (§8); F-2 binding on candidate dispositions with F-2a
+> reported beside it; F-3 having fired against a saturated instrument; and R1 splitting into a producer
+> gate and a population gate.
+>
+> **Read the superseding document for the ordering, the restated falsifier and the gate list.**
+
 ## TL;DR
 
 **The form rule does not do what it was built to do, and §8.1 is not why.** §8.1 says which form is
@@ -18,8 +41,8 @@ nobody had said so out loud.** That is the single most important finding here.
 |---|---|
 | **§8.1 (the form rule)** | **Unchanged. Do not rewrite, do not amend the predicate.** It is a correct statement about form. |
 | **The defect** | **Allocation, not form.** Greedy first-fit is non-monotone under item shrinkage — a structural property, not a coverage artefact (§2 proves it survives full coverage). |
-| **The remedy** | **The per-candidate size cap, shipped first**, exactly as `what-a-block-is-worth-per-byte.md` §7 specifies it. On the traced row it converts the failure into a strict improvement over *both* arms (§4). |
-| **The form rule's PR** | **Land the mechanism at the dial's off position (threshold 0), not at 0.592.** Unit 1's precedent: ship the capability, change no bytes. Flip the dial after the cap, on a threshold F-3 re-selects. |
+| **The remedy** | ~~**The per-candidate size cap, shipped first**~~ — **WITHDRAWN, see the header.** The cap lands inert; `k` and the dial move together, later. |
+| **The form rule's PR** | **Land the mechanism at the dial's off position (threshold 0), not at 0.592.** Unit 1's precedent: ship the capability, change no bytes. ~~Flip the dial after the cap~~ — **WITHDRAWN**: both dials move together, after a restated F-CAP. |
 | **F-2** | **Binds on the candidate dispositions.** The required-node reading is a separate, weaker figure and is renamed F-2a so the two can never be confused again. |
 | **F-3** | **Fired against an instrument that could not have shown an effect.** Admitted-row count is saturated by the budget; the curve is flat because the savings are re-spent, which *is* the defect. **Do not collapse the strata on this evidence.** |
 | **R1 on a warm graph** | **F-1 qualifies a producer; the graph now holds artifacts with no producer attached.** Split the gate: F-1 (producer) + **F-11** (population). Neither touches §8.1; R5 stands. |
