@@ -103,7 +103,7 @@ func TestJudgeCarriesTheBlockNudgeAndEveryToolResultNudgeInOneRequestWhenRecallK
 	)
 
 	anchor := loop.Anchor{ID: 1, Type: "t", Name: "solo", Content: "anchor body"}
-	block, _ := loop.Assemble(anchor, nil, 60_000, 0)
+	block, _ := loop.Assemble(anchor, nil, 60_000, 0, loop.SubstanceRatioThreshold)
 
 	emptyRecall := loop.ToolExchange{Tool: loop.ToolRecall, Query: "still nothing"}
 

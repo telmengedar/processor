@@ -104,7 +104,7 @@ func sweptAt() time.Time {
 func mustSweep(t *testing.T, graph loop.GraphPort, corpus eval.Corpus) eval.Result {
 	t.Helper()
 
-	result, err := sweep(context.Background(), graph, corpus, eval.Derivations{}, sweptAt())
+	result, err := sweep(context.Background(), graph, corpus, eval.Derivations{}, sweptAt(), loop.SubstanceRatioThreshold)
 	if err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 		t.Fatalf("Turn.Run: %v", err)
 	}
 
-	queries, dispositions, found, err := rowDispositions(context.Background(), graph, row, eval.Derivations{})
+	queries, dispositions, found, err := rowDispositions(context.Background(), graph, row, eval.Derivations{}, loop.SubstanceRatioThreshold)
 	if err != nil {
 		t.Fatalf("rowDispositions: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestSweepIssuesOneWholeGraphRecallPerPinnedDerivationBesideTheRawInput(t *t
 		"r01": {"why would a mutation leave the suite green", "what does a non-zero exit code mean"},
 	}}
 
-	if _, err := sweep(context.Background(), graph, corpusOf(row), derivations, sweptAt()); err != nil {
+	if _, err := sweep(context.Background(), graph, corpusOf(row), derivations, sweptAt(), loop.SubstanceRatioThreshold); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
 
@@ -380,7 +380,7 @@ func TestSweepAbortsRatherThanReportingAnEmptyMeasurementWhenTheGraphReadFails(t
 	graph := newFakeGraph(t)
 	graph.nodeErr = errors.New("graph unavailable")
 
-	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt())
+	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt(), loop.SubstanceRatioThreshold)
 	if err == nil {
 		t.Fatal("sweep returned a nil error while the graph was unreachable, want an error rather than a plausible zero score")
 	}
@@ -395,7 +395,7 @@ func TestSweepAbortsWhenRecallItselfFails(t *testing.T) {
 	graph := newFakeGraph(t)
 	graph.recallErr = errors.New("graph unavailable")
 
-	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt())
+	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt(), loop.SubstanceRatioThreshold)
 	if err == nil {
 		t.Fatal("sweep returned a nil error while recall was failing, want an error")
 	}
@@ -568,5 +568,43 @@ func TestTheSweepHoldsThreeOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *
 	want := []int64{2001, 2002, 2003}
 	if !slices.Equal(neighbourhood, want) {
 		t.Fatalf("the sweep scored neighbourhood candidates %v of the five on offer, want %v: the instrument and the product share one retrieval, so a reserve the sweep does not honour is a rate measured on a pipeline the product does not run", neighbourhood, want)
+	}
+}
+
+func TestSweepAssemblesAtTheDialItWasGivenRatherThanTheOneTheLoopShips(t *testing.T) {
+	t.Parallel()
+
+	const threshold loop.SubstanceRatio = 0.592
+	const substance = "condensed!"
+
+	if threshold == loop.SubstanceRatioThreshold {
+		t.Fatalf("test setup error: the dial swept (%v) is the one the loop ships, so this test cannot tell a sweep that honours its flag from one that ignores it", threshold)
+	}
+	if ratio := loop.SubstanceRatio(float64(len(substance)) / float64(len(requiredNodeBody))); ratio >= threshold {
+		t.Fatalf("test setup error: the fixture's ratio is %v against a dial of %v; it must fall below it or the form rule selects the content at either dial and the comparison separates nothing", ratio, threshold)
+	}
+
+	graph := newFakeGraph(t)
+	graph.candidates = []loop.Candidate{
+		{ID: 200, Type: "documentation", Name: "Alpha", Similarity: 0.81, Content: requiredNodeBody, Substance: substance},
+	}
+	row := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "an answer that omits it is wrong"})
+
+	result, err := sweep(context.Background(), graph, corpusOf(row), eval.Derivations{}, sweptAt(), threshold)
+	if err != nil {
+		t.Fatalf("sweep: %v", err)
+	}
+
+	if result.Limits.SubstanceRatioThreshold != threshold {
+		t.Fatalf("the result states a dial of %v, want %v: a reading that misnames its own arm cannot be compared against the one taken beside it", result.Limits.SubstanceRatioThreshold, threshold)
+	}
+
+	candidates := result.Rows[0].Candidates
+	if len(candidates) != 1 {
+		t.Fatalf("the row carries %d candidate dispositions, want 1", len(candidates))
+	}
+	if candidates[0].Form != loop.FormSubstance || candidates[0].RenderedSize != len(substance) {
+		t.Fatalf("the sweep assembled Form %q at RenderedSize %d, want %q at %d: a sweep that drops the dial on its way to the assembler reads the same curve at every arm, and that curve is what selects the dial",
+			candidates[0].Form, candidates[0].RenderedSize, loop.FormSubstance, len(substance))
 	}
 }

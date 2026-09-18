@@ -150,7 +150,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		return t.failed(subject, started, fmt.Errorf("%w: %v", ErrGraphUnavailable, err))
 	}
 
-	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget, RelevanceFloor)
+	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget, RelevanceFloor, SubstanceRatioThreshold)
 
 	fills := t.fill(ctx, dispositions)
 
@@ -176,6 +176,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 			MaxFills:                MaxFills,
 			FillSizeFloor:           FillSizeFloor,
 			MaxFillContentBytes:     MaxFillContentBytes,
+			SubstanceRatioThreshold: SubstanceRatioThreshold,
 		},
 	}
 
@@ -436,8 +437,9 @@ func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window Up
 		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}
 	}
 
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, RelevanceFloor)
-	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions}
+	threshold := SubstanceRatioThreshold
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, RelevanceFloor, threshold)
+	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions, SubstanceRatioThreshold: threshold}
 }
 
 func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {

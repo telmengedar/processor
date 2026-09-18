@@ -14,6 +14,7 @@ import (
 	"github.com/telmengedar/processor/internal/boot"
 	"github.com/telmengedar/processor/internal/divoid"
 	"github.com/telmengedar/processor/internal/eval"
+	"github.com/telmengedar/processor/internal/loop"
 )
 
 const (
@@ -28,7 +29,7 @@ func main() {
 func run(args []string, machine, human io.Writer) int {
 	logger := slog.New(slog.NewTextHandler(human, nil))
 
-	corpusPath, derivationsPath, ok := parseFlags(args, human)
+	corpusPath, derivationsPath, threshold, ok := parseFlags(args, human)
 	if !ok {
 		return exitUsage
 	}
@@ -54,7 +55,7 @@ func run(args []string, machine, human io.Writer) int {
 
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 
-	result, err := sweep(context.Background(), graph, corpus, derivations, time.Now().UTC())
+	result, err := sweep(context.Background(), graph, corpus, derivations, time.Now().UTC(), threshold)
 	if err != nil {
 		logger.Error("sweep", "error", err)
 		return exitError
@@ -91,19 +92,25 @@ func warnOnUnpinnedRows(logger *slog.Logger, derivations eval.Derivations, corpu
 		"rows", strings.Join(unpinned, ","))
 }
 
-func parseFlags(args []string, human io.Writer) (corpusPath, derivationsPath string, ok bool) {
+func parseFlags(args []string, human io.Writer) (corpusPath, derivationsPath string, threshold loop.SubstanceRatio, ok bool) {
 	flags := flag.NewFlagSet("eval", flag.ContinueOnError)
 	flags.SetOutput(human)
 	corpus := flags.String("corpus", "", "path of the corpus file to sweep")
 	derivations := flags.String("derivations", "", "path of the pinned derivation sidecar to sweep with; absent, every row is swept on its own input alone")
+	ratio := flags.Float64("substance-ratio", float64(loop.SubstanceRatioThreshold), "form-rule dial: a substance renders in place of its content below this ratio, and 0 renders content for every row")
 
 	if err := flags.Parse(args); err != nil {
-		return "", "", false
+		return "", "", 0, false
 	}
 	if *corpus == "" {
 		fmt.Fprintln(human, "-corpus is required but not set")
 		flags.Usage()
-		return "", "", false
+		return "", "", 0, false
 	}
-	return *corpus, *derivations, true
+	if !(*ratio >= 0 && *ratio <= 1) {
+		fmt.Fprintf(human, "-substance-ratio is %v, and a ratio of a substance's bytes to its content's lies between 0 and 1: a dial outside that range renders a form no measured ratio selected\n", *ratio)
+		flags.Usage()
+		return "", "", 0, false
+	}
+	return *corpus, *derivations, loop.SubstanceRatio(*ratio), true
 }

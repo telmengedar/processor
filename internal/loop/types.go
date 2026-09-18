@@ -1,7 +1,10 @@
 // Package loop implements the Processor turn: context assembly, judgement, and write-back.
 package loop
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // UpdateWindow is a closed instant range over the graph's last-update field, resolved in the run's own zone; both bounds zero means unbounded.
 type UpdateWindow struct {
@@ -81,7 +84,40 @@ type Disposition struct {
 
 	// SubstanceSize is that substance's byte length, zero when SubstanceAvailable is false.
 	SubstanceSize int `json:"substanceSize"`
+
+	// Form is the representation the form rule selected for this candidate.
+	Form Form `json:"form"`
+
+	// RenderedSize is the byte length of the selected form, and it is what admission charged.
+	RenderedSize int `json:"renderedSize"`
 }
+
+// UnmarshalJSON decodes one disposition, restoring the rendered size on a record written before the form rule existed: such a record carries no rendered size at all, and every candidate in it was charged its content's own byte length.
+func (d *Disposition) UnmarshalJSON(data []byte) error {
+	type wire Disposition
+
+	var decoded wire
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+
+	if decoded.RenderedSize == 0 && decoded.Size != 0 {
+		decoded.RenderedSize = decoded.Size
+	}
+
+	*d = Disposition(decoded)
+	return nil
+}
+
+// Form is the closed set of representations a block can render a candidate as.
+type Form string
+
+const (
+	// FormContent is the candidate's full content.
+	FormContent Form = "content"
+	// FormSubstance is the candidate's condensed substance.
+	FormSubstance Form = "substance"
+)
 
 // TerminalReason is the loop's own closed set of ways a judgement step can end.
 type TerminalReason string
@@ -181,6 +217,9 @@ type Limits struct {
 	FillSizeFloor int `json:"fillSizeFloor"`
 	// MaxFillContentBytes is the fast-refusal ceiling for oversized content.
 	MaxFillContentBytes int `json:"maxFillContentBytes"`
+
+	// SubstanceRatioThreshold is the form rule's dial as this run was configured.
+	SubstanceRatioThreshold SubstanceRatio `json:"substanceRatioThreshold"`
 }
 
 // Sampling records one run's model-call sampling parameters, nil where left to the endpoint's default.
@@ -237,6 +276,9 @@ type ToolExchange struct {
 	Error        string
 	Results      []Candidate
 	Dispositions []Disposition
+
+	// SubstanceRatioThreshold is the dial this round's admission charged at, and the one its results render at.
+	SubstanceRatioThreshold SubstanceRatio
 }
 
 // JudgeInput is everything one judgement step needs.

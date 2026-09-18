@@ -365,3 +365,75 @@ func TestRunRefusesToSweepWhenTheSidecarNamesARowTheCorpusDoesNotCarry(t *testin
 		t.Fatalf("the machine stream carries a result for a sweep that never ran:\n%s", machine.String())
 	}
 }
+
+func TestParseFlagsDefaultsTheSubstanceRatioToTheShippedDial(t *testing.T) {
+	t.Parallel()
+
+	var human strings.Builder
+
+	_, _, threshold, ok := parseFlags([]string{"-corpus", "some.json"}, &human)
+
+	if !ok {
+		t.Fatalf("parseFlags refused a corpus-only invocation: %s", human.String())
+	}
+	if threshold != loop.SubstanceRatioThreshold {
+		t.Fatalf("threshold = %v with no flag given, want %v - a sweep given no dial must sweep the dial the loop itself ships", threshold, loop.SubstanceRatioThreshold)
+	}
+}
+
+func TestParseFlagsTakesTheSubstanceRatioFromTheFlagWhenOneIsGiven(t *testing.T) {
+	t.Parallel()
+
+	var human strings.Builder
+
+	_, _, threshold, ok := parseFlags([]string{"-corpus", "some.json", "-substance-ratio", "0.25"}, &human)
+
+	if !ok {
+		t.Fatalf("parseFlags refused the invocation: %s", human.String())
+	}
+	if threshold != 0.25 {
+		t.Fatalf("threshold = %v, want 0.25 - the sweep must be able to move the dial without a code change", threshold)
+	}
+}
+
+func TestParseFlagsRefusesASubstanceRatioOutsideTheRangeARatioCanTake(t *testing.T) {
+	t.Parallel()
+
+	for _, given := range []string{"-0.1", "1.5", "2"} {
+		t.Run(given, func(t *testing.T) {
+			t.Parallel()
+
+			var human strings.Builder
+
+			_, _, _, ok := parseFlags([]string{"-corpus", "some.json", "-substance-ratio", given}, &human)
+
+			if ok {
+				t.Fatalf("parseFlags accepted -substance-ratio %s: a dial above 1 renders the substance of every row that has one, including rows whose substance is larger than their content, and nothing in the sweep's output says so", given)
+			}
+			if !strings.Contains(human.String(), "substance-ratio") {
+				t.Fatalf("the operator stream does not name the flag it refused:\n%s", human.String())
+			}
+		})
+	}
+}
+
+func TestParseFlagsAcceptsASubstanceRatioAtEitherEndOfItsRange(t *testing.T) {
+	t.Parallel()
+
+	for _, given := range []string{"0", "1"} {
+		t.Run(given, func(t *testing.T) {
+			t.Parallel()
+
+			var human strings.Builder
+
+			_, _, threshold, ok := parseFlags([]string{"-corpus", "some.json", "-substance-ratio", given}, &human)
+
+			if !ok {
+				t.Fatalf("parseFlags refused -substance-ratio %s, which a ratio can take: %s", given, human.String())
+			}
+			if want := map[string]loop.SubstanceRatio{"0": 0, "1": 1}[given]; threshold != want {
+				t.Fatalf("threshold = %v, want %v", threshold, want)
+			}
+		})
+	}
+}

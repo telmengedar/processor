@@ -26,27 +26,45 @@ const nudgeNarrowQuery = "The graph has matches for this, but they did not fit t
 
 const nudgeEscalate = "This does not appear to be in the graph - say so plainly and name what is missing, rather than repeating the same recall.\n"
 
+// SubstanceRatio is a substance's byte length as a fraction of its content's.
+type SubstanceRatio float64
+
+// SubstanceRatioThreshold is the form rule's shipped dial, zero: no ratio is below it, so every candidate renders as content until a later change raises it.
+const SubstanceRatioThreshold SubstanceRatio = 0
+
+const formHeaderKey = "form"
+
 // Assemble is a pure function: no I/O, no clock, no randomness.
-func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64) (block string, dispositions []Disposition) {
+func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64, threshold SubstanceRatio) (block string, dispositions []Disposition) {
 	remaining := budget - len(anchor.Content)
 	if remaining < 0 {
 		remaining = 0
 	}
 
-	admitted, dispositions := admit(candidates, remaining, floor)
+	admitted, dispositions := admit(candidates, remaining, floor, threshold)
 
 	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
 
-	return renderBlock(anchor, admitted, len(candidates) > 0), dispositions
+	return renderBlock(anchor, admitted, len(candidates) > 0, threshold), dispositions
 }
 
-func admit(candidates []Candidate, budget int, floor float64) (admitted []Candidate, dispositions []Disposition) {
+func renderedForm(c Candidate, threshold SubstanceRatio) (Form, string) {
+	if c.Substance == "" || c.Content == "" {
+		return FormContent, c.Content
+	}
+	if SubstanceRatio(float64(len(c.Substance))/float64(len(c.Content))) < threshold {
+		return FormSubstance, c.Substance
+	}
+	return FormContent, c.Content
+}
+
+func admit(candidates []Candidate, budget int, floor float64, threshold SubstanceRatio) (admitted []Candidate, dispositions []Disposition) {
 	dispositions = make([]Disposition, len(candidates))
 	admitted = make([]Candidate, 0, len(candidates))
 
 	cumulative := 0
 	for i, c := range candidates {
-		size := len(c.Content)
+		form, rendered := renderedForm(c, threshold)
 
 		d := Disposition{
 			Rank:               i + 1,
@@ -54,11 +72,13 @@ func admit(candidates []Candidate, budget int, floor float64) (admitted []Candid
 			Type:               c.Type,
 			Name:               c.Name,
 			Similarity:         c.Similarity,
-			Size:               size,
+			Size:               len(c.Content),
 			ContentHash:        contentHash(c.Content),
 			Sources:            c.Sources,
 			SubstanceAvailable: c.Substance != "",
 			SubstanceSize:      len(c.Substance),
+			Form:               form,
+			RenderedSize:       len(rendered),
 		}
 
 		switch {
@@ -66,8 +86,8 @@ func admit(candidates []Candidate, budget int, floor float64) (admitted []Candid
 			d.CutReason = cutReasonSelfProduced
 		case c.Similarity < floor:
 			d.CutReason = cutReasonBelowFloor
-		case cumulative+size <= budget:
-			cumulative += size
+		case cumulative+len(rendered) <= budget:
+			cumulative += len(rendered)
 			d.Included = true
 			admitted = append(admitted, c)
 		default:
@@ -137,7 +157,8 @@ func RenderToolResult(r ToolExchange) string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "===== RESULT =====\nid: %d\ntype: %s\nname: %s\n\n%s\n", c.ID, c.Type, c.Name, c.Content)
+		_, rendered := renderedForm(c, r.SubstanceRatioThreshold)
+		fmt.Fprintf(&b, "===== RESULT =====\nid: %d\ntype: %s\nname: %s\n\n%s\n", c.ID, c.Type, c.Name, rendered)
 	}
 	return b.String()
 }
@@ -154,7 +175,7 @@ func anyCutForByteBudget(dispositions []Disposition) bool {
 // renderBlock renders the fixed layout of design §6.3: the anchor first
 // (the run's stable subject), then the admitted candidates ascending by
 // id (the volatile part).
-func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool) string {
+func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, threshold SubstanceRatio) string {
 	var b strings.Builder
 
 	b.WriteString("===== ANCHOR =====\n")
@@ -163,9 +184,15 @@ func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool) string
 	b.WriteString("\n")
 
 	for _, c := range admitted {
+		form, rendered := renderedForm(c, threshold)
+
 		b.WriteString("\n===== CANDIDATE =====\n")
-		fmt.Fprintf(&b, "id: %d\ntype: %s\nname: %s\n\n", c.ID, c.Type, c.Name)
-		b.WriteString(c.Content)
+		fmt.Fprintf(&b, "id: %d\ntype: %s\nname: %s\n", c.ID, c.Type, c.Name)
+		if form == FormSubstance {
+			fmt.Fprintf(&b, "%s: %s\n", formHeaderKey, form)
+		}
+		b.WriteString("\n")
+		b.WriteString(rendered)
 		b.WriteString("\n")
 	}
 
