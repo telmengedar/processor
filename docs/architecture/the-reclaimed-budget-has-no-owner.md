@@ -21,6 +21,10 @@
 > reported beside it; F-3 having fired against a saturated instrument; and R1 splitting into a producer
 > gate and a population gate.
 >
+> **Every withdrawn item is marked in the body itself** — §3's convergence claim, §4 (struck entire),
+> §6's decision blockquote and D2, §9's F-CAP row and gate order, §10's milestones, and N3. **An unmarked
+> section stands**; this header is not the only place to look, and it is not a substitute for reading them.
+>
 > **Read the superseding document for the ordering, the restated falsifier and the gate list.**
 
 ## TL;DR
@@ -30,7 +34,7 @@ rendered. It says nothing about what the reclaimed bytes are *for*, and `admit` 
 rank order — is under no obligation to spend them on the rows the rule was built to un-starve. It spends
 them on whatever comes next. On corpus row `r01` that was a 48,678 B node with no substance of its own.
 
-**The fix is in admission, and half of it is already designed, measured and unshipped.**
+**The fix is in admission, and half of it is already designed and unshipped.** *(“and measured” is withdrawn — that measurement was taken over an empty set; see the header.)*
 `what-a-block-is-worth-per-byte.md` (on `main`, `5fb97ec`) independently reproduced this exact regression
 on live data — *"arm ONE: 8 admitted → 7, one row worse"* — and diagnosed it in the same words this
 document would have used: **"the form rule frees bytes and the existing allocator wastes them."** Its
@@ -100,10 +104,20 @@ to the rows they were freed for, and `admit` has no reason to.**
 | **F6/§7.3** | A cap at `budget/5 = 12,000 B` removes the quality inversion on both arms, raises the raw-input block from **8 admitted to 14**, and drops the largest single share from **77.2% to 16.4%**. |
 | **§7.4** | *"The cap is not a competitor to the payload change; it is its trigger."* A node over the cap in content and under it in substance is **admitted**, where the cap alone loses it. |
 
-**Two documents, two instruments, two authors, one mechanism.** Neither cited the other. That convergence
-is stronger evidence than either measurement alone, and it is why this document proposes no new mechanism.
+**Two documents, two instruments, two authors, one mechanism.** Neither cited the other.
 
-## 4. What the cap does to the traced row
+> **WITHDRAWN — see the supersession header.** ~~*That convergence is stronger evidence than either
+> measurement alone.*~~ The figures quoted in the table above are **not measurements**: every `0.0000` in
+> that document's plateau table is `max(∅)`. Two documents agreeing is not two instruments agreeing when
+> one of them measured nothing.
+
+## 4. What the cap does to the traced row — STRUCK
+
+> **STRUCK, not amended — see the supersession header.** This table is derived arithmetic, not a sweep. It
+> predicts **7** admitted rows for the cap alone where a live sweep gives **11**, and it models an
+> 11-candidate window where the live one has 20. **One wrong cell condemns the method, not the cell** — so
+> the table below and the three conclusions under it are struck entire. The mechanism they illustrate
+> survives; the arithmetic does not. **Reproduce it by running both mechanisms; do not quote it.**
 
 Derived from the measurement record's own published figures for `r01` (cap = 12,000 B):
 
@@ -119,6 +133,9 @@ Derived from the measurement record's own published figures for `r01` (cap = 12,
 2. **The cap alone has its own cost:** it loses a 17.5 KB row that is admitted today.
 3. **Only the composition keeps everything** — all eight of today's rows, the blocker refused, and
    genuinely reclaimed budget for ranks 12+.
+
+*(End of the struck section. The composition claim itself survives and was later confirmed on live data;
+the row counts above did not.)*
 
 ## 5. F-3's curve is flat because the instrument is saturated
 
@@ -140,12 +157,16 @@ until the allocator stops swallowing the savings.
 
 > **§8.1 is correct and stays as written. The reclaimed budget has no owner, and giving it one is an
 > admission change. The per-candidate size cap already specified in `what-a-block-is-worth-per-byte.md`
-> §7 is that change, and it ships before the form rule's dial leaves zero.**
+> §7 is that change,** ~~**and it ships before the form rule's dial leaves zero.**~~
+>
+> **The final clause is WITHDRAWN — see the supersession header.** The cap's mechanism lands at its **off
+> position**; its number and the form rule's dial move **together, later**, gated on a **restated** F-CAP
+> measured on the composition.
 
 | # | Ruling | Why |
 |---|---|---|
 | **D1** | **§8.1 unchanged.** No size conjunct, no coverage conjunct, no fill conjunct, no provenance conjunct. | Every proposal that amends it either fails to close the mechanism or buys closure with a worse rule. |
-| **D2** | **Ship the cap first**, exactly as §7 specifies: after form choice, before the byte budget, one new cut reason, charging zero, carrying the cap in force on the disposition. | It is measured to remove the inversion on both live arms *today*. **Shipping Unit 3 first ships a measured regression in exchange for an unmeasured benefit.** |
+| **D2** | ~~**Ship the cap first**~~ — **WITHDRAWN, see the header.** exactly as §7 specifies: after form choice, before the byte budget, one new cut reason, charging zero, carrying the cap in force on the disposition. | It is measured to remove the inversion on both live arms *today*. **Shipping Unit 3 first ships a measured regression in exchange for an unmeasured benefit.** |
 | **D3** | **Land the form rule at the dial's off position.** | Unit 1's precedent: *"the block is byte-identical whether or not a candidate carries a substance"* — the property that made it safe to ship alone. |
 
 ### 6.1 The reclamation invariant — the named fallback, not adopted now
@@ -225,15 +246,21 @@ substance can. There is no mechanism that closes this without a provenance field
 | # | Gate | Statement |
 |---|---|---|
 | **F-13** | **Can the instrument see the prize?** Required-node admissions are 10 at every arm including off, and 2 labelled + 1 control required node are retrieved and not admitted at every arm. Identify them; state what cut each, whether it carries a substance, and whether any arm admits it. **Cheapest of all, and it discriminates between Option B and Option C.** |
-| **F-CAP** | *(exists, unchanged)* Sweep the corpus with the cap on and off at several budgets. Any required document going admitted → not-admitted means the cap's value is wrong. |
+| **F-CAP** | ~~*(exists, unchanged)*~~ **WITHDRAWN — restated.** Both of its quantifiers ranged over empty sets. **Use the superseding document's five-limb restatement, not the wording below.** |
 | **F-2** | *(restated)* With the cap in force and the candidate list fixed, sweep with the form rule on and off. **Zero candidates may go admitted → not-admitted.** If any remain, adopt §6.1's reclamation pass. |
 | **F-2a** | *(renamed)* No required node goes admitted → not-admitted. Reported with F-2, never instead. |
 | **F-3** | *(restated)* Three columns — candidate rows admitted, required-node verdicts, **and rows rendered lossily** — against the **capped** allocator. Falsifier re-armed. |
 | **F-11** | *(new)* An independent reader checks each of the 67 live substances against its own content. **Zero tolerance** on any node the eval corpus depends on. **Must pass before the dial leaves zero.** |
 
-**Order: F-13 → F-CAP → F-2 / F-2a / F-3 against the capped allocator → F-11 → dial off zero.**
+~~**Order: F-13 → F-CAP → F-2 / F-2a / F-3 against the capped allocator → F-11 → dial off zero.**~~
 
-## 10. Milestones
+> **WITHDRAWN — see the supersession header.** This order ships the cap's number ahead of the dial. **The
+> superseding document's gate list and ordering supersede this table and §10 entirely** — read it there.
+
+## 10. Milestones — SUPERSEDED
+
+> **SUPERSEDED in full by the superseding document's milestone list.** M2–M5 below sequence the cap's
+> number before the dial; that ordering is withdrawn. M0 and M1 are done and are stated correctly.
 
 - **M0** — run **F-13**. One read of a sweep that has already run. If the corpus cannot see the prize,
   that fact goes in the PR body before anything ships.
@@ -269,7 +296,7 @@ presentation of the cap and the form rule as alternatives.**
 |---|---|---|
 | **N1** | Who wrote the 67, in fact? Not answerable from the graph; likely answerable from what we ran. | No — F-11 audits the artifacts regardless. |
 | **N2** | Should a contentless candidate be admitted at all? It charges zero and renders an empty section. | No — raise against `admit`, not §8. |
-| **N3** | `what-a-block-is-worth-per-byte.md` has no owner and no branch, and D2 makes it the critical path. | **Yes, for sequencing.** |
+| **N3** | ~~`what-a-block-is-worth-per-byte.md` has no owner and no branch, and D2 makes it the critical path.~~ **Withdrawn with D2** — that document is no longer the critical path, and its §7 figures are not measurements. | Resolved. |
 | **N4** | §11's F-3 wording should name the saturation caveat. | No — one sentence. |
 | **N5** | Rank order as the arbiter of reclaimed space. The cap bounds the damage; it does not make the spend principled. | No — its own unit, after F-2 is green. |
 
