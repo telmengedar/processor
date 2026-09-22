@@ -30,6 +30,8 @@ const nudgeNarrowQuery = "The graph has matches for this, but they did not fit t
 
 const nudgeEscalate = "This does not appear to be in the graph - say so plainly and name what is missing, rather than repeating the same recall.\n"
 
+const nothingNewFormat = "%d results, and you have already been shown every one of them in this turn.\n"
+
 // SubstanceRatio is a substance's byte length as a fraction of its content's.
 type SubstanceRatio float64
 
@@ -173,6 +175,9 @@ func RenderToolResult(r ToolExchange) string {
 	}
 	if r.Tool == ToolWriteFile {
 		return fmt.Sprintf("wrote %d bytes to %s", r.Bytes, r.Path)
+	}
+	if r.NothingNew {
+		return fmt.Sprintf(nothingNewFormat, len(r.Results))
 	}
 	if len(r.Results) == 0 {
 		base := "no additional results found."

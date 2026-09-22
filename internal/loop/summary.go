@@ -33,6 +33,7 @@ const (
 	summaryNoTool       = "[tool not recorded]"
 	summaryBlockOmitted = "not rendered here"
 	summaryNoFillModel  = "[model not recorded]"
+	summaryRecallClosed = "recall closed"
 )
 
 type cutGroup struct {
@@ -246,14 +247,21 @@ func renderSummaryOutcome(b *strings.Builder, record Record) {
 		reached = "reached"
 	}
 
-	fmt.Fprintf(b, "\nOUTCOME  %s (raw %q), %d/%d model calls, cap %s\n",
-		record.StopReason.Reason, record.StopReason.Raw, record.ModelCalls, record.Limits.MaxModelCalls, reached)
+	fmt.Fprintf(b, "\nOUTCOME  %s (raw %q), %d/%d model calls, cap %s%s\n",
+		record.StopReason.Reason, record.StopReason.Raw, record.ModelCalls, record.Limits.MaxModelCalls, reached, summaryRecallBound(record))
 
 	renderSummaryVerdict(b, ComputeOutcome(record))
 	renderSummaryAnswer(b, record)
 	renderSummaryTokens(b, record.Usage)
 
 	fmt.Fprintf(b, "  [block  %d B assembled, %s]\n", len(record.Block), summaryBlockOmitted)
+}
+
+func summaryRecallBound(record Record) string {
+	if !record.RecallClosed {
+		return ""
+	}
+	return ", " + summaryRecallClosed
 }
 
 func renderSummaryVerdict(b *strings.Builder, outcome Outcome) {

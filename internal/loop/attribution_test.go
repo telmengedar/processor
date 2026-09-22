@@ -129,7 +129,7 @@ func TestANativeToolRoundIsRecordedAsNativeAndNotAsRecoveredText(t *testing.T) {
 func TestACappedToolRoundStillRecordsHowTheAdapterObtainedTheCall(t *testing.T) {
 	t.Parallel()
 
-	graph := &fakeGraph{nodeFound: true}
+	graph := &fakeGraph{nodeFound: true, recallQueue: newRowsPerRecall()}
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "stop", RecallQuery: "one", ToolSource: ToolSourceContent},
 		{Reason: WantsRecall, RawReason: "stop", RecallQuery: "two", ToolSource: ToolSourceContent},

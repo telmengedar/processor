@@ -24,8 +24,10 @@ const (
 )
 
 const (
-	errCallCapReached     = "call cap reached"
-	errNoWorkingDirectory = "no working directory is configured"
+	errCallCapReached      = "call cap reached"
+	errNoWorkingDirectory  = "no working directory is configured"
+	errRecallClosedToModel = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
+	errRecallClosedCause   = "recall closed"
 )
 
 // CarriedCauseRunes bounds a cause carried to a durable, shared or prompt-bearing destination.
@@ -182,7 +184,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		},
 	}
 
-	judged, err := t.judge(ctx, block, input, now, window)
+	judged, err := t.judge(ctx, block, input, now, window, dispositions)
 	if err != nil {
 		return t.failed(subject, started, err)
 	}
@@ -194,6 +196,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 	record.Workspace = judged.workspace
 	record.ModelCalls = judged.modelCalls
 	record.CapReached = judged.capReached
+	record.RecallClosed = judged.recallClosed
 	record.Usage = judged.usages
 	record.StopReason = judged.stop
 	record.Sampling = judged.sampling
@@ -254,6 +257,11 @@ func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Dur
 			"produced", outcome.Produced, "grounded", outcome.Grounded, "curtailed", outcome.Curtailed)
 	}
 
+	if record.RecallClosed {
+		t.log().Warn("recall was closed for the turn: consecutive rounds returned nothing the model had not already been shown",
+			"subject", record.Subject, "rounds", len(record.ToolCalls), "modelCalls", record.ModelCalls)
+	}
+
 	if len(record.Candidates) > 0 && cut == len(record.Candidates) {
 		t.log().Warn("assembly admitted no candidate: the block carried the anchor alone", "subject", record.Subject, "candidates", len(record.Candidates))
 	}
@@ -303,20 +311,24 @@ func summarizeUsage(usages []*Usage) (reports, inTokens, outTokens int) {
 }
 
 type judgement struct {
-	answer     string
-	stop       StopReason
-	toolCalls  []ToolCallRecord
-	workspace  string
-	modelCalls int
-	capReached bool
-	usages     []*Usage
-	sampling   Sampling
-	provider   Provider
+	answer       string
+	stop         StopReason
+	toolCalls    []ToolCallRecord
+	workspace    string
+	modelCalls   int
+	capReached   bool
+	recallClosed bool
+	usages       []*Usage
+	sampling     Sampling
+	provider     Provider
 }
 
-func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, window UpdateWindow) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, window UpdateWindow, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
+
+	account := newYieldAccount(admitted)
+	final := false
 
 	for {
 		judged.modelCalls++
@@ -339,6 +351,14 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 		judged.sampling = result.Sampling
 		judged.provider = result.Provider
 
+		if final {
+			if wantsTool(result.Reason) {
+				pending := undispatchedExchange(result, errRecallClosedCause)
+				pending.ToolSource = result.ToolSource
+				exchanges = append(exchanges, pending)
+			}
+			break
+		}
 		if !wantsTool(result.Reason) {
 			break
 		}
@@ -349,9 +369,18 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 			exchanges = append(exchanges, capped)
 			break
 		}
+		if result.Reason == WantsRecall && account.closed() {
+			judged.recallClosed = true
+			closed := closedRecallExchange(result)
+			closed.ToolSource = result.ToolSource
+			exchanges = append(exchanges, closed)
+			final = true
+			continue
+		}
 
 		exchange := t.dispatch(ctx, result, &judged.workspace, window)
 		exchange.ToolSource = result.ToolSource
+		accountForYield(account, &exchange)
 		exchanges = append(exchanges, exchange)
 	}
 
@@ -371,6 +400,10 @@ func toolFor(reason TerminalReason) string {
 }
 
 func cappedExchange(result JudgeResult) ToolExchange {
+	return undispatchedExchange(result, errCallCapReached)
+}
+
+func undispatchedExchange(result JudgeResult, cause string) ToolExchange {
 	if result.ToolError != "" {
 		return ToolExchange{Tool: toolFor(result.Reason), Error: BoundCause(result.ToolError)}
 	}
@@ -380,8 +413,20 @@ func cappedExchange(result JudgeResult) ToolExchange {
 		Path:    result.WritePath,
 		Content: result.WriteContent,
 		Bytes:   len(result.WriteContent),
-		Error:   errCallCapReached,
+		Error:   cause,
 	}
+}
+
+func accountForYield(account *yieldAccount, exchange *ToolExchange) {
+	if exchange.Tool != ToolRecall || exchange.Error != "" {
+		return
+	}
+	exchange.Yield = account.round(exchange.Dispositions)
+	exchange.NothingNew = exchange.Yield == 0 && len(exchange.Results) > 0
+}
+
+func closedRecallExchange(result JudgeResult) ToolExchange {
+	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errRecallClosedToModel, Dispositions: []Disposition{}}
 }
 
 func (t *Turn) dispatch(ctx context.Context, result JudgeResult, workspace *string, window UpdateWindow) ToolExchange {
@@ -458,7 +503,7 @@ func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {
 		if results == nil {
 			results = []Disposition{}
 		}
-		records[i] = ToolCallRecord{Tool: e.Tool, Source: e.ToolSource, Query: e.Query, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results}
+		records[i] = ToolCallRecord{Tool: e.Tool, Source: e.ToolSource, Query: e.Query, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results, Yield: e.Yield}
 	}
 	return records
 }

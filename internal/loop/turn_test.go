@@ -517,7 +517,7 @@ func TestTurnRunRecordsASupplementaryRecallTransportFailureAsAnErrorFlaggedRound
 func TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall(t *testing.T) {
 	t.Parallel()
 
-	graph := baseGraph()
+	graph := graphYieldingNewRowsToEveryRecall()
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q1"},
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q2"},
@@ -565,7 +565,7 @@ func TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall(t *testing.
 func TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch(t *testing.T) {
 	t.Parallel()
 
-	graph := baseGraph()
+	graph := graphYieldingNewRowsToEveryRecall()
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q1"},
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q2"},
