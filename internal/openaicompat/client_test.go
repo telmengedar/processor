@@ -48,9 +48,11 @@ func topLevelKeys(t *testing.T, body []byte) map[string]json.RawMessage {
 	return keys
 }
 
+const judgeBudget = 173
+
 func judgeOnce(t *testing.T, c *Client) loop.JudgeResult {
 	t.Helper()
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -63,7 +65,7 @@ func TestJudgePostsToChatCompletions(t *testing.T) {
 	srv, captured := capturingServer(t, stopResponse)
 	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget}); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
 	if captured.Path != "/chat/completions" {
@@ -77,7 +79,7 @@ func TestJudgeSendsNoAuthorizationHeaderWhenKeyIsEmpty(t *testing.T) {
 	srv, captured := capturingServer(t, stopResponse)
 	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget}); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
 	if captured.Auth != "" {
@@ -91,7 +93,7 @@ func TestJudgeSendsAuthorizationBearerWhenKeyIsSet(t *testing.T) {
 	srv, captured := capturingServer(t, stopResponse)
 	c := NewClient(srv.URL, "model-x", "secret-key", loop.Sampling{}, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget}); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
 	const want = "Bearer secret-key"
@@ -106,7 +108,7 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndBothTools(t *testing.T) 
 	srv, captured := capturingServer(t, stopResponse)
 	c := NewClient(srv.URL, "the-model-id", "", loop.Sampling{}, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "the system text", Block: "the block", Input: "the input"}); err != nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "the system text", Block: "the block", Input: "the input", MaxOutputTokens: judgeBudget}); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
 
@@ -131,7 +133,7 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndBothTools(t *testing.T) 
 	}
 
 	const (
-		wantMaxTokens         = 4096
+		wantMaxTokens         = judgeBudget
 		wantRecallName        = "recall"
 		wantRecallDescription = "Search memory for something the assembled context did not include. Takes one argument: query, a short description of what is missing."
 		wantWriteName         = "write_file"
@@ -213,7 +215,7 @@ func TestJudgeRequestBodyOmitsTemperatureAndTopPWhenSamplingIsUnconfigured(t *te
 	srv, captured := capturingServer(t, stopResponse)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget}); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
 
@@ -236,7 +238,7 @@ func TestJudgeRequestBodyCarriesTemperatureAndTopPWhenConfigured(t *testing.T) {
 	sampling := loop.Sampling{Temperature: float64Ptr(0.37), TopP: float64Ptr(0.91)}
 	c := NewClient(srv.URL, "m", "", sampling, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget}); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
 
@@ -262,7 +264,7 @@ func TestJudgeRequestBodyCarriesAnExplicitZeroTemperatureRatherThanOmittingIt(t 
 	sampling := loop.Sampling{Temperature: float64Ptr(0)}
 	c := NewClient(srv.URL, "m", "", sampling, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"}); err != nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget}); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
 
@@ -286,7 +288,7 @@ func TestJudgeResultCarriesTheSamplingTheClientWasConfiguredWith(t *testing.T) {
 	sampling := loop.Sampling{Temperature: float64Ptr(0.42)}
 	c := NewClient(srv.URL, "m", "", sampling, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -316,7 +318,8 @@ func TestJudgeReconstructsPriorRecallRoundsAsAssistantAndToolMessages(t *testing
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	in := loop.JudgeInput{
-		System: "sys", Block: "block", Input: "in",
+		MaxOutputTokens: judgeBudget,
+		System:          "sys", Block: "block", Input: "in",
 		PriorTools: []loop.ToolExchange{
 			{Tool: loop.ToolRecall, Query: "first query", Results: []loop.Candidate{
 				{ID: 5, Type: "task", Name: "Found", Content: "found body"},
@@ -384,7 +387,7 @@ func TestJudgeDecodesATextOnlyResponseAsAnswered(t *testing.T) {
 	srv, _ := capturingServer(t, `{"choices":[{"message":{"content":"hello there"},"finish_reason":"stop"}]}`)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -405,7 +408,7 @@ func TestJudgeDecodesATruncatedResponse(t *testing.T) {
 	srv, _ := capturingServer(t, `{"choices":[{"message":{"content":"cut off"},"finish_reason":"length"}]}`)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -420,7 +423,7 @@ func TestJudgeDecodesAContentFilterResponseAsRefused(t *testing.T) {
 	srv, _ := capturingServer(t, `{"choices":[{"message":{"content":null},"finish_reason":"content_filter"}]}`)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -438,7 +441,7 @@ func TestJudgeMapsAnUnknownFinishReasonToUnrecognisedAndPreservesTheRawValue(t *
 	srv, _ := capturingServer(t, `{"choices":[{"message":{"content":"?"},"finish_reason":"some-vendor-reason"}]}`)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -457,7 +460,7 @@ func TestJudgeDecodesAToolCallAsWantsRecallWithTheParsedQuery(t *testing.T) {
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -479,7 +482,7 @@ func TestJudgeFlagsUnparseableToolArgumentsAsAMalformedRecallRequest(t *testing.
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -501,7 +504,7 @@ func TestJudgeFlagsAnEmptyQueryArgumentAsAMalformedRecallRequest(t *testing.T) {
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -516,7 +519,7 @@ func TestJudgeLeavesUsageAbsentWhenTheResponseHasNoUsageObject(t *testing.T) {
 	srv, _ := capturingServer(t, stopResponse)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -532,7 +535,7 @@ func TestJudgeDecodesUsageWhenPresentEvenIfAllZero(t *testing.T) {
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -548,7 +551,7 @@ func TestJudgeDecodesNonZeroUsage(t *testing.T) {
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -564,7 +567,7 @@ func TestJudgeTreatsAUsageObjectReportingOnlyOneCountAsAbsentInWhole(t *testing.
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -580,7 +583,7 @@ func TestJudgeReadsOnlyTheFirstChoiceIgnoringAnyOthers(t *testing.T) {
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -599,7 +602,7 @@ func TestJudgeDecodesAToolCallAsWantsRecallEvenWhenFinishReasonSaysStop(t *testi
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -621,7 +624,7 @@ func TestJudgeOnNon2xxReturnsAnError(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{}); err == nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget}); err == nil {
 		t.Fatal("Judge returned nil error for a 500 response with a valid completion body, want an error from the status check")
 	}
 }
@@ -630,7 +633,7 @@ func TestJudgeOnUnreachableHostReturnsAnError(t *testing.T) {
 	t.Parallel()
 
 	c := NewClient("http://127.0.0.1:1", "m", "", loop.Sampling{}, nil)
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{}); err == nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget}); err == nil {
 		t.Fatal("Judge returned nil error against an unreachable host, want an error")
 	}
 }
@@ -641,7 +644,7 @@ func TestJudgeOnEmptyChoicesReturnsAnError(t *testing.T) {
 	srv, _ := capturingServer(t, `{"choices":[]}`)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{}); err == nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget}); err == nil {
 		t.Fatal("Judge returned nil error for a response with no choices, want an error")
 	}
 }
@@ -688,7 +691,7 @@ func TestJudgeNamesTheOpenAICompatAdapterAndTheChatCompletionsRouteItPostedTo(t 
 	srv, _ := capturingServer(t, stopResponse)
 	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -710,7 +713,7 @@ func TestAToolCallThisAdapterReadFromTheEndpointIsMarkedNative(t *testing.T) {
 	srv, _ := capturingServer(t, body)
 	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -726,7 +729,7 @@ func TestAProseAnswerFromThisAdapterCarriesNoToolSource(t *testing.T) {
 	srv, _ := capturingServer(t, stopResponse)
 	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}

@@ -121,7 +121,7 @@ func TestATruncatedAnswerIsNotCurtailedSoARecordCanReadUngroundedAndTruncatedAtO
 	record := outcomeRecord()
 	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: "below relevance floor"}}
 	record.StopReason = StopReason{Reason: Truncated, Raw: "length"}
-	record.Limits = Limits{MaxOutputTokens: MaxOutputTokens}
+	record.Limits = Limits{JudgementBudget: JudgementBudget}
 
 	outcome := ComputeOutcome(record)
 
@@ -341,5 +341,26 @@ func TestTheVerdictIsDerivedFromTheRecordsFactsAndNeverReadBackFromTheStoredOutc
 
 	if outcome := ComputeOutcome(record); outcome.Verdict != VerdictDelivered {
 		t.Fatalf("verdict = %q, want %q: a stored outcome is a rendering of the facts, never an input to them", outcome.Verdict, VerdictDelivered)
+	}
+}
+
+func TestARunTheRemainingTimeGuardStoppedIsCurtailedLikeAnyOtherBoundThatEndedTheTurnEarly(t *testing.T) {
+	t.Parallel()
+
+	record := outcomeRecord()
+	record.TimeShortfall = "the run's remaining time cannot afford another judgement call: 3s left, and one call needs 45.866s"
+
+	outcome := ComputeOutcome(record)
+
+	if !outcome.Curtailed {
+		t.Fatalf("a run stopped short of its call cap by the remaining-time guard reads as an ordinary ending; outcome = %+v", outcome)
+	}
+	if outcome.Verdict != VerdictCurtailed {
+		t.Fatalf("verdict = %q, want %q", outcome.Verdict, VerdictCurtailed)
+	}
+
+	record.TimeShortfall = ""
+	if ComputeOutcome(record).Curtailed {
+		t.Fatal("the same run reads as curtailed with no shortfall recorded, so the shortfall is not what the verdict turns on")
 	}
 }

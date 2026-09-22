@@ -214,8 +214,12 @@ type Limits struct {
 	AssemblyByteBudget      int     `json:"assemblyByteBudget"`
 	SupplementaryByteBudget int     `json:"supplementaryByteBudget"`
 	MaxModelCalls           int     `json:"maxModelCalls"`
-	MaxOutputTokens         int     `json:"maxOutputTokens"`
 	RelevanceFloor          float64 `json:"relevanceFloor"`
+
+	// DerivationBudget is the output budget the query-derivation call was issued with.
+	DerivationBudget int `json:"derivationBudget"`
+	// JudgementBudget is the output budget each judgement call was issued with.
+	JudgementBudget int `json:"judgementBudget"`
 
 	// MaxFills is the turn's own fill ceiling, never MaxModelCalls.
 	MaxFills int `json:"maxFills"`
@@ -266,6 +270,8 @@ type Record struct {
 	CapReached bool `json:"capReached"`
 	// RecallClosed is true exactly when consecutive barren rounds closed recall for the turn while the model still wanted it.
 	RecallClosed bool `json:"recallClosed"`
+	// TimeShortfall is the arithmetic that stopped the turn where the run's remaining time could not afford another judgement call, empty on every run that was not stopped that way.
+	TimeShortfall string `json:"timeShortfall,omitempty"`
 	// Usage carries one entry per model call, in call order, nil where the endpoint reported none.
 	Usage      []*Usage   `json:"usage"`
 	StopReason StopReason `json:"stopReason"`
@@ -310,6 +316,9 @@ type JudgeInput struct {
 
 	// Window is the update-time bound the run's supplementary recalls are held to, zero when unbounded.
 	Window UpdateWindow
+
+	// MaxOutputTokens is this call site's own output budget; an adapter refuses a call that carries none.
+	MaxOutputTokens int
 }
 
 // JudgeResult is one judgement step's outcome.

@@ -74,7 +74,7 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			return
 		}
 
-		runCtx, cancel := context.WithTimeout(r.Context(), runBound)
+		runCtx, cancel := context.WithTimeout(r.Context(), RunBound)
 		defer cancel()
 
 		record, receipt, err := turn.Run(runCtx, req.Input, req.Subject)
@@ -84,6 +84,8 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 				writeError(w, http.StatusGatewayTimeout, codeRunDeadlineExceeded, "the run did not produce an answer within the service's time limit")
 			case errors.Is(err, loop.ErrSubjectNotFound):
 				writeError(w, http.StatusNotFound, codeSubjectNotFound, "the subject node was not found")
+			case errors.Is(err, loop.ErrRunTimeExhausted):
+				writeError(w, http.StatusGatewayTimeout, codeRunDeadlineExceeded, withCause("the run had too little time left to afford a judgement call, so none was made", err, loop.ErrRunTimeExhausted))
 			case errors.Is(err, loop.ErrModelUnavailable):
 				writeError(w, http.StatusBadGateway, codeModelUnavailable, withCause("the model call did not complete", err, loop.ErrModelUnavailable))
 			default:

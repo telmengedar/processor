@@ -253,8 +253,8 @@ func TestDialExerciseDeclaresTheKnobNoRecordFieldCarriesAndCanNeverClearIt(t *te
 	t.Parallel()
 
 	archive := archiveOf(t, "every dial the record can carry, all at two values",
-		`{"limits":{"candidateLimit":20,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":3,"maxOutputTokens":4096,"relevanceFloor":0,"maxFills":3,"fillSizeFloor":1,"maxFillContentBytes":1,"substanceRatioThreshold":0}}`,
-		`{"limits":{"candidateLimit":21,"assemblyByteBudget":60001,"supplementaryByteBudget":20001,"maxModelCalls":6,"maxOutputTokens":4097,"relevanceFloor":0.63,"maxFills":4,"fillSizeFloor":2,"maxFillContentBytes":2,"substanceRatioThreshold":0.5}}`,
+		`{"limits":{"candidateLimit":20,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":3,"derivationBudget":160,"judgementBudget":192,"relevanceFloor":0,"maxFills":3,"fillSizeFloor":1,"maxFillContentBytes":1,"substanceRatioThreshold":0}}`,
+		`{"limits":{"candidateLimit":21,"assemblyByteBudget":60001,"supplementaryByteBudget":20001,"maxModelCalls":6,"derivationBudget":161,"judgementBudget":193,"relevanceFloor":0.63,"maxFills":4,"fillSizeFloor":2,"maxFillContentBytes":2,"substanceRatioThreshold":0.5}}`,
 	)
 
 	result := DialExercise(archive)

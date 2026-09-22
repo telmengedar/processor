@@ -24,8 +24,8 @@ func TestTheFillPhaseLeavesAWholeJudgementCallReachableInsideTheRunBound(t *test
 	const wantRunBound = 10 * time.Minute
 	const wantFillBound = 90 * time.Second
 
-	if runBound != wantRunBound {
-		t.Fatalf("runBound = %v, want %v", runBound, wantRunBound)
+	if RunBound != wantRunBound {
+		t.Fatalf("RunBound = %v, want %v", RunBound, wantRunBound)
 	}
 	if loop.FillBound != wantFillBound {
 		t.Fatalf("loop.FillBound = %v, want %v", loop.FillBound, wantFillBound)
@@ -33,9 +33,9 @@ func TestTheFillPhaseLeavesAWholeJudgementCallReachableInsideTheRunBound(t *test
 
 	fills := time.Duration(loop.MaxFills) * loop.FillBound
 
-	if claimed := fillPhaseClaim(); claimed >= runBound {
+	if claimed := fillPhaseClaim(); claimed >= RunBound {
 		t.Fatalf("a turn spends the derivation bound %v, then up to %d fills at %v each (%v), and still owes one judgement call at the adapters' own %v bound — %v against a run bound of %v. The fill runs before any judgement call, so a cold-start turn is cancelled before the model is asked anything",
-			loop.DerivationBound, loop.MaxFills, loop.FillBound, fills, judgementFloor(), claimed, runBound)
+			loop.DerivationBound, loop.MaxFills, loop.FillBound, fills, judgementFloor(), claimed, RunBound)
 	}
 }
 
@@ -43,9 +43,9 @@ func TestTheRunBoundStillAffordsRetrievalOnceTheFillPhaseAndOneJudgementCallAreC
 	t.Parallel()
 
 	claimed := fillPhaseClaim()
-	margin := runBound - claimed
+	margin := RunBound - claimed
 
 	if margin < divoid.DefaultTimeout {
-		t.Fatalf("the derivation, the fill phase and one judgement call claim %v of the %v run bound, leaving %v — under the %v a single graph read is allowed, so retrieval has no room of its own", claimed, runBound, margin, divoid.DefaultTimeout)
+		t.Fatalf("the derivation, the fill phase and one judgement call claim %v of the %v run bound, leaving %v — under the %v a single graph read is allowed, so retrieval has no room of its own", claimed, RunBound, margin, divoid.DefaultTimeout)
 	}
 }

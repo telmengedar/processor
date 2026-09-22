@@ -38,7 +38,7 @@ func TestOllamaClientBuiltByAnExternalKeyedLiteralSurvivesTheNilHTTPClientBranch
 
 	c := ollama.Client{}
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: 173})
 	if err == nil {
 		t.Fatal("Judge on a zero-value Client returned no error, want a transport error")
 	}
@@ -64,7 +64,7 @@ func TestOllamaJudgeSendsItsRequestThroughTheHTTPClientSuppliedToNewClient(t *te
 	rt := &recordingTransport{}
 	c := ollama.NewClient("http://model.invalid", "m", "supplied-key", loop.Sampling{}, &http.Client{Transport: rt})
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: 173})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}

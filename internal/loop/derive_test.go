@@ -317,8 +317,8 @@ func TestDeriveQueriesSendsTheRenderedPromptAndReturnsWhatTheTextParsesTo(t *tes
 	if model.prompts[0] != DerivationPrompt(input, derivationPromptTestNow) {
 		t.Fatalf("the derivation sent a prompt other than the rendered one, so what the model was asked is not what this package's tests pin")
 	}
-	if model.tokens[0] != 4096 {
-		t.Fatalf("the derivation asked for %d output tokens, want the turn's own budget of 4096", model.tokens[0])
+	if model.tokens[0] != 160 {
+		t.Fatalf("the derivation asked for %d output tokens, want the derivation site's own budget of 160", model.tokens[0])
 	}
 }
 

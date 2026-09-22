@@ -56,6 +56,19 @@ func run(human io.Writer) int {
 		return 1
 	}
 
+	declaredFloors, err := boot.LoadModelFloors()
+	if err != nil {
+		logger.Error("boot configuration", "error", err)
+		return 1
+	}
+
+	floors, sites, err := ports.Affordability(modelCfg.Protocol, declaredFloors, server.RunBound, condenseConfigured)
+	if err != nil {
+		logger.Error("boot configuration", "error", err)
+		return 1
+	}
+	ports.StateAffordability(logger, floors, sites)
+
 	if err := ports.StateThinkingSuppression(logger, "judgement", modelCfg.Protocol); err != nil {
 		logger.Error("boot configuration", "error", err)
 		return 1
@@ -89,6 +102,7 @@ func run(human io.Writer) int {
 
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 	turn := loop.NewTurn(graph, model, files, systemtext.Text, modelCfg.ID, logger)
+	turn.Floors = floors
 
 	fillPort, err := ports.Fill(condenseCfg, condenseConfigured, ports.FillGraph(graph))
 	if err != nil {

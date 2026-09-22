@@ -282,7 +282,8 @@ type runRecordWire struct {
 		AssemblyByteBudget      int `json:"assemblyByteBudget"`
 		SupplementaryByteBudget int `json:"supplementaryByteBudget"`
 		MaxModelCalls           int `json:"maxModelCalls"`
-		MaxOutputTokens         int `json:"maxOutputTokens"`
+		DerivationBudget        int `json:"derivationBudget"`
+		JudgementBudget         int `json:"judgementBudget"`
 	} `json:"limits"`
 	Sampling struct {
 		Temperature *float64 `json:"temperature"`
@@ -435,13 +436,15 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 		AssemblyByteBudget      int
 		SupplementaryByteBudget int
 		MaxModelCalls           int
-		MaxOutputTokens         int
-	}{20, 60_000, 20_000, 6, 4_096}
+		DerivationBudget        int
+		JudgementBudget         int
+	}{20, 60_000, 20_000, 6, 160, 192}
 	if got.Limits.CandidateLimit != wantLimits.CandidateLimit ||
 		got.Limits.AssemblyByteBudget != wantLimits.AssemblyByteBudget ||
 		got.Limits.SupplementaryByteBudget != wantLimits.SupplementaryByteBudget ||
 		got.Limits.MaxModelCalls != wantLimits.MaxModelCalls ||
-		got.Limits.MaxOutputTokens != wantLimits.MaxOutputTokens {
+		got.Limits.DerivationBudget != wantLimits.DerivationBudget ||
+		got.Limits.JudgementBudget != wantLimits.JudgementBudget {
 		t.Fatalf("record.limits = %+v, want %+v", got.Limits, wantLimits)
 	}
 	if got.Sampling.Temperature == nil || *got.Sampling.Temperature != 0.4 {
@@ -1045,5 +1048,31 @@ func TestRunsCarriesEveryDerivedQueryOntoTheWireAndLeavesTheCauseOffWhenThereIsN
 	}
 	if got.DerivationError != "" {
 		t.Fatalf("record.derivationError = %q on a run that derived; an empty string is what a dropped field decodes to, so this is the assertion that discriminates", got.DerivationError)
+	}
+}
+
+func TestARunWithTooLittleTimeLeftForAJudgementCallIsNotFiledAsAModelFailure(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	graph := stubGraph{anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"}, found: true}
+	rec := postRunsWithContext(t, ctx, newTestTurn(graph), `{"input":"hello","subject":42}`)
+
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("status = %d, want %d — the run ran out of affordable time, which is the service's own clock rather than an upstream failure; body=%s", rec.Code, http.StatusGatewayTimeout, rec.Body.String())
+	}
+	assertErrorCode(t, rec, codeRunDeadlineExceeded)
+
+	message := errorMessage(t, rec)
+	if strings.Contains(message, "the model call did not complete") {
+		t.Fatalf("error.message = %q blames a model call that was never made", message)
+	}
+	if !strings.Contains(message, "so none was made") {
+		t.Fatalf("error.message = %q does not say that no judgement call was attempted", message)
+	}
+	if !strings.Contains(message, "192 output tokens") {
+		t.Fatalf("error.message = %q drops the arithmetic the guard computed, leaving the reader with a bound and no way to recompute it", message)
 	}
 }

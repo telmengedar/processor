@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +28,8 @@ const ThinkingSuppression = "reasoning_effort=none"
 const ThinkingSuppressionStanding = "endpoint capability, beyond the protocol"
 
 const reasoningEffortNone = "none"
+
+var errNoOutputBudget = errors.New("the judgement call carries no output budget: the call site must state the tokens it is allowed")
 
 const chatCompletionsRoute = "/chat/completions"
 
@@ -86,10 +89,14 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 }
 
 func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string) (loop.JudgeResult, int, error) {
+	if in.MaxOutputTokens <= 0 {
+		return loop.JudgeResult{}, 0, fmt.Errorf("%w: %d", errNoOutputBudget, in.MaxOutputTokens)
+	}
+
 	reqBody := chatRequest{
 		Model:           c.modelID,
 		Messages:        buildMessages(in),
-		MaxTokens:       loop.MaxOutputTokens,
+		MaxTokens:       in.MaxOutputTokens,
 		ReasoningEffort: reasoningEffortNone,
 		Tools:           []wireTool{recallTool(), writeFileTool()},
 		Temperature:     c.sampling.Temperature,
