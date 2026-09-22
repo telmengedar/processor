@@ -39,6 +39,24 @@ type capturedRequest struct {
 
 const stopResponse = `{"choices":[{"message":{"content":"the answer"},"finish_reason":"stop"}]}`
 
+func topLevelKeys(t *testing.T, body []byte) map[string]json.RawMessage {
+	t.Helper()
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(body, &keys); err != nil {
+		t.Fatalf("decode request body: %v; body=%s", err, body)
+	}
+	return keys
+}
+
+func judgeOnce(t *testing.T, c *Client) loop.JudgeResult {
+	t.Helper()
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	if err != nil {
+		t.Fatalf("Judge: %v", err)
+	}
+	return result
+}
+
 func TestJudgePostsToChatCompletions(t *testing.T) {
 	t.Parallel()
 

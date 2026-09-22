@@ -421,3 +421,37 @@ func TestEachProtocolsAdapterCarriesItsCallOnTheHTTPClientThePassBoundsRatherTha
 		}
 	}
 }
+
+func TestBootStatesTheSuppressionControlInForceForTheProtocolThePassWillUse(t *testing.T) {
+	model, _ := recordingModel(t, openAICompatCondensation)
+	bootEnv(t, testGraph(t, &graphRecorder{}).URL, model.URL)
+	corpus := writeCorpus(t, oneRowCorpus)
+
+	code, _, human := runCondense(t, "-corpus", corpus, "-dry-run")
+
+	if code != 0 {
+		t.Fatalf("want exit 0, got %d\n%s", code, human)
+	}
+	if !strings.Contains(human, "reasoning_effort=none") {
+		t.Fatalf("the pass states no suppression control at boot, so an operator cannot tell whether its model calls suppress reasoning; log=%s", human)
+	}
+	if !strings.Contains(human, "path=condensation") {
+		t.Fatalf("the stated control does not name the call path it governs; log=%s", human)
+	}
+}
+
+func TestBootStatesTheNativeSuppressionControlWhenTheNativeProtocolIsConfigured(t *testing.T) {
+	t.Setenv("PROCESSOR_MODEL_PROTOCOL", "ollama")
+	model, _ := recordingModel(t, ollamaCondensation)
+	bootEnv(t, testGraph(t, &graphRecorder{}).URL, model.URL)
+	corpus := writeCorpus(t, oneRowCorpus)
+
+	code, _, human := runCondense(t, "-corpus", corpus, "-dry-run")
+
+	if code != 0 {
+		t.Fatalf("want exit 0, got %d\n%s", code, human)
+	}
+	if !strings.Contains(human, "think=false") {
+		t.Fatalf("the pass states the wrong protocol's suppression control at boot; log=%s", human)
+	}
+}

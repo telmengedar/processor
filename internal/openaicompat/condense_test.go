@@ -227,3 +227,12 @@ func TestOpenAICompatDeriveReportsTheEndpointsOwnFailureRatherThanEmptyText(t *t
 		t.Fatalf("Derive reported %q, which drops the endpoint's own sentence", err)
 	}
 }
+
+func condenseOnce(t *testing.T, c *Client) CondenseResult {
+	t.Helper()
+	result, err := c.Condense(context.Background(), "condense this", 4096)
+	if err != nil {
+		t.Fatalf("Condense: %v", err)
+	}
+	return result
+}

@@ -325,4 +325,7 @@ type JudgeResult struct {
 	Usage        *Usage
 	Sampling     Sampling
 	Provider     Provider
+
+	// ReasoningBytes is how much arrived on the response channel every request suppresses and no caller reads, zero when the suppression held.
+	ReasoningBytes int
 }

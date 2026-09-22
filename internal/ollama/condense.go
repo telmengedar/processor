@@ -13,7 +13,6 @@ import (
 const (
 	condenseFrequencyPenalty = 0.0
 	condensePresencePenalty  = 0.0
-	condenseThinking         = false
 )
 
 // SentSampling is the sampling one call carried, decoded back out of the request bytes rather than restated from configuration.
@@ -61,7 +60,7 @@ func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens in
 		Model:    c.modelID,
 		Messages: []wireMessage{{Role: "user", Content: prompt}},
 		Stream:   false,
-		Think:    condenseThinking,
+		Think:    thinkingOff,
 		Options: condenseOptions{
 			NumPredict:       maxOutputTokens,
 			Temperature:      c.sampling.Temperature,

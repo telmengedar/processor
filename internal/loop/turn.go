@@ -345,6 +345,11 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 			return judgement{}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
 		}
 
+		if result.ReasoningBytes > 0 {
+			t.log().Warn("the response carried reasoning on a request that suppressed it: the endpoint took the control and ignored it",
+				"adapter", result.Provider.Adapter, "reasoningBytes", result.ReasoningBytes)
+		}
+
 		judged.answer = result.Answer
 		judged.stop = StopReason{Reason: result.Reason, Raw: result.RawReason}
 		judged.usages = append(judged.usages, result.Usage)

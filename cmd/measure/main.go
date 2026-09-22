@@ -88,6 +88,16 @@ func build(logger *slog.Logger) (*measure.Runner, error) {
 		return nil, err
 	}
 
+	if err := ports.StateThinkingSuppression(logger, "judgement", modelCfg.Protocol); err != nil {
+		return nil, err
+	}
+
+	if condenseConfigured {
+		if err := ports.StateThinkingSuppression(logger, "fill", condenseCfg.Protocol); err != nil {
+			return nil, err
+		}
+	}
+
 	client := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 	substances := measure.NewCondenseGraph(ports.FillGraph(client))
 
