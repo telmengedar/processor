@@ -61,8 +61,8 @@ func writeSummary(result Result, corpusPath string, w io.Writer) {
 	fmt.Fprintf(w, "corpus %s - %d rows (%d labelled, %d control), hash %s\n",
 		corpusPath, result.RowCount, countRows(result, StratumLabelled), countRows(result, StratumControl), shortHash(result.CorpusHash))
 	fmt.Fprintf(w, "arm %s\n", armLine(result))
-	fmt.Fprintf(w, "limits candidateLimit=%d assemblyByteBudget=%d recallScopeReserve=%d\n\n",
-		result.Limits.CandidateLimit, result.Limits.AssemblyByteBudget, result.Limits.RecallScopeReserve)
+	fmt.Fprintf(w, "limits candidateLimit=%d assemblyByteBudget=%d recallScopeReserve=%d substanceRatioThreshold=%g\n\n",
+		result.Limits.CandidateLimit, result.Limits.AssemblyByteBudget, result.Limits.RecallScopeReserve, float64(result.Limits.SubstanceRatioThreshold))
 
 	writeRate(w, StratumLabelled, rateOf(result, StratumLabelled))
 	writeRate(w, StratumControl, rateOf(result, StratumControl))

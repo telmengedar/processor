@@ -99,10 +99,10 @@ func renderSummaryAssembly(b *strings.Builder, record Record) {
 	}
 
 	fmt.Fprintf(b, "  admitted (%d, %s of %d B remaining):\n",
-		len(admitted), summaryBytes(sumDispositionSizes(admitted)), summaryRemainingAfterAnchor(record.Limits, record.Anchor.Size))
+		len(admitted), summaryBytes(sumRenderedSizes(admitted)), summaryRemainingAfterAnchor(record.Limits, record.Anchor.Size))
 	for _, d := range admitted {
-		fmt.Fprintf(b, "    #%-6d %.3f %-13s %8s  %s\n",
-			d.ID, d.Similarity, summaryTrunc(d.Type, summaryTypeRunes), summaryBytes(d.Size), summaryTrunc(d.Name, summaryNameRunes))
+		fmt.Fprintf(b, "    #%-6d %.3f %-13s %8s%s  %s\n",
+			d.ID, d.Similarity, summaryTrunc(d.Type, summaryTypeRunes), summaryBytes(d.RenderedSize), summaryForm(d), summaryTrunc(d.Name, summaryNameRunes))
 	}
 
 	if len(cut) == 0 {
@@ -116,7 +116,7 @@ func renderSummaryAssembly(b *strings.Builder, record Record) {
 }
 
 func renderCutGroup(b *strings.Builder, group cutGroup, indent string) {
-	head := fmt.Sprintf("%s%s (%d, %s):", indent, group.reason, len(group.rows), summaryBytes(sumDispositionSizes(group.rows)))
+	head := fmt.Sprintf("%s%s (%d, %s):", indent, group.reason, len(group.rows), summaryBytes(sumRenderedSizes(group.rows)))
 	renderIDGroup(b, head, dispositionIDs(group.rows), indent)
 }
 
@@ -230,7 +230,7 @@ func renderRecallResults(b *strings.Builder, results []Disposition) {
 	}
 
 	fmt.Fprintf(b, "      -> %d results, %d admitted (%s)%s\n",
-		len(results), len(admitted), summaryBytes(sumDispositionSizes(admitted)), cutText)
+		len(results), len(admitted), summaryBytes(sumRenderedSizes(admitted)), cutText)
 
 	if len(admitted) == 0 {
 		b.WriteString("      (none admitted)\n")
@@ -323,12 +323,19 @@ func dispositionIDs(dispositions []Disposition) []string {
 	return ids
 }
 
-func sumDispositionSizes(dispositions []Disposition) int {
+func sumRenderedSizes(dispositions []Disposition) int {
 	total := 0
 	for _, d := range dispositions {
-		total += d.Size
+		total += d.RenderedSize
 	}
 	return total
+}
+
+func summaryForm(d Disposition) string {
+	if d.Form != FormSubstance {
+		return ""
+	}
+	return fmt.Sprintf(" %s of %s", FormSubstance, summaryBytes(d.Size))
 }
 
 func summaryRemainingAfterAnchor(limits Limits, anchorSize int) int {

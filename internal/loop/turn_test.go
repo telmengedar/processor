@@ -1405,8 +1405,8 @@ func TestTheTopCutWarnFiresWhenTheTopCandidateWasRefusedForItsSize(t *testing.T)
 		Anchor:  AnchorSummary{Size: 100},
 		Limits:  Limits{AssemblyByteBudget: AssemblyByteBudget},
 		Candidates: []Disposition{
-			{Rank: 1, ID: 900, Name: "BigDoc", CutReason: cutReasonOversized, Included: false, Size: 43_000},
-			{Rank: 2, ID: 901, Name: "Doc", Included: true, Size: 200},
+			{Rank: 1, ID: 900, Name: "BigDoc", CutReason: cutReasonOversized, Included: false, Size: 43_000, RenderedSize: 43_000},
+			{Rank: 2, ID: 901, Name: "Doc", Included: true, Size: 200, RenderedSize: 200},
 		},
 	}
 
@@ -1493,7 +1493,7 @@ func TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped
 		t.Fatalf("Run: %v", err)
 	}
 
-	wantBlock, wantDispositions := Assemble(graph.node, graph.candidates, AssemblyByteBudget, RelevanceFloor)
+	wantBlock, wantDispositions := Assemble(graph.node, graph.candidates, AssemblyByteBudget, RelevanceFloor, SubstanceRatioThreshold)
 	if record.Block != wantBlock {
 		t.Fatalf("record.Block changed when the top candidate was dropped:\ngot  %q\nwant %q", record.Block, wantBlock)
 	}
@@ -1833,5 +1833,35 @@ func TestTheAnchorIsNeverAdmittedAsACandidateAgainstTheBlockThatAlreadyRendersIt
 	}
 	if strings.Count(record.Block, "anchor body") != 1 {
 		t.Fatalf("the block carries the anchor's body %d times, want once", strings.Count(record.Block, "anchor body"))
+	}
+}
+
+func TestTheTopCutWarningReportsTheSizeTheBudgetRefusedNotTheContentsOwn(t *testing.T) {
+	t.Parallel()
+
+	var logBuf strings.Builder
+	turn := &Turn{logger: slog.New(slog.NewTextHandler(&logBuf, nil))}
+
+	record := Record{
+		Subject: 42,
+		Anchor:  AnchorSummary{ID: 1, Size: 100},
+		Limits:  Limits{AssemblyByteBudget: AssemblyByteBudget, CandidateLimit: 2},
+		Candidates: []Disposition{
+			{Rank: 1, ID: 100, Name: "BigDoc", Size: 40_000, RenderedSize: 9_000, Form: FormSubstance, CutReason: cutReasonByteBudget},
+			{Rank: 2, ID: 101, Name: "Small", Size: 10, RenderedSize: 10, Form: FormContent, Included: true},
+		},
+	}
+
+	turn.logFinished(record, WriteReceipt{}, 0)
+
+	warning := topCutLogLine(logBuf.String())
+	if warning == "" {
+		t.Fatalf("no top-cut record for a rank-1 candidate cut for want of room; log:\n%s", logBuf.String())
+	}
+	if !strings.Contains(warning, "candidateSize=9000") {
+		t.Fatalf("the top-cut warning does not report the 9000 bytes the budget refused; a diagnostic that names a size the budget never weighed cannot be read against the remaining it is printed beside:\n%s", warning)
+	}
+	if strings.Contains(warning, "candidateSize=40000") {
+		t.Fatalf("the top-cut warning reports the content's own length beside a budget quantity:\n%s", warning)
 	}
 }

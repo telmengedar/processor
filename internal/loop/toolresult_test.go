@@ -182,7 +182,7 @@ func TestRenderToolResultNarrowsTheQueryWhenEveryHitWasRefusedForItsSize(t *test
 		{ID: 2, Type: "documentation", Name: "Nine", Similarity: 0.8, Content: strings.Repeat("y", 9_000)},
 	}
 
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, RelevanceFloor, testBlockOccupancy)
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, RelevanceFloor, testBlockOccupancy, SubstanceRatioThreshold)
 
 	if len(admitted) != 0 {
 		t.Fatalf("test setup error: %d rows were admitted, want none so the empty-result branch is the one under test", len(admitted))
