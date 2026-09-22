@@ -12,6 +12,7 @@ type chatRequest struct {
 	Model    string        `json:"model"`
 	Messages []wireMessage `json:"messages"`
 	Stream   bool          `json:"stream"`
+	Think    bool          `json:"think"`
 	Tools    []wireTool    `json:"tools,omitempty"`
 	Options  wireOptions   `json:"options"`
 }
@@ -100,6 +101,7 @@ type chatResponse struct {
 
 type wireResponseMessage struct {
 	Content   string         `json:"content"`
+	Thinking  string         `json:"thinking"`
 	ToolCalls []wireToolCall `json:"tool_calls"`
 }
 
@@ -152,9 +154,10 @@ func toolArguments(r loop.ToolExchange) json.RawMessage {
 
 func translate(wire chatResponse) loop.JudgeResult {
 	result := loop.JudgeResult{
-		Answer:    wire.Message.Content,
-		RawReason: wire.DoneReason,
-		Usage:     translateUsage(wire.PromptEvalCount, wire.EvalCount),
+		Answer:         wire.Message.Content,
+		RawReason:      wire.DoneReason,
+		ReasoningBytes: len(wire.Message.Thinking),
+		Usage:          translateUsage(wire.PromptEvalCount, wire.EvalCount),
 	}
 
 	if len(wire.Message.ToolCalls) > 0 {

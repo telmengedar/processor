@@ -36,6 +36,7 @@ type condenseRequest struct {
 	Model            string        `json:"model"`
 	Messages         []wireMessage `json:"messages"`
 	MaxTokens        int           `json:"max_tokens"`
+	ReasoningEffort  string        `json:"reasoning_effort,omitempty"`
 	Temperature      *float64      `json:"temperature,omitempty"`
 	TopP             *float64      `json:"top_p,omitempty"`
 	FrequencyPenalty float64       `json:"frequency_penalty"`
@@ -47,12 +48,13 @@ type condenseResponse struct {
 	Choices []wireChoice `json:"choices"`
 }
 
-// Condense runs one offline condensation call: a single user message, no tools, and the repetition penalties pinned to zero.
+// Condense runs one offline condensation call: a single user message, no tools, the repetition penalties pinned to zero, and the endpoint's reasoning channel switched off.
 func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens int) (CondenseResult, error) {
 	body, err := json.Marshal(condenseRequest{
 		Model:            c.modelID,
 		Messages:         []wireMessage{{Role: "user", Content: prompt}},
 		MaxTokens:        maxOutputTokens,
+		ReasoningEffort:  reasoningEffortNone,
 		Temperature:      c.sampling.Temperature,
 		TopP:             c.sampling.TopP,
 		FrequencyPenalty: condenseFrequencyPenalty,

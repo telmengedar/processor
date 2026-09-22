@@ -20,6 +20,14 @@ const DefaultTimeout = 5 * time.Minute
 
 const adapterName = "ollama"
 
+// ThinkingSuppression names the control this adapter sends on every request to keep the model's reasoning channel off.
+const ThinkingSuppression = "think=false"
+
+// ThinkingSuppressionStanding states where that control comes from, which for this adapter is the chat protocol itself.
+const ThinkingSuppressionStanding = "protocol key"
+
+const thinkingOff = false
+
 const chatRoute = "/api/chat"
 
 const (
@@ -90,6 +98,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		Model:    c.modelID,
 		Messages: buildMessages(in),
 		Stream:   false,
+		Think:    thinkingOff,
 		Tools:    []wireTool{recallTool(), writeFileTool()},
 		Options: wireOptions{
 			NumPredict:  loop.MaxOutputTokens,

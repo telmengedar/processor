@@ -253,3 +253,42 @@ func TestAMeasuredRunWithTheFillOnCondensesACandidateAndStillSendsTheGraphNoWrit
 		t.Fatalf("the receipt reads %q, want %q", result.Written.State, loop.NotStored)
 	}
 }
+
+func TestBootStatesTheSuppressionControlInForceForTheProtocolTheRunWillUse(t *testing.T) {
+	recorder := &writeRecorder{}
+	bootEnv(t, testGraph(t, recorder).URL, testModel(t).URL)
+
+	code, _, human := runMeasure(t, taskText, "-subject", "101")
+
+	if code != 0 {
+		t.Fatalf("want exit 0, got %d\n%s", code, human)
+	}
+	if !strings.Contains(human, "reasoning_effort=none") {
+		t.Fatalf("a measured run states no suppression control at boot, so its wall-clock cannot be read against a known reasoning setting; log=%s", human)
+	}
+	if !strings.Contains(human, "path=judgement") {
+		t.Fatalf("the stated control does not name the call path it governs; log=%s", human)
+	}
+	if strings.Contains(human, "path=fill") {
+		t.Fatalf("a measured run states a fill control with no fill model configured; log=%s", human)
+	}
+}
+
+func TestBootStatesAControlForEveryProtocolAMeasuredRunSendsOnNotOnlyTheJudgementOne(t *testing.T) {
+	t.Setenv("PROCESSOR_MODEL_PROTOCOL", "ollama")
+	t.Setenv("PROCESSOR_CONDENSE_MODEL_PROTOCOL", "openai-compat")
+	bootEnv(t, testGraph(t, &writeRecorder{}).URL, testModel(t).URL)
+	condenseEnv(t, testCondenseModel(t, "a condensed account").URL)
+
+	_, _, human := runMeasure(t, taskText, "-subject", "101")
+
+	if !strings.Contains(human, "think=false") {
+		t.Fatalf("a measured run states no control for its judgement protocol; log=%s", human)
+	}
+	if !strings.Contains(human, "reasoning_effort=none") {
+		t.Fatalf("the fill runs on a second protocol whose control the run never states, so the log names one of two mechanisms in force; log=%s", human)
+	}
+	if !strings.Contains(human, "path=judgement") || !strings.Contains(human, "path=fill") {
+		t.Fatalf("the two stated controls cannot be told apart by the path they govern; log=%s", human)
+	}
+}

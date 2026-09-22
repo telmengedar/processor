@@ -20,6 +20,14 @@ const DefaultTimeout = 5 * time.Minute
 
 const adapterName = "openai-compat"
 
+// ThinkingSuppression names the control this adapter sends on every request to keep the model's reasoning channel off.
+const ThinkingSuppression = "reasoning_effort=none"
+
+// ThinkingSuppressionStanding states where that control comes from, which for this adapter is the endpoint rather than the protocol.
+const ThinkingSuppressionStanding = "endpoint capability, beyond the protocol"
+
+const reasoningEffortNone = "none"
+
 const chatCompletionsRoute = "/chat/completions"
 
 const (
@@ -79,12 +87,13 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 
 func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string) (loop.JudgeResult, int, error) {
 	reqBody := chatRequest{
-		Model:       c.modelID,
-		Messages:    buildMessages(in),
-		MaxTokens:   loop.MaxOutputTokens,
-		Tools:       []wireTool{recallTool(), writeFileTool()},
-		Temperature: c.sampling.Temperature,
-		TopP:        c.sampling.TopP,
+		Model:           c.modelID,
+		Messages:        buildMessages(in),
+		MaxTokens:       loop.MaxOutputTokens,
+		ReasoningEffort: reasoningEffortNone,
+		Tools:           []wireTool{recallTool(), writeFileTool()},
+		Temperature:     c.sampling.Temperature,
+		TopP:            c.sampling.TopP,
 	}
 
 	body, err := json.Marshal(reqBody)

@@ -20,6 +20,7 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 	"github.com/telmengedar/processor/internal/ollama"
 	"github.com/telmengedar/processor/internal/openaicompat"
+	"github.com/telmengedar/processor/internal/ports"
 )
 
 const (
@@ -71,6 +72,11 @@ func run(args []string, machine, human io.Writer) int {
 
 	model, err := newModel(modelCfg, sampling, &http.Client{Timeout: condenseTimeout})
 	if err != nil {
+		logger.Error("boot configuration", "error", err)
+		return exitError
+	}
+
+	if err := ports.StateThinkingSuppression(logger, "condensation", modelCfg.Protocol); err != nil {
 		logger.Error("boot configuration", "error", err)
 		return exitError
 	}

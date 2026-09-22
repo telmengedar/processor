@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -19,11 +20,11 @@ import (
 )
 
 func main() {
-	os.Exit(run())
+	os.Exit(run(os.Stderr))
 }
 
-func run() int {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+func run(human io.Writer) int {
+	logger := slog.New(slog.NewTextHandler(human, nil))
 
 	addr, err := boot.LoadHTTPAddr()
 	if err != nil {
@@ -53,6 +54,18 @@ func run() int {
 	if err != nil {
 		logger.Error("boot configuration", "error", err)
 		return 1
+	}
+
+	if err := ports.StateThinkingSuppression(logger, "judgement", modelCfg.Protocol); err != nil {
+		logger.Error("boot configuration", "error", err)
+		return 1
+	}
+
+	if condenseConfigured {
+		if err := ports.StateThinkingSuppression(logger, "fill", condenseCfg.Protocol); err != nil {
+			logger.Error("boot configuration", "error", err)
+			return 1
+		}
 	}
 
 	ln, err := net.Listen("tcp", addr)

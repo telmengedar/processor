@@ -57,19 +57,6 @@ func TestTheNativeCondensationCallSwitchesThinkingOffSoNoReasoningStreamDrawsOnT
 	}
 }
 
-func TestTheNativeJudgementCallSendsNoThinkKeyBecauseOnlyTheCondensationCallSuppressesReasoning(t *testing.T) {
-	t.Parallel()
-
-	srv, captured := capturingServer(t, doneResponse)
-	c := NewClient(srv.URL, "ai/gemma4", "", loop.Sampling{}, srv.Client())
-
-	judgeOnce(t, c)
-
-	if _, present := topLevelKeys(t, captured.Body)["think"]; present {
-		t.Fatalf("the judgement request carries a think key, which the condensation path alone was meant to set; body=%s", captured.Body)
-	}
-}
-
 func TestTheNativeCondensationCallOffersNoToolSoTheModelCannotAnswerWithARecallRequest(t *testing.T) {
 	t.Parallel()
 

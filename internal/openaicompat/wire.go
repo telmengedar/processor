@@ -9,12 +9,13 @@ import (
 )
 
 type chatRequest struct {
-	Model       string        `json:"model"`
-	Messages    []wireMessage `json:"messages"`
-	MaxTokens   int           `json:"max_tokens"`
-	Tools       []wireTool    `json:"tools,omitempty"`
-	Temperature *float64      `json:"temperature,omitempty"`
-	TopP        *float64      `json:"top_p,omitempty"`
+	Model           string        `json:"model"`
+	Messages        []wireMessage `json:"messages"`
+	MaxTokens       int           `json:"max_tokens"`
+	ReasoningEffort string        `json:"reasoning_effort,omitempty"`
+	Tools           []wireTool    `json:"tools,omitempty"`
+	Temperature     *float64      `json:"temperature,omitempty"`
+	TopP            *float64      `json:"top_p,omitempty"`
 }
 
 type wireMessage struct {
@@ -100,6 +101,7 @@ type wireChoice struct {
 
 type wireResponseMessage struct {
 	Content   *string        `json:"content"`
+	Reasoning string         `json:"reasoning"`
 	ToolCalls []wireToolCall `json:"tool_calls"`
 }
 
@@ -169,7 +171,8 @@ func translate(wire chatResponse) (loop.JudgeResult, error) {
 	choice := wire.Choices[0]
 
 	result := loop.JudgeResult{
-		Usage: translateUsage(wire.Usage),
+		ReasoningBytes: len(choice.Message.Reasoning),
+		Usage:          translateUsage(wire.Usage),
 	}
 	if choice.Message.Content != nil {
 		result.Answer = *choice.Message.Content
