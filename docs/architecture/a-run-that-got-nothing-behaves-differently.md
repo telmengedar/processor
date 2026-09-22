@@ -13,6 +13,12 @@
 
 ---
 
+> **Revision 3, 2026-09-22 — P1 is implemented and open as PR #102, and QA re-ran F-1 against the
+> production computation rather than the reference script, reproducing it exactly (§13).** This revision
+> settles the one question review raised that this document had left to inference: §6.4 now **decides** what
+> becomes of the pre-existing shutout WARN, says what distinguishes the two alarms for an operator reading
+> logs, and corrects a conflation in its own subsumption claim.
+>
 > **Revision 2, 2026-09-22 — F-1 ran against all 42 archived records before implementation, and it moved
 > this document.** Two specification repairs in §6.2 (`curtailed` restricted to tool-dispatch bounds;
 > `curtailed` ordered above `empty`), `acted` demoted from predicate to recorded fact, and four premise
@@ -299,6 +305,14 @@ a recorded predicate, so `curtailed` with `produced: false` is fully legible on 
 guarantees it stays recomputable. Under the repaired precedence the 42 records split **`curtailed` 4,
 `empty` 2, `ungrounded` 1, `delivered` 35.**
 
+**The swap takes nothing from the marker it replaces, and that is a contract rather than a coincidence.**
+`CapReached` is true *only* when the call cap was hit while the model still wanted a tool — so
+`stopReason: answered` and `capReached: true` **cannot co-occur**, an `answered` run having by definition
+asked for nothing. **`curtailed` therefore cannot take a record that `summary.go`'s old `answered`-yet-empty
+marker would have flagged**, and #13034, the only such record in 42, lands on `empty` under either order.
+This is written down because it is exactly the sort of fact every future reader of the precedence table
+otherwise re-derives from scratch.
+
 **`ungrounded` is the load-bearing one and it is deliberately not an accusation.** #13065's correction is
 binding here: the harness must not dress a defensible behaviour as a defect. `ungrounded` states one fact —
 *this system's memory contributed nothing to this answer* — which is precisely the situation Toni wants
@@ -315,9 +329,11 @@ only produced-but-ungrounded run in 42. Two readings of that number, and neither
   forward, and this document does not. The honest statement is the narrow one: **the verdict has one
   instance, the corpus could not have held many more, and the next few post-floor runs decide it.**
 
-**Kill condition, so that a verdict is not carried indefinitely on a single incident.** If `ungrounded`
-does not fire again across the next ten runs taken after the floor, **demote it**: drop it from the verdict
-set, keep `grounded` as a recorded predicate, and let `delivered` cover both. That costs one line and loses
+**Kill condition, counted forward from a measured baseline rather than from a bare promise.** The baseline
+is the complete non-`delivered` set at `6e132a3`, tabulated in §13: **`curtailed` #13031, #13040, #13718,
+#13719 · `empty` #13034, #14249 · `ungrounded` #14247**, against 35 `delivered`. If `ungrounded` does not
+fire again across the next ten runs taken after the floor, **demote it**: drop it from the verdict set,
+keep `grounded` as a recorded predicate, and let `delivered` cover both. That costs one line and loses
 nothing, because F-2 keeps every old record recomputable under the replacement vocabulary.
 
 ### 6.3 Where the verdict lands, and why not in the answer
@@ -337,11 +353,57 @@ answer means instructing the model to disclose it, which is compliance-dependent
 
 ### 6.4 This resolves #14535 better than widening the predicate
 
-#14535 names three shapes for the missing floor-shutout warning. The verdict subsumes all three:
+**First, a correction to this section's own claim.** It read *"#14535 names three shapes … the verdict
+subsumes all three"*, which conflates two different threes. #14535's three **shapes** are three candidate
+*remedies* — widen the predicate, add a distinct WARN, say it in the answer. What the verdict subsumes is
+the three **cut reasons**, plus a fourth case none of the remedies covered. Stated correctly:
+
 `ungrounded` fires on a floor shutout, on a self-produced shutout, on a byte-budget shutout **and** on a
-run that retrieved nothing at all — one signal, with the discriminating facts recorded beside it. The
-existing rank-1 `cutForWantOfRoom` WARN is **left alone**; it answers a different question (*the best match
-was too big*) and is still correct where it fires.
+run that retrieved nothing at all — one signal, with the discriminating facts recorded beside it. Of
+#14535's three remedies it takes the third's **target** (the surface an operator actually meets) and
+rejects its **mechanism** (§6.3: the answer's prose is the model's to write, not the loop's).
+
+**Second — the question review raised, decided here rather than left to inference. Both existing WARNs
+survive, and neither is redundant.**
+
+- The **rank-1 `cutForWantOfRoom` WARN** is untouched. It answers *the best match was too big*, which no
+  verdict asks.
+- The **shutout WARN** — *"assembly admitted no candidate: the block carried the anchor alone"* — also
+  survives. It fires alongside the new non-`delivered` WARN on a produced total shutout, and review asked
+  whether that is one condition alarmed twice. **It is not: the two are not coextensive in either
+  direction.**
+
+| situation | shutout WARN | verdict WARN | what the pair tells the operator |
+|---|---|---|---|
+| retrieval returned **no candidates at all** | **silent** — its guard requires `len(Candidates) > 0` | `ungrounded` | the failure was upstream of admission; there was nothing to cut |
+| candidates returned, all cut, **a supplementary recall then admitted a row** | **fires** | silent — the run is `delivered` | **the recovery worked.** Initial assembly failed and the run got there anyway |
+| candidates returned, all cut, nothing recovered it | fires | `ungrounded` | assembly failed and stayed failed. This is #14247 |
+
+**How that table was established, because only one of its rows has an instance.** The non-coextensiveness
+is **structural, not empirical**: the shutout WARN reads `record.Candidates` behind a `len(...) > 0` guard,
+and `grounded` additionally reads `ToolCalls[].Results[].Included`, so each can be true while the other is
+false by construction. Checked against the 42 records, **row 3 has exactly one instance (#14247) and rows 1
+and 2 have none** — no archived run retrieved zero candidates, and none was rescued by a supplementary
+**Row two is the load-bearing one, and it is why the shutout WARN must not be deleted as part of P1:** it
+is the only signal that says *the initial block was empty and something rescued it*. **It has never fired
+in 42 records**, and that is the point rather than an objection — **P2 and P3 exist to make it fire**, a
+relaxed re-admission being precisely an initial assembly that admitted nothing followed by a run that
+proceeds anyway. Deleting the stage alarm now would remove the instrument that shows P3 working, one phase
+before P3 ships — and would do it on the evidence that the instrument has never yet had anything to report.
+alarm — *what did the whole run end up with?*, asked once, after every round. That is §2's partition
+applied to the log rather than to the detectors, and it is why either can fire without the other.
+
+**Row two is the load-bearing one, and it is why the shutout WARN must not be deleted as part of P1:** it
+is the only signal that says *the initial block was empty and something rescued it*. That case is rare
+today and **P2 and P3 exist to make it common** — a relaxed re-admission is precisely an initial assembly
+that admitted nothing, followed by a run that proceeds anyway. Deleting the stage alarm now would remove
+the instrument that shows P3 working, one phase before P3 ships.
+
+**What P3 owes it, and P1 does not.** Once the ladder can rescue an empty assembly, the shutout WARN's own
+wording — *"the block carried the anchor alone"* — becomes **false on exactly the runs it is most worth
+reading**, because the block will carry the relaxed rows. **Amending that sentence belongs to P3, in P3's
+own PR**, beside the relaxation label it needs anyway. It is not folded into P1, which is merged-ready and
+whose claim about the WARNs is correct as this section now states it.
 
 ---
 
@@ -610,6 +672,27 @@ Falsified by any record carrying only the final attempt.
 **F-8 (cost, P2).** Over a corpus of runs that repeat a recall, total input tokens strictly decrease and no
 run's admitted row set shrinks. This is measurable from records alone, with **no model-in-the-loop
 instrument**.
+
+**F-9 (P3, mechanical — read the caveat before quoting it).** An `ungrounded` run whose candidates were cut
+**for the floor alone** must become `delivered` under P3, because the relaxation admits those rows by
+construction. **That measures the mechanism firing, not the answer improving.** `grounded` claims nothing
+about correctness (§6.2), and a verdict moving `ungrounded` → `delivered` is a statement about what reached
+the model. Anyone quoting *"P3 took `ungrounded` from 1 to 0"* as a quality result has committed #13534
+§3's anti-pattern using this document's own instrument.
+
+**The baseline all of these count forward from**, measured at `6e132a3` over all 42 records:
+
+| verdict | records | n |
+|---|---|---|
+| `curtailed` | #13031, #13040, #13718, #13719 | 4 |
+| `empty` | #13034, #14249 | 2 |
+| `ungrounded` | #14247 | 1 |
+| `delivered` | the remaining records | 35 |
+
+**Reproduced independently at implementation time.** QA re-ran F-1 against the production computation
+rather than the reference script and obtained this table exactly, with all four named records landing where
+this section requires. The precedence mutant moves it to **`curtailed` 0 / `empty` 6** and reddens four
+tests, so the ordering §6.2 repaired is pinned by the suite rather than merely asserted here.
 
 ### What this design cannot verify, stated plainly
 
