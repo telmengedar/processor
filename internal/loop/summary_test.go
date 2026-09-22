@@ -189,7 +189,7 @@ func TestRenderSummaryPrintsAShortAnswerWholeWithNoExcerptNotice(t *testing.T) {
 	}
 }
 
-func TestRenderSummaryFlagsAnEmptyAnswerAgainstATerminalReasonOfAnswered(t *testing.T) {
+func TestRenderSummaryCallsAnEmptyAnswerUnderATerminalReasonOfAnsweredWhatItIs(t *testing.T) {
 	t.Parallel()
 
 	record := summaryRecord()
@@ -198,25 +198,75 @@ func TestRenderSummaryFlagsAnEmptyAnswerAgainstATerminalReasonOfAnswered(t *test
 
 	summary := RenderSummary(record, summaryInstant())
 
-	if !strings.Contains(summary, "EMPTY (0 B)  <-- terminal reason says answered") {
-		t.Fatalf("an empty answer under a terminal reason of answered is not flagged; the contradiction is the one thing a reader needs.\nsummary:\n%s", summary)
+	if !strings.Contains(summary, "verdict  empty") {
+		t.Fatalf("a run that stopped as answered having produced nothing is not named empty; the contradiction is the one thing a reader needs.\nsummary:\n%s", summary)
+	}
+	if !strings.Contains(summary, `OUTCOME  answered (raw "stop")`) {
+		t.Fatalf("the terminal reason is gone from the summary; the verdict names the outcome and the reason still names how the endpoint stopped.\nsummary:\n%s", summary)
+	}
+	if !strings.Contains(summary, "EMPTY (0 B)") {
+		t.Fatalf("the summary does not report the empty answer at all.\nsummary:\n%s", summary)
 	}
 }
 
-func TestRenderSummaryLeavesAnEmptyAnswerUnflaggedWhenTheTerminalReasonExpectsOne(t *testing.T) {
+func TestRenderSummaryNamesTheVerdictThePredicatesBehindItAndTheRoundsThatActed(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.ToolCalls = []ToolCallRecord{
+		{Tool: ToolRecall, Query: "first"},
+		{Tool: ToolRecall, Query: "second"},
+		{Tool: ToolWriteFile, Path: "index.html"},
+		{Tool: ToolRecall, Query: "refused", Error: errCallCapReached},
+	}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	for _, want := range []string{
+		"  verdict  delivered (produced yes, grounded yes, curtailed no)\n",
+		"  acted    recall 2, writeFile 1\n",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("the summary does not carry %q; the verdict and the facts under it are what distinguish a run that got nothing from one that delivered.\nsummary:\n%s", want, summary)
+		}
+	}
+}
+
+func TestRenderSummaryLeavesTheActedLineOutOfARunThatDispatchedNoRound(t *testing.T) {
+	t.Parallel()
+
+	summary := RenderSummary(summaryRecord(), summaryInstant())
+
+	if strings.Contains(summary, "acted") {
+		t.Fatalf("a run that dispatched no tool round carries an acted line.\nsummary:\n%s", summary)
+	}
+}
+
+func TestRenderSummaryNamesARoundWithNoRecordedToolRatherThanLeavingTheActedCountAnonymous(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.ToolCalls = []ToolCallRecord{{Query: "a round from before the tool name was written down"}}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	if want := "  acted    " + summaryNoTool + " 1\n"; !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not carry %q.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryStatesTheVerdictOfAnArchivedRecordThatCarriesNoneOfItsOwn(t *testing.T) {
 	t.Parallel()
 
 	record := summaryRecord()
 	record.Answer = ""
-	record.StopReason = StopReason{Reason: WantsWrite, Raw: "stop"}
+	record.CapReached = true
+	record.Outcome = Outcome{}
 
 	summary := RenderSummary(record, summaryInstant())
 
-	if strings.Contains(summary, "terminal reason says answered") {
-		t.Fatalf("an empty answer under %q is flagged as a contradiction, want the flag only under %q.\nsummary:\n%s", WantsWrite, Answered, summary)
-	}
-	if !strings.Contains(summary, "EMPTY (0 B)") {
-		t.Fatalf("the summary does not report the empty answer at all.\nsummary:\n%s", summary)
+	if !strings.Contains(summary, "verdict  curtailed") {
+		t.Fatalf("a record written before the verdict existed renders no verdict; the verdict is a function of the record and every record can be read under it.\nsummary:\n%s", summary)
 	}
 }
 
