@@ -25,7 +25,7 @@ func TestJudgeSendsANativeUserMessageByteEqualToRenderUserContentOfTheSameBlockA
 	srv, captured := capturingServer(t, doneResponse)
 	c := NewClient(srv.URL, "the-model-id", "", loop.Sampling{}, srv.Client())
 
-	in := loop.JudgeInput{System: "the system text", Block: block, Input: input, Now: instant}
+	in := loop.JudgeInput{System: "the system text", Block: block, Input: input, Now: instant, MaxOutputTokens: judgeBudget}
 	if _, err := c.Judge(context.Background(), in); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestJudgeSendsANativeToolResultByteEqualToRenderToolResultOfTheSameExchange
 	srv, captured := capturingServer(t, doneResponse)
 	c := NewClient(srv.URL, "the-model-id", "", loop.Sampling{}, srv.Client())
 
-	in := loop.JudgeInput{System: "the system text", Block: "block", Input: "in", PriorTools: []loop.ToolExchange{exchange}}
+	in := loop.JudgeInput{System: "the system text", Block: "block", Input: "in", PriorTools: []loop.ToolExchange{exchange}, MaxOutputTokens: judgeBudget}
 	if _, err := c.Judge(context.Background(), in); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}

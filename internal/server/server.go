@@ -9,8 +9,10 @@ import (
 	"time"
 )
 
+// RunBound is the deadline one run is given, and the bound every model call inside it ultimately shares.
+const RunBound = 10 * time.Minute
+
 const (
-	runBound          = 10 * time.Minute
 	shutdownGrace     = 11*time.Minute + 15*time.Second
 	readHeaderTimeout = 5 * time.Second
 )

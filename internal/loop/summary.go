@@ -30,6 +30,7 @@ const (
 
 const (
 	summaryNoProvider   = "[provider not recorded]"
+	summaryAbsentField  = "—"
 	summaryNoTool       = "[tool not recorded]"
 	summaryBlockOmitted = "not rendered here"
 	summaryNoFillModel  = "[model not recorded]"
@@ -72,13 +73,20 @@ func renderSummaryHeader(b *strings.Builder, record Record, at time.Time) {
 	}
 
 	limits := record.Limits
-	fmt.Fprintf(b, "limits   %d cands / %d B content / %d B suppl / %d calls / %d tok%s\n",
+	fmt.Fprintf(b, "limits   %d cands / %d B content / %d B suppl / %d calls / %s tok derive / %s tok judge%s\n",
 		limits.CandidateLimit, limits.AssemblyByteBudget, limits.SupplementaryByteBudget,
-		limits.MaxModelCalls, limits.MaxOutputTokens, summarySampling(record.Sampling))
+		limits.MaxModelCalls, summaryBudget(limits.DerivationBudget), summaryBudget(limits.JudgementBudget), summarySampling(record.Sampling))
 
 	if record.Workspace != "" {
 		fmt.Fprintf(b, "workdir  %s\n", record.Workspace)
 	}
+}
+
+func summaryBudget(tokens int) string {
+	if tokens == 0 {
+		return summaryAbsentField
+	}
+	return strconv.Itoa(tokens)
 }
 
 func renderSummaryAssembly(b *strings.Builder, record Record) {
@@ -249,6 +257,10 @@ func renderSummaryOutcome(b *strings.Builder, record Record) {
 
 	fmt.Fprintf(b, "\nOUTCOME  %s (raw %q), %d/%d model calls, cap %s%s\n",
 		record.StopReason.Reason, record.StopReason.Raw, record.ModelCalls, record.Limits.MaxModelCalls, reached, summaryRecallBound(record))
+
+	if record.TimeShortfall != "" {
+		fmt.Fprintf(b, "  stopped  %s\n", summaryTrunc(record.TimeShortfall, summaryErrorRunes))
+	}
 
 	renderSummaryVerdict(b, ComputeOutcome(record))
 	renderSummaryAnswer(b, record)

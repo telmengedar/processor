@@ -16,7 +16,6 @@ const (
 	// MaxModelCalls caps a turn's model calls: 6 is the measured knee, 17 of 20 sampled tasks reaching their own terminal.
 	MaxModelCalls           = 6
 	SupplementaryByteBudget = 20_000
-	MaxOutputTokens         = 4_096
 	// RelevanceFloor is 0.63: the well-answered corpus keeps 13/25 required documents at this value.
 	RelevanceFloor = 0.63
 	// BlockOccupancy is how many rows the per-candidate payload ceiling reserves room for in the byte budget; zero leaves no ceiling in force.
@@ -25,6 +24,7 @@ const (
 
 const (
 	errCallCapReached      = "call cap reached"
+	errRunTimeShort        = "the run's remaining time cannot afford another judgement call"
 	errNoWorkingDirectory  = "no working directory is configured"
 	errRecallClosedToModel = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
 	errRecallClosedCause   = "recall closed"
@@ -52,6 +52,9 @@ var ErrGraphUnavailable = errors.New("graph unavailable")
 
 // ErrModelUnavailable wraps any failure completing the model call itself.
 var ErrModelUnavailable = errors.New("model unavailable")
+
+// ErrRunTimeExhausted marks a judgement call the run's remaining time could not afford: a call that was never made, and therefore not a model failure.
+var ErrRunTimeExhausted = errors.New("run time exhausted")
 
 // ErrWriteRejected marks a write the working directory refused; its message is shown to the model.
 var ErrWriteRejected = errors.New("write rejected")
@@ -107,6 +110,9 @@ type Turn struct {
 
 	// ModelID is the model id sent with every judgement step, echoed into Record.Model.
 	ModelID string
+
+	// Floors is the deployment's declared model rates the remaining-time guard prices a judgement call at; the zero value is the product's own declaration.
+	Floors Floors
 
 	clock func() time.Time
 
@@ -175,7 +181,8 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 			AssemblyByteBudget:      AssemblyByteBudget,
 			SupplementaryByteBudget: SupplementaryByteBudget,
 			MaxModelCalls:           MaxModelCalls,
-			MaxOutputTokens:         MaxOutputTokens,
+			DerivationBudget:        DerivationBudget,
+			JudgementBudget:         JudgementBudget,
 			RelevanceFloor:          RelevanceFloor,
 			MaxFills:                MaxFills,
 			FillSizeFloor:           FillSizeFloor,
@@ -197,6 +204,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 	record.ModelCalls = judged.modelCalls
 	record.CapReached = judged.capReached
 	record.RecallClosed = judged.recallClosed
+	record.TimeShortfall = judged.timeShortfall
 	record.Usage = judged.usages
 	record.StopReason = judged.stop
 	record.Sampling = judged.sampling
@@ -311,16 +319,35 @@ func summarizeUsage(usages []*Usage) (reports, inTokens, outTokens int) {
 }
 
 type judgement struct {
-	answer       string
-	stop         StopReason
-	toolCalls    []ToolCallRecord
-	workspace    string
-	modelCalls   int
-	capReached   bool
-	recallClosed bool
-	usages       []*Usage
-	sampling     Sampling
-	provider     Provider
+	answer        string
+	stop          StopReason
+	toolCalls     []ToolCallRecord
+	workspace     string
+	modelCalls    int
+	capReached    bool
+	recallClosed  bool
+	timeShortfall string
+	usages        []*Usage
+	sampling      Sampling
+	provider      Provider
+}
+
+func (t *Turn) judgementShortfall(ctx context.Context) string {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return ""
+	}
+
+	floors := t.Floors.Resolved()
+	need := JudgementCost(floors)
+	remaining := deadline.Sub(t.now())
+	if remaining >= need {
+		return ""
+	}
+
+	return BoundCause(fmt.Sprintf("%s: %s left, and one call needs %s — %d output tokens at the declared floor of %g tokens per second, plus %d prompt bytes at the declared floor of %g bytes per second",
+		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond),
+		JudgementBudget, floors.TokensPerSecond, JudgementPromptCeiling, floors.PromptBytesPerSecond))
 }
 
 func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, window UpdateWindow, admitted []Disposition) (judgement, error) {
@@ -331,15 +358,26 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 	final := false
 
 	for {
+		if shortfall := t.judgementShortfall(ctx); shortfall != "" {
+			if judged.modelCalls == 0 {
+				return judgement{}, fmt.Errorf("%w: %s", ErrRunTimeExhausted, shortfall)
+			}
+			t.log().Warn("the run stopped short of its call cap: its remaining time cannot afford another judgement call at the declared floor",
+				"modelCalls", judged.modelCalls, "shortfall", shortfall)
+			judged.timeShortfall = shortfall
+			break
+		}
+
 		judged.modelCalls++
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
-			System:     t.System,
-			Block:      block,
-			Input:      input,
-			PriorTools: exchanges,
-			Now:        now,
-			Window:     window,
+			System:          t.System,
+			Block:           block,
+			Input:           input,
+			PriorTools:      exchanges,
+			Now:             now,
+			Window:          window,
+			MaxOutputTokens: JudgementBudget,
 		})
 		if jerr != nil {
 			return judgement{}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)

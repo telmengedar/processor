@@ -248,8 +248,8 @@ func TestTheDrainGraceIsTheRunBoundPlusTheMeasuredWriteBackCeilingPlusAStatedMar
 	const wantRunBound = 10 * time.Minute
 	const wantGrace = 11*time.Minute + 15*time.Second
 
-	if runBound != wantRunBound {
-		t.Fatalf("runBound = %v, want %v", runBound, wantRunBound)
+	if RunBound != wantRunBound {
+		t.Fatalf("RunBound = %v, want %v", RunBound, wantRunBound)
 	}
 	if shutdownGrace != wantGrace {
 		t.Fatalf("shutdownGrace = %v, want %v", shutdownGrace, wantGrace)
@@ -257,8 +257,8 @@ func TestTheDrainGraceIsTheRunBoundPlusTheMeasuredWriteBackCeilingPlusAStatedMar
 
 	calls := writeBackGraphCallCeiling()
 	allowance := time.Duration(calls) * divoid.DefaultTimeout
-	if derived := runBound + allowance + graceMargin; derived != shutdownGrace {
-		t.Fatalf("runBound %v + a measured write-back ceiling of %d graph calls at %v each (%v) + margin %v = %v, but shutdownGrace is %v", runBound, calls, divoid.DefaultTimeout, allowance, graceMargin, derived, shutdownGrace)
+	if derived := RunBound + allowance + graceMargin; derived != shutdownGrace {
+		t.Fatalf("RunBound %v + a measured write-back ceiling of %d graph calls at %v each (%v) + margin %v = %v, but shutdownGrace is %v", RunBound, calls, divoid.DefaultTimeout, allowance, graceMargin, derived, shutdownGrace)
 	}
 }
 
@@ -268,7 +268,7 @@ func TestTheDrainGraceKeepsAPositiveMarginOverTheBoundItMustCover(t *testing.T) 
 	if graceMargin <= 0 {
 		t.Fatalf("graceMargin = %v, want a positive headroom — the margin is the whole reason the grace does not sit on its own bound", graceMargin)
 	}
-	covered := runBound + time.Duration(writeBackGraphCallCeiling())*divoid.DefaultTimeout
+	covered := RunBound + time.Duration(writeBackGraphCallCeiling())*divoid.DefaultTimeout
 	if shutdownGrace <= covered {
 		t.Fatalf("shutdownGrace = %v, but a run plus its write-back can take %v — the grace sits on its own bound with no headroom", shutdownGrace, covered)
 	}

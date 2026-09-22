@@ -15,7 +15,7 @@ func TestJudgeDecodesAWriteToolCallAsWantsWriteWithThePathAndContent(t *testing.
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestJudgeFlagsUnparseableArgumentsOnAWriteToolCallWithoutInventingAPath(t *
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestJudgeAcceptsAWriteToolCallWithEmptyContentRatherThanCallingItMalformed(
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestJudgeTreatsACallToAToolThatWasNeverOfferedAsUnrecognised(t *testing.T) 
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -106,7 +106,8 @@ func TestJudgeReplaysAPriorWriteRoundAsTheWriteToolAndItsReceipt(t *testing.T) {
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
 	in := loop.JudgeInput{
-		System: "sys", Block: "block", Input: "in",
+		MaxOutputTokens: judgeBudget,
+		System:          "sys", Block: "block", Input: "in",
 		PriorTools: []loop.ToolExchange{
 			{Tool: loop.ToolWriteFile, Path: "index.html", Content: "<h1>hi</h1>", Bytes: 11},
 		},
@@ -155,7 +156,8 @@ func TestJudgeReplaysARefusedWriteRoundAsTheRefusalTheModelMustSee(t *testing.T)
 
 	const refusal = "write rejected: path must not leave the working directory"
 	in := loop.JudgeInput{
-		System: "sys", Block: "block", Input: "in",
+		MaxOutputTokens: judgeBudget,
+		System:          "sys", Block: "block", Input: "in",
 		PriorTools: []loop.ToolExchange{
 			{Tool: loop.ToolWriteFile, Path: "../escape.html", Content: "x", Error: refusal},
 		},

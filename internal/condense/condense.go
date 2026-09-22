@@ -306,12 +306,17 @@ func isProse(contentType string) bool {
 	return normalised == "" || strings.HasPrefix(normalised, "text/")
 }
 
-func maxOutputTokens(content string) int {
-	estimate := int(math.Ceil(float64(len(content)) / bytesPerToken))
+// OutputBudget is the output budget one condensation of contentBytes of content is issued with.
+func OutputBudget(contentBytes int) int {
+	estimate := int(math.Ceil(float64(contentBytes) / bytesPerToken))
 	if estimate < minOutputTokens {
 		return minOutputTokens
 	}
 	return estimate
+}
+
+func maxOutputTokens(content string) int {
+	return OutputBudget(len(content))
 }
 
 func ratio(substanceSize, contentSize int) float64 {

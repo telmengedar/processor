@@ -39,9 +39,11 @@ type capturedRequest struct {
 
 const doneResponse = `{"message":{"role":"assistant","content":"the answer"},"done":true,"done_reason":"stop"}`
 
+const judgeBudget = 173
+
 func judgeOnce(t *testing.T, c *Client) loop.JudgeResult {
 	t.Helper()
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -112,7 +114,7 @@ func TestJudgeNativeRequestCarriesModelSystemBlockInputAndBothTools(t *testing.T
 	srv, captured := capturingServer(t, doneResponse)
 	c := NewClient(srv.URL, "the-model-id", "", loop.Sampling{}, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "the system text", Block: "the block", Input: "the input"}); err != nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "the system text", Block: "the block", Input: "the input", MaxOutputTokens: judgeBudget}); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
 
@@ -240,8 +242,8 @@ func TestJudgeSendsTheOutputCapAsNumPredictBecauseTheNativeProtocolHasNoMaxToken
 	if err := json.Unmarshal(options["num_predict"], &numPredict); err != nil {
 		t.Fatalf("options carries no numeric num_predict: %v; options=%v", err, options)
 	}
-	if numPredict != loop.MaxOutputTokens {
-		t.Fatalf("options.num_predict = %d, want %d", numPredict, loop.MaxOutputTokens)
+	if numPredict != judgeBudget {
+		t.Fatalf("options.num_predict = %d, want the %d the call site asked for", numPredict, judgeBudget)
 	}
 }
 
@@ -318,9 +320,10 @@ func TestJudgeReplaysPriorToolRoundsAsAssistantToolCallsAndNamedToolResults(t *t
 	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
 
 	in := loop.JudgeInput{
-		System: "sys",
-		Block:  "block",
-		Input:  "in",
+		MaxOutputTokens: judgeBudget,
+		System:          "sys",
+		Block:           "block",
+		Input:           "in",
 		PriorTools: []loop.ToolExchange{{
 			Tool:    loop.ToolWriteFile,
 			Path:    "site/index.html",
@@ -379,9 +382,10 @@ func TestJudgeReplaysToolArgumentsAsAJSONObjectRatherThanAnEncodedString(t *test
 	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
 
 	in := loop.JudgeInput{
-		System: "sys",
-		Block:  "block",
-		Input:  "in",
+		MaxOutputTokens: judgeBudget,
+		System:          "sys",
+		Block:           "block",
+		Input:           "in",
 		PriorTools: []loop.ToolExchange{{
 			Tool:    loop.ToolWriteFile,
 			Path:    "site/index.html",
@@ -711,7 +715,7 @@ func TestJudgeSurfacesTheNativeErrorStringWhichIsNotAnErrorObject(t *testing.T) 
 
 	c := NewClient(srv.URL, "no-such-model:1b", "", loop.Sampling{}, srv.Client())
 
-	_, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	_, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
 	if err == nil {
 		t.Fatal("Judge returned no error for a 404, want one")
 	}
@@ -728,7 +732,7 @@ func TestJudgeOnUnreachableNativeHostReturnsAnError(t *testing.T) {
 
 	c := NewClient("http://127.0.0.1:1", "model-x", "", loop.Sampling{}, &http.Client{})
 
-	_, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	_, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
 	if err == nil {
 		t.Fatal("Judge returned no error against an unreachable host, want one")
 	}

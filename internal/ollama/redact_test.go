@@ -79,7 +79,7 @@ func assertCredentialRedacted(t *testing.T, err error, composed, mustKeep string
 }
 
 func judgeInput() loop.JudgeInput {
-	return loop.JudgeInput{System: "sys", Block: "block", Input: "in"}
+	return loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget}
 }
 
 func TestOllamaJudgeRedactsTheCredentialFromTheBuildRequestError(t *testing.T) {

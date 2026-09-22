@@ -32,6 +32,9 @@ const (
 
 	envModelTopP = "PROCESSOR_MODEL_TOP_P"
 
+	envFloorTokensPerSecond      = "PROCESSOR_MODEL_FLOOR_TOKENS_PER_SECOND"
+	envFloorPromptBytesPerSecond = "PROCESSOR_MODEL_FLOOR_PROMPT_BYTES_PER_SECOND"
+
 	envCondenseModelProtocol    = "PROCESSOR_CONDENSE_MODEL_PROTOCOL"
 	envCondenseModelURL         = "PROCESSOR_CONDENSE_MODEL_URL"
 	envCondenseModelID          = "PROCESSOR_CONDENSE_MODEL_ID"
@@ -90,6 +93,42 @@ func LoadModel() (ModelConfig, error) {
 // LoadCondenseModel returns the fill's model configuration and whether one is configured at all; PROCESSOR_CONDENSE_MODEL_URL absent means configured is false, with a nil error and no fallback to PROCESSOR_MODEL_*.
 func LoadCondenseModel() (cfg ModelConfig, configured bool, err error) {
 	return loadCondenseModel(lookupEnv)
+}
+
+// FloorsConfig is what the deployment declares its model endpoint delivers, nil in either member where the operator declared nothing.
+type FloorsConfig struct {
+	TokensPerSecond      *float64
+	PromptBytesPerSecond *float64
+}
+
+// LoadModelFloors returns the deployment's declared generation and prompt-processing floors; a non-positive declaration is a startup error, because it asserts an endpoint that never finishes.
+func LoadModelFloors() (FloorsConfig, error) {
+	return loadModelFloors(lookupEnv)
+}
+
+func loadModelFloors(lookup lookupFunc) (FloorsConfig, error) {
+	tokens, err := positiveFloatEnv(lookup, envFloorTokensPerSecond)
+	if err != nil {
+		return FloorsConfig{}, err
+	}
+
+	promptBytes, err := positiveFloatEnv(lookup, envFloorPromptBytesPerSecond)
+	if err != nil {
+		return FloorsConfig{}, err
+	}
+
+	return FloorsConfig{TokensPerSecond: tokens, PromptBytesPerSecond: promptBytes}, nil
+}
+
+func positiveFloatEnv(lookup lookupFunc, key string) (*float64, error) {
+	val, err := optionalFloatEnv(lookup, key)
+	if err != nil {
+		return nil, err
+	}
+	if val != nil && *val <= 0 {
+		return nil, fmt.Errorf("%s is %v, which is not a rate a model endpoint can deliver at; declare the tokens or bytes per second this deployment asserts its endpoint sustains, or leave it unset for the product's own declaration", key, *val)
+	}
+	return val, nil
 }
 
 // LoadWorkspaceDir returns the root for run working directories, empty when the variable is absent.

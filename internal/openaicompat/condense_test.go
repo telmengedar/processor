@@ -171,7 +171,7 @@ func TestTheJudgementCallStillCarriesItsToolsSoTheCondensationPathChangedNothing
 	srv, captured := condenseServer(t, `{"choices":[{"message":{"content":"an answer"},"finish_reason":"stop"}]}`)
 	client := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	if _, err := client.Judge(context.Background(), loop.JudgeInput{System: "s", Block: "b", Input: "i"}); err != nil {
+	if _, err := client.Judge(context.Background(), loop.JudgeInput{System: "s", Block: "b", Input: "i", MaxOutputTokens: judgeBudget}); err != nil {
 		t.Fatalf("want the judgement call to succeed, got %v", err)
 	}
 

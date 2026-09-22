@@ -52,7 +52,8 @@ func summaryRecord() Record {
 			AssemblyByteBudget:      60000,
 			SupplementaryByteBudget: 20000,
 			MaxModelCalls:           6,
-			MaxOutputTokens:         4096,
+			DerivationBudget:        160,
+			JudgementBudget:         192,
 			MaxFills:                MaxFills,
 			FillSizeFloor:           8000,
 			MaxFillContentBytes:     100000,
@@ -510,12 +511,12 @@ func TestRenderSummaryNamesTheAdapterAndEndpointThatServedTheRun(t *testing.T) {
 	}
 }
 
-func TestRenderSummaryStatesEveryLimitTheRunWasBoundBy(t *testing.T) {
+func TestRenderSummaryStatesEveryLimitTheRunWasBoundByIncludingABudgetPerCallSite(t *testing.T) {
 	t.Parallel()
 
 	summary := RenderSummary(summaryRecord(), summaryInstant())
 
-	const want = "limits   20 cands / 60000 B content / 20000 B suppl / 6 calls / 4096 tok"
+	const want = "limits   20 cands / 60000 B content / 20000 B suppl / 6 calls / 160 tok derive / 192 tok judge"
 	if !strings.Contains(summary, want) {
 		t.Fatalf("the summary does not state %q, the five limits this run was bound by.\nsummary:\n%s", want, summary)
 	}
@@ -549,7 +550,7 @@ func TestRenderSummaryReportsTemperatureAndTopPEachUnderItsOwnName(t *testing.T)
 
 	summary := RenderSummary(record, summaryInstant())
 
-	const want = "4096 tok  temp=0.2 topP=0.95"
+	const want = "192 tok judge  temp=0.2 topP=0.95"
 	if !strings.Contains(summary, want) {
 		t.Fatalf("the summary does not state %q; the two values differ so that reporting one under the other's name is visible.\nsummary:\n%s", want, summary)
 	}
@@ -560,7 +561,7 @@ func TestRenderSummaryLeavesTheSamplingFieldsOutWhenTheRunSetNeither(t *testing.
 
 	summary := RenderSummary(summaryRecord(), summaryInstant())
 
-	if !strings.Contains(summary, "4096 tok\n") {
+	if !strings.Contains(summary, "192 tok judge\n") {
 		t.Fatalf("the limits line does not end at the token cap on a run that set no sampling parameter.\nsummary:\n%s", summary)
 	}
 	if strings.Contains(summary, "temp=") || strings.Contains(summary, "topP=") {
@@ -1017,5 +1018,36 @@ func TestRenderSummaryAccountsASubstanceRenderedCandidateByWhatTheBlockCarried(t
 	}
 	if strings.Contains(summary, "admitted (2, 44.4 kB") {
 		t.Fatalf("the admitted total is the sum of the content sizes; the budget was never spent on the 43.3 kB the substance replaced.\nsummary:\n%s", summary)
+	}
+}
+
+func TestALegacyRecordCarryingNoPerSiteBudgetRendersThemAsAbsentRatherThanAsZero(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Limits.DerivationBudget = 0
+	record.Limits.JudgementBudget = 0
+
+	summary := RenderSummary(record, summaryInstant())
+
+	const want = "6 calls / — tok derive / — tok judge"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the limits line does not state %q; a record written before the budgets existed carries the field at zero, and a zero token budget is a claim the run was allowed to generate nothing.summary:%s", want, summary)
+	}
+	if strings.Contains(summary, "0 tok derive") || strings.Contains(summary, "0 tok judge") {
+		t.Fatalf("the limits line reads a gap as a zero.summary:%s", summary)
+	}
+}
+
+func TestARecordCarryingItsPerSiteBudgetsStillRendersTheNumbersRatherThanTheAbsentMarker(t *testing.T) {
+	t.Parallel()
+
+	summary := RenderSummary(summaryRecord(), summaryInstant())
+
+	if !strings.Contains(summary, "160 tok derive / 192 tok judge") {
+		t.Fatalf("a record carrying both budgets does not state them.summary:%s", summary)
+	}
+	if strings.Contains(summary, "— tok") {
+		t.Fatalf("a record carrying both budgets renders one of them as absent.summary:%s", summary)
 	}
 }
