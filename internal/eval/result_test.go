@@ -9,6 +9,8 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
+const formRuleTestThreshold loop.SubstanceRatio = 0.592
+
 func anchorNode() loop.Anchor {
 	return loop.Anchor{ID: 100, Type: "documentation", Name: "Subject", Content: "the subject body"}
 }
@@ -24,7 +26,7 @@ func TestSweepReportsAShutoutWhenEveryCandidateWasOversized(t *testing.T) {
 		{ID: 200, Content: strings.Repeat("x", loop.AssemblyByteBudget+1)},
 		{ID: 201, Content: strings.Repeat("y", loop.AssemblyByteBudget+1)},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0, loop.SubstanceRatioThreshold)
 
 	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -45,7 +47,7 @@ func TestSweepReportsAShutoutWhenEveryCandidateWasOversized(t *testing.T) {
 func TestSweepReportsNoShutoutWhenTheCandidateSetItselfWasEmpty(t *testing.T) {
 	t.Parallel()
 
-	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget, 0)
+	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget, 0, loop.SubstanceRatioThreshold)
 
 	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -61,7 +63,7 @@ func TestSweepRecordsThatTheAnchorAlsoAppearedAmongTheCandidates(t *testing.T) {
 		{ID: 100, Content: "the subject body"},
 		{ID: 201, Content: "another body"},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0, loop.SubstanceRatioThreshold)
 
 	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -80,7 +82,7 @@ func TestSweepRecordsAnAnchorCandidateTheBudgetCutAsPresentButNotAdmitted(t *tes
 		{ID: 100, Content: strings.Repeat("x", loop.AssemblyByteBudget)},
 		{ID: 201, Content: "another body"},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0, loop.SubstanceRatioThreshold)
 
 	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -96,7 +98,7 @@ func TestSweepRecordsNoAnchorDuplicationWhenTheSubjectIsNotAmongTheCandidates(t 
 	t.Parallel()
 
 	candidates := []loop.Candidate{{ID: 201, Content: "another body"}}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0, loop.SubstanceRatioThreshold)
 
 	got := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -113,7 +115,7 @@ func TestSweepRecordsTheAdmittedByteTotalBesideTheBudget(t *testing.T) {
 		{ID: 200, Content: "aaaa"},
 		{ID: 201, Content: "bbbbb"},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0, loop.SubstanceRatioThreshold)
 
 	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -136,7 +138,7 @@ func TestSweepCountsOnlyRunRecordsAsSelfProducedAndNotOtherSessionLogs(t *testin
 		{ID: 201, Type: divoid.RunNodeType, Name: "a session log another agent wrote", Content: "b"},
 		{ID: 202, Type: "documentation", Name: divoid.RunNamePrefix + " lookalike", Content: "c"},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0, loop.SubstanceRatioThreshold)
 
 	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -152,7 +154,7 @@ func TestSweepRecordsTheTopSimilarityOfTheCandidateSet(t *testing.T) {
 		{ID: 200, Similarity: 0.6388, Content: "a"},
 		{ID: 201, Similarity: 0.6704, Content: "b"},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0, loop.SubstanceRatioThreshold)
 
 	got := BuildRow(labelledRow(Required{Node: 200, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -167,7 +169,7 @@ func TestResultHeaderCarriesTheCorpusHashAndTheLoopLimits(t *testing.T) {
 	corpus := Corpus{Hash: "a-corpus-hash", Rows: []Row{labelledRow(), labelledRow()}}
 	sweptAt := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
 
-	got := NewResult(corpus, Derivations{}, sweptAt)
+	got := NewResult(corpus, Derivations{}, sweptAt, loop.SubstanceRatioThreshold)
 
 	if got.CorpusHash != "a-corpus-hash" {
 		t.Fatalf("CorpusHash = %q, want the hash of the corpus that produced the result", got.CorpusHash)
@@ -207,7 +209,7 @@ func TestNewResultCarriesTheHandAuthoredAndBlindGeneratedRowCountsAlongsideTheDe
 		Sources: map[string]string{"r01": SourceHandAuthored, "r02": SourceHandAuthored, "r03": SourceBlindGenerated},
 	}
 
-	got := NewResult(corpus, derivations, time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC))
+	got := NewResult(corpus, derivations, time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC), loop.SubstanceRatioThreshold)
 
 	if got.DerivedRows != 3 {
 		t.Fatalf("DerivedRows = %d, want 3", got.DerivedRows)
@@ -236,7 +238,7 @@ func TestNewResultLeavesProvenanceUnrecordedWhenTheSidecarNamesNoSource(t *testi
 		Sources: map[string]string{"r01": ""},
 	}
 
-	got := NewResult(corpus, derivations, time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC))
+	got := NewResult(corpus, derivations, time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC), loop.SubstanceRatioThreshold)
 
 	if got.ProvenanceRecorded {
 		t.Fatal("ProvenanceRecorded = true, want false: r01 names no source")
@@ -335,7 +337,7 @@ func TestSweepRetainsEveryCandidateItSawInRankOrderIncludingTheOnesTheBudgetCut(
 		{ID: 403, Similarity: 0.77, Content: strings.Repeat("x", loop.AssemblyByteBudget)},
 		{ID: 404, Similarity: 0.48, Content: strings.Repeat("c", loop.AssemblyByteBudget)},
 	}
-	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0)
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0, loop.SubstanceRatioThreshold)
 
 	got := BuildRow(labelledRow(Required{Node: 403, Hash: "h", Why: "w"}), nil, dispositions)
 
@@ -360,5 +362,37 @@ func TestSweepRetainsEveryCandidateItSawInRankOrderIncludingTheOnesTheBudgetCut(
 			t.Fatalf("Candidates[%d] (#%d) has Included = %v, want %v: a candidate the byte budget cut is retained exactly as an admitted one is",
 				i, got.Candidates[i].ID, got.Candidates[i].Included, wantIncluded[i])
 		}
+	}
+}
+
+func TestBuildRowAdmittedBytesCountsTheRenderedFormNotTheContent(t *testing.T) {
+	t.Parallel()
+
+	candidates := []loop.Candidate{
+		{ID: 200, Content: strings.Repeat("x", 1000), Substance: strings.Repeat("z", 300)},
+		{ID: 201, Content: strings.Repeat("y", 500)},
+	}
+
+	_, dispositions := loop.Assemble(anchorNode(), candidates, loop.AssemblyByteBudget, 0, formRuleTestThreshold)
+
+	got := BuildRow(Row{ID: "r01", Stratum: StratumLabelled, Subject: 100}, nil, dispositions)
+
+	if got.AdmittedCount != 2 {
+		t.Fatalf("AdmittedCount = %d, want 2", got.AdmittedCount)
+	}
+	if got.AdmittedBytes != 800 {
+		t.Fatalf("AdmittedBytes = %d, want 800 - a 300-byte substance plus a 500-byte content, never the 1000 bytes the substance replaced", got.AdmittedBytes)
+	}
+}
+
+func TestNewResultRecordsTheSubstanceRatioTheSweepRanAt(t *testing.T) {
+	t.Parallel()
+
+	corpus := Corpus{Hash: "h"}
+
+	got := NewResult(corpus, Derivations{}, time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC), 0.25)
+
+	if got.Limits.SubstanceRatioThreshold != 0.25 {
+		t.Fatalf("Limits.SubstanceRatioThreshold = %v, want 0.25 - the dial the sweep ran at, not the one the loop ships", got.Limits.SubstanceRatioThreshold)
 	}
 }

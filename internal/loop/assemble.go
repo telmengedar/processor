@@ -29,16 +29,24 @@ const nudgeNarrowQuery = "The graph has matches for this, but they did not fit t
 
 const nudgeEscalate = "This does not appear to be in the graph - say so plainly and name what is missing, rather than repeating the same recall.\n"
 
+// SubstanceRatio is a substance's byte length as a fraction of its content's.
+type SubstanceRatio float64
+
+// SubstanceRatioThreshold is the form rule's shipped dial, zero: no ratio is below it, so every candidate renders as content until a later change raises it.
+const SubstanceRatioThreshold SubstanceRatio = 0
+
+const formHeaderKey = "form"
+
 // Assemble is a pure function: no I/O, no clock, no randomness.
-func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64) (block string, dispositions []Disposition) {
-	admitted, dispositions := admit(candidates, budget, len(anchor.Content), floor, BlockOccupancy)
+func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64, threshold SubstanceRatio) (block string, dispositions []Disposition) {
+	admitted, dispositions := admit(candidates, budget, len(anchor.Content), floor, BlockOccupancy, threshold)
 
 	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
 
-	return renderBlock(anchor, admitted, len(candidates) > 0), dispositions
+	return renderBlock(anchor, admitted, len(candidates) > 0, threshold), dispositions
 }
 
-func admit(candidates []Candidate, budget, spent int, floor float64, occupancy int) (admitted []Candidate, dispositions []Disposition) {
+func admit(candidates []Candidate, budget, spent int, floor float64, occupancy int, threshold SubstanceRatio) (admitted []Candidate, dispositions []Disposition) {
 	remaining := budget - spent
 	if remaining < 0 {
 		remaining = 0
@@ -51,7 +59,8 @@ func admit(candidates []Candidate, budget, spent int, floor float64, occupancy i
 
 	cumulative := 0
 	for i, c := range candidates {
-		payload := len(renderedPayload(c))
+		form, rendered := renderedPayload(c, threshold)
+		payload := len(rendered)
 
 		d := Disposition{
 			Rank:               i + 1,
@@ -65,6 +74,8 @@ func admit(candidates []Candidate, budget, spent int, floor float64, occupancy i
 			SubstanceAvailable: c.Substance != "",
 			SubstanceSize:      len(c.Substance),
 			PayloadCap:         capBytes,
+			Form:               form,
+			RenderedSize:       payload,
 		}
 
 		switch {
@@ -99,8 +110,14 @@ func refusedForItsSize(payload, ceiling int) bool {
 	return ceiling != noPayloadCeiling && payload > ceiling
 }
 
-func renderedPayload(c Candidate) string {
-	return c.Content
+func renderedPayload(c Candidate, threshold SubstanceRatio) (Form, string) {
+	if c.Substance == "" || c.Content == "" {
+		return FormContent, c.Content
+	}
+	if SubstanceRatio(float64(len(c.Substance))/float64(len(c.Content))) < threshold {
+		return FormSubstance, c.Substance
+	}
+	return FormContent, c.Content
 }
 
 const (
@@ -108,8 +125,14 @@ const (
 	sectionResult    = "RESULT"
 )
 
-func renderSection(b *strings.Builder, section string, c Candidate) {
-	fmt.Fprintf(b, "===== %s =====\nid: %d\ntype: %s\nname: %s\n\n%s\n", section, c.ID, c.Type, c.Name, renderedPayload(c))
+func renderSection(b *strings.Builder, section string, c Candidate, threshold SubstanceRatio) {
+	form, rendered := renderedPayload(c, threshold)
+
+	fmt.Fprintf(b, "===== %s =====\nid: %d\ntype: %s\nname: %s\n", section, c.ID, c.Type, c.Name)
+	if form == FormSubstance {
+		fmt.Fprintf(b, "%s: %s\n", formHeaderKey, form)
+	}
+	fmt.Fprintf(b, "\n%s\n", rendered)
 }
 
 // RenderUserContent composes the user message: the request, the instant it states and the window it was bounded to when one applied, the assembled block, then the same request again.
@@ -169,7 +192,7 @@ func RenderToolResult(r ToolExchange) string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		renderSection(&b, sectionResult, c)
+		renderSection(&b, sectionResult, c, r.SubstanceRatioThreshold)
 	}
 	return b.String()
 }
@@ -190,7 +213,7 @@ func anyCutForWantOfRoom(dispositions []Disposition) bool {
 // renderBlock renders the fixed layout of design §6.3: the anchor first
 // (the run's stable subject), then the admitted candidates ascending by
 // id (the volatile part).
-func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool) string {
+func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, threshold SubstanceRatio) string {
 	var b strings.Builder
 
 	b.WriteString("===== ANCHOR =====\n")
@@ -200,7 +223,7 @@ func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool) string
 
 	for _, c := range admitted {
 		b.WriteString("\n")
-		renderSection(&b, sectionCandidate, c)
+		renderSection(&b, sectionCandidate, c, threshold)
 	}
 
 	if len(admitted) == 0 && consideredAny {

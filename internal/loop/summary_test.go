@@ -34,11 +34,11 @@ func summaryRecord() Record {
 			Size: 3408,
 		},
 		Candidates: []Disposition{
-			{Rank: 1, ID: 11, Type: "task", Name: "Pitch-Site hosting", Similarity: 0.689, Size: 1111, Included: true},
-			{Rank: 2, ID: 12, Type: "documentation", Name: "Profilgenerator wireframe", Similarity: 0.659, Size: 43300, Included: true},
-			{Rank: 3, ID: 13, Type: "session-log", Name: "processor-run earlier", Similarity: 0.640, Size: 87880, CutReason: "self-produced"},
-			{Rank: 4, ID: 14, Type: "session-log", Name: "processor-run earlier still", Similarity: 0.638, Size: 83181, CutReason: "self-produced"},
-			{Rank: 5, ID: 15, Type: "documentation", Name: "Something large", Similarity: 0.630, Size: 20000, CutReason: "byte budget exceeded"},
+			{Rank: 1, ID: 11, Type: "task", Name: "Pitch-Site hosting", Similarity: 0.689, Size: 1111, RenderedSize: 1111, Included: true},
+			{Rank: 2, ID: 12, Type: "documentation", Name: "Profilgenerator wireframe", Similarity: 0.659, Size: 43300, RenderedSize: 43300, Included: true},
+			{Rank: 3, ID: 13, Type: "session-log", Name: "processor-run earlier", Similarity: 0.640, Size: 87880, RenderedSize: 87880, CutReason: "self-produced"},
+			{Rank: 4, ID: 14, Type: "session-log", Name: "processor-run earlier still", Similarity: 0.638, Size: 83181, RenderedSize: 83181, CutReason: "self-produced"},
+			{Rank: 5, ID: 15, Type: "documentation", Name: "Something large", Similarity: 0.630, Size: 20000, RenderedSize: 20000, CutReason: "byte budget exceeded"},
 		},
 		Block:      strings.Repeat("assembled block body ", 100),
 		Answer:     "the webpage is written",
@@ -267,8 +267,8 @@ func TestRenderSummaryNamesTheToolOfEveryRoundInTheOrderTheRunTookThem(t *testin
 	record := summaryRecord()
 	record.ToolCalls = []ToolCallRecord{
 		{Tool: ToolRecall, Source: ToolSourceNative, Query: "repository creation", Results: []Disposition{
-			{Rank: 1, ID: 21, Size: 400, Included: true},
-			{Rank: 2, ID: 22, Size: 90000, CutReason: "byte budget exceeded"},
+			{Rank: 1, ID: 21, Size: 400, RenderedSize: 400, Included: true},
+			{Rank: 2, ID: 22, Size: 90000, RenderedSize: 90000, CutReason: "byte budget exceeded"},
 		}},
 		{Tool: ToolWriteFile, Source: ToolSourceContent, Path: "index.html", Bytes: 502},
 	}
@@ -294,8 +294,8 @@ func TestRenderSummaryRendersALegacyRoundWithNoToolFieldAsARecallRatherThanABlan
 	record.ToolCalls = []ToolCallRecord{{
 		Query: "Go comment-discipline annex ruling on package doc comments",
 		Results: []Disposition{
-			{Rank: 1, ID: 41, Size: 5000, Included: true},
-			{Rank: 2, ID: 42, Size: 90000, CutReason: "byte budget exceeded"},
+			{Rank: 1, ID: 41, Size: 5000, RenderedSize: 5000, Included: true},
+			{Rank: 2, ID: 42, Size: 90000, RenderedSize: 90000, CutReason: "byte budget exceeded"},
 		},
 	}}
 
@@ -594,7 +594,7 @@ func TestRenderSummaryDenominatorReflectsTrueHeadroomOnceTheAnchorTookItsShare(t
 	record.Limits.AssemblyByteBudget = 60000
 	record.Anchor.Size = 59500
 	record.Candidates = []Disposition{
-		{Rank: 1, ID: 11, Type: "task", Name: "small", Similarity: 0.9, Size: 494, Included: true},
+		{Rank: 1, ID: 11, Type: "task", Name: "small", Similarity: 0.9, Size: 494, RenderedSize: 494, Included: true},
 	}
 
 	summary := RenderSummary(record, summaryInstant())
@@ -612,7 +612,7 @@ func TestRenderSummaryFloorsTheRemainingAfterAnchorAtZeroWhenTheAnchorAloneExcee
 	record.Limits.AssemblyByteBudget = 1000
 	record.Anchor.Size = 2000
 	record.Candidates = []Disposition{
-		{Rank: 1, ID: 11, Type: "task", Name: "small", Similarity: 0.9, Size: 500, Included: true},
+		{Rank: 1, ID: 11, Type: "task", Name: "small", Similarity: 0.9, Size: 500, RenderedSize: 500, Included: true},
 	}
 
 	summary := RenderSummary(record, summaryInstant())
@@ -656,7 +656,7 @@ func TestRenderSummaryWrapsALongCutGroupsIdsAcrossLinesNoneOverNinetySixRunes(t 
 	record.Candidates = nil
 	for i := range 40 {
 		record.Candidates = append(record.Candidates, Disposition{
-			Rank: i + 1, ID: int64(1000000 + i), Size: 10, CutReason: "byte budget exceeded",
+			Rank: i + 1, ID: int64(1000000 + i), Size: 10, RenderedSize: 10, CutReason: "byte budget exceeded",
 		})
 	}
 
@@ -728,7 +728,7 @@ func TestRenderSummarySaysNoneAdmittedWhenEveryRecallResultWasCut(t *testing.T) 
 
 	record := summaryRecord()
 	record.ToolCalls = []ToolCallRecord{{Tool: ToolRecall, Source: ToolSourceNative, Query: "all too large", Results: []Disposition{
-		{Rank: 1, ID: 31, Size: 90000, CutReason: "byte budget exceeded"},
+		{Rank: 1, ID: 31, Size: 90000, RenderedSize: 90000, CutReason: "byte budget exceeded"},
 	}}}
 
 	summary := RenderSummary(record, summaryInstant())
@@ -764,14 +764,15 @@ func summaryWorstCaseRecord() Record {
 	record.Candidates = nil
 	for i := range record.Limits.CandidateLimit {
 		record.Candidates = append(record.Candidates, Disposition{
-			Rank:       i + 1,
-			ID:         int64(100 + i),
-			Type:       "documentation",
-			Name:       strings.Repeat("a long node name that will be bounded by the renderer ", 3),
-			Similarity: 0.6,
-			Size:       40000,
-			Included:   i < 8,
-			CutReason:  "byte budget exceeded",
+			Rank:         i + 1,
+			ID:           int64(100 + i),
+			Type:         "documentation",
+			Name:         strings.Repeat("a long node name that will be bounded by the renderer ", 3),
+			Similarity:   0.6,
+			Size:         40000,
+			RenderedSize: 40000,
+			Included:     i < 8,
+			CutReason:    "byte budget exceeded",
 		})
 	}
 
@@ -823,9 +824,9 @@ func TestRenderSummaryNamesTheNodesASupplementaryRecallAdmitted(t *testing.T) {
 
 	record := summaryRecord()
 	record.ToolCalls = []ToolCallRecord{{Tool: ToolRecall, Source: ToolSourceNative, Query: "repository creation", Results: []Disposition{
-		{Rank: 1, ID: 21, Size: 400, Included: true},
-		{Rank: 2, ID: 23, Size: 700, Included: true},
-		{Rank: 3, ID: 22, Size: 90000, CutReason: "byte budget exceeded"},
+		{Rank: 1, ID: 21, Size: 400, RenderedSize: 400, Included: true},
+		{Rank: 2, ID: 23, Size: 700, RenderedSize: 700, Included: true},
+		{Rank: 3, ID: 22, Size: 90000, RenderedSize: 90000, CutReason: "byte budget exceeded"},
 	}}}
 
 	summary := RenderSummary(record, summaryInstant())
@@ -941,5 +942,30 @@ func TestTheSummarysQueryWidthStaysAtEightyEightRunes(t *testing.T) {
 	wider := RenderSummary(Record{Queries: []string{strings.Repeat("q", 89)}}, summaryInstant())
 	if strings.Contains(wider, "q0: "+strings.Repeat("q", 89)+"\n") {
 		t.Fatalf("an 89-rune query rendered whole, so the error line's widening reached the query excerpt; summary:\n%s", wider)
+	}
+}
+
+func TestRenderSummaryAccountsASubstanceRenderedCandidateByWhatTheBlockCarried(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Candidates = []Disposition{
+		{Rank: 1, ID: 11, Type: "task", Name: "Pitch-Site hosting", Similarity: 0.689, Size: 1111, RenderedSize: 1111, Form: FormContent, Included: true},
+		{Rank: 2, ID: 12, Type: "documentation", Name: "Profilgenerator wireframe", Similarity: 0.659, Size: 43300, RenderedSize: 12900, Form: FormSubstance, Included: true},
+	}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	for _, want := range []string{
+		"  admitted (2, 14.0 kB of 56592 B remaining):",
+		"12.9 kB substance of 43.3 kB  Profilgenerator wireframe",
+		"1111 B  Pitch-Site hosting",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("the summary does not carry %q; an admitted row must state the bytes the block actually took and name the form it took them in.\nsummary:\n%s", want, summary)
+		}
+	}
+	if strings.Contains(summary, "admitted (2, 44.4 kB") {
+		t.Fatalf("the admitted total is the sum of the content sizes; the budget was never spent on the 43.3 kB the substance replaced.\nsummary:\n%s", summary)
 	}
 }

@@ -50,11 +50,11 @@ func callsByName(fn *ast.FuncDecl) map[string]bool {
 	return called
 }
 
-func readsACandidatesContent(fn *ast.FuncDecl) bool {
+func readsACandidatesBody(fn *ast.FuncDecl) bool {
 	found := false
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		selector, ok := n.(*ast.SelectorExpr)
-		if !ok || selector.Sel.Name != "Content" {
+		if !ok || (selector.Sel.Name != "Content" && selector.Sel.Name != "Substance") {
 			return true
 		}
 		if ident, ok := selector.X.(*ast.Ident); ok && ident.Name == "anchor" {
@@ -66,18 +66,18 @@ func readsACandidatesContent(fn *ast.FuncDecl) bool {
 	return found
 }
 
-func TestOnlyAdmissionAndThePayloadSeamReadACandidatesContent(t *testing.T) {
+func TestOnlyAdmissionAndThePayloadSeamReadACandidatesBody(t *testing.T) {
 	t.Parallel()
 
 	allowed := []string{"admit", "renderedPayload"}
 	functions := parseTheLoopSources(t)
 
 	for name, fn := range functions {
-		if !readsACandidatesContent(fn) {
+		if !readsACandidatesBody(fn) {
 			continue
 		}
 		if !slices.Contains(allowed, name) {
-			t.Errorf("%s reads a candidate's Content directly; only %v may, because the cap is charged against renderedPayload and a renderer that reaches past it writes bytes nobody counted", name, allowed)
+			t.Errorf("%s reads a candidate's Content or Substance directly; only %v may, because the cap is charged against renderedPayload and a renderer that reaches past it writes bytes nobody counted, in either form", name, allowed)
 		}
 	}
 
@@ -86,8 +86,8 @@ func TestOnlyAdmissionAndThePayloadSeamReadACandidatesContent(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s is not in the loop package at all, so the list this guard permits is stale and the guard admits whatever replaced it", name)
 		}
-		if !readsACandidatesContent(fn) {
-			t.Errorf("%s no longer reads a candidate's Content, so permitting it here widens the guard for nothing", name)
+		if !readsACandidatesBody(fn) {
+			t.Errorf("%s no longer reads a candidate's Content or Substance, so permitting it here widens the guard for nothing", name)
 		}
 	}
 }

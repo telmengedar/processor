@@ -58,7 +58,7 @@ func (g *fakeGraph) SetSubstance(_ context.Context, id int64, substance string) 
 	return nil
 }
 
-const legacyRecordJSON = `{"input":"do the thing","subject":10422,"query":"","queries":["do the thing"],"anchor":{"id":10422,"type":"project","name":"processor","size":100},"candidates":[],"block":"","answer":"done","model":"m1","provider":{"adapter":"a","endpoint":"e"},"toolCalls":[],"modelCalls":1,"capReached":false,"usage":null,"stopReason":{"reason":"answered","raw":"stop"},"limits":{"candidateLimit":20,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":6,"maxOutputTokens":4096},"sampling":{}}`
+const legacyRecordJSON = `{"input":"do the thing","subject":10422,"query":"","queries":["do the thing"],"anchor":{"id":10422,"type":"project","name":"processor","size":100},"candidates":[{"rank":1,"id":11,"type":"task","name":"Pitch-Site hosting","similarity":0.689,"size":1111,"contentHash":"c11","included":true},{"rank":2,"id":12,"type":"documentation","name":"Profilgenerator wireframe","similarity":0.659,"size":43300,"contentHash":"c12","included":true},{"rank":3,"id":15,"type":"documentation","name":"Something large","similarity":0.630,"size":20000,"contentHash":"c15","included":false,"cutReason":"byte budget exceeded"}],"block":"","answer":"done","model":"m1","provider":{"adapter":"a","endpoint":"e"},"toolCalls":[],"modelCalls":1,"capReached":false,"usage":null,"stopReason":{"reason":"answered","raw":"stop"},"limits":{"candidateLimit":20,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":6,"maxOutputTokens":4096},"sampling":{}}`
 
 func TestBackfillOneLegacyRecordIsComposedByteIdentically(t *testing.T) {
 	graph := &fakeGraph{nodes: map[int64]Node{
@@ -261,4 +261,61 @@ func TestBackfillOneRefusesToWriteWhenTheBackupFails(t *testing.T) {
 	if len(graph.contentWrites) != 0 || len(graph.substanceWrites) != 0 {
 		t.Fatalf("a failed backup must produce no write, got content=%v substance=%v", graph.contentWrites, graph.substanceWrites)
 	}
+}
+
+func TestBackfillOneLegacyRecordAccountsTheBytesItsCandidatesCharged(t *testing.T) {
+	graph := &fakeGraph{nodes: map[int64]Node{
+		8: {
+			ID:          8,
+			Type:        divoid.RunNodeType,
+			Name:        `processor-run 2026-09-02T11:35:08Z — do the thing`,
+			ContentType: "application/json",
+			Content:     legacyRecordJSON,
+		},
+	}}
+
+	result := Run(context.Background(), graph, []int64{8}, Options{}, time.Now)
+
+	if len(result.Skipped) != 0 || len(result.Provenance) != 1 {
+		t.Fatalf("want one clean backfill, got skipped=%+v provenance=%+v", result.Skipped, result.Provenance)
+	}
+
+	account := graph.substanceWrites[8]
+	if account == "" {
+		t.Fatalf("no substance was written, so there is no account to read")
+	}
+
+	for _, want := range []string{
+		"admitted (2, 44.4 kB of 59900 B remaining):",
+		"byte budget exceeded (1, 20.0 kB):",
+	} {
+		if !strings.Contains(account, want) {
+			t.Fatalf("the account written to the graph is missing %q - a record written before the form rule existed carries no rendered size, and the account must report the bytes it charged rather than zero:\n%s", want, account)
+		}
+	}
+
+	for _, row := range []struct {
+		id    string
+		bytes string
+	}{
+		{id: "#11", bytes: "1111 B"},
+		{id: "#12", bytes: "43.3 kB"},
+	} {
+		line := accountLineFor(t, account, row.id)
+		if !strings.Contains(line, row.bytes) {
+			t.Fatalf("the %s row reads %q, want the %s its size records - a legacy candidate has no rendered size and must be charged its content's own length", row.id, line, row.bytes)
+		}
+	}
+}
+
+func accountLineFor(t *testing.T, account, id string) string {
+	t.Helper()
+
+	for _, line := range strings.Split(account, "\n") {
+		if strings.Contains(line, id+" ") {
+			return line
+		}
+	}
+	t.Fatalf("the account carries no row for %s:\n%s", id, account)
+	return ""
 }

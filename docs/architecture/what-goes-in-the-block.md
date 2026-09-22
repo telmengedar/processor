@@ -1020,6 +1020,86 @@ concern:
 set by the curve, not by taste. A defensible starting point is the midpoint of the two measured strata; the
 measurement, not this document, decides it (§11, F-3).
 
+#### 8.1.1 What the rule ships at, what the dial moves to later, and how it composes with the cap
+
+**The rule ships with its dial at zero — the off position, since no ratio is below zero.** The mechanism
+lands whole: the form decision, the `form` and `renderedSize` dispositions, the sweep dial, and the guards
+over all of them. The block it renders stays byte-identical to the block rendered before the rule existed.
+That is the same property that let the unit before this one ship its recording alone, and it is what makes
+the regression check runnable without a second code path.
+
+**The value a later change starts the dial from is `0.592`**, the midpoint of §4.2's two measured stratum
+medians — `0.886` for content below 4 KB and `0.298` for content at or above 8 KB. It is not today's
+default, for a reason that is not about the form rule at all: **greedy first-fit admission is non-monotone
+under item shrinkage.** Bytes the rule frees are captured by the next large *unfilled* row in rank order,
+which can consume the whole remaining budget and cost the block rows it admits today. This is structural,
+not a coverage artefact — a worked counterexample at 100 % substance coverage still loses a row — so it is
+not waited out.
+
+The remedy is the per-candidate size cap specified in `what-a-block-is-worth-per-byte.md`, whose F6 **reports**
+a block going from 8 admitted rows to 14 and its largest single share falling from 77.2 % to 16.4 %.
+**Those figures are quoted as reported, not as measurement, and this section does not rest on them.** F6's
+own status cell sources them to that document's §7.3, and `the-reclaimed-budget-has-no-owner.md` withdraws
+*"every citation of `what-a-block-is-worth-per-byte.md` §7 as a measurement"* — every `0.0000` in §7.3's
+plateau table is `max(∅)`. That file carries no supersession header of its own, so nothing in it warns a
+reader; this paragraph is the warning. The numbers that may be quoted come from re-running the sweep
+against the live instrument, which is `a-falsifier-measured-on-an-empty-set.md` §11's M2 and M5.
+`0.592` is the starting point of the threshold sweep, never its conclusion.
+
+**The two compose in one order only: the form rule first, then the cap.**
+`what-a-block-is-worth-per-byte.md` §7.4 rules that *"the cap is evaluated against the payload the block is
+about to render, after the form rule has chosen it"*, and requires the cap be written against the payload
+rather than against the content even while content is the only payload there is — so the cap reads
+`renderedSize`, never `size`, and the composition is `cap(form(c))`, never `form(cap(c))`. The two admit
+different rows: a row over the ceiling in content form and under it in substance form is **admitted** under
+this order and **cut as `oversized`** under the other, and *"rows going from admitted to not admitted"* is
+exactly what F-2 measures.
+
+**It is one function, not two.** Both mechanisms reach a candidate through a single payload seam, which
+selects the form and returns the bytes it renders as. Admission compares the ceiling against that one value,
+charges the budget the same value, and records it as `renderedSize`; the block and the supplementary tool
+result both render from it. The order is therefore not a convention two call sites have to keep agreeing
+on — there is one call site, and a structural guard holds every *renderer in this package* on it.
+
+**Three reads of `size` remain, and all three are deliberate.** The fill gates on `size` because it fetches
+and condenses *content*, so content length is the quantity it must weigh; the summary's form column prints
+`substance of <size>` so a reader can see what was replaced; and the anchor's own `size` is not a candidate
+quantity at all. Every other read of a candidate's byte count is `renderedSize`.
+
+**The guard's reach stops at this package's renderers, and one production wire lies outside it.**
+`dispatchRecall` copies the dial onto the tool exchange it builds, and at the shipped dial the zero value
+and the constant coincide — so no test can see that copy go missing. It becomes observable only once the
+dial is injectable into `Turn`, which is the dial-move change's job. **Until then it is an unguarded wire,
+recorded here rather than assumed covered**; if it is dropped, admission charges at the raised dial and the
+tool result renders at zero, which puts content bytes in the prompt that nothing charged.
+
+**Both surfaces mark a condensed payload.** The `form: substance` header is written by the shared section
+renderer, so the block and the tool result carry it alike, and there is no surface on which a condensation
+can be presented as the node itself. At the shipped dial no row renders as substance and the header appears
+nowhere, so this is a property of the mechanism rather than a change to the prompt.
+
+**The cap and the threshold sweep are two steps of a longer gate, and the live ordering is in neither this
+document nor the cap's.** It is `a-falsifier-measured-on-an-empty-set.md` §11, as **M0 → M1 → M2 → M3 →
+M4 → M5 → M6**: establish what the inversion metric counts; enumerate the degenerate rows; re-run the
+honest curve; verify the per-row commitment behind `k`; **M4**, F-11's population audit with node 10943
+first, *now on the critical path*; **M5**, run the composition — the cap at its chosen `k` **and** the form
+rule at a threshold above `0.2501` — and re-run **F-CAP as restated in that document's §5.3**; then **M6**,
+F-2 / F-2a / F-3 against the **composed** allocator, adopting §6.1 as M3a if F-2 still reports a loss. That
+document states the rule this section exists to carry, in one line: ***"no number off its off position
+before M5 is green on the composition."***
+
+> **Do not brief off `the-reclaimed-budget-has-no-owner.md`'s ordering.** Its §9 order — *F-13 → F-CAP →
+> … → dial off zero* — is struck in that document's own body, its F-CAP row is **withdrawn and restated
+> elsewhere**, and its header says so in terms: *"Do not brief an implementer off the ordering below."*
+> What §9 still carries unstruck, and what this section does rely on, is **F-11**: an independent reader
+> checks each of the 67 live substances against its own content, at zero tolerance on any node the eval
+> corpus depends on, and it **must pass before the dial leaves zero**.
+
+**`0.370` is not a candidate**, although it is the midpoint of the *live* corpus's own stratum medians.
+Those medians are computed over the 67 substances whose trustworthiness is the open audit question of §4.5
+and R1. Deriving the dial from the population being audited is circular — and that audit is F-11 above,
+which gates the dial whatever value it is set to, not only this one.
+
 **Why a ratio and not a size.** Size is a proxy; the ratio is the thing. #12984's #11084 is 3,587 B with a
 ratio of **0.983** — a small node where condensation did nothing — and its #11228 is 6,820 B at **0.971**.
 A size rule would mis-handle both. The ratio is available for free: both representations are in hand.
@@ -1639,7 +1719,10 @@ document** (§9.5).
 | # | Gate | Fires against | Status |
 |---|---|---|---|
 | **F-1** | **Model qualification.** #12984's audit, re-run at zero tolerance: every required node's substance must support its pre-registered `why`. **It is not a one-time release gate — it is the instrument that qualifies a *model*, and it re-runs whenever the fill model or the prompt changes** (§7.4.7) | **Unit 2 *and* Unit 3, and every model change thereafter.** A single FAIL disqualifies that model. **Note it now gates generation, not only rendering** — under the fill an unqualified model writes to the graph as a side effect of serving traffic, where the offline pass could be re-run and its output discarded | **OPEN, with a stated blocker.** #12984 read 23/1/1 on `ai/gemma3`, qualifying *that model with that prompt* and nothing else. **#13242 could not advance it: `gemma4:31b` meets the bar and cannot complete one record inside the 30-minute timeout — 15.4 of 22.8 GB in VRAM, ~32 % on CPU — while the 26B MoE that was fast enough is the model that produced the fabrications.** F-1 needs a host where the 31B fits in VRAM, and §7.4.8's D2/D3 fixed first |
-| **F-2** | **The regression check that replaces the withdrawn invariant.** Sweep the corpus at several budgets with the form rule on and off; no row may go from *admitted* to *not admitted* | **Unit 3.** Any such row is either a bug or the threshold is wrong | Not run |
+| **F-2** | **The regression check that replaces the withdrawn invariant.** **With the per-candidate cap in force and the candidate list fixed**, sweep the corpus at several budgets with the form rule on and off; **zero *candidate* rows may go from *admitted* to *not admitted*** | **Unit 3.** Any such row is either a bug or the threshold is wrong; if any remain, §6.1's reclamation pass is adopted | **Not run. Amended by `the-reclaimed-budget-has-no-owner.md` §8/§9:** F-2 binds on the candidate dispositions, it fires against the capped allocator rather than today's, and the weaker required-node reading is renamed F-2a and reported beside it, never instead of it |
+| **F-2a** | **The required-node reading, renamed so the two can never be read as one.** No required node goes from *admitted* to *not admitted* | Reported **with** F-2, never as a substitute. **F-2a passing while F-2 fails is informative, not exculpatory** — the rule's motivating harm is the starvation of unlabelled rows, so a metric blind to them is blind to the thing this exists for | Not run. Renamed by `the-reclaimed-budget-has-no-owner.md` §9 |
+| **F-11** | **The population audit.** An independent reader checks each of the **67 live substances** against its own content, at **zero tolerance** on any node the eval corpus depends on | **§8.1.1's dial.** F-1 qualifies a *producer*; these 67 have no producer attached, so no producer gate reaches them. **Must pass before the dial leaves zero** | Not run. Added by `the-reclaimed-budget-has-no-owner.md` §8/§9 |
+| **F-12** | **Prompt-surface symmetry for the form marker.** Every surface that can present a candidate must mark a payload rendered as substance; a condensation presented unmarked tells the model it is holding the node | **§8.1.1's dial, and the tool-result path beside the block.** Unobservable at the shipped dial — no row renders as substance, so the marker is absent from both surfaces and they agree | **CLOSED BY CONSTRUCTION, and kept as a standing guard.** The asymmetry this row was filed against — the block marked, the tool result not — was a *deferral*, and the composed admission path made it inexpressible: one section renderer writes both surfaces, so both carry the header or neither does. It was decided rather than merged away, in favour of marking both, and a guard asserts the two surfaces alike. It re-opens only if a surface is added that does not render through the payload seam |
 | **F-3** | **The threshold curve.** Bytes reclaimed and rows admitted, as a function of the ratio threshold | Sets §8.1's dial. If the curve is flat, the stratum distinction is decoration and a single rule is simpler | Not run |
 | **F-4** | **Convergence, not coverage.** Run the same task twice against a cold area: run 1 fills, **run 2 must fire zero fills and reach the same or a better admitted set** | **Unit 2.** If run 2 still fills, the cache is not doing what §7.4.1 claims and the whole economic argument collapses to per-turn cost | Not run. **~0.3 % coverage as of 2026-09-08** (§4.1). **Its instrument now exists:** PR #58 puts `substanceAvailable` / `substanceSize` on every disposition, and they reach `internal/eval.RowResult.Candidates`, so coverage is a figure the sweep's machine report carries rather than a separate offline probe (§3's correction) |
 | **F-5** | **#13106 §8.3's three-arm differential** — opaque labels vs names-only vs name+substance | **Unit 4.** Ties against either weaker arm sink the catalogue's central claim | Not run; **requires Unit 2 for the twenty rows** |
@@ -1689,7 +1772,7 @@ unambiguous about what it measured.
 
 | # | Risk | Mitigation | Falsifier |
 |---|---|---|---|
-| R1 | **Substance ships before fidelity is clean** and the model is confidently told something a lossy pass mangled | F-1 gates **Unit 2 as well as Unit 3** — the fill *writes* to the shared graph, so an unqualified model contaminates the substrate whether or not anything renders it yet. Unit 1 alone is safe: it renders nothing new and writes nothing | Any block containing a substance-form candidate, **or any fill at all**, before F-1 passes |
+| R1 | **Substance ships before fidelity is clean** and the model is confidently told something a lossy pass mangled | **Split in two by `the-reclaimed-budget-has-no-owner.md` §8: F-1 qualifies a *producer*, and the graph already holds 67 substances with no producer attached, which a producer gate does not reach. F-11 audits that *population*, and must pass before the dial leaves zero.** F-1 gates **Unit 2 as well as Unit 3** — the fill *writes* to the shared graph, so an unqualified model contaminates the substrate whether or not anything renders it yet. Unit 1 alone is safe: it renders nothing new and writes nothing | Any block containing a substance-form candidate, **or any fill at all**, before **both F-1 and F-11** pass |
 | R2 | **Unit 2 is treated as a one-off migration.** Coverage decays as the graph grows | §10 names it a recurring pass; Q5 asks for the coverage metric | Coverage measured once and never again |
 | R3 | **A stale substance renders in place of correct content** | A6: the server clears substance on a content write, verified live. Fallback is content, never a wrong render | A substance surviving a content edit |
 | R4 | **`contentHash` is re-based onto rendered bytes**, marking every substance-rendered required node stale | §7.2, adopted from #12955 §6.4 verbatim, with the reason | A sweep reporting corpus-wide staleness after Unit 3 |
