@@ -166,7 +166,7 @@ func TestTurnRunStillReportsTheCallCapAsTheLoopsOwnSentence(t *testing.T) {
 
 	wantsRecall := JudgeResult{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"}
 	model := &fakeModel{results: []JudgeResult{wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall}}
-	turn := NewTurn(baseGraph(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -312,7 +312,7 @@ func TestTurnRunBoundsAToolErrorTheCallCapRefused(t *testing.T) {
 	wantsRecall := JudgeResult{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"}
 	capped := JudgeResult{Reason: WantsRecall, RawReason: "tool_calls", ToolError: toolError}
 	model := &fakeModel{results: []JudgeResult{wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall, capped}}
-	turn := NewTurn(baseGraph(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {

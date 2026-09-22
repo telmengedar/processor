@@ -179,6 +179,9 @@ type ToolCallRecord struct {
 	Bytes   int           `json:"bytes"`
 	Error   string        `json:"error,omitempty"`
 	Results []Disposition `json:"results"`
+
+	// Yield is how many rows this round put in front of the model for the first time in the turn; zero on every round that was not a dispatched recall.
+	Yield int `json:"yield"`
 }
 
 // StopReason pairs the loop's own terminal value with the endpoint's verbatim string.
@@ -261,6 +264,8 @@ type Record struct {
 	ModelCalls int    `json:"modelCalls"`
 	// CapReached is true exactly when the call cap was hit while the model still wanted a tool.
 	CapReached bool `json:"capReached"`
+	// RecallClosed is true exactly when consecutive barren rounds closed recall for the turn while the model still wanted it.
+	RecallClosed bool `json:"recallClosed"`
 	// Usage carries one entry per model call, in call order, nil where the endpoint reported none.
 	Usage      []*Usage   `json:"usage"`
 	StopReason StopReason `json:"stopReason"`
@@ -285,6 +290,12 @@ type ToolExchange struct {
 
 	// SubstanceRatioThreshold is the dial this round's admission charged at, and the one its results render at.
 	SubstanceRatioThreshold SubstanceRatio
+
+	// Yield is how many rows this round put in front of the model for the first time in the turn.
+	Yield int
+
+	// NothingNew is true when this round admitted rows and the model had already been shown every one of them.
+	NothingNew bool
 }
 
 // JudgeInput is everything one judgement step needs.
