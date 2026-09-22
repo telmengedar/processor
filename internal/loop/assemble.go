@@ -18,7 +18,8 @@ const (
 
 const noPayloadCeiling = 0
 
-const thinKnowledgeThreshold = 5
+// ThinKnowledgeThreshold is the admitted-row count below which the block tells the model its knowledge of the topic is still thin.
+const ThinKnowledgeThreshold = 5
 
 const (
 	nudgeNone = "Seems you know nothing about this topic - or maybe you are asking the wrong question; try looking at it from a different angle.\n"
@@ -236,7 +237,7 @@ func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, thresh
 	case len(admitted) == 0:
 		b.WriteString("\n")
 		b.WriteString(nudgeNone)
-	case len(admitted) < thinKnowledgeThreshold:
+	case len(admitted) < ThinKnowledgeThreshold:
 		b.WriteString("\n")
 		b.WriteString(nudgeThin)
 	}

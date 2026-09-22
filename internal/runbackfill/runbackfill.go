@@ -3,35 +3,27 @@ package runbackfill
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/telmengedar/processor/internal/divoid"
 	"github.com/telmengedar/processor/internal/loop"
+	"github.com/telmengedar/processor/internal/runarchive"
 )
 
 const (
 	skipNodeAbsent           = "node absent"
 	skipNotRunRecord         = "not a run record"
-	skipContentAbsent        = "content absent"
+	skipContentAbsent        = runarchive.SkipContentAbsent
 	skipAlreadyBackfilled    = "already backfilled"
-	skipUnrecognisedShape    = "content is neither bare JSON nor a recognisable fenced record"
-	skipNameUnparseable      = "node name does not carry a parseable timestamp"
+	skipUnrecognisedShape    = runarchive.SkipUnrecognisedShape
+	skipNameUnparseable      = runarchive.SkipNameUnparseable
 	skipReadFailed           = "graph read failed"
 	skipContentMoved         = "content changed since it was read, write refused"
 	skipBackupFailed         = "backup failed, write refused"
 	skipWriteContentFailed   = "content write failed"
 	skipWriteSubstanceFailed = "substance write failed (content was written)"
-)
-
-var runNamePattern = regexp.MustCompile(`^processor-run (\S+) — `)
-
-const (
-	fenceOpenNeedle  = "\n```json\n"
-	fenceCloseNeedle = "\n```"
 )
 
 // Node is one graph row as the pass reads it.
@@ -143,7 +135,7 @@ func backfillOne(ctx context.Context, graph GraphPort, id int64, opts Options) (
 		return nil, &Skip{Node: id, Reason: skipContentAbsent}
 	}
 
-	raw, record, alreadyBackfilled, err := classify(node.Content)
+	raw, record, alreadyBackfilled, err := runarchive.Classify(node.Content)
 	if err != nil {
 		return nil, &Skip{Node: id, Reason: skipUnrecognisedShape, Detail: err.Error()}
 	}
@@ -151,7 +143,7 @@ func backfillOne(ctx context.Context, graph GraphPort, id int64, opts Options) (
 		return nil, &Skip{Node: id, Reason: skipAlreadyBackfilled}
 	}
 
-	at, err := parseRunAt(node.Name)
+	at, err := runarchive.ParseRunInstant(node.Name)
 	if err != nil {
 		return nil, &Skip{Node: id, Reason: skipNameUnparseable, Detail: err.Error()}
 	}
@@ -200,48 +192,4 @@ func backfillOne(ctx context.Context, graph GraphPort, id int64, opts Options) (
 	prov.SubstanceWritten = true
 
 	return &prov, nil
-}
-
-func classify(content string) (raw []byte, record loop.Record, alreadyBackfilled bool, err error) {
-	var legacy loop.Record
-	if err := json.Unmarshal([]byte(content), &legacy); err == nil {
-		return []byte(content), legacy, false, nil
-	}
-
-	fenced, ok := extractLastFencedJSON(content)
-	if !ok {
-		return nil, loop.Record{}, false, fmt.Errorf("content has no closing json fence and does not parse whole as a Record")
-	}
-
-	var backfilled loop.Record
-	if err := json.Unmarshal(fenced, &backfilled); err != nil {
-		return nil, loop.Record{}, false, fmt.Errorf("last fenced json block does not parse as a Record: %w", err)
-	}
-	return fenced, backfilled, true, nil
-}
-
-func extractLastFencedJSON(content string) ([]byte, bool) {
-	openAt := strings.LastIndex(content, fenceOpenNeedle)
-	if openAt == -1 {
-		return nil, false
-	}
-	start := openAt + len(fenceOpenNeedle)
-
-	closeAt := strings.Index(content[start:], fenceCloseNeedle)
-	if closeAt == -1 {
-		return nil, false
-	}
-	return []byte(content[start : start+closeAt]), true
-}
-
-func parseRunAt(name string) (time.Time, error) {
-	m := runNamePattern.FindStringSubmatch(name)
-	if m == nil {
-		return time.Time{}, fmt.Errorf("name %q does not match \"processor-run <RFC3339> — ...\"", name)
-	}
-	at, err := time.Parse(time.RFC3339, m[1])
-	if err != nil {
-		return time.Time{}, fmt.Errorf("name %q carries %q, which is not RFC3339: %w", name, m[1], err)
-	}
-	return at, nil
 }
