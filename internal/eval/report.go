@@ -14,9 +14,9 @@ const hashPrefixLength = 8
 const outrankedCandidateCount = 3
 
 const (
-	alarmControlAbsent = "no control stratum: this sweep verified nothing about itself, so a broken harness would report a plausible number"
-	alarmControlBroken = "the control stratum did not verify retrieval: either the graph moved, the harness broke, or the stratum could not be scored at all, and this sweep's labelled number is not trustworthy"
-	alarmControlBudget = "budget alarm: the control stratum was retrieved in full and cut by the budget. Retrieval is intact and this sweep's retrieved rate is trustworthy; the admitted rate is a reading of the assembler, not of the retriever."
+	alarmControlAbsent      = "no control stratum: this sweep verified nothing about itself, so a broken harness would report a plausible number"
+	alarmControlBroken      = "the control stratum did not verify retrieval: either the graph moved, the harness broke, or the stratum could not be scored at all, and this sweep's labelled number is not trustworthy"
+	alarmControlNotAdmitted = "admission alarm: the control stratum was retrieved in full and admission did not carry it. Retrieval is intact and this sweep's retrieved rate is trustworthy; the admitted rate is a reading of the assembler, not of the retriever."
 )
 
 type rate struct {
@@ -97,7 +97,7 @@ func controlAlarm(result Result) string {
 		return alarmControlBroken
 	}
 	if result.controlWasCut() {
-		return alarmControlBudget
+		return alarmControlNotAdmitted
 	}
 	return ""
 }

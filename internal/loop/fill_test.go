@@ -71,21 +71,44 @@ func TestFillRecordsNoPressureForAnAdmittedCandidate(t *testing.T) {
 	}
 }
 
-func TestFillRecordsNoPressureForACandidateCutForAnotherReason(t *testing.T) {
+func TestFillRecordsNoPressureForACandidateCutForAReasonRoomWouldNotHaveChanged(t *testing.T) {
 	t.Parallel()
 
 	fill := &fakeFill{}
 	turn := &Turn{Fill: fill, logger: testLogger()}
 
-	rows := []Disposition{{ID: 1, Included: false, CutReason: cutReasonSelfProduced, Size: FillSizeFloor}}
+	rows := []Disposition{
+		{ID: 1, Included: false, CutReason: cutReasonSelfProduced, Size: FillSizeFloor},
+		{ID: 2, Included: false, CutReason: cutReasonBelowFloor, Size: FillSizeFloor},
+	}
 	outcomes := turn.fill(context.Background(), rows)
 
-	got := outcomeFor(t, outcomes, 1)
-	if got.Filled || got.Reason != fillReasonNoPressure {
-		t.Fatalf("outcome = %+v, want a no-pressure refusal for a non-byte-budget cut", got)
+	for _, id := range []int64{1, 2} {
+		got := outcomeFor(t, outcomes, id)
+		if got.Filled || got.Reason != fillReasonNoPressure {
+			t.Fatalf("outcome for id %d = %+v, want a no-pressure refusal: neither our own run record nor a row the floor rejected is waiting on room", id, got)
+		}
 	}
 	if len(fill.calls) != 0 {
 		t.Fatalf("fill.calls = %v, want the port never called", fill.calls)
+	}
+}
+
+func TestFillAttemptsACandidateRefusedForItsSizeBecauseThatIsMorePressureNotLess(t *testing.T) {
+	t.Parallel()
+
+	fill := &fakeFill{}
+	turn := &Turn{Fill: fill, logger: testLogger()}
+
+	rows := []Disposition{{ID: 1, Included: false, CutReason: cutReasonOversized, Size: FillSizeFloor}}
+	outcomes := turn.fill(context.Background(), rows)
+
+	got := outcomeFor(t, outcomes, 1)
+	if !got.Filled {
+		t.Fatalf("outcome = %+v, want a fill attempt: a row too large for the block is exactly the queue condensation exists to drain, and refusing it for want of pressure empties that queue the moment the ceiling fills it", got)
+	}
+	if len(fill.calls) != 1 || fill.calls[0] != 1 {
+		t.Fatalf("fill.calls = %v, want exactly one attempt, for the row refused for its size", fill.calls)
 	}
 }
 

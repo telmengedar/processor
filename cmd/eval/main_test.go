@@ -210,7 +210,7 @@ func TestRunExitsZeroAndBlamesTheBudgetWhenTheControlNodeDoesNotFitOnALiveSweep(
 		t.Fatalf("the control node's verdict = %q, want %q: the fixture did not reach the boundary this guard is about", got, eval.Cut)
 	}
 
-	if !strings.Contains(human.String(), "budget alarm: the control stratum was retrieved in full and cut by the budget. Retrieval is intact and this sweep's retrieved rate is trustworthy; the admitted rate is a reading of the assembler, not of the retriever.") {
+	if !strings.Contains(human.String(), "admission alarm: the control stratum was retrieved in full and admission did not carry it. Retrieval is intact and this sweep's retrieved rate is trustworthy; the admitted rate is a reading of the assembler, not of the retriever.") {
 		t.Fatalf("the human stream does not name the budget as the cause:\n%s", human.String())
 	}
 	if strings.Contains(human.String(), "either the graph moved, the harness broke, or the stratum could not be scored at all") {

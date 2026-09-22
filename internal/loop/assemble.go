@@ -13,7 +13,10 @@ const (
 	cutReasonByteBudget   = "byte budget exceeded"
 	cutReasonSelfProduced = "self-produced"
 	cutReasonBelowFloor   = "below relevance floor"
+	cutReasonOversized    = "oversized"
 )
+
+const noPayloadCeiling = 0
 
 const thinKnowledgeThreshold = 5
 
@@ -28,25 +31,27 @@ const nudgeEscalate = "This does not appear to be in the graph - say so plainly 
 
 // Assemble is a pure function: no I/O, no clock, no randomness.
 func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64) (block string, dispositions []Disposition) {
-	remaining := budget - len(anchor.Content)
-	if remaining < 0 {
-		remaining = 0
-	}
-
-	admitted, dispositions := admit(candidates, remaining, floor)
+	admitted, dispositions := admit(candidates, budget, len(anchor.Content), floor, BlockOccupancy)
 
 	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
 
 	return renderBlock(anchor, admitted, len(candidates) > 0), dispositions
 }
 
-func admit(candidates []Candidate, budget int, floor float64) (admitted []Candidate, dispositions []Disposition) {
+func admit(candidates []Candidate, budget, spent int, floor float64, occupancy int) (admitted []Candidate, dispositions []Disposition) {
+	remaining := budget - spent
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	capBytes := payloadCap(budget, occupancy)
+
 	dispositions = make([]Disposition, len(candidates))
 	admitted = make([]Candidate, 0, len(candidates))
 
 	cumulative := 0
 	for i, c := range candidates {
-		size := len(c.Content)
+		payload := len(renderedPayload(c))
 
 		d := Disposition{
 			Rank:               i + 1,
@@ -54,11 +59,12 @@ func admit(candidates []Candidate, budget int, floor float64) (admitted []Candid
 			Type:               c.Type,
 			Name:               c.Name,
 			Similarity:         c.Similarity,
-			Size:               size,
+			Size:               len(c.Content),
 			ContentHash:        contentHash(c.Content),
 			Sources:            c.Sources,
 			SubstanceAvailable: c.Substance != "",
 			SubstanceSize:      len(c.Substance),
+			PayloadCap:         capBytes,
 		}
 
 		switch {
@@ -66,8 +72,10 @@ func admit(candidates []Candidate, budget int, floor float64) (admitted []Candid
 			d.CutReason = cutReasonSelfProduced
 		case c.Similarity < floor:
 			d.CutReason = cutReasonBelowFloor
-		case cumulative+size <= budget:
-			cumulative += size
+		case refusedForItsSize(payload, capBytes):
+			d.CutReason = cutReasonOversized
+		case cumulative+payload <= remaining:
+			cumulative += payload
 			d.Included = true
 			admitted = append(admitted, c)
 		default:
@@ -78,6 +86,30 @@ func admit(candidates []Candidate, budget int, floor float64) (admitted []Candid
 	}
 
 	return admitted, dispositions
+}
+
+func payloadCap(budget, occupancy int) int {
+	if occupancy <= 0 {
+		return noPayloadCeiling
+	}
+	return budget / occupancy
+}
+
+func refusedForItsSize(payload, ceiling int) bool {
+	return ceiling != noPayloadCeiling && payload > ceiling
+}
+
+func renderedPayload(c Candidate) string {
+	return c.Content
+}
+
+const (
+	sectionCandidate = "CANDIDATE"
+	sectionResult    = "RESULT"
+)
+
+func renderSection(b *strings.Builder, section string, c Candidate) {
+	fmt.Fprintf(b, "===== %s =====\nid: %d\ntype: %s\nname: %s\n\n%s\n", section, c.ID, c.Type, c.Name, renderedPayload(c))
 }
 
 // RenderUserContent composes the user message: the request, the instant it states and the window it was bounded to when one applied, the assembled block, then the same request again.
@@ -126,7 +158,7 @@ func RenderToolResult(r ToolExchange) string {
 		if r.Tool != ToolRecall {
 			return base
 		}
-		if anyCutForByteBudget(r.Dispositions) {
+		if anyCutForWantOfRoom(r.Dispositions) {
 			return base + "\n" + nudgeNarrowQuery
 		}
 		return base + "\n" + nudgeEscalate
@@ -137,14 +169,18 @@ func RenderToolResult(r ToolExchange) string {
 		if i > 0 {
 			b.WriteString("\n")
 		}
-		fmt.Fprintf(&b, "===== RESULT =====\nid: %d\ntype: %s\nname: %s\n\n%s\n", c.ID, c.Type, c.Name, c.Content)
+		renderSection(&b, sectionResult, c)
 	}
 	return b.String()
 }
 
-func anyCutForByteBudget(dispositions []Disposition) bool {
+func cutForWantOfRoom(reason string) bool {
+	return reason == cutReasonByteBudget || reason == cutReasonOversized
+}
+
+func anyCutForWantOfRoom(dispositions []Disposition) bool {
 	for _, d := range dispositions {
-		if d.CutReason == cutReasonByteBudget {
+		if cutForWantOfRoom(d.CutReason) {
 			return true
 		}
 	}
@@ -163,10 +199,8 @@ func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool) string
 	b.WriteString("\n")
 
 	for _, c := range admitted {
-		b.WriteString("\n===== CANDIDATE =====\n")
-		fmt.Fprintf(&b, "id: %d\ntype: %s\nname: %s\n\n", c.ID, c.Type, c.Name)
-		b.WriteString(c.Content)
 		b.WriteString("\n")
+		renderSection(&b, sectionCandidate, c)
 	}
 
 	if len(admitted) == 0 && consideredAny {
