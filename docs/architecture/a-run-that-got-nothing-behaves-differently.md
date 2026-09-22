@@ -384,20 +384,19 @@ is **structural, not empirical**: the shutout WARN reads `record.Candidates` beh
 and `grounded` additionally reads `ToolCalls[].Results[].Included`, so each can be true while the other is
 false by construction. Checked against the 42 records, **row 3 has exactly one instance (#14247) and rows 1
 and 2 have none** — no archived run retrieved zero candidates, and none was rescued by a supplementary
+recall.
+
+**Which alarm answers which question.** The shutout WARN is a **stage** alarm — *did initial assembly
+produce a usable block?*, asked once, before the model ran. The verdict WARN is an **outcome**
+alarm — *what did the whole run end up with?*, asked once, after every round. That is §2's partition
+applied to the log rather than to the detectors, and it is why either can fire without the other.
+
 **Row two is the load-bearing one, and it is why the shutout WARN must not be deleted as part of P1:** it
 is the only signal that says *the initial block was empty and something rescued it*. **It has never fired
 in 42 records**, and that is the point rather than an objection — **P2 and P3 exist to make it fire**, a
 relaxed re-admission being precisely an initial assembly that admitted nothing followed by a run that
 proceeds anyway. Deleting the stage alarm now would remove the instrument that shows P3 working, one phase
 before P3 ships — and would do it on the evidence that the instrument has never yet had anything to report.
-alarm — *what did the whole run end up with?*, asked once, after every round. That is §2's partition
-applied to the log rather than to the detectors, and it is why either can fire without the other.
-
-**Row two is the load-bearing one, and it is why the shutout WARN must not be deleted as part of P1:** it
-is the only signal that says *the initial block was empty and something rescued it*. That case is rare
-today and **P2 and P3 exist to make it common** — a relaxed re-admission is precisely an initial assembly
-that admitted nothing, followed by a run that proceeds anyway. Deleting the stage alarm now would remove
-the instrument that shows P3 working, one phase before P3 ships.
 
 **What P3 owes it, and P1 does not.** Once the ladder can rescue an empty assembly, the shutout WARN's own
 wording — *"the block carried the anchor alone"* — becomes **false on exactly the runs it is most worth
