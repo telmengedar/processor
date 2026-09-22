@@ -266,6 +266,9 @@ type Record struct {
 	StopReason StopReason `json:"stopReason"`
 	Limits     Limits     `json:"limits"`
 	Sampling   Sampling   `json:"sampling"`
+
+	// Outcome is the loop's own account of what this run obtained, recomputable from the rest of this record.
+	Outcome Outcome `json:"outcome"`
 }
 
 // ToolExchange is one tool round already completed in this turn.

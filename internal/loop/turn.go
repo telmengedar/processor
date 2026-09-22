@@ -197,6 +197,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 	record.Usage = judged.usages
 	record.StopReason = judged.stop
 	record.Sampling = judged.sampling
+	record.Outcome = ComputeOutcome(record)
 
 	receipt := t.Graph.WriteRun(context.WithoutCancel(ctx), record)
 
@@ -245,6 +246,12 @@ func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Dur
 	}
 	if receipt.NodeID != 0 {
 		attrs = append(attrs, "node", receipt.NodeID)
+	}
+
+	if outcome := record.Outcome; outcome.Verdict != VerdictDelivered {
+		t.log().Warn("the run did not deliver: what it obtained is not what a delivered run obtains",
+			"subject", record.Subject, "verdict", string(outcome.Verdict),
+			"produced", outcome.Produced, "grounded", outcome.Grounded, "curtailed", outcome.Curtailed)
 	}
 
 	if len(record.Candidates) > 0 && cut == len(record.Candidates) {

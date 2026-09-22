@@ -710,7 +710,7 @@ than none** (`what-the-adapters-may-share.md` §3.5) — each below was chosen a
 | **F-1** | `git grep -cE '"thinking"\|reasoning_content' HEAD -- 'internal/loop/*.go'` — C-2, a provider field name reaching the loop | **0** | **0** |
 | **F-2** | `git grep -nE '\bthink\b' HEAD -- 'internal/loop/*.go'` — the documented accommodation does not grow | **2**, both `derivationThinkBlock` | **2** |
 | **F-3** | Paired port test: **one** table of endpoint behaviours, run against **both** adapters, asserting identical `JudgeResult` + post-classification outcome. Rows: content only · content + reasoning · **reasoning only** · neither · tool call + reasoning | does not exist | passes — **this is C-1's guard** |
-| **F-4** | `summaryAnsweredYetEmpty` (`summary.go:31`) is **deleted**. Its condition — `Answer == "" && Reason == Answered` — is unreachable once §5.1 ships. If it is still referenced, §5.1 did not land | live, `summary.go:31,209` | **absent** |
+| **F-4** | ~~`summaryAnsweredYetEmpty` (`summary.go:31`) is **deleted**. Its condition — `Answer == "" && Reason == Answered` — is unreachable once §5.1 ships. If it is still referenced, §5.1 did not land~~ **Invalidated 2026-09-22.** The identifier was deleted by P1 of `a-run-that-got-nothing-behaves-differently.md`, which absorbed the marker into a computed verdict line while §5.1 remained unshipped. Its absence therefore no longer evidences anything about §5.1, and a reader who ran this check today would read a pass that is not one. Before relying on it, restate it against `answerSource` on the record, which is the thing §5.1 actually adds | live, `summary.go:31,209` | ~~**absent**~~ absent, by another unit |
 | **F-5** | Any request body captured from `ModelPort.Derive` on ollama lacking `"think":false` falsifies §3.4 | holds by construction | holds |
 | **F-6** | `Record.ModelCalls` for a fixed trajectory is unchanged by this design — S-3, and the guard against a retry arriving later by the side door | — | equal |
 | **F-7** | A record with `answerSource` absent decodes identically to a record written before this change — the `omitempty` compatibility claim | — | passes |
@@ -848,8 +848,10 @@ third.** They are separable features with separable value, per the one-feature-o
    leave the field unread and record why, which is a correct outcome (§5.3).
 3. `turn.go`'s `judge()`: the one decision box of §6.3, between `translate` and the tool branch. Promotion
    first, classification second, `Refused` exempt. **No control-flow change** — F-6.
-4. `summary.go`: **delete** `summaryAnsweredYetEmpty` and its branch (F-4); render `answerSource` on the
-   answer line when present. Tests: F-3's paired table, F-7's compatibility case.
+4. `summary.go`: ~~**delete** `summaryAnsweredYetEmpty` and its branch (F-4)~~ — **already deleted
+   2026-09-22** by P1 of `a-run-that-got-nothing-behaves-differently.md`, which absorbed the marker into
+   the verdict line; nothing remains to delete here. Render `answerSource` on the answer line when
+   present. Tests: F-3's paired table, F-7's compatibility case.
 
 **PR 2 — the derivation arm names its two causes.**
 

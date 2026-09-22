@@ -2,6 +2,8 @@ package loop
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -27,11 +29,10 @@ const (
 )
 
 const (
-	summaryNoProvider       = "[provider not recorded]"
-	summaryNoTool           = "[tool not recorded]"
-	summaryAnsweredYetEmpty = "  <-- terminal reason says answered"
-	summaryBlockOmitted     = "not rendered here"
-	summaryNoFillModel      = "[model not recorded]"
+	summaryNoProvider   = "[provider not recorded]"
+	summaryNoTool       = "[tool not recorded]"
+	summaryBlockOmitted = "not rendered here"
+	summaryNoFillModel  = "[model not recorded]"
 )
 
 type cutGroup struct {
@@ -248,19 +249,43 @@ func renderSummaryOutcome(b *strings.Builder, record Record) {
 	fmt.Fprintf(b, "\nOUTCOME  %s (raw %q), %d/%d model calls, cap %s\n",
 		record.StopReason.Reason, record.StopReason.Raw, record.ModelCalls, record.Limits.MaxModelCalls, reached)
 
+	renderSummaryVerdict(b, ComputeOutcome(record))
 	renderSummaryAnswer(b, record)
 	renderSummaryTokens(b, record.Usage)
 
 	fmt.Fprintf(b, "  [block  %d B assembled, %s]\n", len(record.Block), summaryBlockOmitted)
 }
 
+func renderSummaryVerdict(b *strings.Builder, outcome Outcome) {
+	fmt.Fprintf(b, "  verdict  %s (produced %s, grounded %s, curtailed %s)\n",
+		outcome.Verdict, summaryYesNo(outcome.Produced), summaryYesNo(outcome.Grounded), summaryYesNo(outcome.Curtailed))
+
+	if len(outcome.Acted) == 0 {
+		return
+	}
+
+	tools := slices.Sorted(maps.Keys(outcome.Acted))
+	parts := make([]string, len(tools))
+	for i, tool := range tools {
+		name := tool
+		if name == "" {
+			name = summaryNoTool
+		}
+		parts[i] = fmt.Sprintf("%s %d", name, outcome.Acted[tool])
+	}
+	fmt.Fprintf(b, "  acted    %s\n", strings.Join(parts, ", "))
+}
+
+func summaryYesNo(value bool) string {
+	if value {
+		return "yes"
+	}
+	return "no"
+}
+
 func renderSummaryAnswer(b *strings.Builder, record Record) {
 	if record.Answer == "" {
-		flag := ""
-		if record.StopReason.Reason == Answered {
-			flag = summaryAnsweredYetEmpty
-		}
-		fmt.Fprintf(b, "  answer   EMPTY (0 B)%s\n", flag)
+		b.WriteString("  answer   EMPTY (0 B)\n")
 		return
 	}
 
