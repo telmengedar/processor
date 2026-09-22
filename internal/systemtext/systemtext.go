@@ -1,6 +1,8 @@
-package main
+// Package systemtext carries the system text sent with every judgement step.
+package systemtext
 
-const systemText = `You are answering a question for a human reader.
+// Text is the system text sent with every judgement step.
+const Text = `You are answering a question for a human reader.
 
 A context block is provided with this request. It was assembled by an automatic memory search, not by you. It begins with the subject of this request, followed by other material the search found related. Each part has an id, a type, a name, and a body.
 

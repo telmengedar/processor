@@ -1,4 +1,5 @@
-package main
+// Package ports builds the loop's model and fill ports from boot configuration.
+package ports
 
 import (
 	"context"
@@ -93,7 +94,7 @@ func (m *fillOllamaModel) Condense(ctx context.Context, prompt string, maxOutput
 	}, nil
 }
 
-func newFillModel(cfg boot.ModelConfig, sampling loop.Sampling) (condense.ModelPort, error) {
+func fillModel(cfg boot.ModelConfig, sampling loop.Sampling) (condense.ModelPort, error) {
 	switch cfg.Protocol {
 	case boot.ProtocolOpenAICompat:
 		return &fillOpenAICompatModel{client: openaicompat.NewClient(cfg.URL, cfg.ID, cfg.Key, sampling, nil)}, nil
@@ -103,14 +104,31 @@ func newFillModel(cfg boot.ModelConfig, sampling loop.Sampling) (condense.ModelP
 	return nil, fmt.Errorf("condense model protocol %q has no adapter in this binary", cfg.Protocol)
 }
 
-func newFillPort(cfg boot.ModelConfig, configured bool, graph *divoid.Client) (loop.FillPort, error) {
+// FillGraph adapts client to the condense pass's own graph seam, which can read a node and write its substance and nothing else.
+func FillGraph(client *divoid.Client) condense.GraphPort {
+	return &fillGraphAdapter{client: client}
+}
+
+// Fill builds the loop's fill port over graph, or nil when no condense model is configured.
+func Fill(cfg boot.ModelConfig, configured bool, graph condense.GraphPort) (loop.FillPort, error) {
 	if !configured {
 		return nil, nil
 	}
 	sampling := loop.Sampling{Temperature: cfg.Temperature, TopP: cfg.TopP}
-	model, err := newFillModel(cfg, sampling)
+	model, err := fillModel(cfg, sampling)
 	if err != nil {
 		return nil, err
 	}
-	return fill.New(&fillGraphAdapter{client: graph}, model, nil), nil
+	return fill.New(graph, model, nil), nil
+}
+
+// Model builds the model port that cfg's protocol names, sending sampling with every call.
+func Model(cfg boot.ModelConfig, sampling loop.Sampling) (loop.ModelPort, error) {
+	switch cfg.Protocol {
+	case boot.ProtocolOpenAICompat:
+		return openaicompat.NewClient(cfg.URL, cfg.ID, cfg.Key, sampling, nil), nil
+	case boot.ProtocolOllama:
+		return ollama.NewClient(cfg.URL, cfg.ID, cfg.Key, sampling, nil), nil
+	}
+	return nil, fmt.Errorf("model protocol %q has no adapter in this binary", cfg.Protocol)
 }

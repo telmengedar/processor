@@ -15,6 +15,7 @@ import (
 	"github.com/telmengedar/processor/internal/divoid"
 	"github.com/telmengedar/processor/internal/loop"
 	"github.com/telmengedar/processor/internal/server"
+	"github.com/telmengedar/processor/internal/systemtext"
 )
 
 const storedNodeID = 10525
@@ -115,7 +116,7 @@ func runOneTurn(t *testing.T, failing string) (*httptest.ResponseRecorder, []byt
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	graph := divoid.NewClient(graphSrv.URL, "k", graphSrv.Client(), logger)
-	turn := loop.NewTurn(graph, answeringModel{}, nil, systemText, "test-model-id", logger)
+	turn := loop.NewTurn(graph, answeringModel{}, nil, systemtext.Text, "test-model-id", logger)
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/runs", bytes.NewBufferString(`{"input":"what changed","subject":42}`))

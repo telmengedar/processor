@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -13,9 +12,9 @@ import (
 	"github.com/telmengedar/processor/internal/boot"
 	"github.com/telmengedar/processor/internal/divoid"
 	"github.com/telmengedar/processor/internal/loop"
-	"github.com/telmengedar/processor/internal/ollama"
-	"github.com/telmengedar/processor/internal/openaicompat"
+	"github.com/telmengedar/processor/internal/ports"
 	"github.com/telmengedar/processor/internal/server"
+	"github.com/telmengedar/processor/internal/systemtext"
 	"github.com/telmengedar/processor/internal/workspace"
 )
 
@@ -64,7 +63,7 @@ func run() int {
 
 	sampling := loop.Sampling{Temperature: modelCfg.Temperature, TopP: modelCfg.TopP}
 
-	model, err := newModel(modelCfg, sampling)
+	model, err := ports.Model(modelCfg, sampling)
 	if err != nil {
 		logger.Error("boot configuration", "error", err)
 		return 1
@@ -76,9 +75,9 @@ func run() int {
 	}
 
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
-	turn := loop.NewTurn(graph, model, files, systemText, modelCfg.ID, logger)
+	turn := loop.NewTurn(graph, model, files, systemtext.Text, modelCfg.ID, logger)
 
-	fillPort, err := newFillPort(condenseCfg, condenseConfigured, graph)
+	fillPort, err := ports.Fill(condenseCfg, condenseConfigured, ports.FillGraph(graph))
 	if err != nil {
 		logger.Error("boot configuration", "error", err)
 		return 1
@@ -97,14 +96,4 @@ func run() int {
 	}
 
 	return 0
-}
-
-func newModel(cfg boot.ModelConfig, sampling loop.Sampling) (loop.ModelPort, error) {
-	switch cfg.Protocol {
-	case boot.ProtocolOpenAICompat:
-		return openaicompat.NewClient(cfg.URL, cfg.ID, cfg.Key, sampling, nil), nil
-	case boot.ProtocolOllama:
-		return ollama.NewClient(cfg.URL, cfg.ID, cfg.Key, sampling, nil), nil
-	}
-	return nil, fmt.Errorf("model protocol %q has no adapter in this binary", cfg.Protocol)
 }
