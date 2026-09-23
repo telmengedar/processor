@@ -208,6 +208,12 @@ type StopReason struct {
 	Raw    string         `json:"raw"`
 }
 
+// LastResponse is the two facts the turn's last judgement call's response carried on channels every request suppresses and no caller reads.
+type LastResponse struct {
+	ReasoningBytes     int `json:"reasoningBytes"`
+	UnofferedToolCalls int `json:"unofferedToolCalls"`
+}
+
 // WriteState is the closed set of ways one record's filing can end.
 type WriteState string
 
@@ -295,10 +301,12 @@ type Record struct {
 	// ReservedCall is what became of the judgement call this turn reserved for answering, absent on a turn that reserved none.
 	ReservedCall ReservedCall `json:"reservedCall,omitzero"`
 	// Usage carries one entry per model call, in call order, nil where the endpoint reported none.
-	Usage      []*Usage   `json:"usage"`
-	StopReason StopReason `json:"stopReason"`
-	Limits     Limits     `json:"limits"`
-	Sampling   Sampling   `json:"sampling"`
+	Usage []*Usage `json:"usage"`
+	// LastResponse is present exactly when the turn's last judgement call returned a response; absent means either that call returned none, or the record predates this field.
+	LastResponse *LastResponse `json:"lastResponse,omitempty"`
+	StopReason   StopReason    `json:"stopReason"`
+	Limits       Limits        `json:"limits"`
+	Sampling     Sampling      `json:"sampling"`
 
 	// Outcome is the loop's own account of what this run obtained, recomputable from the rest of this record.
 	Outcome Outcome `json:"outcome"`
