@@ -290,9 +290,24 @@ func TestRenderSummarySumsTokensOverTheCallsTheEndpointActuallyReported(t *testi
 
 	summary := RenderSummary(record, summaryInstant())
 
-	const want = "tokens   71414 in / 439 out over 2 calls  (out per call: 30, 409)"
+	const want = "tokens   71414 in / 439 out over 2 calls  (out per call: 30, ?, 409)"
 	if !strings.Contains(summary, want) {
-		t.Fatalf("the summary does not state %q; three usage slots were given and one is nil.\nsummary:\n%s", want, summary)
+		t.Fatalf("the summary does not state %q; three usage slots were given and one is nil, and the nil must hold its own position rather than being skipped — otherwise 409 (call 3's tokens) prints in call 2's place.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryTokensPlaceholdsANilInTheLastPositionRatherThanDroppingIt(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Usage = []*Usage{{InTokens: 70000, OutTokens: 30}, {InTokens: 1414, OutTokens: 409}, nil}
+	record.ModelCalls = 3
+
+	summary := RenderSummary(record, summaryInstant())
+
+	const want = "tokens   71414 in / 439 out over 2 calls  (out per call: 30, 409, ?)"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not state %q; the last call reported no usage, and the last printed position must still be the last call's, not silently absent.\nsummary:\n%s", want, summary)
 	}
 }
 
