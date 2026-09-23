@@ -263,7 +263,8 @@ The turn: fetch the subject, derive the query set and window described above, re
 them, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
 model, dispatch a tool each time the model asks for one (up to a **judgement**-call cap of 6, so at most 5
-tool dispatches per run — the capping call's request is counted but never dispatched; the derivation call
+tool dispatches per run — the sixth call is reserved for answering and is issued with no tool list at all,
+because the loop already knows it would not dispatch what that call asked for; the derivation call
 above is not charged to this cap, so a turn makes up to **seven** model calls in all), then write the
 record back to the graph as one `session-log` node linked to the subject. The node's content is
 `text/markdown; charset=utf-8`: the run's own account first (the same prose `RenderSummary` renders, in
@@ -271,10 +272,15 @@ record back to the graph as one `session-log` node linked to the subject. The no
 one fenced ` ```json ` block. The record — described next — is recovered by taking the content's last
 fenced `json` block and parsing it.
 
-Two tools are offered on every call: `recall`, which searches the same graph, and `write_file`, which
-writes one file into the run's working directory. Neither is urged — the system text names each in one
-sentence and still asks for prose — so whether a run reaches for the file tool is a property of the model
-and the task, not of the prompt.
+Two tools are offered on every call the loop is still willing to dispatch one from: `recall`, which
+searches the same graph, and `write_file`, which writes one file into the run's working directory. Neither
+is urged — the system text names each in one sentence and still asks for prose — so whether a run reaches
+for the file tool is a property of the model and the task, not of the prompt. The turn's **last** call
+carries neither: where the call budget is spent, or recall has closed on consecutive barren rounds, the
+loop reserves that call for answering and sends no tool list, so prose is the only terminal the call can
+reach. The omission is the whole mechanism — nothing is added to the prompt, and no adapter may return a
+tool-wanting terminal from such a call, not from a native tool field and not by recovering one from the
+response text.
 
 Response (`200`) is the run record: the input, the instant the prompt stated (`now`, absent when it
 stated none), the query and the full query set the derivation produced (`queries`, with `input` always
@@ -292,15 +298,22 @@ absent on a round no adapter produced; for a recall round the
 query and, for every row it returned — not only the admitted ones — the same
 rank/id/type/name/similarity/size/content-hash/included/cut-reason columns the candidates carry; for a write
 round the `path` the model asked for and the `bytes` it offered; and on either an `error` if the round was
-malformed, refused, capped or failed), the run's `workspace` directory when one was opened — absent when the
-run attempted no write, and never carrying what was written, which is only on disk — how many model calls were made and whether the per-run call cap
-was reached (`capReached`), token usage as one entry per model call, in call order, named for the direction
-of travel (`inTokens`/`outTokens` — a `null` entry means that call's endpoint reported no usage object,
-absent, never zero-filled), the stop reason (both the loop's own neutral value and the endpoint's raw
+malformed, refused or failed — no round can be *capped*, because the call that would have carried the request
+is issued with no tool list at all), the run's `workspace` directory when one was opened — absent when the
+run attempted no write, and never carrying what was written, which is only on disk — how many model calls were made and whether the turn's last call
+was reserved for answering because the call budget was spent (`capReached`), what became of that reserved
+call (`reservedCall`, absent on a run that reserved none: `state` is `unmade` where the turn stopped before
+issuing it, `completed` where the endpoint answered it — whatever it answered with — and `failed` where the
+call did not complete, with `error` carrying the cause on that last one alone; the three are distinguishable
+from this field alone, because a run whose reserved call never happened would otherwise read exactly like one
+whose reserved call answered with nothing), token usage as one entry per model call, in call order, named for
+the direction of travel (`inTokens`/`outTokens` — a `null` entry means that call reported no usage object:
+either the endpoint returned none, or the call was the reserved one and failed before reaching an endpoint at
+all; absent, never zero-filled), the stop reason (both the loop's own neutral value and the endpoint's raw
 string), why the turn stopped where the run's own remaining time could not afford another judgement call
 (`timeShortfall`, absent on every run that ended any other way), the constants that governed the run
 (`limits`: candidate limit, assembly byte budget, supplementary byte budget, max model calls, and one
-output budget per model call site — `derivationBudget` and `judgementBudget`), and the sampling the run was made with
+output budget per model call site — `derivationBudget`, `judgementBudget` and `answeringBudget`), and the sampling the run was made with
 (`sampling`: `temperature` and `topP`, each key absent when nothing was sent for it).
 
 **Read that as a description, not as the field list.** `Record` in `internal/loop/types.go` is the field

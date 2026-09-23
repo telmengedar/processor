@@ -78,6 +78,8 @@ func TestAnAdmittedRowFromADispatchedRoundGroundsARunWhoseBlockAdmittedNothing(t
 	}
 }
 
+const archivedCapCause = "call cap reached"
+
 func TestAnAdmittedRowInsideAnErroredRoundGroundsNothingBecauseItNeverReachedTheModel(t *testing.T) {
 	t.Parallel()
 
@@ -86,7 +88,7 @@ func TestAnAdmittedRowInsideAnErroredRoundGroundsNothingBecauseItNeverReachedThe
 	record.ToolCalls = []ToolCallRecord{{
 		Tool:    ToolRecall,
 		Query:   "the missing thing",
-		Error:   errCallCapReached,
+		Error:   archivedCapCause,
 		Results: []Disposition{{Rank: 1, ID: 21, Included: true}},
 	}}
 
@@ -257,7 +259,7 @@ func TestActedExcludesARoundThatCarriedAnError(t *testing.T) {
 	record := outcomeRecord()
 	record.ToolCalls = []ToolCallRecord{
 		{Tool: ToolRecall, Query: "dispatched"},
-		{Tool: ToolRecall, Query: "refused", Error: errCallCapReached},
+		{Tool: ToolRecall, Query: "refused", Error: archivedCapCause},
 	}
 
 	acted := ComputeOutcome(record).Acted

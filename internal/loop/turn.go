@@ -23,11 +23,17 @@ const (
 )
 
 const (
-	errCallCapReached      = "call cap reached"
 	errRunTimeShort        = "the run's remaining time cannot afford another judgement call"
 	errNoWorkingDirectory  = "no working directory is configured"
 	errRecallClosedToModel = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
-	errRecallClosedCause   = "recall closed"
+	errReservedCallRefused = "the turn's last call was reserved for answering, so it offered no tool and dispatched none"
+)
+
+type reservation string
+
+const (
+	reservedByCallCap      reservation = "callCap"
+	reservedByClosedRecall reservation = "closedRecall"
 )
 
 // CarriedCauseRunes bounds a cause carried to a durable, shared or prompt-bearing destination.
@@ -183,6 +189,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 			MaxModelCalls:           MaxModelCalls,
 			DerivationBudget:        DerivationBudget,
 			JudgementBudget:         JudgementBudget,
+			AnsweringBudget:         AnsweringBudget,
 			RelevanceFloor:          RelevanceFloor,
 			MaxFills:                MaxFills,
 			FillSizeFloor:           FillSizeFloor,
@@ -205,6 +212,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 	record.CapReached = judged.capReached
 	record.RecallClosed = judged.recallClosed
 	record.TimeShortfall = judged.timeShortfall
+	record.ReservedCall = judged.reservedCall
 	record.Usage = judged.usages
 	record.StopReason = judged.stop
 	record.Sampling = judged.sampling
@@ -327,9 +335,12 @@ type judgement struct {
 	capReached    bool
 	recallClosed  bool
 	timeShortfall string
-	usages        []*Usage
-	sampling      Sampling
-	provider      Provider
+
+	reservedCall ReservedCall
+
+	usages   []*Usage
+	sampling Sampling
+	provider Provider
 }
 
 func (t *Turn) judgementShortfall(ctx context.Context) string {
@@ -355,7 +366,8 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 	var exchanges []ToolExchange
 
 	account := newYieldAccount(admitted)
-	final := false
+	reserved := reservation("")
+	dispatched := 0
 
 	for {
 		if shortfall := t.judgementShortfall(ctx); shortfall != "" {
@@ -368,6 +380,13 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 			break
 		}
 
+		if reserved == "" && judged.modelCalls+1 >= MaxModelCalls {
+			reserved = reservedByCallCap
+			judged.capReached = true
+			judged.reservedCall = ReservedCall{State: ReservedCallUnmade}
+			t.logReservation(reserved, judged.modelCalls+1, dispatched)
+		}
+
 		judged.modelCalls++
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
@@ -377,15 +396,33 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 			PriorTools:      exchanges,
 			Now:             now,
 			Window:          window,
-			MaxOutputTokens: JudgementBudget,
+			MaxOutputTokens: outputBudget(reserved),
+			WithholdTools:   reserved != "",
 		})
 		if jerr != nil {
-			return judgement{}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
+			if reserved == "" {
+				return judgement{}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
+			}
+			judged.answer = ""
+			judged.usages = append(judged.usages, nil)
+			judged.reservedCall = ReservedCall{State: ReservedCallFailed, Error: BoundCause(jerr.Error())}
+			t.log().Warn("the reserved answering call failed: the turn ends with the record it already holds rather than failing the run",
+				"condition", string(reserved), "modelCalls", judged.modelCalls, "error", jerr)
+			break
+		}
+
+		if reserved != "" {
+			judged.reservedCall.State = ReservedCallCompleted
 		}
 
 		if result.ReasoningBytes > 0 {
 			t.log().Warn("the response carried reasoning on a request that suppressed it: the endpoint took the control and ignored it",
 				"adapter", result.Provider.Adapter, "reasoningBytes", result.ReasoningBytes)
+		}
+
+		if result.UnofferedToolCalls > 0 {
+			t.log().Warn("the response carried a tool call on a request that offered none: the endpoint answered a tool list it was never sent",
+				"adapter", result.Provider.Adapter, "unofferedToolCalls", result.UnofferedToolCalls)
 		}
 
 		judged.answer = result.Answer
@@ -394,22 +431,17 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 		judged.sampling = result.Sampling
 		judged.provider = result.Provider
 
-		if final {
+		if reserved != "" {
 			if wantsTool(result.Reason) {
-				pending := undispatchedExchange(result, errRecallClosedCause)
-				pending.ToolSource = result.ToolSource
-				exchanges = append(exchanges, pending)
+				refused := undispatchedExchange(result, errReservedCallRefused)
+				refused.ToolSource = result.ToolSource
+				exchanges = append(exchanges, refused)
+				t.log().Warn("the reserved answering call returned a tool-wanting terminal: the adapter honoured a tool list the request did not carry",
+					"adapter", result.Provider.Adapter, "condition", string(reserved), "tool", toolFor(result.Reason))
 			}
 			break
 		}
 		if !wantsTool(result.Reason) {
-			break
-		}
-		if judged.modelCalls >= MaxModelCalls {
-			judged.capReached = true
-			capped := cappedExchange(result)
-			capped.ToolSource = result.ToolSource
-			exchanges = append(exchanges, capped)
 			break
 		}
 		if result.Reason == WantsRecall && account.closed() {
@@ -417,7 +449,9 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 			closed := closedRecallExchange(result)
 			closed.ToolSource = result.ToolSource
 			exchanges = append(exchanges, closed)
-			final = true
+			reserved = reservedByClosedRecall
+			judged.reservedCall = ReservedCall{State: ReservedCallUnmade}
+			t.logReservation(reserved, judged.modelCalls+1, dispatched)
 			continue
 		}
 
@@ -425,10 +459,23 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 		exchange.ToolSource = result.ToolSource
 		accountForYield(account, &exchange)
 		exchanges = append(exchanges, exchange)
+		dispatched++
 	}
 
 	judged.toolCalls = toolCallRecords(exchanges)
 	return judged, nil
+}
+
+func (t *Turn) logReservation(reserved reservation, call, dispatched int) {
+	t.log().Info("the turn reserved its last judgement call for answering: no tool is offered on a call whose tool request it would not dispatch",
+		"condition", string(reserved), "call", call, "callCap", MaxModelCalls, "dispatched", dispatched, "budget", AnsweringBudget)
+}
+
+func outputBudget(reserved reservation) int {
+	if reserved == "" {
+		return JudgementBudget
+	}
+	return AnsweringBudget
 }
 
 func wantsTool(reason TerminalReason) bool {
@@ -440,10 +487,6 @@ func toolFor(reason TerminalReason) string {
 		return ToolWriteFile
 	}
 	return ToolRecall
-}
-
-func cappedExchange(result JudgeResult) ToolExchange {
-	return undispatchedExchange(result, errCallCapReached)
 }
 
 func undispatchedExchange(result JudgeResult, cause string) ToolExchange {

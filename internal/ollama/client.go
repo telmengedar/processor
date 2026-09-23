@@ -106,12 +106,14 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		Messages: buildMessages(in),
 		Stream:   false,
 		Think:    thinkingOff,
-		Tools:    []wireTool{recallTool(), writeFileTool()},
 		Options: wireOptions{
 			NumPredict:  in.MaxOutputTokens,
 			Temperature: c.sampling.Temperature,
 			TopP:        c.sampling.TopP,
 		},
+	}
+	if !in.WithholdTools {
+		reqBody.Tools = []wireTool{recallTool(), writeFileTool()}
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -144,7 +146,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		return loop.JudgeResult{}, len(body), fmt.Errorf("decode response: %w", err)
 	}
 
-	result := translate(wire)
+	result := translate(wire, in.WithholdTools)
 	result.Sampling = c.sampling
 	result.Provider = loop.Provider{Adapter: adapterName, Endpoint: redacturl.URL(endpoint)}
 	return result, len(body), nil

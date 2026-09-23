@@ -261,7 +261,7 @@ func TestTurnRunRecordsAMalformedWriteRequestWithoutOpeningTheWorkingDirectory(t
 	}
 }
 
-func TestTurnRunCountsTheCappingWriteRoundWithoutDispatchingIt(t *testing.T) {
+func TestTurnRunOffersNoWriteToolOnTheCallItWouldNotDispatchOneFrom(t *testing.T) {
 	t.Parallel()
 
 	files := &fakeFiles{dir: "/runs/run-1"}
@@ -278,17 +278,16 @@ func TestTurnRunCountsTheCappingWriteRoundWithoutDispatchingIt(t *testing.T) {
 	}
 
 	if !record.CapReached {
-		t.Fatal("record.CapReached is false, want true — the final call still wanted the tool")
+		t.Fatal("record.CapReached is false, want true — the last call was reserved because the call budget was spent")
 	}
 	if len(files.writes) != MaxModelCalls-1 {
 		t.Fatalf("files.writes = %+v, want exactly %d dispatched writes under a cap of %d model calls", files.writes, MaxModelCalls-1, MaxModelCalls)
 	}
-	if len(record.ToolCalls) != MaxModelCalls {
-		t.Fatalf("record.ToolCalls has %d entries, want %d — the capped round is counted", len(record.ToolCalls), MaxModelCalls)
+	if len(record.ToolCalls) != MaxModelCalls-1 {
+		t.Fatalf("record.ToolCalls has %d entries, want %d — the reserved call was offered no write tool, so it made no round to count", len(record.ToolCalls), MaxModelCalls-1)
 	}
-	capped := record.ToolCalls[MaxModelCalls-1]
-	if capped.Tool != ToolWriteFile || capped.Path != "c.html" || capped.Error != "call cap reached" {
-		t.Fatalf("the final record.ToolCalls entry = %+v, want the undispatched write named with the cap reason", capped)
+	if last := model.calls[len(model.calls)-1]; !last.WithholdTools {
+		t.Fatal("the reserved call was issued with its tool list intact; a call that can still write is a call that can still end without prose")
 	}
 }
 

@@ -218,7 +218,7 @@ func TestRenderSummaryNamesTheVerdictThePredicatesBehindItAndTheRoundsThatActed(
 		{Tool: ToolRecall, Query: "first"},
 		{Tool: ToolRecall, Query: "second"},
 		{Tool: ToolWriteFile, Path: "index.html"},
-		{Tool: ToolRecall, Query: "refused", Error: errCallCapReached},
+		{Tool: ToolRecall, Query: "refused", Error: archivedCapCause},
 	}
 
 	summary := RenderSummary(record, summaryInstant())
