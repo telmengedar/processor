@@ -329,24 +329,26 @@ func renderSummaryAnswer(b *strings.Builder, record Record) {
 }
 
 func renderSummaryTokens(b *strings.Builder, usage []*Usage) {
-	in, out := 0, 0
-	perCall := make([]string, 0, len(usage))
-	for _, u := range usage {
+	in, out, reports := 0, 0, 0
+	perCall := make([]string, len(usage))
+	for i, u := range usage {
 		if u == nil {
+			perCall[i] = "?"
 			continue
 		}
 		in += u.InTokens
 		out += u.OutTokens
-		perCall = append(perCall, strconv.Itoa(u.OutTokens))
+		reports++
+		perCall[i] = strconv.Itoa(u.OutTokens)
 	}
 
-	if len(perCall) == 0 {
+	if reports == 0 {
 		b.WriteString("  tokens   not recorded\n")
 		return
 	}
 
 	fmt.Fprintf(b, "  tokens   %d in / %d out over %d calls  (out per call: %s)\n",
-		in, out, len(perCall), strings.Join(perCall, ", "))
+		in, out, reports, strings.Join(perCall, ", "))
 }
 
 func splitDispositions(dispositions []Disposition) (admitted []Disposition, cut []cutGroup) {
