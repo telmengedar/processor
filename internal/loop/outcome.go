@@ -6,7 +6,7 @@ import "strings"
 type Verdict string
 
 const (
-	// VerdictCurtailed is a tool-dispatch bound or the remaining-time guard ending the turn while the model still wanted a tool.
+	// VerdictCurtailed is a turn whose last call was reserved for answering, or which the remaining-time guard stopped, rather than one that ran to its own end.
 	VerdictCurtailed Verdict = "curtailed"
 	// VerdictEmpty is a run no tool-dispatch bound stopped that nonetheless produced no text.
 	VerdictEmpty Verdict = "empty"
@@ -26,7 +26,7 @@ type Outcome struct {
 	// Grounded is true when an admitted row reached the model, from the block or from a dispatched round.
 	Grounded bool `json:"grounded"`
 
-	// Curtailed is true when a tool-dispatch bound or the remaining-time guard ended the turn while the model still wanted a tool.
+	// Curtailed is true when the turn's last call was reserved for answering or the remaining-time guard stopped the turn, whatever the model then produced.
 	Curtailed bool `json:"curtailed"`
 
 	// Acted counts the tool rounds that completed without error, by tool; no verdict consumes it.

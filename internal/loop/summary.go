@@ -262,11 +262,22 @@ func renderSummaryOutcome(b *strings.Builder, record Record) {
 		fmt.Fprintf(b, "  stopped  %s\n", summaryTrunc(record.TimeShortfall, summaryErrorRunes))
 	}
 
+	if record.ReservedCall.State != "" {
+		fmt.Fprintf(b, "  reserved %s\n", summaryReservedCall(record.ReservedCall))
+	}
+
 	renderSummaryVerdict(b, ComputeOutcome(record))
 	renderSummaryAnswer(b, record)
 	renderSummaryTokens(b, record.Usage)
 
 	fmt.Fprintf(b, "  [block  %d B assembled, %s]\n", len(record.Block), summaryBlockOmitted)
+}
+
+func summaryReservedCall(reserved ReservedCall) string {
+	if reserved.Error == "" {
+		return string(reserved.State)
+	}
+	return string(reserved.State) + ": " + summaryTrunc(reserved.Error, summaryErrorRunes)
 }
 
 func summaryRecallBound(record Record) string {

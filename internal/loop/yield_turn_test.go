@@ -100,8 +100,8 @@ func TestFiveRecallsDifferingOnlyByADateSuffixStopBuyingRoundsOnceTwoInARowAdded
 	if want := []int{repeatedRowCount, 0, 0}; !sameInts(yieldsOf(record), want) {
 		t.Fatalf("the dispatched rounds recorded yields %v, want %v: the first brought rows and the rest returned what was already in front of the model", yieldsOf(record), want)
 	}
-	if len(record.ToolCalls) != 5 {
-		t.Fatalf("the record carries %d rounds, want 5: three dispatched, the refusal the model was shown, and the request it made after that", len(record.ToolCalls))
+	if len(record.ToolCalls) != 4 {
+		t.Fatalf("the record carries %d rounds, want 4: three dispatched and the refusal the model was shown; the call that followed was offered no tool and asked for nothing", len(record.ToolCalls))
 	}
 	if refused := record.ToolCalls[3]; refused.Error != errRecallClosedToModel {
 		t.Fatalf("the refused round carries error %q, want the sentence the model was shown", refused.Error)
@@ -359,12 +359,12 @@ func sameBools(a, b []bool) bool {
 	return true
 }
 
-func TestTheToolTheModelStillWantedAfterRecallClosedIsRecordedRatherThanDropped(t *testing.T) {
+func TestAToolWantedOnTheReservedCallAfterRecallClosedIsRecordedRatherThanDispatched(t *testing.T) {
 	t.Parallel()
 
 	queries := recallsDifferingOnlyByADateSuffix(MaxModelCalls)
 	graph := graphReturningTheSameRowsToEveryRecall()
-	model := &fakeModel{results: queries}
+	model := &fakeModel{ignoresWithheldToolList: true, results: queries}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
@@ -376,8 +376,8 @@ func TestTheToolTheModelStillWantedAfterRecallClosedIsRecordedRatherThanDropped(
 	if pending.Query != queries[record.ModelCalls-1].RecallQuery {
 		t.Fatalf("the last round carries query %q, want the one the final judgement asked for, %q: a request the loop refused must not vanish from the record", pending.Query, queries[record.ModelCalls-1].RecallQuery)
 	}
-	if pending.Error != errRecallClosedCause {
-		t.Fatalf("the request the loop never dispatched carries error %q, want the bound that refused it named the way the call cap names its own", pending.Error)
+	if pending.Error != errReservedCallRefused {
+		t.Fatalf("the request the loop never dispatched carries error %q, want the reservation that refused it named as the loop's own sentence", pending.Error)
 	}
 	if len(pending.Results) != 0 {
 		t.Fatalf("the undispatched request carries %d results, want none: it never reached the graph", len(pending.Results))

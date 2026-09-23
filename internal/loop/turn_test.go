@@ -105,6 +105,11 @@ type fakeModel struct {
 	results []JudgeResult
 	err     error
 
+	ignoresWithheldToolList bool
+
+	failOn  int
+	failErr error
+
 	beforeReturn func()
 
 	derivedText string
@@ -135,6 +140,9 @@ func (f *fakeModel) Judge(_ context.Context, in JudgeInput) (JudgeResult, error)
 	if f.err != nil {
 		return JudgeResult{}, f.err
 	}
+	if f.failOn == len(f.calls) {
+		return JudgeResult{}, f.failErr
+	}
 	if len(f.results) == 0 {
 		return JudgeResult{Reason: Answered, RawReason: "stop"}, nil
 	}
@@ -142,7 +150,24 @@ func (f *fakeModel) Judge(_ context.Context, in JudgeInput) (JudgeResult, error)
 	if idx >= len(f.results) {
 		idx = len(f.results) - 1
 	}
-	return f.results[idx], nil
+	if !in.WithholdTools || f.ignoresWithheldToolList {
+		return f.results[idx], nil
+	}
+	return withoutToolRequest(f.results[idx]), nil
+}
+
+func withoutToolRequest(result JudgeResult) JudgeResult {
+	if !wantsTool(result.Reason) {
+		return result
+	}
+	result.Reason = Answered
+	result.RawReason = "stop"
+	result.RecallQuery = ""
+	result.WritePath = ""
+	result.WriteContent = ""
+	result.ToolError = ""
+	result.ToolSource = ""
+	return result
 }
 
 func newTurnWithGraph(graph GraphPort) *Turn {
@@ -347,7 +372,7 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	if record.CapReached {
 		t.Fatal("record.CapReached = true, want false — the model answered on the first call, the cap never fired")
 	}
-	wantLimits := Limits{CandidateLimit: 20, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, RelevanceFloor: 0.63, MaxFills: 2, FillSizeFloor: 8_000, MaxFillContentBytes: 100_000}
+	wantLimits := Limits{CandidateLimit: 20, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, AnsweringBudget: 192, RelevanceFloor: 0.63, MaxFills: 2, FillSizeFloor: 8_000, MaxFillContentBytes: 100_000}
 	if record.Limits != wantLimits {
 		t.Fatalf("record.Limits = %+v, want %+v", record.Limits, wantLimits)
 	}
@@ -544,32 +569,25 @@ func TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall(t *testing.
 	if len(graph.recallCalls) != wantRecallCalls {
 		t.Fatalf("Recall was called %d times, want %d", len(graph.recallCalls), wantRecallCalls)
 	}
-	if record.StopReason.Reason != WantsRecall {
-		t.Fatalf("record.StopReason.Reason = %q, want WantsRecall (the cap fired mid-request)", record.StopReason.Reason)
+	if record.StopReason.Reason != Answered {
+		t.Fatalf("record.StopReason.Reason = %q, want Answered — the last call carried no tool, so prose is the only terminal it could reach", record.StopReason.Reason)
 	}
 	if !record.CapReached {
-		t.Fatal("record.CapReached = false, want true — the cap fired while the model still wanted recall")
+		t.Fatal("record.CapReached = false, want true — the last call was reserved because the call budget was spent")
 	}
-	if len(record.ToolCalls) != wantModelCallCap {
-		t.Fatalf("record.ToolCalls has %d entries, want %d (the cap-reached round counted too)", len(record.ToolCalls), wantModelCallCap)
-	}
-	last := record.ToolCalls[len(record.ToolCalls)-1]
-	if last.Query != "q3" {
-		t.Fatalf("record.ToolCalls[last].Query = %q, want %q — the model's final query must not be discarded", last.Query, "q3")
-	}
-	if len(last.Results) != 0 {
-		t.Fatalf("record.ToolCalls[last].Results = %+v, want empty — the round was never dispatched", last.Results)
+	if len(record.ToolCalls) != wantDispatchedRecalls {
+		t.Fatalf("record.ToolCalls has %d entries, want %d (every dispatched round and nothing beside) — the reserved call has no tool request to record", len(record.ToolCalls), wantDispatchedRecalls)
 	}
 }
 
-func TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch(t *testing.T) {
+func TestACappedRunCarriesNoRoundThatWasRefusedForWantOfBudget(t *testing.T) {
 	t.Parallel()
 
 	graph := graphYieldingNewRowsToEveryRecall()
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q1"},
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q2"},
-		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the query that was never dispatched"},
+		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q3"},
 	}}
 	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
 
@@ -577,22 +595,17 @@ func TestTurnRunRecordsTheFinalRecallQueryEvenWhenTheCapPreventsDispatch(t *test
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if len(record.ToolCalls) != MaxModelCalls {
-		t.Fatalf("record.ToolCalls has %d entries, want %d (every dispatched round + the cap-reached round)", len(record.ToolCalls), MaxModelCalls)
+	if !record.CapReached {
+		t.Fatal("record.CapReached = false, want the run to have spent its call budget")
 	}
-	last := record.ToolCalls[MaxModelCalls-1]
-	if last.Query != "the query that was never dispatched" {
-		t.Fatalf("the final record.ToolCalls entry has Query = %q, want the model's final query preserved", last.Query)
-	}
-	if last.Error == "" {
-		t.Fatal("the final record.ToolCalls entry has an empty Error, want the cap-reached round flagged")
-	}
-	if len(last.Results) != 0 {
-		t.Fatalf("the final record.ToolCalls entry has Results = %+v, want empty — the round was never dispatched", last.Results)
+	for i, call := range record.ToolCalls {
+		if call.Error != "" {
+			t.Fatalf("round %d carries error %q; no round of a new record may be refused for want of budget, because the loop no longer offers a tool it would not dispatch", i+1, call.Error)
+		}
 	}
 	wantRecalls := primaryRecallCalls + MaxModelCalls - 1
 	if len(graph.recallCalls) != wantRecalls {
-		t.Fatalf("Recall was called %d times, want %d (the primary pair + every dispatched round) — the final round must still not be dispatched", len(graph.recallCalls), wantRecalls)
+		t.Fatalf("Recall was called %d times, want %d (the primary pair + every dispatched round) — reserving the last call must not buy or lose a dispatched round", len(graph.recallCalls), wantRecalls)
 	}
 }
 

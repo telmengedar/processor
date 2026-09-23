@@ -98,9 +98,11 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		Messages:        buildMessages(in),
 		MaxTokens:       in.MaxOutputTokens,
 		ReasoningEffort: reasoningEffortNone,
-		Tools:           []wireTool{recallTool(), writeFileTool()},
 		Temperature:     c.sampling.Temperature,
 		TopP:            c.sampling.TopP,
+	}
+	if !in.WithholdTools {
+		reqBody.Tools = []wireTool{recallTool(), writeFileTool()}
 	}
 
 	body, err := json.Marshal(reqBody)
@@ -133,7 +135,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		return loop.JudgeResult{}, len(body), fmt.Errorf("decode response: %w", err)
 	}
 
-	result, err := translate(wire)
+	result, err := translate(wire, in.WithholdTools)
 	if err != nil {
 		return loop.JudgeResult{}, len(body), err
 	}

@@ -164,7 +164,7 @@ func toolArguments(r loop.ToolExchange) string {
 	return string(encoded)
 }
 
-func translate(wire chatResponse) (loop.JudgeResult, error) {
+func translate(wire chatResponse, withheld bool) (loop.JudgeResult, error) {
 	if len(wire.Choices) == 0 {
 		return loop.JudgeResult{}, fmt.Errorf("response has no choices")
 	}
@@ -176,6 +176,13 @@ func translate(wire chatResponse) (loop.JudgeResult, error) {
 	}
 	if choice.Message.Content != nil {
 		result.Answer = *choice.Message.Content
+	}
+
+	if withheld {
+		result.UnofferedToolCalls = len(choice.Message.ToolCalls)
+		result.RawReason = choice.FinishReason
+		result.Reason = mapFinishReason(choice.FinishReason)
+		return result, nil
 	}
 
 	if len(choice.Message.ToolCalls) > 0 {

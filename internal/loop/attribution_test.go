@@ -126,11 +126,11 @@ func TestANativeToolRoundIsRecordedAsNativeAndNotAsRecoveredText(t *testing.T) {
 	}
 }
 
-func TestACappedToolRoundStillRecordsHowTheAdapterObtainedTheCall(t *testing.T) {
+func TestARoundRefusedOnTheReservedCallStillRecordsHowTheAdapterObtainedTheCall(t *testing.T) {
 	t.Parallel()
 
 	graph := &fakeGraph{nodeFound: true, recallQueue: newRowsPerRecall()}
-	model := &fakeModel{results: []JudgeResult{
+	model := &fakeModel{ignoresWithheldToolList: true, results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "stop", RecallQuery: "one", ToolSource: ToolSourceContent},
 		{Reason: WantsRecall, RawReason: "stop", RecallQuery: "two", ToolSource: ToolSourceContent},
 		{Reason: WantsRecall, RawReason: "stop", RecallQuery: "three", ToolSource: ToolSourceContent},
@@ -143,11 +143,14 @@ func TestACappedToolRoundStillRecordsHowTheAdapterObtainedTheCall(t *testing.T) 
 	}
 
 	if !record.CapReached {
-		t.Fatal("CapReached is false, want the run to have hit the call cap")
+		t.Fatal("CapReached is false, want the run to have spent its call budget")
 	}
 	last := record.ToolCalls[len(record.ToolCalls)-1]
+	if last.Error != errReservedCallRefused {
+		t.Fatalf("the last round carries error %q, want the refusal %q — this fixture models an endpoint that answered a tool list it was never sent", last.Error, errReservedCallRefused)
+	}
 	if last.Source != ToolSourceContent {
-		t.Fatalf("the capped round's Source = %q, want %q — a round recorded but never dispatched still knows where its call came from", last.Source, ToolSourceContent)
+		t.Fatalf("the refused round's Source = %q, want %q — a round recorded but never dispatched still knows where its call came from", last.Source, ToolSourceContent)
 	}
 }
 

@@ -184,6 +184,24 @@ type ToolCallRecord struct {
 	Yield int `json:"yield"`
 }
 
+// ReservedCallState is the loop's closed set of fates the one judgement call a turn reserves for answering can have.
+type ReservedCallState string
+
+const (
+	// ReservedCallUnmade is a reserved answering call the turn stopped before it was ever issued.
+	ReservedCallUnmade ReservedCallState = "unmade"
+	// ReservedCallCompleted is a reserved answering call the endpoint answered, whatever it answered with.
+	ReservedCallCompleted ReservedCallState = "completed"
+	// ReservedCallFailed is a reserved answering call that was issued and did not complete.
+	ReservedCallFailed ReservedCallState = "failed"
+)
+
+// ReservedCall pairs the fate of a turn's reserved answering call with the cause where it did not complete.
+type ReservedCall struct {
+	State ReservedCallState `json:"state"`
+	Error string            `json:"error,omitempty"`
+}
+
 // StopReason pairs the loop's own terminal value with the endpoint's verbatim string.
 type StopReason struct {
 	Reason TerminalReason `json:"reason"`
@@ -220,6 +238,8 @@ type Limits struct {
 	DerivationBudget int `json:"derivationBudget"`
 	// JudgementBudget is the output budget each judgement call was issued with.
 	JudgementBudget int `json:"judgementBudget"`
+	// AnsweringBudget is the output budget a reserved answering call is issued with.
+	AnsweringBudget int `json:"answeringBudget"`
 
 	// MaxFills is the turn's own fill ceiling, never MaxModelCalls.
 	MaxFills int `json:"maxFills"`
@@ -266,12 +286,14 @@ type Record struct {
 	// Workspace is the run's working directory, absent when the run attempted no file write.
 	Workspace  string `json:"workspace,omitempty"`
 	ModelCalls int    `json:"modelCalls"`
-	// CapReached is true exactly when the call cap was hit while the model still wanted a tool.
+	// CapReached is true exactly when the turn's last judgement call was reserved for answering because the call budget was spent.
 	CapReached bool `json:"capReached"`
 	// RecallClosed is true exactly when consecutive barren rounds closed recall for the turn while the model still wanted it.
 	RecallClosed bool `json:"recallClosed"`
 	// TimeShortfall is the arithmetic that stopped the turn where the run's remaining time could not afford another judgement call, empty on every run that was not stopped that way.
 	TimeShortfall string `json:"timeShortfall,omitempty"`
+	// ReservedCall is what became of the judgement call this turn reserved for answering, absent on a turn that reserved none.
+	ReservedCall ReservedCall `json:"reservedCall,omitzero"`
 	// Usage carries one entry per model call, in call order, nil where the endpoint reported none.
 	Usage      []*Usage   `json:"usage"`
 	StopReason StopReason `json:"stopReason"`
@@ -319,6 +341,9 @@ type JudgeInput struct {
 
 	// MaxOutputTokens is this call site's own output budget; an adapter refuses a call that carries none.
 	MaxOutputTokens int
+
+	// WithholdTools suppresses this call's tool list entirely, leaving prose as the only terminal it can reach; the zero value offers the tools every call has always carried.
+	WithholdTools bool
 }
 
 // JudgeResult is one judgement step's outcome.
@@ -337,4 +362,7 @@ type JudgeResult struct {
 
 	// ReasoningBytes is how much arrived on the response channel every request suppresses and no caller reads, zero when the suppression held.
 	ReasoningBytes int
+
+	// UnofferedToolCalls is how many tool calls the endpoint reported on a request that offered it none, none of which the adapter honoured.
+	UnofferedToolCalls int
 }

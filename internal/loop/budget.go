@@ -7,6 +7,8 @@ const (
 	DerivationBudget = 160
 	// JudgementBudget is the output budget one judgement call is issued with.
 	JudgementBudget = 192
+	// AnsweringBudget is the output budget the reserved answering call is issued with.
+	AnsweringBudget = 192
 )
 
 const (
@@ -33,6 +35,8 @@ const (
 	SiteJudgement = "judgement"
 	// SiteFill names the on-demand condensation call site.
 	SiteFill = "fill"
+	// SiteAnswering names the reserved answering call site.
+	SiteAnswering = "answering"
 )
 
 // Floors is what a deployment declares its model endpoint delivers; it is a declaration, never a measurement.
@@ -90,9 +94,11 @@ func JudgementBound(clientBound, runBound time.Duration) time.Duration {
 
 // CallSites is every site a run issues a model call at; a fillBudget of zero or less leaves the fill site out, which is the shape of a deployment configured with no condensation model.
 func CallSites(clientBound, runBound time.Duration, fillBudget int) []CallSite {
+	judgement := JudgementBound(clientBound, runBound)
 	sites := []CallSite{
 		{Name: SiteDerivation, Budget: DerivationBudget, PromptCeiling: DerivationPromptCeiling, Bound: DerivationBound},
-		{Name: SiteJudgement, Budget: JudgementBudget, PromptCeiling: JudgementPromptCeiling, Bound: JudgementBound(clientBound, runBound)},
+		{Name: SiteJudgement, Budget: JudgementBudget, PromptCeiling: JudgementPromptCeiling, Bound: judgement},
+		{Name: SiteAnswering, Budget: AnsweringBudget, PromptCeiling: JudgementPromptCeiling, Bound: judgement},
 	}
 	if fillBudget > 0 {
 		sites = append(sites, CallSite{Name: SiteFill, Budget: fillBudget, PromptCeiling: MaxFillContentBytes, Bound: FillBound, Deferred: true})

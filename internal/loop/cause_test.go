@@ -161,11 +161,11 @@ func TestTurnRunOpeningTheWorkingDirectoryCarriesItsOwnCause(t *testing.T) {
 	}
 }
 
-func TestTurnRunStillReportsTheCallCapAsTheLoopsOwnSentence(t *testing.T) {
+func TestTurnRunReportsARefusedReservedCallAsTheLoopsOwnSentence(t *testing.T) {
 	t.Parallel()
 
 	wantsRecall := JudgeResult{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"}
-	model := &fakeModel{results: []JudgeResult{wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall}}
+	model := &fakeModel{ignoresWithheldToolList: true, results: []JudgeResult{wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall}}
 	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
@@ -176,11 +176,11 @@ func TestTurnRunStillReportsTheCallCapAsTheLoopsOwnSentence(t *testing.T) {
 		t.Fatal("record.CapReached = false, want the cap reached")
 	}
 	if len(record.ToolCalls) == 0 {
-		t.Fatal("record.ToolCalls is empty, want the capped round recorded")
+		t.Fatal("record.ToolCalls is empty, want the refused round recorded")
 	}
 	last := record.ToolCalls[len(record.ToolCalls)-1]
-	if last.Error != errCallCapReached {
-		t.Fatalf("the capped round recorded %q, want the loop's own sentence %q — the loop authored this failure", last.Error, errCallCapReached)
+	if last.Error != errReservedCallRefused {
+		t.Fatalf("the refused round recorded %q, want the loop's own sentence %q — the loop authored this failure", last.Error, errReservedCallRefused)
 	}
 }
 
@@ -305,13 +305,13 @@ func TestTurnRunBoundsAWriteToolErrorPassedThroughFromTheModelsOwnRound(t *testi
 	}
 }
 
-func TestTurnRunBoundsAToolErrorTheCallCapRefused(t *testing.T) {
+func TestTurnRunBoundsAToolErrorTheReservedCallRefused(t *testing.T) {
 	t.Parallel()
 
 	toolError := strings.Repeat("e", CarriedCauseRunes+1)
 	wantsRecall := JudgeResult{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"}
 	capped := JudgeResult{Reason: WantsRecall, RawReason: "tool_calls", ToolError: toolError}
-	model := &fakeModel{results: []JudgeResult{wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall, capped}}
+	model := &fakeModel{ignoresWithheldToolList: true, results: []JudgeResult{wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall, capped}}
 	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
@@ -323,7 +323,7 @@ func TestTurnRunBoundsAToolErrorTheCallCapRefused(t *testing.T) {
 	}
 	last := record.ToolCalls[len(record.ToolCalls)-1]
 	if n := len([]rune(last.Error)); n != CarriedCauseRunes {
-		t.Fatalf("the capped round's passed-through tool error carried %d runes, want it bounded to %d like every other cause", n, CarriedCauseRunes)
+		t.Fatalf("the refused round's passed-through tool error carried %d runes, want it bounded to %d like every other cause", n, CarriedCauseRunes)
 	}
 }
 

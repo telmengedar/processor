@@ -152,12 +152,18 @@ func toolArguments(r loop.ToolExchange) json.RawMessage {
 	return encoded
 }
 
-func translate(wire chatResponse) loop.JudgeResult {
+func translate(wire chatResponse, withheld bool) loop.JudgeResult {
 	result := loop.JudgeResult{
 		Answer:         wire.Message.Content,
 		RawReason:      wire.DoneReason,
 		ReasoningBytes: len(wire.Message.Thinking),
 		Usage:          translateUsage(wire.PromptEvalCount, wire.EvalCount),
+	}
+
+	if withheld {
+		result.UnofferedToolCalls = len(wire.Message.ToolCalls)
+		result.Reason = mapDoneReason(wire.DoneReason)
+		return result
 	}
 
 	if len(wire.Message.ToolCalls) > 0 {
