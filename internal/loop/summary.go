@@ -268,6 +268,7 @@ func renderSummaryOutcome(b *strings.Builder, record Record) {
 
 	renderSummaryVerdict(b, ComputeOutcome(record))
 	renderSummaryAnswer(b, record)
+	renderSummaryLastResponse(b, record)
 	renderSummaryTokens(b, record.Usage)
 
 	fmt.Fprintf(b, "  [block  %d B assembled, %s]\n", len(record.Block), summaryBlockOmitted)
@@ -349,6 +350,34 @@ func renderSummaryTokens(b *strings.Builder, usage []*Usage) {
 
 	fmt.Fprintf(b, "  tokens   %d in / %d out over %d calls  (out per call: %s)\n",
 		in, out, reports, strings.Join(perCall, ", "))
+}
+
+func lastUsage(usage []*Usage) *Usage {
+	if len(usage) == 0 {
+		return nil
+	}
+	return usage[len(usage)-1]
+}
+
+func renderSummaryLastResponse(b *strings.Builder, record Record) {
+	if producedText(record) {
+		return
+	}
+
+	out := "?"
+	if u := lastUsage(record.Usage); u != nil {
+		out = fmt.Sprintf("%d tok", u.OutTokens)
+	}
+
+	lr := record.LastResponse
+	if lr == nil {
+		fmt.Fprintf(b, "  lastCall out %s, reasoning %s, unofferedToolCalls %s, terminal %s\n",
+			out, summaryAbsentField, summaryAbsentField, summaryAbsentField)
+		return
+	}
+
+	fmt.Fprintf(b, "  lastCall out %s, reasoning %d B, unofferedToolCalls %d, terminal %s (raw %q)\n",
+		out, lr.ReasoningBytes, lr.UnofferedToolCalls, record.StopReason.Reason, record.StopReason.Raw)
 }
 
 func splitDispositions(dispositions []Disposition) (admitted []Disposition, cut []cutGroup) {

@@ -214,6 +214,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 	record.TimeShortfall = judged.timeShortfall
 	record.ReservedCall = judged.reservedCall
 	record.Usage = judged.usages
+	record.LastResponse = judged.lastResponse
 	record.StopReason = judged.stop
 	record.Sampling = judged.sampling
 	record.Outcome = ComputeOutcome(record)
@@ -338,9 +339,10 @@ type judgement struct {
 
 	reservedCall ReservedCall
 
-	usages   []*Usage
-	sampling Sampling
-	provider Provider
+	usages       []*Usage
+	lastResponse *LastResponse
+	sampling     Sampling
+	provider     Provider
 }
 
 func (t *Turn) judgementShortfall(ctx context.Context) string {
@@ -405,6 +407,7 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 			}
 			judged.answer = ""
 			judged.usages = append(judged.usages, nil)
+			judged.lastResponse = nil
 			judged.reservedCall = ReservedCall{State: ReservedCallFailed, Error: BoundCause(jerr.Error())}
 			t.log().Warn("the reserved answering call failed: the turn ends with the record it already holds rather than failing the run",
 				"condition", string(reserved), "modelCalls", judged.modelCalls, "error", jerr)
@@ -428,6 +431,7 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 		judged.answer = result.Answer
 		judged.stop = StopReason{Reason: result.Reason, Raw: result.RawReason}
 		judged.usages = append(judged.usages, result.Usage)
+		judged.lastResponse = &LastResponse{ReasoningBytes: result.ReasoningBytes, UnofferedToolCalls: result.UnofferedToolCalls}
 		judged.sampling = result.Sampling
 		judged.provider = result.Provider
 

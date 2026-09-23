@@ -1,6 +1,8 @@
 package loop
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -308,6 +310,97 @@ func TestRenderSummaryTokensPlaceholdsANilInTheLastPositionRatherThanDroppingIt(
 	const want = "tokens   71414 in / 439 out over 2 calls  (out per call: 30, 409, ?)"
 	if !strings.Contains(summary, want) {
 		t.Fatalf("the summary does not state %q; the last call reported no usage, and the last printed position must still be the last call's, not silently absent.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryOmitsTheLastCallLineWhenAnAnswerWasProduced(t *testing.T) {
+	t.Parallel()
+
+	summary := RenderSummary(summaryRecord(), summaryInstant())
+
+	if strings.Contains(summary, "  lastCall ") {
+		t.Fatalf("the summary reports the last call's response facts on a run that produced an answer; want that line reserved for a run the record itself calls empty.\nsummary:\n%s", summary)
+	}
+}
+
+func TestRenderSummaryShowsTheLastCallLineWhenTheAnswerIsWhitespaceOnly(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Answer = "\n"
+	record.Usage = []*Usage{{InTokens: 900, OutTokens: 48}}
+	record.ModelCalls = 1
+	record.StopReason = StopReason{Reason: Answered, Raw: "stop"}
+	record.LastResponse = &LastResponse{ReasoningBytes: 0, UnofferedToolCalls: 0}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	if !strings.Contains(summary, "  lastCall ") {
+		t.Fatalf("the summary omits the last call's response facts on a whitespace-only answer; the record itself calls this run produced=false, and the diagnostic must agree with the record's own verdict rather than with a bare string comparison.\nsummary:\n%s", summary)
+	}
+}
+
+func TestRenderSummaryReportsTheLastCallsResponseFactsWhenTheAnswerIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Answer = ""
+	record.Usage = []*Usage{{InTokens: 900, OutTokens: 48}}
+	record.ModelCalls = 1
+	record.StopReason = StopReason{Reason: Answered, Raw: "stop"}
+	record.LastResponse = &LastResponse{ReasoningBytes: 312, UnofferedToolCalls: 1}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	const want = `  lastCall out 48 tok, reasoning 312 B, unofferedToolCalls 1, terminal answered (raw "stop")`
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not state %q; an operator reading a 0-byte run needs the last call's own counts, not a verdict — and reasoning bytes must be shown at a measured non-zero value, not only ever at zero.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryReportsTheLastCallAsUnrecordedRatherThanAsZeroWhenNoResponseArrived(t *testing.T) {
+	t.Parallel()
+
+	model := &fakeModel{results: researchToTheCap(), failOn: MaxModelCalls, failErr: errors.New("connection reset")}
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if record.LastResponse != nil {
+		t.Fatalf("the scenario did not reach the path under test: record.LastResponse = %+v, want nil (the reserved call failed and returned no response)", record.LastResponse)
+	}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	const want = "  lastCall out ?, reasoning —, unofferedToolCalls —, terminal —\n"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not state %q; a reserved call that never returned a response must read as unrecorded on every fact the response would have carried, never as a measured zero and never as an earlier call's terminal.\nsummary:\n%s", want, summary)
+	}
+	if strings.Contains(summary, "reasoning 0 B") || strings.Contains(summary, "unofferedToolCalls 0") {
+		t.Fatalf("the summary rendered an absent last response as a measured zero.\nsummary:\n%s", summary)
+	}
+	if strings.Contains(summary, "terminal wantsRecall") || strings.Contains(summary, "terminal answered") {
+		t.Fatalf("the summary rendered a terminal for a call that returned no response; want it read as unrecorded rather than as an earlier call's terminal.\nsummary:\n%s", summary)
+	}
+}
+
+func TestRenderSummaryLastCallLineNamesNoVerdict(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Answer = ""
+	record.Usage = []*Usage{{InTokens: 900, OutTokens: 48}}
+	record.ModelCalls = 1
+	record.LastResponse = &LastResponse{ReasoningBytes: 0, UnofferedToolCalls: 1}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	for _, verdict := range []string{"swallowed", "declined", "unknown"} {
+		if strings.Contains(summary, verdict) {
+			t.Fatalf("the summary names the verdict %q; the design bars any cut, dial or classification from the product — the reader supplies the boundary, not the summary.\nsummary:\n%s", verdict, summary)
+		}
 	}
 }
 
