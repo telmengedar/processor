@@ -108,7 +108,7 @@ BUDGET ARITHMETIC, corrected after review (C2/C3): the anchor is not exempt from
 budget. `internal/loop/assemble.go`: `remaining := budget - len(anchor.Content)`, floored at zero --
 the anchor's bytes are charged against the budget, in full, before any candidate is even considered.
 What the anchor IS exempt from is being CUT: its full content always reaches the model regardless of
-size (design correction pinned in this tree at `m1-skeleton-loop.md:765`: "the anchor is exempt from
+size (design correction pinned in DiVoid #10532, the M1 design, at line 765 of its body: "the anchor is exempt from
 being cut, not from being charged"). This script computes and prints the actual per-run candidate
 budget (`assemblyByteBudget - anchor.size`, floored at zero) and tests admissibility against THAT
 number, not the raw constant -- a candidate that fits the constant but not the anchor-adjusted
