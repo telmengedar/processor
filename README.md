@@ -81,14 +81,14 @@ words; that document carries the argument.
   listen address, a graph half and a model half, so a caller that needs only graph configuration is
   never asked for model configuration.
 - `internal/server` — the HTTP route table and the serve/drain lifecycle
-  (`docs/architecture/m0-service-skeleton.md`).
+  (DiVoid **#10437**).
 - `internal/loop` — the turn: mechanical context assembly (`Assemble`, a pure function — no I/O, no
   clock, no randomness) and its sequencing (`Turn.Run`): fetch the subject, derive the query set and the
   retrieval window from the input, retrieve, assemble, judge — dispatching the two tools as the model
   asks for them, up to a call cap — then write the record back. The tools are
   supplementary recall and one file write; both go through the same round, so a run record carries them
   in one `toolCalls` list, each entry naming which tool it was. See
-  `docs/architecture/m1-skeleton-loop.md` §9.
+  DiVoid **#10532** §9.
 - `internal/workspace` — the working directory a run writes into: one fresh directory per run
   beneath a root the operator names (`PROCESSOR_WORKSPACE_DIR`). Two layers keep a write inside it.
   First, **shape rules on the path the model asked for**, each refused with the rule that refused it:
@@ -128,7 +128,7 @@ words; that document carries the argument.
   of a row's required nodes against what assembly did with them, and the reporter. **Two** rates, not
   one — *retrieved* (did retrieval surface the node at all) and *admitted* (did it survive the
   byte budget) — because they fail differently and imply opposite fixes
-  (`docs/architecture/m2-retrieval-eval.md`).
+  (DiVoid **#10926**).
 - `GET /health` — returns `200` with `Content-Type: application/json` and body `{"status":"ok"}`.
 - `POST /runs` — assembles context for one input against one subject node, judges it against the
   configured model (dispatching the recall and file-write tools as needed), writes the run record to the
@@ -178,7 +178,7 @@ signal exercised by the automated test described under "What is and isn't verifi
 measured the process logging `shutdown started` then `shutdown complete` and exiting `0`.
 
 **A shutdown drains an in-flight run rather than cancelling it.** The two numbers behind that are
-constants, not configuration (`docs/architecture/run-record-fate.md` §8.4):
+constants, not configuration (DiVoid **#10904** §8.4):
 
 | Constant | Value | What it bounds |
 |---|---|---|
@@ -335,7 +335,7 @@ record can be honest about only the near side of the wire, and this is that side
 The response carries **one key more than the record**: `written`, the write receipt, which says where the
 record was filed. It is not a member of the record and never reaches the stored copy — a stored record is
 at the node it would be naming. **The record inside the stored node's last fenced `json` block is the
-response body minus that one key, and nothing else differs** (`docs/architecture/run-record-fate.md`
+response body minus that one key, and nothing else differs** (DiVoid **#10904**
 §8.1) — the account and the fence wrapped around the record are additions to the stored body, not a
 difference within the record itself.
 
@@ -596,7 +596,7 @@ flags it.
 - **What is still not covered:** `run()`'s serve-error exit branch and a second interrupt arriving
   during the shutdown drain — both are structurally unreachable from outside the process without adding
   a slow route or a delay knob to shipping code, which is declined (design
-  `docs/architecture/process-boundary-test-harness.md` §2.4) — and the remaining drain-failure axis
+  DiVoid **#10488** §2.4) — and the remaining drain-failure axis
   (`ReadHeaderTimeout` and shutdown-error propagation at the process level), which is a different
   instrument tracked separately as DiVoid **#10489**.
 - **Mechanical context assembly (`POST /runs`, unit A):** `Assemble` is byte-pinned by an offline golden
