@@ -65,18 +65,24 @@ import step_trace
 # and `sampling=None` is how a test asks for it.
 ABSENT = object()
 
-# The five run constants as a record carries them. maxModelCalls stays 3 -- the cap the runs these
+# The run constants as a record carries them. maxModelCalls stays 3 -- the cap the runs these
 # fixtures model were made under, not the one turn.go ships today -- because the trace renders every
 # limit out of the record it is given, and must stay readable on records older than the constant.
 # A module constant, not an inline literal, so a test that needs one value different
 # (ScopeReserveLineTests moves the candidate limit) can copy this and change that one key instead of
 # restating a dict the fixture also owns.
+#
+# derivationBudget/judgementBudget replaced the single maxOutputTokens the wire carried before the
+# per-site budget split -- step_trace.py never reads either key (no STEP prints an output-token
+# bound), so this dict carries them only so a record fixture built from this constant matches the
+# shape the binary actually writes today rather than a retired one.
 LIMITS = {
     "candidateLimit": 20,
     "assemblyByteBudget": 60_000,
     "supplementaryByteBudget": 20_000,
     "maxModelCalls": 3,
-    "maxOutputTokens": 4096,
+    "derivationBudget": 1_024,
+    "judgementBudget": 4_096,
 }
 
 

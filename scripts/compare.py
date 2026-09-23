@@ -839,6 +839,32 @@ def task_stage(task, record):
     return NOT_RETRIEVED  # unreachable: STAGE_PRECEDENCE ends in NOT_RETRIEVED, the report's only other value
 
 
+def transcript_output_budget(task_id, limits):
+    """The output-token bound arm TRANSCRIPT is sent with, matched to the bound arm SUBSTRATE's own
+    visible answer was generated under -- so the two arms differ by memory substrate and not by how
+    much either was allowed to say.
+
+    internal/loop/turn.go's judge loop sets judged.answer from t.Model.Judge's result, and Judge is
+    called with MaxOutputTokens: JudgementBudget -- so limits.judgementBudget is the bound the
+    answer text actually came out of. derive.go's call only turns the input into recall queries
+    (DerivationBudget bounds that call, not the answer), so limits.derivationBudget sits right next
+    to the right field in the same object and would be the wrong one to read.
+
+    `limits` here is always this invocation's own fresh /runs response, never an archived graph
+    record read back (compare.py never re-reads limits off the graph), so there is no older shape
+    to stay lenient for: an absent or unrecognised limits shape -- including the pre-#109 shape that
+    carried maxOutputTokens instead -- must stop the run rather than let the two arms be bounded
+    differently while looking like a comparison."""
+    budget = (limits or {}).get("judgementBudget")
+    if not budget:
+        raise CompareFailure(
+            f"task {task_id}'s run record carries no limits.judgementBudget, so arm TRANSCRIPT has "
+            f"no output bound to match arm SUBSTRATE's judgement calls with. The two arms would be "
+            f"bounded differently and the comparison would not be one."
+        )
+    return budget
+
+
 def remaining_after_anchor(budget, anchor_size):
     """The byte budget actually left for candidates once the anchor is charged against it --
     internal/loop/assemble.go: remaining := budget - len(anchor.Content), floored at zero. The
@@ -1159,13 +1185,7 @@ def main():
                 in_flight = False
                 receipts.append(response.get("written") or {})
 
-                max_tokens = (response.get("limits") or {}).get("maxOutputTokens")
-                if not max_tokens:
-                    raise CompareFailure(
-                        f"task {task['id']}'s run record carries no limits.maxOutputTokens, so arm "
-                        f"TRANSCRIPT has no output bound to match. The two arms would be bounded "
-                        f"differently and the comparison would not be one."
-                    )
+                max_tokens = transcript_output_budget(task["id"], response.get("limits"))
                 transcript = chat(
                     model_url, model_id, model_key, task["task"], max_tokens, TRANSCRIPT_TIMEOUT_S
                 )

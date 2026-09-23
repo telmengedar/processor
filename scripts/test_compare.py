@@ -576,6 +576,56 @@ class RemainingAfterAnchorTests(unittest.TestCase):
         self.assertIsNone(compare.remaining_after_anchor(60000, None))
 
 
+class TranscriptOutputBudgetTests(unittest.TestCase):
+    """transcript_output_budget picks the bound arm TRANSCRIPT is sent with, matched to the bound
+    arm SUBSTRATE's own visible answer came out of -- internal/loop/turn.go's judge loop sets
+    judged.answer from a Judge call issued with MaxOutputTokens: JudgementBudget, never from Derive.
+
+    The durable guard PR #109 needed and did not have: this rig must fail loudly the moment the
+    limits shape it depends on goes missing or unrecognised, rather than run a comparison the two
+    arms are not equally bounded for. Every case here is a limits shape the rig might actually be
+    handed -- the pre-#109 wire shape included -- so a future wire change reddens this suite instead
+    of killing the rig at its first task."""
+
+    def test_reads_judgement_budget(self):
+        self.assertEqual(compare.transcript_output_budget("t1", {"judgementBudget": 4096}), 4096)
+
+    def test_does_not_read_derivation_budget(self):
+        """The discriminating fixture: derivationBudget and judgementBudget both present and
+        different, so a wrong implementation reading the wrong key (or either key indifferently)
+        returns 111 instead of 222 and this fails."""
+        limits = {"derivationBudget": 111, "judgementBudget": 222}
+        self.assertEqual(compare.transcript_output_budget("t1", limits), 222)
+
+    def test_raises_when_limits_is_none(self):
+        with self.assertRaises(compare.CompareFailure) as ctx:
+            compare.transcript_output_budget("t1", None)
+        self.assertIn("t1", str(ctx.exception))
+        self.assertIn("limits.judgementBudget", str(ctx.exception))
+
+    def test_raises_when_limits_is_empty(self):
+        with self.assertRaises(compare.CompareFailure):
+            compare.transcript_output_budget("t1", {})
+
+    def test_raises_when_judgement_budget_is_zero(self):
+        with self.assertRaises(compare.CompareFailure):
+            compare.transcript_output_budget("t1", {"judgementBudget": 0})
+
+    def test_raises_on_the_pre_split_wire_shape(self):
+        """The exact regression: a record carrying the retired single-budget field and neither of
+        its replacements. This is the shape that made the rig die on its first task, and the shape
+        a blind maxOutputTokens -> judgementBudget rename would still accept by accident if the old
+        key were left in the lookup chain."""
+        with self.assertRaises(compare.CompareFailure) as ctx:
+            compare.transcript_output_budget("t1", {"maxOutputTokens": 4096})
+        self.assertIn("limits.judgementBudget", str(ctx.exception))
+
+    def test_failure_message_names_the_task(self):
+        with self.assertRaises(compare.CompareFailure) as ctx:
+            compare.transcript_output_budget("t3-second-ask-worse", {})
+        self.assertIn("t3-second-ask-worse", str(ctx.exception))
+
+
 class DescribeCutReclassifiesAgainstRemainingBudgetTests(unittest.TestCase):
     """The straddle this fix exists for, demonstrated on two real run records rather than a
     constructed one: DiVoid #12981 and #12985 both carry anchor #10850 (size 18208) against
