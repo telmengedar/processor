@@ -13,20 +13,31 @@
 > **not merged**; `main` = `73dfcce`). Every repo fact in §3 was read at `3e6a055`.
 > **Nothing was run.** No model call, no inference, no endpoint contacted, no graph write, no code changed.
 > **No measurement in this document is mine.** §3 states whose each one is.
+>
+> **REVISION 2026-09-23 — §10.4's experiment has run, and this document's central prediction is falsified.**
+> Result: **#14722**. §10 is rewritten against it rather than annotated, and the superseded prediction is
+> retained struck through because the error is instructive (§10.6). §1.3, §3.4, §3.5, §8 A-7, §11, §13 R-1,
+> §15 Q-4, §16 and §17 carry dated corrections. **§10.7 states plainly whether the recommendation survives:
+> it does, and its justification has moved** — from *the model is acting on a false statement* to *nothing
+> about this call can be measured while the prompt misdescribes it.* **Nothing in this revision was run by
+> me either.**
 
 ---
 
 ## TL;DR
 
-**Two sentences in the system text are false on exactly the call that withholds the tools they describe, and
-the model believes them. Delete them — and delete the class that produced them, because the deletion and the
-class fix are the same edit and produce byte-identical wire traffic.**
+**Two sentences in the system text are false on exactly the call that withholds the tools they describe.
+~~and the model believes them.~~ Delete them — and delete the class that produced them, because the deletion
+and the class fix are the same edit and produce byte-identical wire traffic.**
+**CORRECTED 2026-09-23 (#14722): the model largely is not acting on them, and the deletion's value is
+structural rather than behavioural — §10.7.**
 
 - The reserved answering call withholds the tool list at the wire, verified. The system text sent on that same
   call still says *"A recall tool is available"* and *"A file tool is available"* (#14717 §3.2).
-- All **six** observations of that prompt state open *"I have enough to write the report. Let me confirm one
-  thing about…"* and **none contains a claim about the subject matter**. The model is doing what it was told
-  it could do.
+- All **six** observations of that prompt state — **with the paragraphs present** — open *"I have enough to
+  write the report. Let me confirm one thing about…"* and **none contains a claim about the subject matter**.
+  ~~The model is doing what it was told it could do.~~ **Measured with the paragraphs removed, the same opening
+  still appears (§3.5), so that last sentence was an inference and it was wrong.**
 - **The permitted operation is the one that is complete at the wire.** Deleting a sentence whose truth is
   decidable from the request bytes changes what the request *is*; there is no compliance event to fail. Adding
   a directive changes what the model is *asked to do*; its effect requires obedience. §4 places the line, and
@@ -42,11 +53,16 @@ class fix are the same edit and produce byte-identical wire traffic.**
 - **Cost of choosing 3 over 1: almost nothing, and the reason is decisive.** Options 1 and 3 send the *same
   bytes*. They differ only in what the next diff can break. A third tool added to the adapters re-creates the
   defect under option 1 and cannot under option 3.
-- **Honest conclusion on sufficiency, and it is the result the brief asked for rather than an optimistic
-  design: deleting the false sentences is necessary, it is the only compliance-free step available, and it is
-  not established as sufficient.** §10 predicts the observed opening disappears and **declines to predict a
-  report**, names what would falsify each half, and scopes the remainder as a separate question rather than
-  absorbing it.
+- **Honest conclusion on sufficiency — written as a prediction, now replaced by a measurement.** ~~§10 predicts
+  the observed opening disappears and declines to predict a report.~~ **MEASURED 2026-09-23 (#14722): the
+  opening does not disappear — the prediction is falsified at 1 of 6 — and the report does not appear, at 1 of
+  6. The pessimistic half held; the optimistic half did not.** The deletion's product benefit is measured at
+  approximately none, and what the measurement points at is the reading this document named one section later:
+  **the five demonstrated tool calls in the history are the operative licence, not the paragraph.** §10.
+- **The recommendation survives and its ground has moved.** Not *because the model is acting on a false
+  statement* — it largely is not — but because **nothing about this call is attributable while the request it
+  is issued on misdescribes itself.** §10.7. **Nothing here fixes #14718's product symptom, and the PR body
+  must not say it does.**
 
 ---
 
@@ -86,7 +102,13 @@ streaming call, a call that offers recall but not the file tool, a second answer
    that inertness is asserted, not assumed.
 4. **A diff that reintroduces the disagreement fails a test**, including one written by someone who has not
    read this document.
-5. **The failure mode is today's behaviour, never worse** (#14695 D-4's discipline, inherited).
+5. ~~**The failure mode is today's behaviour, never worse** (#14695 D-4's discipline, inherited).~~
+   **RESTATED 2026-09-23 (#14722), because as written it claimed more than it can carry and the measurement
+   caught it.** The criterion is **structural**: nothing in this design can fail that could not fail before —
+   composing a string from a set has no failure mode, and the reserved call's own failure handling is
+   untouched. **It is not a distributional claim about output, and it must not be read as one.** At the one
+   measured prompt state the observable byte production **fell**, from 6 of 6 baseline observations producing
+   bytes to 4 of 6 — see §10.5, which also states why *worse* is not established either.
 
 ---
 
@@ -163,9 +185,44 @@ model class: three live runs, three wordings, zero tool calls, one hallucinated 
 
 - **No observation exists of a reserved call reached by the closed-recall trigger.** All six observations are
   the call-cap trigger. §15 Q-3 says why that matters and why the missing observation is nearly free.
-- **No observation exists of this prompt state with the paragraphs removed.** That is precisely Unit 0.
+- ~~**No observation exists of this prompt state with the paragraphs removed.** That is precisely Unit 0.~~
+  **SUPERSEDED 2026-09-23: it exists now — §3.5.**
 - **The primary run's 0 bytes has no captured response body.** #14717 §3.4 states the inference and marks it as
-  one. Nothing here rests on it.
+  one. Nothing here rests on it — **and #14722 reproduced the same signature twice with the response captured,
+  which narrows the question without settling it (§10.5).**
+
+### 3.5 Not mine — the operator's, at #14722, 2026-09-23 — §10.4's experiment, run
+
+The captured reserved-call request replayed **six** times with message 0's two tool paragraphs removed and
+**every other byte held**: the deletion applied as a raw-byte substitution on the request JSON, `messages[1:]`
+byte-identical afterwards, every non-`messages` key equal, 497 content bytes removed, no artefact left where the
+paragraphs were. Same model, same endpoint, same sampling, no proxy hop, no graph write. **This characterises
+one prompt state, not the run distribution.**
+
+| obs | finish | completion tokens | content bytes | subject matter? | cached prompt tokens |
+|---|---|---:|---:|---|---:|
+| 1 | **length** | **192** | **818** | **yes** | **0** |
+| 2 | stop | 79 | 102 | no — process announcement | 41,742 |
+| 3 | stop | 94 | 232 | no — **research preamble** | 41,742 |
+| 4 | stop | 51 | **0** | no — nothing surfaced | 41,742 |
+| 5 | stop | 79 | 102 | no — process announcement | 41,742 |
+| 6 | stop | 49 | **0** | no — nothing surfaced | 41,742 |
+
+Against the baseline six (#14717 §3.3: 162–244 bytes, 82–104 tokens, **none** truncated, **none** empty, **zero**
+subject-matter claims):
+
+| axis | baseline six | deleted six |
+|---|---|---|
+| research preamble present | 6 of 6 | **1 of 6** *(2 unobservable)* |
+| subject-matter prose | **0 of 6** | **1 of 6** |
+| produced bytes at all | **6 of 6** | **4 of 6** |
+| completion tokens, median | 94.5 | **79** |
+| truncated at the 192-token ceiling | 0 of 6 | **1 of 6** — and it is the only one carrying subject matter |
+
+**The confound the measurer named rather than hid:** observation 1, the only one with subject matter, is also
+the only one with `cached_tokens: 0` — the first call against the new prefix — and the same pattern held in the
+baseline set. n is far too small to claim prefix-cache state affects sampling and far too small to rule it out.
+§10.3 states what that does and does not do to the judgement.
 
 ---
 
@@ -250,6 +307,12 @@ argued by analogy — and it is the strongest single argument in this document.
 
 > **So option 2 is not rejected as "near the line". 2a is permitted and unjustified; 2b is barred; and the
 > prompt already contains 2b's weaker form and it did not work.**
+
+**CORROBORATED 2026-09-23 (#14722), on a second set of six.** With the two tool paragraphs gone and the
+process-narration sentence still in place, **four of six** observations again open by describing what the model
+is doing — *"I have enough to write the report. Let me …"* — and in three of those four that description is the
+entire output. **Twelve observations, two prompt states, one standing directive, and every observation that
+surfaced anything at all opens by violating it.** The argument against 2b no longer rests on one set.
 
 ### 4.5 One shape that looks compliance-free and is not — rejected before someone builds it
 
@@ -464,10 +527,19 @@ of a prompt-engineering deliverable, which is the coupling #10532 §8.6 exists t
 ### A-7 — Change nothing; the mechanism already works at the wire — **rejected, and it deserves the hearing**
 
 The tool withholding *is* implemented exactly as designed and the reservation costs no research. But the
-product's own prompt contains two false statements about the request carrying it, and 6 of 6 observations show
+product's own prompt contains two false statements about the request carrying it, ~~and 6 of 6 observations show
 the model acting on them. **A design whose central claim is that the last call's output is worth keeping cannot
-leave standing the sentence that makes that output a research preamble.** It also loses on #12935's ground: the
-class is now live, and doing nothing means the next varying call reproduces it.
+leave standing the sentence that makes that output a research preamble.**~~ It also loses on #12935's ground:
+the class is now live, and doing nothing means the next varying call reproduces it.
+
+> **CORRECTED 2026-09-23 (#14722). The struck leg is gone and A-7 still loses, on the two legs that remain.**
+> The measurement shows the model is *not* mainly acting on the two sentences: with them removed, the research
+> preamble still appears and subject-matter prose still does not. **So the behavioural leg of A-7's rejection
+> is withdrawn**, and the rejection now rests on (i) #12935's class argument, untouched, and (ii) the
+> attributability argument of §10.7, which the measurement did not weaken but *demonstrated* — this very
+> finding cost a full diagnostic cycle precisely because the prompt and the request disagreed. **A-7 is the
+> alternative the new evidence most strengthens, and it still loses. Anyone re-opening it should argue against
+> §10.7, not against the struck sentence.**
 
 ---
 
@@ -485,52 +557,170 @@ change.
 
 ---
 
-## 10. Is the Deletion Sufficient? — The Honest Answer
+## 10. Is the Deletion Sufficient? — The Prediction, and the Measurement That Answered It
 
-The brief asks for this result even if it is unwelcome. **It is: I do not believe the deletion alone can be
-relied on to make the reserved call produce a usable report, and I would not have the design claim otherwise.**
+> **REWRITTEN 2026-09-23 against #14722.** Revision 1 argued this section as a prediction and filed the
+> falsifiers that judged it. **The central prediction is falsified and the pessimism is confirmed.** The
+> superseded reasoning is retained struck through rather than repaired, because the error is instructive and
+> §10.6 says why.
 
-### 10.1 What the deletion clearly removes
+### 10.1 What revision 1 predicted, and the reasoning it rested on
 
-The observed output has two clauses: *"I have enough to write the report."* then *"Let me confirm one thing
-about X."* **The first clause is the model's own conclusion that it can answer.** The second is a research move,
-and the stated licence for it is the paragraph being deleted. Removing the licence removes the stated basis for
-the second clause. That much I predict.
+> ~~**What the deletion clearly removes.** The observed output has two clauses: *"I have enough to write the
+> report."* then *"Let me confirm one thing about X."* **The first clause is the model's own conclusion that it
+> can answer.** The second is a research move, and the stated licence for it is the paragraph being deleted.
+> Removing the licence removes the stated basis for the second clause. That much I predict.~~
+>
+> ~~Supporting detail, and it matters: **all six stopped of their own accord** — `finish_reason: stop` at
+> 82–104 completion tokens against a 192-token budget. **None was truncated.** The natural continuation of
+> *"let me confirm one thing"* is a tool call; with no tools declared there was nothing to emit, so the turn
+> ended. Remove the preamble and nothing forces that stop.~~
 
-Supporting detail, and it matters: **all six stopped of their own accord** — `finish_reason: stop` at 82–104
-completion tokens against a 192-token budget. **None was truncated.** The natural continuation of *"let me
-confirm one thing"* is a tool call; with no tools declared there was nothing to emit, so the turn ended. Remove
-the preamble and nothing forces that stop.
+**Both halves are wrong, and they are wrong in different ways.**
 
-### 10.2 What the deletion does **not** remove, and this is the honest half
+- **The licence claim is falsified.** Observation 3 reproduces the baseline shape verbatim — *"Let me confirm
+  one more thing about how the model config members are structured and the 'alongside' question…"* — with the
+  paragraphs gone from the request. One observation was filed as sufficient, and one is what arrived.
+- **The stop-condition claim is falsified in the opposite direction from the one it feared.** Removing the
+  preamble did not let the completions run on. **The median fell, 94.5 → 79 tokens, and four of six ran shorter
+  than every single baseline observation.** The reasoning inferred *an early stop caused by the preamble* from
+  the fact that nothing was truncated; the measurement shows the turn ends early with the preamble gone too,
+  and slightly earlier. **The inference was available at authorship time and it was wrong: "none was truncated"
+  does not identify what ended the turn.**
 
-1. **The history still demonstrates five successful tool calls.** Messages 2–11 are five assistant tool-call
-   messages and five tool results, every one of them productive. **In-context demonstration is a stronger signal
-   than a paragraph**, and the deletion does not touch it. On the call-cap trigger specifically, the last thing
-   the model sees before the reserved call is a **successful tool result** — the maximal available evidence that
-   more research is possible.
-2. **Nothing true in the prompt says research has ended.** On the cap trigger, the request's silence about tools
-   is the only carrier of that fact, and silence is a weak carrier against five demonstrations.
-3. **One remaining sentence licenses a shortfall statement** — *"if you still do not have enough information,
-   say so plainly and say what is missing"* — and the observed outputs are arguably a malformed execution of it.
-   The plausible best case of the deletion is therefore not a report but a **clean shortfall statement**: *"I do
-   not have enough information; what is missing is X."* That clears `produced=true` and **does not clear
-   #14717 §4.2's bar**, which is whether an operator learns anything about the subject matter.
+**What survived intact is the clause revision 1 attributed to the model rather than to the prompt.** Four of six
+still open *"I have enough to write the report. Let me …"* and then announce a procedural next move instead of
+making a claim. The habit of announcing a step rather than taking it is not carried by the deleted sentences.
 
-### 10.3 The claim, and what falsifies each half
+### 10.2 The reading that was right, one section later
 
-| claim | prediction | falsified by |
+Revision 1 listed three things the deletion does not remove and put this first:
+
+> **The history still demonstrates five successful tool calls.** In-context demonstration is a stronger signal
+> than a paragraph, and the deletion does not touch it. On the call-cap trigger the last thing the model sees
+> before the reserved call is a **successful tool result** — the maximal available evidence that more research
+> is possible.
+
+**Per §10.3's own table, falsifying P1 makes this the live reading, and P1 was falsified.** It is now the
+measured explanation of the preamble rather than a hypothesis about it: **the licence for the research move is
+in the message history, not in the system text, and no edit to the system text reaches it.**
+
+Two consequences follow, and neither is this document's to act on:
+
+1. **Any remedy that works on the prompt alone is operating on the weaker of the two signals.** That bounds
+   Q-S1's search space (§16) without choosing inside it.
+2. **The measurement is trigger-specific.** It is the call-cap path, where the last message is a *successful*
+   tool result. The closed-recall path already carries a true statement that recall is closed in that same
+   strongest position — which is exactly why §15 Q-3 matters more after this result than before it.
+
+### 10.3 The three predictions, judged
+
+| # | claim | filed falsifier | result at #14722 |
+|---|---|---|---|
+| **P1** | the deletion removes the observed opening | ≥1 of 6 still opening with a research preamble — *filed with its consequence attached: "which would show the paragraphs were not the operative licence and would make reading 10.2(1) the live one"* | **FALSIFIED — 1 of 6.** Observations 4 and 6 surfaced nothing, so their opening is unobservable and is not counted toward it. **The attached consequence is what now binds, and §10.2 takes it** |
+| **P2** | the deletion is **not** sufficient for a report *(the pessimism)* | ≥5 of 6 carrying real claims about the subject | **CONFIRMED — 1 of 6.** §16 Q-S1 does not close unopened |
+| **P3** | the design is not worse than today | all six returning 0 bytes | **does not fire — 4 of 6 produced bytes.** Its second clause is undecidable at this surface — §10.5 |
+
+**On P2 and the cache confound, worked through so nobody has to.** The single subject-matter observation is also
+the single uncached one, and the same pattern held in the baseline set. **The confound cannot rescue P2; it can
+only deepen it.** If cache state is what produced observation 1, the deletion's contribution to subject-matter
+prose is zero rather than one-in-six. If cache state is irrelevant, P2 stands at 1 of 6. Either way P2 is
+confirmed — **and the 0-of-6 → 1-of-6 improvement must not be claimed as the deletion's**, because on the
+reading that would make it attributable it is not, and n cannot separate the two.
+
+### 10.4 The experiment, and it is now spent
+
+The instrument was #14717's own: the byte-identical captured request, replayed with message 0's two paragraphs
+removed and every other byte held. **It has run.** Six single-call observations, no graph write, no product
+change. Provenance, the exact before/after system text, hashes and the full completions: **#14722**.
+
+### 10.5 The two caveats the measurement carries into this document
+
+**(a) P3's second clause is not decidable at this surface, and the phenomenon it was meant to rule out became
+*more* frequent.** Observations 4 and 6 billed 51 and 49 completion tokens and surfaced empty content with no
+`tool_calls` and no `reasoning` — the same signature #14717 §3.4 recorded and attributed, *as inference rather
+than measurement*, to tool-call syntax consumed by the runtime template when no tools are declared. **The
+baseline six never produced a 0-byte observation; two of the new six did.** So:
+
+- **On the binary bar, byte production fell: 6 of 6 → 4 of 6.** §1.3's criterion 5 is restated accordingly and
+  must not be read as a distributional promise.
+- **And *worse* is not established either**, because the two observations in question are exactly the two that
+  cannot be read. Whether they are *nothing produced* or *a tool-shaped payload the template ate* decides
+  whether this is a worse outcome or the same outcome rendered invisible, and **the surface cannot tell them
+  apart.** That is a gap in the instrument, not a finding about the model.
+- **No falsifier in §11 depends on this observable.** V-1 through V-5 are assertions about the **request** and
+  about the composer, decidable from the bytes leaving the process, and none needs the response read. **The
+  property that does depend on it is #14695 D-2's** — *no adapter may return a tool-wanting terminal from a
+  tool-less call* — and its adapter guard is already filed as **#14709**. **Re-scoped there, not here.**
+- **One thing stated for #14695's owner and not adjudicated here:** a completed reserved call yielding no prose
+  is the exact condition #14695 F-3 names as *the falsifier that sinks the design*. These are replays, so no
+  record exists and F-3 has not fired — **but a run at this prompt state would produce the record that fires
+  it, and the undecidability above means F-3 could not then distinguish its two causes.**
+
+**(b) The completions did not run longer, and the one that tried hit a different wall.** Exactly one observation
+ran past the baseline range, and it ran to the **192-token ceiling and was cut off** — `finish_reason: length`,
+818 bytes — and it is also the only one carrying subject matter. **On the single occasion the model attempted a
+report, the binding constraint was `AnsweringBudget`, not the prompt.** That is a finding about a different
+variable; it corroborates #14717 §4.4's correction of the ~0.75 KB claim from the other direction; and **it lands
+on #14695 D-5 and its Unit 3, which own the answering call's budget.** Filed there, **deliberately not absorbed
+here** — this document's subject is what a request asserts about itself, and a budget is not an assertion.
+
+### 10.6 The instructive part, recorded rather than quietly repaired
+
+Two errors, both this document's, both caught by the instrument it filed. Recorded in the idiom of #14561 §4.4,
+because one instance reads as a lapse and two read as a property of the work.
+
+| error | where | caught by |
 |---|---|---|
-| **the deletion removes the observed opening** | the *"let me confirm one thing"* opening disappears | **≥1 of 6** replays still opening with a research preamble — which would show the paragraphs were not the operative licence and would make reading 10.2(1) the live one |
-| **the deletion is not sufficient for a report** *(my pessimism)* | fewer than 5 of 6 replays contain substantive subject-matter prose | **≥5 of 6** carrying real claims about the subject — in which case §16 Q-S1 closes unopened and this section was wrong, which is a good outcome and should be recorded as one |
-| **the design is not worse than today** | ≥1 of 6 produces bytes; none is a tool-shaped payload | **all six returning 0 bytes** — a stop condition, see §17 Unit 0 |
+| **the two readings were ranked, and the ranking was backwards.** §10.1 was asserted as a prediction; §10.2(1) was filed as a risk the prediction might be wrong about. The measurement says 10.2(1) was the mechanism all along | **inside this document, one section apart** | **running the experiment it specified** |
+| **a stop condition whose vocabulary could not express the evidence it needed.** P3's falsifier was *all six returning 0 bytes* — binary, at the extreme. What happened was **graded**: 0 of 6 → 2 of 6 empty. The condition correctly did not fire, and correctly reported nothing about a real move in the direction it was watching | §10.3's table | **the same run** |
 
-### 10.4 The instrument is already built
+> **The generalisation, and it is the one worth carrying out of this document: naming a competing explanation is
+> not the same as weighing it.** §10.2(1) was written down, in the right words, one section after the prediction
+> it contradicted — and it was filed as a caveat rather than tested against the prediction. **A document that
+> lists a rival reading and then predicts as though it had not is one revision away from this outcome every
+> time.** The cheap remedy is the one that worked here: name the observation that would separate the two
+> readings *before* predicting. It cost six model calls.
 
-#14717 captured the byte-identical request and replayed it five times. **The measurement is the same replay with
-message 0's two paragraphs removed and nothing else changed** — six single-call observations, no graph write, no
-product change, comparable to the existing six by construction because every other byte is held. That is the
-cheapest decisive evidence available on this question and it exists because someone already built the harness.
+The second error is the same shape as #14561 §6.6.5's verdict vocabulary that could not express `reference
+failed`: **a falsifier whose evidence has no expressible value is invisible from inside the specification and
+becomes visible the moment something has to emit it.** Filed as a lesson, not repaired — P3's replacement would
+be a graded condition, and there is no second experiment for it to guard.
+
+### 10.7 Does the recommendation survive? — yes, and the ground has moved
+
+The brief asks for this plainly, including the option of narrowing. **The design survives unnarrowed, and the
+justification it rests on is not the one revision 1 leaned hardest on.**
+
+**What died.** *Delete the false sentences because the model is acting on them.* The measurement says it largely
+is not. **Any claim that this change fixes #14718's product symptom is contradicted by evidence and must not
+appear in the PR body, in the record, or in a summary.**
+
+**What is untouched, and now carries the design.**
+
+1. **Attributability — the strongest ground, not the fallback.** Every future arm on this call — §15 Q-1, §16
+   Q-S1 and Q-S2, #14695's F-3, any adjudication under #14561 §6.6 — is issued against a request that asserts
+   two capabilities it does not carry. **A confounder present in every observation cannot be controlled for by
+   a larger n**, and the measurement has now *demonstrated* the cost rather than argued it: a full diagnostic
+   cycle (#14717 → #14718 → this design → #14722) was spent establishing something a truthful request would
+   never have raised. **The deletion is a precondition for measuring anything about the reserved call, and that
+   is worth more than the symptom it does not fix.**
+2. **The class.** #12935's argument is untouched by anything measured. The next call that varies what it sends
+   reproduces the defect, and the product has just acquired its first such call.
+3. **Correctness as such.** A request that misdescribes itself is a defect in an artifact this project's whole
+   measurement programme reads as evidence. It needs no behavioural payoff to be worth removing.
+
+**Does option 3 still earn itself over option 1? Yes, and more clearly than before.** §8's decisive fact is
+untouched by the measurement — **options 1 and 3 send identical bytes** — so nothing the experiment found bears
+on that comparison. What changed is the *composition* of the value: **with the product-symptom benefit gone, all
+remaining value is structural**, and option 1 buys only the instance while option 3 buys the class for the same
+wire delta. **Narrowing to option 1 would keep nearly all of the cost and discard the half of the value still
+standing.**
+
+**The honest narrowing, named so it is not mistaken for an unconsidered one:** the real alternative to option 3
+is now **A-7, change nothing** — not option 1. §8 A-7 is corrected against the measurement and still loses, on
+attributability and on the class. **Anyone who wants this scoped down should argue A-7 against point 1 above,
+which is where the weight now sits.**
 
 ---
 
@@ -548,7 +738,17 @@ diff need not touch the file where the claim lives.**
 | **V-5** | **Positive control.** Removing the omission logic must turn V-1 red; removing one paragraph from the composer must turn V-2 red | a guard whose subject can be deleted with the suite still green | #14561 §12.11 and V-13. **An instrument whose guard cannot fail is not an instrument** — and the implementer must demonstrate both reds before the unit is called done |
 
 **What no property here checks:** whether the resulting prose is any good, or whether the deletion helped. That
-is §10's measurement and #14561 §17.6's adjudicator's question — **a finding, never a gate.**
+is §10's measurement and #14561 §17.6's adjudicator's question — **a finding, never a gate.** *(#14722 has now
+run that measurement, and the answer is that the deletion does not help. **No property above changes**, because
+none of them was ever an assertion about the model's output — see the note below.)*
+
+> **STATED 2026-09-23 (#14722): every falsifier above survives the measurement untouched, and the reason is the
+> half of the design the result did not reach.** V-1 through V-5 are assertions about the **request** and about
+> the composer — decidable from the bytes leaving the process, with the response never read. The measurement
+> judged the *response*. **A design whose guarantees are complete at the wire is a design whose guarantees a
+> behavioural result cannot move**, which is §4's line doing exactly the work it was placed to do. The one
+> property that *does* depend on reading a tool-less call's response is **#14695 D-2's**, and §10.5 re-scopes it
+> to **#14709** rather than importing it here.
 
 **The negative claim this document makes, filed with its expiry per #12935:** *"no sentence other than the two
 tool paragraphs states something about the request whose truth is decidable from the request bytes"* — true at
@@ -577,7 +777,9 @@ something other than a tool is outside its domain. **Named here so it is not dis
 
 | # | risk | mitigation |
 |---|---|---|
-| **R-1** | **The deletion does not help, and the reserved call still yields no report.** Live, and §10 says it is more likely than not | Unit 0 measures it **before** anything is claimed. The deletion is justified as a truth-correction regardless of its effect, so R-1 does not block the unit — it opens Q-S1 |
+| **R-1** | ~~**The deletion does not help, and the reserved call still yields no report.** Live, and §10 says it is more likely than not~~ **REALISED 2026-09-23 (#14722): it did not help.** R-1 has stopped being a risk and become a fact | Unit 0 measured it **before** anything was claimed, which is the whole of the mitigation working as designed. The deletion is justified as a truth-correction and as a measurement precondition (§10.7), so R-1 does not block the unit — **it opens Q-S1, which is now open rather than contingent** |
+| **R-1a** | **NEW 2026-09-23. The result is read as evidence that the change is not worth shipping.** The measurement is about the model's output; the design's guarantees are about the request | §10.7 states the three grounds that survive, and §8 A-7 is corrected so the do-nothing alternative is argued against the right paragraph. **The PR body must carry the measured numbers and must not claim the symptom is fixed** |
+| **R-1b** | **NEW 2026-09-23. Byte production fell at the one measured prompt state**, 6 of 6 → 4 of 6, and the two lost observations are exactly the two that cannot be read | §10.5(a). Neither *worse* nor *the same* is established, and the instrument that would decide it is Q-4's, now promoted. **Not a reason to hold the unit** — the undecidable signature predates this change (#14717 §3.4) and is #14695 D-2's property, filed at #14709 |
 | **R-2** | **The composer is treated as a general prompt-templating facility** and grows conditionals | V-4, plus the §4.3 eligibility test, which admits exactly the sentences whose truth the request decides |
 | **R-3** | **V-1 becomes a string-matching nuisance and is deleted** the first time the wording changes | Under D-1 it cannot: it asserts against the composer's own paragraphs, so a reword moves both sides together. **This is the single strongest practical argument for option 3 over option 1**, where the equivalent test would have to match a literal sentence |
 | **R-4** | **`internal/systemtext` stops being the "one constant, no test file" package** #14600 describes | Real. It gains a function and a test file, and #14600 must be reconciled in the same arc (§17). The alternative — keeping the package inert — is what forced the disagreement to live somewhere unchecked |
@@ -613,10 +815,21 @@ reinterpreted. The change is confined to bytes leaving the process on calls that
    available. **It is the cheapest evidence anyone will get on whether telling the model something true about its
    own run changes what it writes** — which is precisely what option 2 would bet on, and it needs no new
    sentence to observe. Recommend it be captured the next time a run closes recall; **not** a gate on this unit.
-4. **Q-4 — Should the record carry what the prompt asserted?** The record carries the block and not the system
-   text, so no record-level falsifier for this property is possible today. Adding one is a prompt-provenance
-   design, and it is where #14717 §3.4's unstored `UnofferedToolCalls` / `ReasoningBytes` gap belongs too.
-   **Filed, not worked.**
+   **PROMOTED 2026-09-23 (#14722).** The measurement is call-cap only, and it established that **the licence for
+   the research move lives in the message history** (§10.2). The closed-recall path is the one trigger whose
+   history carries a *true negative* in that same position — so it is no longer merely the cheapest evidence on
+   whether a true statement changes behaviour, it is **the only variation of the operative variable that the
+   product produces for free.** Still not a gate; now the most informative unspent observation on this call.
+4. **Q-4 — Should the record carry what the prompt asserted, and can a tool-less call's response be read at
+   all?** The record carries the block and not the system text, so no record-level falsifier for this property
+   is possible today. Adding one is a prompt-provenance design, and it is where #14717 §3.4's unstored
+   `UnofferedToolCalls` / `ReasoningBytes` gap belongs too. **Filed, not worked.**
+   **WIDENED AND PROMOTED 2026-09-23 (#14722).** Two of six observations billed 49–51 completion tokens and
+   surfaced empty content with no `tool_calls` and no `reasoning`, so **the surface cannot distinguish *the
+   model produced nothing* from *the model emitted tool syntax the template consumed*.** That is no longer a
+   tidiness question: it is the observable **#14695 F-3** depends on to decide whether the reserved-call
+   mechanism works, and it is undecidable today. **Load-bearing for #14695, not for this design** — §10.5(a)
+   routes the adapter half to #14709 and leaves the record half here.
 
 ---
 
@@ -624,15 +837,25 @@ reinterpreted. The change is confined to bytes leaving the process on calls that
 
 **Q-S1 — Does the reserved call need more than a truthful prompt to produce a usable answer?**
 
-§10 says the answer is probably yes and declines to solve it here. The brief asks for this to be scoped
-separately rather than absorbed, and it should be, for a reason stronger than tidiness: **the remedies live in
-different families with different owners** — a measured prompt unit (Q-1 / A-3), a loop-level change such as
-retaining the prose the model wrote alongside earlier tool calls (#14700), or a conclusion that the reserved
-call is not recoverable at this budget and this prompt state. Choosing among them needs Unit 0's result first,
-and bundling any of them with a truth-correction would make the correction unmeasurable.
+~~§10 says the answer is probably yes and declines to solve it here.~~ **OPEN AS OF 2026-09-23 (#14722): the
+answer is yes, and the trigger below has fired.** The brief asks for this to be scoped separately rather than
+absorbed, and it should be, for a reason stronger than tidiness: **the remedies live in different families with
+different owners** — a measured prompt unit (Q-1 / A-3), a loop-level change such as retaining the prose the
+model wrote alongside earlier tool calls (#14700), or a conclusion that the reserved call is not recoverable at
+this budget and this prompt state. Bundling any of them with a truth-correction would make the correction
+unmeasurable.
 
-**Owner:** whoever owns #14695. **Input:** Unit 0's six observations. **Trigger:** Unit 0 showing the deletion
-removes the preamble without producing subject-matter prose.
+**Owner:** whoever owns #14695. **Input:** #14722's six observations. ~~**Trigger:** Unit 0 showing the deletion
+removes the preamble without producing subject-matter prose.~~ **Trigger fired in a stronger form than the one
+written: the deletion removed neither.**
+
+**Three things the measurement hands Q-S1 that it did not have before, and none of them is a proposal:**
+
+1. **The operative licence is in the message history, not the system text** (§10.2). Any remedy confined to the
+   prompt works on the weaker signal.
+2. **The one observation that attempted a report was cut off at the 192-token ceiling** (§10.5(b)). At least one
+   candidate constraint is a **budget**, and it belongs to #14695 D-5 / Unit 3 rather than to a prompt.
+3. **The closed-recall trigger is an unspent natural experiment** on exactly the variable in question (Q-3).
 
 **Q-S2 — Does stating the terminal status in prose add anything over the request already carrying it?** §4.4's
 2a, as its own unit, its own arm, its own falsifier, after this one. Not barred — unjustified until measured.
@@ -644,14 +867,22 @@ removes the preamble without producing subject-matter prose.
 **No code in this document. Each unit is one PR, in this order, per the one-feature-one-PR rule. Rebase onto
 `3e6a055` first.**
 
-**Unit 0 — the measurement, no product change.**
-Replay #14717's captured reserved-call request **six times with message 0's two tool paragraphs removed and
+**Unit 0 — the measurement, no product change. ✅ RUN 2026-09-23 — result #14722.**
+~~Replay #14717's captured reserved-call request **six times with message 0's two tool paragraphs removed and
 every other byte held**, on the same endpoint and model, writes suppressed, no graph read or write. Record the
-opening clause and whether any subject-matter claim appears, against §10.3's table.
-**Unit 0 does not gate Units 1–2 — it gates the *claim*.** Removing a false assertion is justified whether or not
-it helps; what needs evidence is any statement about its effect. **One stop condition:** if all six return 0
-bytes where the un-deleted prompt returned 162–244, the deletion has made the call worse and the design stops
-for re-briefing.
+opening clause and whether any subject-matter claim appears, against §10.3's table.~~ Executed as specified;
+§3.5 carries the result and §10 is rewritten against it.
+**Unit 0 did not gate Units 1–2 — it gated the *claim*, and the claim is what it removed.** Removing a false
+assertion is justified whether or not it helps; what needed evidence was any statement about its effect, and
+that statement is now retracted (§10.7, TL;DR).
+**The stop condition did not fire:** 4 of 6 produced bytes, not 0 of 6. **But it moved in that direction and the
+condition could not say so** — 0 of 6 empty observations became 2 of 6 (§10.5(a), §10.6). **Judgement: proceed.**
+The undecidable signature predates this change and belongs to #14695 D-2 / #14709, and the design's own
+guarantees are request-side and untouched.
+
+> **What Units 1–2 must now carry in their PR bodies, stated here so it is not forgotten at the end of the
+> arc:** the deletion is shipped as a **truth correction and a measurement precondition**, with #14722's numbers
+> quoted and **no claim that #14718's product symptom is fixed**. §10.7.
 
 **Unit 1 — the offered set replaces the boolean. Wire-inert by construction.**
 1. The loop declares its tool identity vocabulary as an ordered domain (D-2) and constructs the offered set at
@@ -673,10 +904,15 @@ for re-briefing.
 
 **Filed, not worked** — `task` nodes linked to #10422 and to this document:
 
-- **Q-3's observation** — capture a closed-recall reserved call's request and response. The cheapest available
-  evidence on whether a true statement about the run changes what the model writes.
+- **Q-3's observation** — capture a closed-recall reserved call's request and response. **Promoted 2026-09-23:**
+  with the licence located in the message history (§10.2), this is the only variation of the operative variable
+  the product produces for free.
 - **Q-4** — prompt provenance in the record, carrying #14717 §3.4's unstored warning counters with it.
-- **Q-S1** and **Q-S2** — §16, owned by #14695.
+  **Widened 2026-09-23** to the undecidable empty-response signature, which #14695 F-3 depends on.
+- **Q-S1** and **Q-S2** — §16, owned by #14695. **Q-S1 is open as of 2026-09-23**, with the three inputs §16
+  lists.
+- **The `AnsweringBudget` finding** (§10.5(b)) — **not filed by this document**; it lands on #14695 D-5 and its
+  Unit 3, and the measurer is filing it.
 
 ### 17.1 What an implementer must not do
 
@@ -690,8 +926,12 @@ for re-briefing.
 - **Do not synthesise a tool result to announce that research has ended.** §4.5.
 - **Do not bundle Units 1 and 2.** Unit 1's wire delta must be empty and provably so; Unit 2's must be exactly
   the two paragraphs.
-- **Do not claim an effect before Unit 0 has run.** The correction stands on truth; any statement about what it
-  achieves stands on the six observations.
+- ~~**Do not claim an effect before Unit 0 has run.**~~ **REPLACED 2026-09-23, now that it has: do not claim an
+  effect at all.** #14722 measured one and it is approximately none. The correction stands on truth and on
+  attributability (§10.7); **any sentence in a PR body, a record or a summary implying that this fixes
+  #14718's product symptom is contradicted by evidence.**
+- **NEW — do not quote the 0-of-6 → 1-of-6 subject-matter improvement as this change's.** §10.3: the single
+  positive observation is also the single uncached one, and n cannot separate the two readings.
 
 ---
 
@@ -702,3 +942,29 @@ model call, no inference, no endpoint contacted, no graph mutation, no code chan
 was read out of that tree. Every measurement in §3.1 and §3.2 is #14717's and #14250's respectively, attributed
 where used. Three judgements are mine and are marked as such: §4's placement of the line, §10's pessimism about
 sufficiency, and §8's ruling that A-1 and D-1 send the same bytes so the class fix is nearly free.
+
+### 18.1 Revision 2026-09-23 — the experiment ran, at `975d82b` on `docs/the-prompt-and-the-request-must-agree`
+
+**Measurement: #14722, the operator's, not mine. Nothing was run by me in this revision either** — no model
+call, no inference, no endpoint contacted, no graph write, no code changed, no git beyond checking out the
+branch this document sits on.
+
+| § | change |
+|---|---|
+| header, TL;DR | revision banner; the *"the model believes them"* headline and the *"doing what it was told"* inference struck and corrected |
+| **§1.3** | criterion 5 restated as structural, because as written it made a distributional promise the measurement caught |
+| **§3.4, §3.5** | the missing observation is no longer missing; #14722's six observations and the baseline comparison carried in, with the cache confound |
+| **§8 A-7** | its behavioural leg **withdrawn**; A-7 still loses, on the class and on attributability, and is named as the real alternative to the recommendation |
+| **§10** | rewritten, not annotated. P1 falsified, P2 confirmed, P3 undecidable in its second clause; §10.6 records two instrument errors and §10.7 answers whether the recommendation survives |
+| **§11** | every falsifier survives untouched, with the reason stated — they are request-side, and the measurement judged the response |
+| **§13** | R-1 realised; R-1a and R-1b added |
+| **§15** | Q-3 and Q-4 promoted; Q-4 widened to the undecidable response surface, which #14695 F-3 depends on |
+| **§16** | Q-S1 open, with three inputs the measurement handed it |
+| **§17** | Unit 0 marked run; the stop-condition judgement recorded; the PR-body obligation stated |
+
+**Three judgements in this revision are mine:** that the recommendation survives on attributability rather than
+on behaviour (§10.7); that the measurement makes option 3 relatively *more* attractive than option 1 rather
+than less, because the surviving value is entirely structural (§10.7); and that §10.6's two errors are one
+property of the work rather than two coincidences. **Two things are deliberately not absorbed:** the
+`AnsweringBudget` finding, which lands on #14695 D-5 / Unit 3, and the undecidable empty-response signature,
+which lands on #14695 D-2 / #14709.
