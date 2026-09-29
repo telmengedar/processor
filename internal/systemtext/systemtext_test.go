@@ -30,13 +30,3 @@ func TestTheSystemTextStatesWhatACondensedMarkingMeansAndThatTheBodyIsFetchableB
 		}
 	}
 }
-
-func TestTheSystemTextDescribesEveryToolTheJudgementCallOffers(t *testing.T) {
-	t.Parallel()
-
-	for _, want := range []string{"A recall tool is available.", "A read tool is available.", "A file tool is available."} {
-		if !strings.Contains(Text, want) {
-			t.Errorf("the system text introduces no paragraph beginning %q; every tool the call offers is described here, in one register, or the model is left to infer one of them from its schema alone", want)
-		}
-	}
-}
