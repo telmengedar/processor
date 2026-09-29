@@ -36,6 +36,7 @@ const chatCompletionsRoute = "/chat/completions"
 const (
 	recallToolName    = "recall"
 	writeFileToolName = "write_file"
+	readNodeToolName  = "read_node"
 )
 
 var _ loop.ModelPort = (*Client)(nil)
@@ -102,7 +103,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		TopP:            c.sampling.TopP,
 	}
 	if !in.WithholdTools {
-		reqBody.Tools = []wireTool{recallTool(), writeFileTool()}
+		reqBody.Tools = []wireTool{recallTool(), writeFileTool(), readNodeTool()}
 	}
 
 	body, err := json.Marshal(reqBody)

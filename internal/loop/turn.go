@@ -27,6 +27,10 @@ const (
 	errNoWorkingDirectory  = "no working directory is configured"
 	errRecallClosedToModel = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
 	errReservedCallRefused = "the turn's last call was reserved for answering, so it offered no tool and dispatched none"
+	errNoSuchNode          = "no part of memory has that id"
+	errReadOfSubject       = "that id is this request's own subject, and the context block already carries it in full"
+	errAlreadyReadInFull   = "that part has already been shown to you in full in this turn"
+	errNodeTooLargeFormat  = "that part is %d bytes and one read carries at most %d, so it cannot be shown in full"
 )
 
 type reservation string
@@ -68,8 +72,7 @@ var ErrWriteRejected = errors.New("write rejected")
 // GraphPort is the seam between the loop and the graph. Declared here,
 // implemented by internal/divoid, constructed in main (design §5.2, §8.3).
 type GraphPort interface {
-	// Node fetches the subject node by id, with its content. found is
-	// false when the id resolves to nothing.
+	// Node fetches a node by id, with its content; found is false when the id resolves to nothing.
 	Node(ctx context.Context, id int64) (anchor Anchor, found bool, err error)
 
 	// Recall returns up to limit candidates in the graph's own rank order, never re-sorted; an empty scope ranks the whole graph. A non-zero window bounds the request to nodes last updated inside it; a zero window is unbounded.
@@ -199,7 +202,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		},
 	}
 
-	judged, err := t.judge(ctx, block, input, now, window, dispositions)
+	judged, err := t.judge(ctx, block, input, subject, now, window, dispositions)
 	if err != nil {
 		return t.failed(subject, started, err)
 	}
@@ -364,7 +367,7 @@ func (t *Turn) judgementShortfall(ctx context.Context) string {
 		JudgementBudget, floors.TokensPerSecond, JudgementPromptCeiling, floors.PromptBytesPerSecond))
 }
 
-func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, window UpdateWindow, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, block, input string, subject int64, now time.Time, window UpdateWindow, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -460,7 +463,7 @@ func (t *Turn) judge(ctx context.Context, block, input string, now time.Time, wi
 			continue
 		}
 
-		exchange := t.dispatch(ctx, result, &judged.workspace, window)
+		exchange := t.dispatch(ctx, result, &judged.workspace, window, subject, account)
 		exchange.ToolSource = result.ToolSource
 		accountForYield(account, &exchange)
 		exchanges = append(exchanges, exchange)
@@ -484,14 +487,18 @@ func outputBudget(reserved reservation) int {
 }
 
 func wantsTool(reason TerminalReason) bool {
-	return reason == WantsRecall || reason == WantsWrite
+	return reason == WantsRecall || reason == WantsWrite || reason == WantsRead
 }
 
 func toolFor(reason TerminalReason) string {
-	if reason == WantsWrite {
+	switch reason {
+	case WantsWrite:
 		return ToolWriteFile
+	case WantsRead:
+		return ToolReadNode
+	default:
+		return ToolRecall
 	}
-	return ToolRecall
 }
 
 func undispatchedExchange(result JudgeResult, cause string) ToolExchange {
@@ -501,6 +508,7 @@ func undispatchedExchange(result JudgeResult, cause string) ToolExchange {
 	return ToolExchange{
 		Tool:    toolFor(result.Reason),
 		Query:   result.RecallQuery,
+		NodeID:  result.ReadNodeID,
 		Path:    result.WritePath,
 		Content: result.WriteContent,
 		Bytes:   len(result.WriteContent),
@@ -509,22 +517,30 @@ func undispatchedExchange(result JudgeResult, cause string) ToolExchange {
 }
 
 func accountForYield(account *yieldAccount, exchange *ToolExchange) {
-	if exchange.Tool != ToolRecall || exchange.Error != "" {
+	if !retrieves(exchange.Tool) || exchange.Error != "" {
 		return
 	}
 	exchange.Yield = account.round(exchange.Dispositions)
 	exchange.NothingNew = exchange.Yield == 0 && len(exchange.Results) > 0
 }
 
+func retrieves(tool string) bool {
+	return tool == ToolRecall || tool == ToolReadNode
+}
+
 func closedRecallExchange(result JudgeResult) ToolExchange {
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errRecallClosedToModel, Dispositions: []Disposition{}}
 }
 
-func (t *Turn) dispatch(ctx context.Context, result JudgeResult, workspace *string, window UpdateWindow) ToolExchange {
-	if result.Reason == WantsWrite {
+func (t *Turn) dispatch(ctx context.Context, result JudgeResult, workspace *string, window UpdateWindow, subject int64, account *yieldAccount) ToolExchange {
+	switch result.Reason {
+	case WantsWrite:
 		return t.dispatchWrite(ctx, result, workspace)
+	case WantsRead:
+		return t.dispatchRead(ctx, result, subject, account)
+	default:
+		return t.dispatchRecall(ctx, result, window)
 	}
-	return t.dispatchRecall(ctx, result, window)
 }
 
 func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace *string) ToolExchange {
@@ -587,6 +603,47 @@ func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window Up
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions, SubstanceRatioThreshold: threshold}
 }
 
+func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int64, account *yieldAccount) ToolExchange {
+	exchange := ToolExchange{Tool: ToolReadNode, NodeID: result.ReadNodeID, Dispositions: []Disposition{}}
+
+	if result.ToolError != "" {
+		exchange.Error = BoundCause(result.ToolError)
+		return exchange
+	}
+	if result.ReadNodeID == subject {
+		exchange.Error = errReadOfSubject
+		return exchange
+	}
+
+	anchor, found, err := t.Graph.Node(ctx, result.ReadNodeID)
+	if err != nil {
+		t.log().Error("addressed read failed", "node", result.ReadNodeID, "error", err)
+		exchange.Error = BoundCause(err.Error())
+		return exchange
+	}
+	if !found {
+		exchange.Error = errNoSuchNode
+		return exchange
+	}
+
+	threshold := SubstanceRatioThreshold
+	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, SupplementaryByteBudget, 0, 0, BlockOccupancy, threshold)
+	if account.alreadyShown(dispositions[0]) {
+		exchange.Error = errAlreadyReadInFull
+		return exchange
+	}
+	if len(admitted) == 0 {
+		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, dispositions[0].Size, SupplementaryByteBudget)
+		return exchange
+	}
+
+	t.log().Info("node read in full", "node", dispositions[0].ID, "bytes", dispositions[0].RenderedSize)
+	exchange.Results = admitted
+	exchange.Dispositions = dispositions
+	exchange.SubstanceRatioThreshold = threshold
+	return exchange
+}
+
 func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {
 	records := make([]ToolCallRecord, len(exchanges))
 	for i, e := range exchanges {
@@ -594,7 +651,7 @@ func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {
 		if results == nil {
 			results = []Disposition{}
 		}
-		records[i] = ToolCallRecord{Tool: e.Tool, Source: e.ToolSource, Query: e.Query, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results, Yield: e.Yield}
+		records[i] = ToolCallRecord{Tool: e.Tool, Source: e.ToolSource, Query: e.Query, NodeID: e.NodeID, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results, Yield: e.Yield}
 	}
 	return records
 }

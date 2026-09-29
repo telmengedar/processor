@@ -8,6 +8,8 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
+const errNoNodeID = "tool arguments named no node id to read"
+
 type chatRequest struct {
 	Model           string        `json:"model"`
 	Messages        []wireMessage `json:"messages"`
@@ -56,6 +58,10 @@ type writeFileToolArguments struct {
 	Content string `json:"content"`
 }
 
+type readNodeToolArguments struct {
+	ID int64 `json:"id"`
+}
+
 func recallTool() wireTool {
 	return wireTool{
 		Type: "function",
@@ -84,6 +90,21 @@ func writeFileTool() wireTool {
 					"content": {"type": "string"}
 				},
 				"required": ["path", "content"]
+			}`),
+		},
+	}
+}
+
+func readNodeTool() wireTool {
+	return wireTool{
+		Type: "function",
+		Function: wireFunction{
+			Name:        readNodeToolName,
+			Description: "Read one part of memory in full. Takes one argument: id, the integer id that part is printed with.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {"id": {"type": "integer"}},
+				"required": ["id"]
 			}`),
 		},
 	}
@@ -149,19 +170,28 @@ func buildMessages(in loop.JudgeInput) []wireMessage {
 }
 
 func wireToolName(tool string) string {
-	if tool == loop.ToolWriteFile {
+	switch tool {
+	case loop.ToolWriteFile:
 		return writeFileToolName
+	case loop.ToolReadNode:
+		return readNodeToolName
+	default:
+		return recallToolName
 	}
-	return recallToolName
 }
 
 func toolArguments(r loop.ToolExchange) string {
-	if r.Tool == loop.ToolWriteFile {
+	switch r.Tool {
+	case loop.ToolWriteFile:
 		encoded, _ := json.Marshal(writeFileToolArguments{Path: r.Path, Content: r.Content})
 		return string(encoded)
+	case loop.ToolReadNode:
+		encoded, _ := json.Marshal(readNodeToolArguments{ID: r.NodeID})
+		return string(encoded)
+	default:
+		encoded, _ := json.Marshal(recallToolArguments{Query: r.Query})
+		return string(encoded)
 	}
-	encoded, _ := json.Marshal(recallToolArguments{Query: r.Query})
-	return string(encoded)
 }
 
 func translate(wire chatResponse, withheld bool) (loop.JudgeResult, error) {
@@ -195,6 +225,8 @@ func translate(wire chatResponse, withheld bool) (loop.JudgeResult, error) {
 			return translateRecall(result, call.Function.Arguments), nil
 		case writeFileToolName:
 			return translateWrite(result, call.Function.Arguments), nil
+		case readNodeToolName:
+			return translateRead(result, call.Function.Arguments), nil
 		}
 
 		result.Reason = loop.Unrecognised
@@ -204,6 +236,23 @@ func translate(wire chatResponse, withheld bool) (loop.JudgeResult, error) {
 	result.RawReason = choice.FinishReason
 	result.Reason = mapFinishReason(choice.FinishReason)
 	return result, nil
+}
+
+func translateRead(result loop.JudgeResult, arguments string) loop.JudgeResult {
+	result.Reason = loop.WantsRead
+
+	var args readNodeToolArguments
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		result.ToolError = fmt.Sprintf("tool arguments could not be parsed: %v", err)
+		return result
+	}
+	if args.ID <= 0 {
+		result.ToolError = errNoNodeID
+		return result
+	}
+
+	result.ReadNodeID = args.ID
+	return result
 }
 
 func translateRecall(result loop.JudgeResult, arguments string) loop.JudgeResult {

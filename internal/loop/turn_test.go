@@ -25,6 +25,8 @@ type fakeGraph struct {
 	nodeFound bool
 	nodeErr   error
 	onNode    func()
+	nodes     map[int64]nodeResponse
+	nodeCalls []int64
 
 	candidates []Candidate
 	recallErr  error
@@ -64,9 +66,20 @@ type recallResponse struct {
 	Err        error
 }
 
-func (f *fakeGraph) Node(_ context.Context, _ int64) (Anchor, bool, error) {
+type nodeResponse struct {
+	Anchor Anchor
+	Found  bool
+	Err    error
+}
+
+func (f *fakeGraph) Node(_ context.Context, id int64) (Anchor, bool, error) {
 	if f.onNode != nil {
 		f.onNode()
+	}
+	f.nodeCalls = append(f.nodeCalls, id)
+	if f.nodes != nil {
+		response := f.nodes[id]
+		return response.Anchor, response.Found, response.Err
 	}
 	return f.node, f.nodeFound, f.nodeErr
 }
@@ -163,6 +176,7 @@ func withoutToolRequest(result JudgeResult) JudgeResult {
 	result.Reason = Answered
 	result.RawReason = "stop"
 	result.RecallQuery = ""
+	result.ReadNodeID = 0
 	result.WritePath = ""
 	result.WriteContent = ""
 	result.ToolError = ""

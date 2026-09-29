@@ -108,7 +108,7 @@ func TestJudgeSendsStreamFalseExplicitlySoTheEndpointRepliesWithOneJSONObject(t 
 	}
 }
 
-func TestJudgeNativeRequestCarriesModelSystemBlockInputAndBothTools(t *testing.T) {
+func TestJudgeNativeRequestCarriesModelSystemBlockInputAndEveryTool(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, doneResponse)
@@ -159,8 +159,8 @@ func TestJudgeNativeRequestCarriesModelSystemBlockInputAndBothTools(t *testing.T
 	if !strings.Contains(got.Messages[1].Content, "the block") || !strings.Contains(got.Messages[1].Content, "the input") {
 		t.Fatalf("user message = %q, want it to carry both the block and the input", got.Messages[1].Content)
 	}
-	if len(got.Tools) != 2 {
-		t.Fatalf("tools = %d, want the recall tool and the write tool", len(got.Tools))
+	if len(got.Tools) != 3 {
+		t.Fatalf("tools = %d, want the recall tool, the write tool and the read tool", len(got.Tools))
 	}
 	if got.Tools[0].Function.Name != wantRecallName || got.Tools[0].Function.Description != wantRecallDescription {
 		t.Fatalf("tool 0 = %q/%q, want %q/%q", got.Tools[0].Function.Name, got.Tools[0].Function.Description, wantRecallName, wantRecallDescription)
