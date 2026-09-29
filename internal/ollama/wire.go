@@ -3,9 +3,15 @@ package ollama
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/telmengedar/processor/internal/loop"
+)
+
+const (
+	errNoNodeID               = "tool arguments named no node id to read"
+	errRecoveredCallWithoutID = "the call in the response text was missing its id argument"
 )
 
 type chatRequest struct {
@@ -59,6 +65,10 @@ type writeFileToolArguments struct {
 	Content string `json:"content"`
 }
 
+type readNodeToolArguments struct {
+	ID int64 `json:"id"`
+}
+
 func recallTool() wireTool {
 	return wireTool{
 		Type: "function",
@@ -87,6 +97,21 @@ func writeFileTool() wireTool {
 					"content": {"type": "string"}
 				},
 				"required": ["path", "content"]
+			}`),
+		},
+	}
+}
+
+func readNodeTool() wireTool {
+	return wireTool{
+		Type: "function",
+		Function: wireFunction{
+			Name:        readNodeToolName,
+			Description: "Read one part of memory in full. Takes one argument: id, the integer id that part is printed with.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {"id": {"type": "integer"}},
+				"required": ["id"]
 			}`),
 		},
 	}
@@ -137,19 +162,28 @@ func buildMessages(in loop.JudgeInput) []wireMessage {
 }
 
 func wireToolName(tool string) string {
-	if tool == loop.ToolWriteFile {
+	switch tool {
+	case loop.ToolWriteFile:
 		return writeFileToolName
+	case loop.ToolReadNode:
+		return readNodeToolName
+	default:
+		return recallToolName
 	}
-	return recallToolName
 }
 
 func toolArguments(r loop.ToolExchange) json.RawMessage {
-	if r.Tool == loop.ToolWriteFile {
+	switch r.Tool {
+	case loop.ToolWriteFile:
 		encoded, _ := json.Marshal(writeFileToolArguments{Path: r.Path, Content: r.Content})
 		return encoded
+	case loop.ToolReadNode:
+		encoded, _ := json.Marshal(readNodeToolArguments{ID: r.NodeID})
+		return encoded
+	default:
+		encoded, _ := json.Marshal(recallToolArguments{Query: r.Query})
+		return encoded
 	}
-	encoded, _ := json.Marshal(recallToolArguments{Query: r.Query})
-	return encoded
 }
 
 func translate(wire chatResponse, withheld bool) loop.JudgeResult {
@@ -175,6 +209,8 @@ func translate(wire chatResponse, withheld bool) loop.JudgeResult {
 			return translateRecall(result, call.Function.Arguments)
 		case writeFileToolName:
 			return translateWrite(result, call.Function.Arguments)
+		case readNodeToolName:
+			return translateRead(result, call.Function.Arguments)
 		}
 
 		result.Reason = loop.Unrecognised
@@ -197,6 +233,8 @@ func translateRecoveredCall(result loop.JudgeResult, call recoveredCall) loop.Ju
 		return recoverRecall(result, call)
 	case writeFileToolName:
 		return recoverWrite(result, call)
+	case readNodeToolName:
+		return recoverRead(result, call)
 	}
 
 	result.Reason = loop.Unrecognised
@@ -234,6 +272,42 @@ func recoverWrite(result loop.JudgeResult, call recoveredCall) loop.JudgeResult 
 
 	result.WritePath = path
 	result.WriteContent = content
+	return result
+}
+
+func recoverRead(result loop.JudgeResult, call recoveredCall) loop.JudgeResult {
+	result.Reason = loop.WantsRead
+
+	raw, present := call.parameters["id"]
+	if !present {
+		result.ToolError = errRecoveredCallWithoutID
+		return result
+	}
+
+	id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil || id <= 0 {
+		result.ToolError = fmt.Sprintf("%s: %q", errNoNodeID, raw)
+		return result
+	}
+
+	result.ReadNodeID = id
+	return result
+}
+
+func translateRead(result loop.JudgeResult, arguments json.RawMessage) loop.JudgeResult {
+	result.Reason = loop.WantsRead
+
+	var args readNodeToolArguments
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		result.ToolError = fmt.Sprintf("tool arguments could not be parsed: %v", err)
+		return result
+	}
+	if args.ID <= 0 {
+		result.ToolError = errNoNodeID
+		return result
+	}
+
+	result.ReadNodeID = args.ID
 	return result
 }
 

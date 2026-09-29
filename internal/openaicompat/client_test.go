@@ -102,7 +102,7 @@ func TestJudgeSendsAuthorizationBearerWhenKeyIsSet(t *testing.T) {
 	}
 }
 
-func TestJudgeRequestBodyCarriesModelSystemBlockInputAndBothTools(t *testing.T) {
+func TestJudgeRequestBodyCarriesModelSystemBlockInputAndEveryTool(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, stopResponse)
@@ -159,8 +159,8 @@ func TestJudgeRequestBodyCarriesModelSystemBlockInputAndBothTools(t *testing.T) 
 	if got.Messages[1].Content != wantBlockInputContent {
 		t.Fatalf("messages[1].Content = %q, want %q byte-exact", got.Messages[1].Content, wantBlockInputContent)
 	}
-	if len(got.Tools) != 2 {
-		t.Fatalf("tools has %d entries, want exactly 2 (recall and the file write)", len(got.Tools))
+	if len(got.Tools) != 3 {
+		t.Fatalf("tools has %d entries, want exactly 3 (recall, the file write and the addressed read)", len(got.Tools))
 	}
 	if got.Tools[0].Type != "function" || got.Tools[0].Function.Name != wantRecallName {
 		t.Fatalf("tools[0] = %+v, want the recall function tool named %q", got.Tools[0], wantRecallName)

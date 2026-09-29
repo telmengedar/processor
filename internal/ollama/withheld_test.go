@@ -44,7 +44,7 @@ func TestAWithheldToolListLeavesTheToolsKeyOutOfTheRequestEntirely(t *testing.T)
 	}
 }
 
-func TestACallStillWillingToDispatchCarriesBothToolsAsItAlwaysHas(t *testing.T) {
+func TestACallStillWillingToDispatchCarriesEveryToolAsItAlwaysHas(t *testing.T) {
 	t.Parallel()
 
 	srv, captured := capturingServer(t, doneResponse)
@@ -56,8 +56,8 @@ func TestACallStillWillingToDispatchCarriesBothToolsAsItAlwaysHas(t *testing.T) 
 	if err := json.Unmarshal(captured.Body, &got); err != nil {
 		t.Fatalf("decode request: %v; body=%s", err, captured.Body)
 	}
-	if len(got.Tools) != 2 {
-		t.Fatalf("tools = %d, want 2: a call the loop would still dispatch a tool from must carry the tool list it always carried", len(got.Tools))
+	if len(got.Tools) != 3 {
+		t.Fatalf("tools = %d, want 3: a call the loop would still dispatch a tool from must carry every tool it can dispatch", len(got.Tools))
 	}
 }
 

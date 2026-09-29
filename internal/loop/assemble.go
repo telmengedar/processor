@@ -263,6 +263,10 @@ func contentHash(content string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+func candidateFromAnchor(anchor Anchor) Candidate {
+	return Candidate{ID: anchor.ID, Type: anchor.Type, Name: anchor.Name, Content: anchor.Content}
+}
+
 func summarizeAnchor(anchor Anchor) AnchorSummary {
 	return AnchorSummary{
 		ID:          anchor.ID,

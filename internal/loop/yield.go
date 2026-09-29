@@ -5,6 +5,11 @@ const barrenRoundsToClose = 2
 type rowIdentity struct {
 	id   int64
 	hash string
+	form Form
+}
+
+func identityOf(row Disposition) rowIdentity {
+	return rowIdentity{id: row.ID, hash: row.ContentHash, form: row.Form}
 }
 
 type yieldAccount struct {
@@ -24,7 +29,7 @@ func (a *yieldAccount) show(rows []Disposition) int {
 		if !d.Included {
 			continue
 		}
-		identity := rowIdentity{id: d.ID, hash: d.ContentHash}
+		identity := identityOf(d)
 		if !a.shown[identity] {
 			unseen++
 		}
@@ -41,6 +46,10 @@ func (a *yieldAccount) round(rows []Disposition) int {
 	}
 	a.barren = 0
 	return yield
+}
+
+func (a *yieldAccount) alreadyShown(row Disposition) bool {
+	return a.shown[identityOf(row)]
 }
 
 func (a *yieldAccount) closed() bool {

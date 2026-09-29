@@ -136,6 +136,8 @@ const (
 	Refused TerminalReason = "refused"
 	// WantsWrite means the model asked for the file-write tool.
 	WantsWrite TerminalReason = "wantsWrite"
+	// WantsRead means the model asked for the addressed-read tool.
+	WantsRead TerminalReason = "wantsRead"
 	// Unrecognised means the endpoint reported a terminal state outside this set.
 	Unrecognised TerminalReason = "unrecognised"
 )
@@ -145,6 +147,8 @@ const (
 	ToolRecall = "recall"
 	// ToolWriteFile is the file-write tool's name in a run record.
 	ToolWriteFile = "writeFile"
+	// ToolReadNode is the addressed-read tool's name in a run record.
+	ToolReadNode = "readNode"
 )
 
 // ToolSource is the closed set of ways an adapter can have obtained a tool call from one response.
@@ -173,10 +177,14 @@ type Usage struct {
 type ToolCallRecord struct {
 	Tool string `json:"tool"`
 	// Source is how the adapter obtained this call, absent on a round that reached no adapter.
-	Source  ToolSource    `json:"source,omitempty"`
-	Query   string        `json:"query,omitempty"`
-	Path    string        `json:"path,omitempty"`
-	Bytes   int           `json:"bytes"`
+	Source ToolSource `json:"source,omitempty"`
+	Query  string     `json:"query,omitempty"`
+	Path   string     `json:"path,omitempty"`
+	Bytes  int        `json:"bytes"`
+
+	// NodeID is the id an addressed read asked for, absent on every round that was not one.
+	NodeID int64 `json:"nodeId,omitempty"`
+
 	Error   string        `json:"error,omitempty"`
 	Results []Disposition `json:"results"`
 
@@ -319,6 +327,7 @@ type ToolExchange struct {
 	Tool         string
 	ToolSource   ToolSource
 	Query        string
+	NodeID       int64
 	Path         string
 	Content      string
 	Bytes        int
@@ -362,6 +371,7 @@ type JudgeResult struct {
 	Reason       TerminalReason
 	RawReason    string
 	RecallQuery  string
+	ReadNodeID   int64
 	WritePath    string
 	WriteContent string
 	ToolError    string

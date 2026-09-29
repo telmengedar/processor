@@ -133,6 +133,7 @@ var dials = []dial{
 var mechanisms = []mechanism{
 	{name: "on-demand fill", field: "fills", observed: observedFill},
 	{name: "substance form", field: "candidates[].form", observed: observedSubstanceForm},
+	{name: "addressed read", field: "toolCalls[].tool", observed: observedAddressedRead},
 }
 
 // DialExercise reads every declared dial's recorded values across the selection, counting a value only where the record itself carries the field and naming the span it was recorded over.
@@ -382,6 +383,15 @@ func recordedLimits(raw []byte) (map[string]string, bool) {
 
 func observedFill(record loop.Record) bool {
 	return len(record.Fills) > 0
+}
+
+func observedAddressedRead(record loop.Record) bool {
+	for _, call := range record.ToolCalls {
+		if call.Tool == loop.ToolReadNode {
+			return true
+		}
+	}
+	return false
 }
 
 func observedSubstanceForm(record loop.Record) bool {

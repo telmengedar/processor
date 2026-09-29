@@ -36,6 +36,7 @@ const chatRoute = "/api/chat"
 const (
 	recallToolName    = "recall"
 	writeFileToolName = "write_file"
+	readNodeToolName  = "read_node"
 )
 
 const (
@@ -113,7 +114,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		},
 	}
 	if !in.WithholdTools {
-		reqBody.Tools = []wireTool{recallTool(), writeFileTool()}
+		reqBody.Tools = []wireTool{recallTool(), writeFileTool(), readNodeTool()}
 	}
 
 	body, err := json.Marshal(reqBody)

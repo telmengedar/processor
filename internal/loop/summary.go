@@ -210,6 +210,8 @@ func renderSummaryTools(b *strings.Builder, record Record) {
 		case call.Tool == ToolRecall, call.Tool == "" && call.Query != "":
 			fmt.Fprintf(b, "  %d %s%s  %q\n", i+1, tool, source, summaryTrunc(call.Query, summaryRecallRunes))
 			renderRecallResults(b, call.Results)
+		case call.Tool == ToolReadNode:
+			fmt.Fprintf(b, "  %d %s%s  #%d\n", i+1, tool, source, call.NodeID)
 		case call.Tool == "" && call.Path == "":
 			fmt.Fprintf(b, "  %d %s%s\n", i+1, tool, source)
 		default:
