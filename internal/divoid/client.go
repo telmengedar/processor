@@ -27,11 +27,8 @@ const DefaultTimeout = 15 * time.Second
 // Compile-time assertion that Client satisfies the port the loop declares.
 var _ loop.GraphPort = (*Client)(nil)
 
-// nodeFields and candidateFields are the response projections each
-// operation needs (design C29, C21) and nothing more, so the graph does
-// not serialize bytes nobody reads.
 const (
-	nodeFields      = "id,type,name,contentType,content"
+	nodeFields      = "id,type,name,content"
 	candidateFields = "id,type,name,similarity,content,substance"
 )
 
@@ -41,6 +38,8 @@ const (
 )
 
 const linksPageSize = 500
+
+const errorBodyBytes = 4096
 
 const logPartialNeighbourhood = "neighbourhood read stopped before the graph's last page"
 
@@ -254,7 +253,7 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, errorBodyBytes))
 		return fmt.Errorf("divoid: unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -292,7 +291,7 @@ func (c *Client) send(req *http.Request, out any) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode/100 != 2 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, errorBodyBytes))
 		return fmt.Errorf("divoid: unexpected status %d: %s", resp.StatusCode, string(respBody))
 	}
 	if out == nil {

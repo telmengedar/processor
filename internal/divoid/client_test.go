@@ -60,12 +60,6 @@ func TestNodeConstructsTheListingQueryWithIDAndFields(t *testing.T) {
 	}
 }
 
-// TestNodeReturnsNotFoundOnEmptyResultWithStatus200 pins design C30: a
-// missing id via the listing form returns 200 with an empty result, never
-// 404. A status-code-based not-found check would pass this test wrongly
-// (it would never inspect the body) — TestNodeOnNon200TreatsItAsAnError
-// below is the mutation-style counterpart that shows the failure such a
-// check would miss.
 func TestNodeReturnsNotFoundOnEmptyResultWithStatus200(t *testing.T) {
 	t.Parallel()
 
@@ -112,11 +106,6 @@ func TestNodeDecodesAFoundResultIncludingContent(t *testing.T) {
 	}
 }
 
-// TestNodeOnNon200TreatsItAsAnErrorNeverAsNotFound is the mutation check
-// for the C30 discrimination: a 401 must surface as an error (which Turn
-// maps to graph_unavailable/502), never as found=false (which Turn would
-// map to subject_not_found/404). A status-code-based not-found check would
-// fail this test.
 func TestNodeOnNon200TreatsItAsAnErrorNeverAsNotFound(t *testing.T) {
 	t.Parallel()
 
@@ -136,7 +125,7 @@ func TestNodeOnNon200TreatsItAsAnErrorNeverAsNotFound(t *testing.T) {
 	}
 }
 
-func TestRecallConstructsTheQueryWithTextAndCount(t *testing.T) {
+func TestRecallSendsTheQueryTextVerbatimWithCountAndFieldsAndNoOtherKey(t *testing.T) {
 	t.Parallel()
 
 	var gotQuery string
@@ -148,9 +137,6 @@ func TestRecallConstructsTheQueryWithTextAndCount(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	// Deliberately not already lowercase/trimmed/single-spaced (CF-1): a
-	// fixture that already satisfies those normalizations can't fail when
-	// the adapter silently applies one.
 	const wantQueryText = "  Why DOES   the Assembler ignore SCOPE?  "
 	if _, err := c.Recall(context.Background(), wantQueryText, 20, nil, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Recall: %v", err)
@@ -167,9 +153,6 @@ func TestRecallConstructsTheQueryWithTextAndCount(t *testing.T) {
 		t.Fatalf("count = %q, want %q", q.Get("count"), "20")
 	}
 
-	// CF-2: assert the exact key set, not merely that query/count are
-	// present. A key set assertion is what catches an adapter that adds a
-	// scope filter (e.g. type=documentation) alongside them.
 	wantKeys := []string{"query", "count", "fields"}
 	if len(q) != len(wantKeys) {
 		t.Fatalf("query has keys %v, want exactly %v", keysOf(q), wantKeys)
@@ -247,10 +230,6 @@ func keysOf(v url.Values) []string {
 	return keys
 }
 
-// TestRecallReturnsEveryCandidateTheServerSentUnfiltered pins CF-2's other
-// half: Recall must return every row the server sent, in the order sent —
-// no scope filter, no similarity floor, no truncation of the result set
-// independent of the requested limit (design R2).
 func TestRecallReturnsEveryCandidateTheServerSentUnfiltered(t *testing.T) {
 	t.Parallel()
 
@@ -320,8 +299,6 @@ func TestRecallMarksOnlyTheRunRecordsThisClientWrote(t *testing.T) {
 	}
 }
 
-// TestRecallPreservesReturnedOrderWithoutResorting pins design §8.3: "Rank
-// order as returned. The adapter does not re-sort."
 func TestRecallPreservesReturnedOrderWithoutResorting(t *testing.T) {
 	t.Parallel()
 
@@ -466,11 +443,6 @@ func TestNodeOnUnreachableHostReturnsAnError(t *testing.T) {
 	}
 }
 
-// TestNodeAnchorsOnTheRowMatchingTheRequestedIDNotResultZero pins W-4: on a
-// multi-row response, Node must anchor on the row whose id matches the
-// requested id, not on Result[0]. The matching row sits in the middle —
-// neither first nor last — so this also catches an "always take the last
-// row" variant, not just "always take the first".
 func TestNodeAnchorsOnTheRowMatchingTheRequestedIDNotResultZero(t *testing.T) {
 	t.Parallel()
 
@@ -500,9 +472,6 @@ func TestNodeAnchorsOnTheRowMatchingTheRequestedIDNotResultZero(t *testing.T) {
 	}
 }
 
-// TestNodeReportsNotFoundWhenNoRowMatchesTheRequestedID is W-4's
-// complement: a non-empty result that contains no row for the requested id
-// must not be silently accepted as a match.
 func TestNodeReportsNotFoundWhenNoRowMatchesTheRequestedID(t *testing.T) {
 	t.Parallel()
 
@@ -552,13 +521,19 @@ func TestNodeRequestsEveryAnchorFieldAndNoCondensedFormInTheFieldsProjection(t *
 		requested = append(requested, strings.ToLower(strings.TrimSpace(field)))
 	}
 
-	carried := reflect.VisibleFields(reflect.TypeOf(loop.Anchor{}))
-	if len(carried) == 0 {
-		t.Fatal("the anchor type reports no fields, so this guard would assert nothing")
+	carried := []string{}
+	for _, field := range reflect.VisibleFields(reflect.TypeOf(loop.Anchor{})) {
+		if field.Anonymous || !field.IsExported() {
+			continue
+		}
+		carried = append(carried, field.Name)
 	}
-	for _, field := range carried {
-		if !slices.Contains(requested, strings.ToLower(field.Name)) {
-			t.Fatalf("fields = %q, want it to cover every field the anchor carries; %q is missing — a field the projection never requests arrives empty from a real graph, and every id the run records is the requested one, so nothing downstream disagrees", q.Get("fields"), field.Name)
+	if len(carried) == 0 {
+		t.Fatal("the anchor type reports no field a projection could ever fill, so this guard would assert nothing")
+	}
+	for _, name := range carried {
+		if !slices.Contains(requested, strings.ToLower(name)) {
+			t.Fatalf("fields = %q, want it to cover every field the anchor carries; %q is missing — a field the projection never requests arrives empty from a real graph, and every id the run records is the requested one, so nothing downstream disagrees", q.Get("fields"), name)
 		}
 	}
 	if slices.Contains(requested, "substance") {
@@ -566,13 +541,14 @@ func TestNodeRequestsEveryAnchorFieldAndNoCondensedFormInTheFieldsProjection(t *
 	}
 }
 
-func TestTheErrorForANon200ReadCarriesABoundedSliceOfTheBodyNotAllOfIt(t *testing.T) {
+func TestTheNon200ErrorBodyBoundIsFourThousandAndNinetySixBytesMeasuredAgainstALiteral(t *testing.T) {
 	t.Parallel()
 
+	const filler = "Z"
 	const bodySize = 200000
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(strings.Repeat("x", bodySize)))
+		_, _ = w.Write([]byte(strings.Repeat(filler, bodySize)))
 	}))
 	defer srv.Close()
 
@@ -582,12 +558,9 @@ func TestTheErrorForANon200ReadCarriesABoundedSliceOfTheBodyNotAllOfIt(t *testin
 		t.Fatal("Node returned nil error for a 500 response, want an error")
 	}
 
-	const maxLen = 8192
-	if len(err.Error()) > maxLen {
-		t.Fatalf("error is %d bytes for a %d byte response body, want at most %d — an unbounded cause is rendered verbatim into the next prompt", len(err.Error()), bodySize, maxLen)
-	}
-	if !strings.Contains(err.Error(), "xxxx") {
-		t.Fatalf("error = %q, want it to still carry a slice of the response body", err.Error())
+	carried := strings.Count(err.Error(), filler)
+	if carried != 4096 {
+		t.Fatalf("the error carried %d bytes of a %d byte response body, want exactly 4096 — the bound the next judgement call's prompt is held to, so an off-by-one and a doubling are both defects", carried, bodySize)
 	}
 }
 
@@ -613,10 +586,6 @@ func TestNewClientDropsATrailingSlashSoTheReadPathNeverDoubles(t *testing.T) {
 	}
 }
 
-// TestNewClientDefaultsToATimeoutBoundHTTPClientWhenNoneIsSupplied pins
-// W-7: http.DefaultClient has no timeout, so a hung graph read would be
-// bounded only by client disconnect. A nil httpClient must still produce a
-// bounded one.
 func TestNewClientDefaultsToATimeoutBoundHTTPClientWhenNoneIsSupplied(t *testing.T) {
 	t.Parallel()
 
@@ -632,15 +601,7 @@ func TestNewClientDefaultsToATimeoutBoundHTTPClientWhenNoneIsSupplied(t *testing
 	}
 }
 
-// TestDefaultTimeoutIsFifteenSeconds pins DefaultTimeout's magnitude (W-13)
-// against a literal, not against the DefaultTimeout constant itself — a
-// comparison of the constant to itself would move with a mutation to its
-// value and catch nothing (the same both-sides-move anti-pattern CF-4
-// named at the wire layer). main no longer sets its own copy of the
-// timeout (W-13): it passes a nil httpClient and relies on this single
-// value, so this is now the one place the magnitude is reachable and worth
-// pinning.
-func TestDefaultTimeoutIsFifteenSeconds(t *testing.T) {
+func TestDefaultTimeoutIsFifteenSecondsMeasuredAgainstALiteralNotAgainstItself(t *testing.T) {
 	t.Parallel()
 
 	const want = 15 * time.Second
