@@ -1230,6 +1230,39 @@ def go_int_constants(*relative_paths):
     return found
 
 
+def go_prefixed_constants(prefix, package_dir):
+    """Every `const` spec whose name starts with the prefix, over a Go package's non-test files, as
+    a (name -> value, unreadable specs) pair.
+
+    It classifies rather than filters: a prefixed spec is either read into the map or named in the
+    unreadable list, so none leaves this scan silently, whether it carries a type annotation or not.
+    Its one limit against the `go/parser` walk it mirrors is that it reads text -- a `const (` block
+    nested in a raw string literal would be taken for real source, and a spec gofmt has not put on
+    one line reads as unreadable rather than as itself.
+    """
+    block = re.compile(r"^const\s*\(\s*$(.*?)^\)\s*$", re.MULTILINE | re.DOTALL)
+    single = re.compile(r"^const\s+(\S.*)$", re.MULTILINE)
+    declaration = re.compile(r'^(\w+)(?:\s+[\w.\[\]*]+)?\s*=\s*"([^"]*)"\s*(?://.*)?$')
+    found = {}
+    unreadable = []
+    for path in sorted((pathlib.Path(step_trace.REPO) / package_dir).glob("*.go")):
+        if path.name.endswith("_test.go"):
+            continue
+        text = path.read_text(encoding="utf-8")
+        specs = [line for grouped in block.findall(text) for line in grouped.splitlines()]
+        specs.extend(single.findall(text))
+        for spec in specs:
+            spec = spec.strip()
+            if not spec.startswith(prefix):
+                continue
+            read = declaration.match(spec)
+            if read is None:
+                unreadable.append(f"{path.name}: {spec}")
+                continue
+            found[read.group(1)] = read.group(2)
+    return found, unreadable
+
+
 class MirroredConstantTests(unittest.TestCase):
     """The mirrors this script keeps of internal/loop's own vocabulary, pinned against the Go source
     in this tree rather than against the memory of whoever last edited them.
@@ -1245,6 +1278,9 @@ class MirroredConstantTests(unittest.TestCase):
     TURN = "internal/loop/turn.go"
     TYPES = "internal/loop/types.go"
     ASSEMBLE = "internal/loop/assemble.go"
+    LOOP_PACKAGE = "internal/loop"
+    TOOL_CONSTANT_PREFIX = "Tool"
+    NON_TOOL_CONSTANTS = ("ToolSourceNative", "ToolSourceContent")
 
     def test_the_three_tool_names_are_the_records_own_vocabulary(self):
         go = go_string_constants(self.TYPES)
@@ -1256,14 +1292,32 @@ class MirroredConstantTests(unittest.TestCase):
             self.assertEqual(mirrored, go[name], f"{name} has drifted from this script's mirror")
 
     def test_the_loop_declares_no_tool_this_script_cannot_narrate(self):
-        """The guard that would have caught the defect this change closes: a FOURTH `Tool*` constant
-        in types.go reddens here the day it lands, rather than the day a model reaches for it."""
-        declared = {
-            value
-            for name, value in go_string_constants(self.TYPES).items()
-            if name.startswith("Tool") and not name.startswith("ToolSource")
+        """A FOURTH tool reddens here the day it lands rather than the day a model reaches for it,
+        however it is named or typed: every prefixed constant is classified against the tools and
+        the named non-tools, so nothing is excluded by the shape of its name."""
+        declared, _ = go_prefixed_constants(self.TOOL_CONSTANT_PREFIX, self.LOOP_PACKAGE)
+        tools = {
+            name: value for name, value in declared.items() if name not in self.NON_TOOL_CONSTANTS
         }
-        self.assertEqual(declared, set(step_trace.KNOWN_TOOLS))
+        self.assertEqual(
+            sorted(tools.values()),
+            sorted(step_trace.KNOWN_TOOLS),
+            f"the loop's {self.TOOL_CONSTANT_PREFIX}-prefixed constants classify as the tools {tools} "
+            f"and this script narrates {list(step_trace.KNOWN_TOOLS)}; every such constant is either a "
+            f"tool this script must narrate or one of the named non-tools "
+            f"{list(self.NON_TOOL_CONSTANTS)}, so a new one reds here until it is classified either way"
+        )
+
+    def test_no_tool_prefixed_constant_is_declared_in_a_shape_this_guard_reads_past(self):
+        """The half classification cannot do for itself: a prefixed constant this text scan cannot
+        read is named here, rather than going missing from the set the test above compares."""
+        _, unreadable = go_prefixed_constants(self.TOOL_CONSTANT_PREFIX, self.LOOP_PACKAGE)
+        self.assertEqual(
+            [],
+            unreadable,
+            f"these {self.TOOL_CONSTANT_PREFIX}-prefixed constants are declared in a shape this guard "
+            f"can neither read nor honestly leave out of what it classifies: {unreadable}"
+        )
 
     def test_every_mirrored_refusal_sentence_is_the_loops_own(self):
         go = go_string_constants(self.TURN)
