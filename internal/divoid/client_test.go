@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -523,6 +524,92 @@ func TestNodeReportsNotFoundWhenNoRowMatchesTheRequestedID(t *testing.T) {
 	}
 	if found {
 		t.Fatal("Node reported found=true for a result with no row matching the requested id")
+	}
+}
+
+func TestNodeRequestsEveryAnchorFieldAndNoCondensedFormInTheFieldsProjection(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	if _, _, err := c.Node(context.Background(), 42); err != nil {
+		t.Fatalf("Node: %v", err)
+	}
+
+	q, err := url.ParseQuery(gotQuery)
+	if err != nil {
+		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+	}
+	requested := []string{}
+	for _, field := range strings.Split(q.Get("fields"), ",") {
+		requested = append(requested, strings.ToLower(strings.TrimSpace(field)))
+	}
+
+	carried := reflect.VisibleFields(reflect.TypeOf(loop.Anchor{}))
+	if len(carried) == 0 {
+		t.Fatal("the anchor type reports no fields, so this guard would assert nothing")
+	}
+	for _, field := range carried {
+		if !slices.Contains(requested, strings.ToLower(field.Name)) {
+			t.Fatalf("fields = %q, want it to cover every field the anchor carries; %q is missing — a field the projection never requests arrives empty from a real graph, and every id the run records is the requested one, so nothing downstream disagrees", q.Get("fields"), field.Name)
+		}
+	}
+	if slices.Contains(requested, "substance") {
+		t.Fatalf("fields = %q, want an addressed read to request the full content and never a condensed form", q.Get("fields"))
+	}
+}
+
+func TestTheErrorForANon200ReadCarriesABoundedSliceOfTheBodyNotAllOfIt(t *testing.T) {
+	t.Parallel()
+
+	const bodySize = 200000
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(strings.Repeat("x", bodySize)))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	_, _, err := c.Node(context.Background(), 42)
+	if err == nil {
+		t.Fatal("Node returned nil error for a 500 response, want an error")
+	}
+
+	const maxLen = 8192
+	if len(err.Error()) > maxLen {
+		t.Fatalf("error is %d bytes for a %d byte response body, want at most %d — an unbounded cause is rendered verbatim into the next prompt", len(err.Error()), bodySize, maxLen)
+	}
+	if !strings.Contains(err.Error(), "xxxx") {
+		t.Fatalf("error = %q, want it to still carry a slice of the response body", err.Error())
+	}
+}
+
+func TestNewClientDropsATrailingSlashSoTheReadPathNeverDoubles(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL+"/", "k", srv.Client(), testLogger())
+	if _, _, err := c.Node(context.Background(), 42); err != nil {
+		t.Fatalf("Node: %v", err)
+	}
+
+	const wantPath = "/api/nodes"
+	if gotPath != wantPath {
+		t.Fatalf("path = %q, want %q — a base URL configured with a trailing slash must not double the separator", gotPath, wantPath)
 	}
 }
 
