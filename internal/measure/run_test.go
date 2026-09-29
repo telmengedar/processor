@@ -3,6 +3,7 @@ package measure
 import (
 	"context"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -10,7 +11,7 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
-func TestTheRecordAMeasuredRunProducesIsTheRecordTheShippedTurnProducesAndOnlyItsFateDiffers(t *testing.T) {
+func TestTheRecordAMeasuredRunProducesIsTheRecordTheShippedTurnProducesExceptItsFateAndItsClockReadings(t *testing.T) {
 	measuredLive := newRecordingGraph()
 	_, runner := measuredRunner(measuredLive)
 
@@ -36,6 +37,9 @@ func TestTheRecordAMeasuredRunProducesIsTheRecordTheShippedTurnProducesAndOnlyIt
 
 	measuredRecord, shippedRecord := measured.Record, shipped
 	measuredRecord.Now, shippedRecord.Now = time.Time{}, time.Time{}
+	elapsedFigure := regexp.MustCompile(`after [0-9][0-9.hmsnµu]*`)
+	measuredRecord.DerivationError = elapsedFigure.ReplaceAllLiteralString(measuredRecord.DerivationError, "after <elapsed>")
+	shippedRecord.DerivationError = elapsedFigure.ReplaceAllLiteralString(shippedRecord.DerivationError, "after <elapsed>")
 
 	if !reflect.DeepEqual(measuredRecord, shippedRecord) {
 		t.Fatalf("the measured run produced a different record than the undecorated one\nmeasured: %+v\nshipped:  %+v", measuredRecord, shippedRecord)
