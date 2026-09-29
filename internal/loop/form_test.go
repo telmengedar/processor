@@ -113,7 +113,7 @@ func TestAssembleMarksASubstanceRenderedCandidateAndLeavesAContentOneUnmarked(t 
 
 	anchor := Anchor{ID: 1, Type: "t", Name: "a", Content: "anchor body"}
 	candidates := []Candidate{
-		{ID: 10, Type: "documentation", Name: "Bravo", Content: strings.Repeat("x", 100), Substance: "condensed!"},
+		{ID: 10, Type: "documentation", Name: "Bravo", Content: strings.Repeat("x", 100), Substance: "the condensed form of the node"},
 		{ID: 20, Type: "task", Name: "Charlie", Content: "charlie body"},
 	}
 
@@ -132,7 +132,7 @@ func TestAssembleMarksASubstanceRenderedCandidateAndLeavesAContentOneUnmarked(t 
 		"name: Bravo\n" +
 		"form: substance\n" +
 		"\n" +
-		"condensed!\n" +
+		"the condensed form of the node\n" +
 		"\n" +
 		"===== CANDIDATE =====\n" +
 		"id: 20\n" +
@@ -307,44 +307,156 @@ func TestDispositionDecodedFromARecordThatStatesARenderedSizeKeepsIt(t *testing.
 	}
 }
 
-func TestTheShippedSubstanceRatioThresholdIsTheOffPosition(t *testing.T) {
+func TestTheShippedSubstanceRatioFloorIsItsMeasuredValueAndNotAnOffPosition(t *testing.T) {
 	t.Parallel()
 
-	if SubstanceRatioThreshold != 0 {
-		t.Fatalf("SubstanceRatioThreshold = %v, want 0 - the rule ships with its dial off, and the block it renders stays byte-identical to the one rendered before the rule existed", SubstanceRatioThreshold)
+	if SubstanceRatioFloor != 0.10 {
+		t.Fatalf("SubstanceRatioFloor = %v, want 0.10 - the floor ships at its measured knee and never at an off position, because a floor at zero lets a later raise of the threshold alone render the most compressed substances first", SubstanceRatioFloor)
 	}
 }
 
-func TestAssembleRendersAByteIdenticalBlockAtThresholdZeroWhetherOrNotACandidateCarriesASubstance(t *testing.T) {
+func TestAssembleRendersTheContentWhenTheRatioFallsBelowTheFloor(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	content := strings.Repeat("x", 1000)
+	substance := strings.Repeat("z", 50)
+	candidates := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
+
+	if SubstanceRatio(0.05) >= SubstanceRatioFloor || SubstanceRatio(0.05) >= formRuleTestThreshold {
+		t.Fatalf("test setup error: a ratio of 0.05 must sit below the floor %v and below the test threshold %v, or this test cannot tell the floor's refusal from the threshold's", SubstanceRatioFloor, formRuleTestThreshold)
+	}
+
+	block, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+
+	if dispositions[0].Form != FormContent {
+		t.Fatalf("Form = %q for a 50-byte substance against 1000 bytes of content, want %q - a ratio of 0.05 is more compressed than the floor admits, at a threshold that would otherwise take it", dispositions[0].Form, FormContent)
+	}
+	if dispositions[0].RenderedSize != 1000 {
+		t.Fatalf("RenderedSize = %d, want 1000 - a substance refused below the floor falls back to the content and is charged for it", dispositions[0].RenderedSize)
+	}
+	if !strings.Contains(block, content) {
+		t.Fatal("the block does not carry the content although the ratio fell below the floor")
+	}
+	if strings.Contains(block, substance) {
+		t.Fatal("the block carries a substance more compressed than the floor admits")
+	}
+}
+
+func TestAssembleRendersTheSubstanceWhenTheRatioSitsExactlyOnTheFloor(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	content := strings.Repeat("x", 1000)
+	substance := strings.Repeat("z", 100)
+	candidates := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
+
+	if SubstanceRatio(float64(len(substance))/float64(len(content))) != SubstanceRatioFloor {
+		t.Fatalf("test setup error: %d substance bytes against %d of content put the ratio off the floor %v, so this test observes neither side of its inclusivity", len(substance), len(content), SubstanceRatioFloor)
+	}
+
+	block, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+
+	if dispositions[0].Form != FormSubstance {
+		t.Fatalf("Form = %q at a ratio of exactly the floor, want %q - the floor is inclusive, against the threshold above it which is not", dispositions[0].Form, FormSubstance)
+	}
+	if dispositions[0].RenderedSize != 100 {
+		t.Fatalf("RenderedSize = %d, want 100", dispositions[0].RenderedSize)
+	}
+	if !strings.Contains(block, substance) {
+		t.Fatal("the block does not carry the substance although the ratio sits exactly on the inclusive floor")
+	}
+}
+
+func TestAssembleRendersTheSubstanceOnlyWhenTheRatioSitsInsideBothBounds(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	content := strings.Repeat("x", 1000)
+	candidates := []Candidate{
+		{ID: 10, Content: content, Substance: strings.Repeat("z", 50)},
+		{ID: 20, Content: content, Substance: strings.Repeat("z", 300)},
+		{ID: 30, Content: content, Substance: strings.Repeat("z", 592)},
+	}
+
+	_, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+
+	wantForms := []Form{FormContent, FormSubstance, FormContent}
+	wantSizes := []int{1000, 300, 1000}
+	for i := range candidates {
+		if dispositions[i].Form != wantForms[i] {
+			t.Fatalf("dispositions[%d] (id %d, %d substance bytes against %d of content) has Form %q, want %q - the band is two-sided and one call must separate all three of its regions", i, dispositions[i].ID, len(candidates[i].Substance), len(content), dispositions[i].Form, wantForms[i])
+		}
+		if dispositions[i].RenderedSize != wantSizes[i] {
+			t.Fatalf("dispositions[%d] (id %d) has RenderedSize %d, want %d", i, dispositions[i].ID, dispositions[i].RenderedSize, wantSizes[i])
+		}
+	}
+}
+
+func TestAssembleRendersContentForEveryCandidateAtTheShippedBoundsWhateverTheRatio(t *testing.T) {
+	t.Parallel()
+
+	anchor := Anchor{ID: 1}
+	content := strings.Repeat("x", 1000)
+	candidates := []Candidate{
+		{ID: 10, Content: content, Substance: strings.Repeat("z", 1)},
+		{ID: 20, Content: content, Substance: strings.Repeat("z", 50)},
+		{ID: 30, Content: content, Substance: strings.Repeat("z", 100)},
+		{ID: 40, Content: content, Substance: strings.Repeat("z", 300)},
+		{ID: 50, Content: content, Substance: strings.Repeat("z", 900)},
+		{ID: 60, Content: content, Substance: strings.Repeat("z", 1000)},
+	}
+
+	block, dispositions := Assemble(anchor, candidates, 60_000, 0, SubstanceRatioThreshold)
+
+	for i, d := range dispositions {
+		if !d.Included {
+			t.Fatalf("test setup error: dispositions[%d] (id %d) was cut for %q; a cut row renders nothing and this guard then observes no form at all", i, d.ID, d.CutReason)
+		}
+		if d.Form != FormContent {
+			t.Fatalf("dispositions[%d] (id %d, %d substance bytes against 1000 of content) has Form %q at the shipped bounds, want %q - the shipped band is empty and no ratio may render as substance inside it", i, d.ID, len(candidates[i].Substance), d.Form, FormContent)
+		}
+		if d.RenderedSize != 1000 {
+			t.Fatalf("dispositions[%d] (id %d) has RenderedSize %d at the shipped bounds, want 1000", i, d.ID, d.RenderedSize)
+		}
+	}
+	if strings.Contains(block, "zzz") {
+		t.Fatal("the block carries a substance at the shipped bounds, where the band admits none")
+	}
+}
+
+func TestAssembleRendersAByteIdenticalBlockAtTheShippedBoundsWhetherOrNotACandidateCarriesASubstance(t *testing.T) {
 	t.Parallel()
 
 	anchor := Anchor{ID: 1, Type: "t", Name: "a", Content: "anchor body"}
 	const budget = 60_000
 
 	for _, content := range []string{strings.Repeat("bravo body ", 100), ""} {
-		t.Run(fmt.Sprintf("contentBytes=%d", len(content)), func(t *testing.T) {
-			t.Parallel()
+		for _, substance := range []string{"z", strings.Repeat("z", 330), strings.Repeat("z", 1100)} {
+			t.Run(fmt.Sprintf("contentBytes=%d/substanceBytes=%d", len(content), len(substance)), func(t *testing.T) {
+				t.Parallel()
 
-			if len(anchor.Content)+len(content) > budget {
-				t.Fatalf("test setup error: anchor and content are %d bytes against budget %d; the row must fit or it renders in neither arm and the comparison separates nothing", len(anchor.Content)+len(content), budget)
-			}
+				if len(anchor.Content)+len(content) > budget {
+					t.Fatalf("test setup error: anchor and content are %d bytes against budget %d; the row must fit or it renders in neither arm and the comparison separates nothing", len(anchor.Content)+len(content), budget)
+				}
 
-			withoutSubstance := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content}}
-			withSubstance := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content, Substance: "z"}}
+				withoutSubstance := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content}}
+				withSubstance := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
 
-			blockWithout, dispositionsWithout := Assemble(anchor, withoutSubstance, budget, 0, 0)
-			blockWith, dispositionsWith := Assemble(anchor, withSubstance, budget, 0, 0)
+				blockWithout, dispositionsWithout := Assemble(anchor, withoutSubstance, budget, 0, SubstanceRatioThreshold)
+				blockWith, dispositionsWith := Assemble(anchor, withSubstance, budget, 0, SubstanceRatioThreshold)
 
-			if !dispositionsWithout[0].Included || !dispositionsWith[0].Included {
-				t.Fatalf("test setup error: the candidate was cut (without a substance %v, with one %v); a cut row renders in neither arm and the comparison separates nothing", dispositionsWithout[0].Included, dispositionsWith[0].Included)
-			}
-			if blockWith != blockWithout {
-				t.Fatalf("at a threshold of 0 the block changed when the candidate carried a substance:\nwithout=%q\nwith=%q", blockWithout, blockWith)
-			}
-			if dispositionsWith[0].RenderedSize != len(content) {
-				t.Fatalf("RenderedSize = %d at a threshold of 0, want %d - the off position charges the content it renders, whatever substance arrived beside it", dispositionsWith[0].RenderedSize, len(content))
-			}
-		})
+				if !dispositionsWithout[0].Included || !dispositionsWith[0].Included {
+					t.Fatalf("test setup error: the candidate was cut (without a substance %v, with one %v); a cut row renders in neither arm and the comparison separates nothing", dispositionsWithout[0].Included, dispositionsWith[0].Included)
+				}
+				if blockWith != blockWithout {
+					t.Fatalf("at the shipped bounds the block changed when the candidate carried a substance:\nwithout=%q\nwith=%q", blockWithout, blockWith)
+				}
+				if dispositionsWith[0].RenderedSize != len(content) {
+					t.Fatalf("RenderedSize = %d at the shipped bounds, want %d - an empty band charges the content it renders, whatever substance arrived beside it", dispositionsWith[0].RenderedSize, len(content))
+				}
+			})
+		}
 	}
 }
 
@@ -496,5 +608,70 @@ func TestRenderToolResultRendersTheContentAtTheOffPositionForAResultCarryingASub
 	want := "===== RESULT =====\nid: 91\ntype: documentation\nname: Bravo\n\n" + content + "\n"
 	if got != want {
 		t.Fatalf("at the dial's off position the tool result rendered:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+func TestRenderToolResultRendersTheFormItsAdmissionChargedForUnderBothBounds(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Repeat("x", 1000)
+	banded := strings.Repeat("z", 300)
+	overCompressed := strings.Repeat("y", 50)
+	candidates := []Candidate{
+		{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: banded},
+		{ID: 92, Type: "documentation", Name: "Charlie", Content: content, Substance: overCompressed},
+	}
+
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, 0, BlockOccupancy, formRuleTestThreshold)
+	if len(admitted) != 2 {
+		t.Fatalf("test setup error: %d of 2 results were admitted; a cut row renders nothing and the two sides of the band cannot then be compared", len(admitted))
+	}
+	if dispositions[0].Form != FormSubstance || dispositions[1].Form != FormContent {
+		t.Fatalf("test setup error: admission charged %q then %q, want %q then %q or this test observes only one side of the band", dispositions[0].Form, dispositions[1].Form, FormSubstance, FormContent)
+	}
+
+	got := RenderToolResult(ToolExchange{
+		Tool:                    ToolRecall,
+		Query:                   "q",
+		Results:                 admitted,
+		Dispositions:            dispositions,
+		SubstanceRatioThreshold: formRuleTestThreshold,
+	})
+
+	want := "===== RESULT =====\nid: 91\ntype: documentation\nname: Bravo\nform: substance\n\n" + banded + "\n" +
+		"\n===== RESULT =====\nid: 92\ntype: documentation\nname: Charlie\n\n" + content + "\n"
+	if got != want {
+		t.Fatalf("the supplementary surface applies a different band from the one its admission charged at:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+func TestTurnRunRecordsBothBoundsOfTheFormRuleItRenderedAt(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.candidates = []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Similarity: 0.9, Content: strings.Repeat("x", 1000), Substance: strings.Repeat("z", 300)}}
+	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, nil, "the system text", "test-model-id", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if record.Limits.SubstanceRatioFloor != 0.10 {
+		t.Fatalf("record.Limits.SubstanceRatioFloor = %v, want 0.10 - a record stating only the upper bound cannot say which band its forms were decided in", record.Limits.SubstanceRatioFloor)
+	}
+	if record.Limits.SubstanceRatioThreshold != 0 {
+		t.Fatalf("record.Limits.SubstanceRatioThreshold = %v, want 0 - the run rendered at the shipped dial and must state it", record.Limits.SubstanceRatioThreshold)
+	}
+
+	encoded, err := json.Marshal(record.Limits)
+	if err != nil {
+		t.Fatalf("marshal limits: %v", err)
+	}
+	for _, want := range []string{`"substanceRatioFloor":0.1`, `"substanceRatioThreshold":0`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("limits JSON = %s, want it to contain %q - the archive reads both bounds by these names, and a renamed field reads there as an absent one", encoded, want)
+		}
 	}
 }

@@ -35,7 +35,10 @@ const nothingNewFormat = "%d results, and you have already been shown every one 
 // SubstanceRatio is a substance's byte length as a fraction of its content's.
 type SubstanceRatio float64
 
-// SubstanceRatioThreshold is the form rule's shipped dial, zero: no ratio is below it, so every candidate renders as content until a later change raises it.
+// SubstanceRatioFloor is the form rule's measured lower bound: a substance compressed further than this renders as content whatever the threshold above it is raised to.
+const SubstanceRatioFloor SubstanceRatio = 0.10
+
+// SubstanceRatioThreshold is the form rule's shipped dial, zero: it leaves the band empty, so every candidate renders as content until a later change raises it.
 const SubstanceRatioThreshold SubstanceRatio = 0
 
 const formHeaderKey = "form"
@@ -117,7 +120,8 @@ func renderedPayload(c Candidate, threshold SubstanceRatio) (Form, string) {
 	if c.Substance == "" || c.Content == "" {
 		return FormContent, c.Content
 	}
-	if SubstanceRatio(float64(len(c.Substance))/float64(len(c.Content))) < threshold {
+	ratio := SubstanceRatio(float64(len(c.Substance)) / float64(len(c.Content)))
+	if ratio >= SubstanceRatioFloor && ratio < threshold {
 		return FormSubstance, c.Substance
 	}
 	return FormContent, c.Content

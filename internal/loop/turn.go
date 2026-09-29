@@ -194,6 +194,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 			MaxFills:                MaxFills,
 			FillSizeFloor:           FillSizeFloor,
 			MaxFillContentBytes:     MaxFillContentBytes,
+			SubstanceRatioFloor:     SubstanceRatioFloor,
 			SubstanceRatioThreshold: SubstanceRatioThreshold,
 		},
 	}
