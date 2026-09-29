@@ -711,3 +711,26 @@ func TestWriteRunStillLinksAndReportsStoredWhenTheSummaryPatchFails(t *testing.T
 		t.Fatalf("a failed summary write is silent in the operator log; log:\n%s", log.String())
 	}
 }
+
+func TestTheWritePathsNon2xxErrorBodyBoundIsFourThousandAndNinetySixBytesMeasuredAgainstALiteral(t *testing.T) {
+	t.Parallel()
+
+	const filler = "Z"
+	const bodySize = 200000
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(strings.Repeat(filler, bodySize)))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	err := c.SetRunContent(context.Background(), 10525, []byte("a body the graph refuses"))
+	if err == nil {
+		t.Fatal("the write returned nil error for a 500 response, want an error")
+	}
+
+	carried := strings.Count(err.Error(), filler)
+	if carried != 4096 {
+		t.Fatalf("the write path's error carried %d bytes of a %d byte response body, want exactly 4096 — the bound the operator log and the next judgement call's prompt are held to, so an off-by-one and a doubling are both defects", carried, bodySize)
+	}
+}
