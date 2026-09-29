@@ -254,6 +254,8 @@ type Limits struct {
 	// MaxFillContentBytes is the fast-refusal ceiling for oversized content.
 	MaxFillContentBytes int `json:"maxFillContentBytes"`
 
+	// SubstanceRatioFloor is the form rule's lower bound as this run was configured.
+	SubstanceRatioFloor SubstanceRatio `json:"substanceRatioFloor"`
 	// SubstanceRatioThreshold is the form rule's dial as this run was configured.
 	SubstanceRatioThreshold SubstanceRatio `json:"substanceRatioThreshold"`
 }

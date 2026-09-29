@@ -125,6 +125,7 @@ var dials = []dial{
 	{name: "MaxFills", field: "maxFills"},
 	{name: "FillSizeFloor", field: "fillSizeFloor"},
 	{name: "MaxFillContentBytes", field: "maxFillContentBytes"},
+	{name: "SubstanceRatioFloor", field: "substanceRatioFloor"},
 	{name: "SubstanceRatioThreshold", field: "substanceRatioThreshold"},
 	{name: "BlockOccupancy"},
 }
