@@ -33,6 +33,8 @@ var errNoOutputBudget = errors.New("the judgement call carries no output budget:
 
 const chatCompletionsRoute = "/chat/completions"
 
+const errorBodyBytes = 4096
+
 const (
 	recallToolName    = "recall"
 	writeFileToolName = "write_file"
@@ -146,7 +148,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 }
 
 func readUpstreamMessage(r io.Reader) string {
-	body, _ := io.ReadAll(io.LimitReader(r, 4096))
+	body, _ := io.ReadAll(io.LimitReader(r, errorBodyBytes))
 	var e wireError
 	if json.Unmarshal(body, &e) == nil && e.Error.Message != "" {
 		return e.Error.Message

@@ -115,6 +115,20 @@ func TestOllamaJudgeCarriesTheUpstreamsOwnSentenceBehindThePreamble(t *testing.T
 	}
 }
 
+func TestOllamaJudgeReadsAtMostFourThousandAndNinetySixBytesOfAMisbehavingEndpointsErrorBody(t *testing.T) {
+	t.Parallel()
+
+	const filler = "Z"
+	const bodySize = 200000
+	srv, _ := respondingServer(t, http.StatusInternalServerError, strings.Repeat(filler, bodySize))
+	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
+
+	carried := strings.Count(judgeFailure(t, c).Error(), filler)
+	if carried != 4096 {
+		t.Fatalf("the failure carried %d bytes of a %d byte response body, want exactly 4096 — the bound on the in-process read of the body an already-misbehaving endpoint returns, so an off-by-one, a doubling and an unbounded read are all defects", carried, bodySize)
+	}
+}
+
 func TestOllamaJudgeFailurePreambleNamesTheModelItAskedFor(t *testing.T) {
 	t.Parallel()
 
