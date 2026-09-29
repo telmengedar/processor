@@ -15,20 +15,21 @@ long day measuring components -- retrieval rates, admission budgets, compression
 never watched the loop attempt a task end to end. THE DELIVERABLE IS VISIBILITY, NOT IMPROVEMENT.
 If a run does something useless, this script's job is to show that clearly, not to soften it.
 
-What "one turn" actually is (internal/loop/turn.go, DiVoid #10850 / #10846), verified against this
-tree rather than assumed: fetch the anchor by id -> retrieve candidates (Retrieve, DiVoid #11259 --
-one unscoped recall plus one recall scoped to the anchor's two-hop neighbourhood, combined by
-reciprocal-rank fusion IN PRINCIPLE, but turn.go always calls Retrieve with exactly one query
-(`[]string{input}`), and RRF over a single list is order-preserving -- see the RECALL RANKING note
-below for what that actually means for the order you see) -> assemble a byte-budgeted block -> call
-the model, looping while it asks for supplementary recall, bounded by MaxModelCalls=6 -> write a run
-record. The model has TWO tools: the supplementary "recall", and "write_file", which writes one
-file into a working directory the run is given (internal/workspace). There is still no shell, no
-network and no repo tool, and no notion of a task spanning more than one HTTP call. So a task like
-"generate a webpage and a repo" can now get the webpage written and cannot get the repo -- and
-whether the model reaches for the file tool at all, unprompted, is the thing this trace exists to
-show. What it also shows is HOW it fails when it does: refuses, answers about the task, asks for
-recall, claims completion without writing anything, or produces something confidently wrong.
+What "one turn" actually is (internal/loop/turn.go), verified against this tree rather than assumed:
+fetch the anchor by id -> retrieve candidates (Retrieve -- one unscoped recall plus one recall scoped
+to the anchor's two-hop neighbourhood, combined by reciprocal-rank fusion IN PRINCIPLE, but turn.go
+always calls Retrieve with exactly one query (`[]string{input}`), and RRF over a single list is
+order-preserving -- see the RECALL RANKING note below for what that actually means for the order you
+see) -> assemble a byte-budgeted block -> call the model, looping while it asks for a tool, bounded
+by MaxModelCalls=6 -> write a run record. The model has THREE tools: the supplementary "recall";
+"write_file", which writes one file into a working directory the run is given (internal/workspace);
+and "read_node", which fetches ONE part of memory by the id the model names and puts it in front of
+the model in full. There is still no shell, no network and no repo tool, and no notion of a task
+spanning more than one HTTP call. So a task like "generate a webpage and a repo" can now get the
+webpage written and cannot get the repo -- and whether the model reaches for a tool at all,
+unprompted, is the thing this trace exists to show. What it also shows is HOW it fails when it does:
+refuses, answers about the task, asks for recall, claims completion without writing anything, or
+produces something confidently wrong.
 
 The file tool is offered but not urged: cmd/processor/system_text.go names it in one neutral
 sentence, symmetric with the sentence that names recall, and still tells the model to write its
@@ -40,25 +41,53 @@ One POST /runs is one turn and returns one JSON record (internal/loop/types.go's
 { ...Record fields, "written": {state, nodeId} } by internal/server/routes.go). Every "step" below is
 reconstructed from that one record after the fact -- there is no intermediate progress feed -- so the
 ordering is inferred from the record's own structure (usage is one entry per model call, in call
-order; toolCalls is one entry per call that asked for recall, in call order, including a call that
-never reached the graph at all -- see the tool-round classification note below) rather than observed
-live. Anywhere that inference could be wrong, the trace says so rather than guessing quietly.
+order; toolCalls is one entry per call that asked for a tool, in call order, including a call the
+loop refused -- see the tool-round classification note below) rather than observed live. Anywhere
+that inference could be wrong, the trace says so rather than guessing quietly.
 
-TOOL-ROUND CLASSIFICATION, corrected after review (C1): a toolCalls[i] entry with a non-empty
-`error` is not one thing. `internal/loop/turn.go`'s dispatchRecall returns *before ever calling
-`Graph.Recall`* when the model's own tool call was malformed (wire.go's ToolError -- unparseable
-arguments or an empty query, itself ordinary local-model misbehaviour, not rare) -- so that round
-never touched the graph. This script distinguishes three shapes by the exact `error` string:
-`""` is a real dispatch with real results (a tool-call step follows); the literal "call cap reached"
-is a round the call cap stopped before dispatch could happen; the literal "supplementary recall
-failed" is a dispatch that reached the graph and the graph call itself errored (turn.go's own
-scrubbing rule keeps the real reason out of this surface, DiVoid #10850). Any OTHER non-empty error
-string -- including one this script does not otherwise recognise -- means the request was malformed
-and, per dispatchRecall's own control flow, GUARANTEED never dispatched: no tool-call step is
-printed for it, the record's error string is shown verbatim, and no query is available (turn.go's
-ToolExchange construction on this path never sets Query at all). Printing a fabricated tool-call
-step here was the exact defect a reviewer caught: it read as "the model asked the graph and the
-graph had nothing" when the truth was "the model's tool call never reached the graph".
+TOOL-ROUND CLASSIFICATION, and the rule it is built to keep: A NARRATION THIS SCRIPT CANNOT SUPPORT
+IS VISIBLY ABSENT, NEVER INVENTED. A toolCalls[i] entry is read on two axes and each has an explicit
+arm for "this script does not know", because both axes have grown under it before.
+
+  THE TOOL. `tool` is one of "recall", "writeFile" or "readNode", and each has a renderer of its
+  own. A round whose `tool` key is ABSENT -- absent, not empty -- is read as a recall, correct
+  because every round in a record older than the field was one. A round whose `tool` is PRESENT and
+  is none of the three is rendered as UNRECOGNISED: this script prints the record's fields verbatim
+  and says it cannot narrate the round. THE EMPTY STRING IS PRESENT, not absent, and takes the
+  unrecognised arm with every other unknown name. That arm is the point of the design. It was added
+  after a served "readNode" -- a single Graph.Node fetched by id -- fell through into the recall
+  renderer and printed `recall(query=None, limit=20, scope=nil -- whole graph, deliberately
+  unscoped)`, a whole-graph search the run never issued, with a limit and a scope the round did not
+  have. The next tool the loop grows reaches the unrecognised arm rather than the nearest renderer
+  that happens to be last. The first version of THIS paragraph was already true of a tool named
+  wrongly and false of a tool named emptily, because the code behind it read the two the same way;
+  the seam is closed and both halves are pinned by a test.
+
+  THE CAUSE. A non-empty `error` is not one thing. `""` is a served round and a tool-call step
+  follows it. A sentence the LOOP authored -- the reserved-call refusal, a closed recall, and the
+  four refusals of a read -- is printed as that sentence and nothing more. Any OTHER non-empty
+  string is UNRECOGNISED, on the same terms as an unknown tool.
+
+  WHAT IS NO LONGER CLAIMED, and its falsifier. This script used to say of every unrecognised cause
+  that "the tool call itself was malformed and NEVER reached the graph". That was true when the only
+  causes were the adapter's own ToolError; it is false now, and demonstrably. Counted against
+  dispatchRead's control flow rather than summarised: of the four refusals of a read, ONE
+  (`errReadOfSubject`) is raised before `Graph.Node` is called and THREE (`errNoSuchNode`,
+  `errAlreadyReadInFull`, the too-large refusal) after it has returned -- so the retired sentence
+  was false of three of the four, not of some of them. The reserved-call refusal describes a
+  well-formed request the loop declined, which is a third thing again. No arm of this script now
+  says whether a refused round reached the graph, because the record does not carry it: the cause
+  strings are the whole of what survives, and they do not sort into before and after as a set. The
+  claim is falsified the moment a record shows a refused round whose fetch demonstrably happened --
+  which is exactly why it is gone rather than reworded. The first version of this paragraph said
+  "two before and two after", which was itself a confident, specific and false sentence about
+  another package's mechanism, printed by --help, inside the change that exists to stop printing
+  those. It was caught by review reading turn.go line by line rather than reading this paragraph.
+
+  ARCHIVE-ONLY CAUSES. "call cap reached", "supplementary recall failed" and "file write failed"
+  were once written into records and are not any more. Their branches are kept because this script
+  renders archived records and the archive still carries all three, and every line they print says
+  ARCHIVE SHAPE so nobody reads them as live.
 
 RECALL RANKING, corrected twice -- once after review found it asserting the opposite of what
 retrieve.go does (a prose defect, not a logic one, but it printed on every trace), and once after
@@ -108,8 +137,7 @@ BUDGET ARITHMETIC, corrected after review (C2/C3): the anchor is not exempt from
 budget. `internal/loop/assemble.go`: `remaining := budget - len(anchor.Content)`, floored at zero --
 the anchor's bytes are charged against the budget, in full, before any candidate is even considered.
 What the anchor IS exempt from is being CUT: its full content always reaches the model regardless of
-size (design correction pinned in DiVoid #10532, the M1 design, at line 765 of its body: "the anchor is exempt from
-being cut, not from being charged"). This script computes and prints the actual per-run candidate
+size -- the M1 design puts it as "the anchor is exempt from being cut, not from being charged". This script computes and prints the actual per-run candidate
 budget (`assemblyByteBudget - anchor.size`, floored at zero) and tests admissibility against THAT
 number, not the raw constant -- a candidate that fits the constant but not the anchor-adjusted
 remainder is unadmittable for this run and previously got no marker at all (C3). The supplementary
@@ -141,12 +169,17 @@ file changes):
     calls after the first (which also replay prior tool rounds as synthetic assistant/tool messages,
     internal/openaicompat/wire.go's buildMessages) are not reconstructable from the record alone --
     only the token counts (Usage) are. This script does not reach past the record for it.
-  - On a malformed tool round that also happens to be the final call, the record cannot say whether
-    the model-call cap would ALSO have stopped it: turn.go's construction on that shared branch lets
-    the malformed-request reason win outright rather than recording both, so `capReached` can be true
-    on a run whose last round shows a plain malformed-tool-call error instead of the cap's own
-    literal. This script flags that ambiguity inline when it can detect the shape (see below) rather
-    than guessing which one actually fired.
+  - Whether a REFUSED round reached the graph before it was refused. The record carries the loop's
+    refusal sentence and nothing else, and the sentences do not divide along that line: of the four
+    read refusals, THREE are raised after the fetch and ONE before it. This script prints the
+    sentence and declines the question. An earlier version answered it, always the same way, and
+    was wrong about most of the sentences the loop can write.
+  - What the turn's reserved answering call did, beyond the state the record names. `capReached`
+    means the turn's last call was reserved for answering because the budget was spent -- not that
+    a round was cut off -- so this script prints the flag and `reservedCall` as the record spells
+    them and draws no conclusion from either. It no longer prints a note about the cap racing a
+    malformed request: that note described turn.go choosing between two reasons for one round, and
+    the cause it was written against was deleted from turn.go.
   - Whether the endpoint HONOURED the sampling the record reports. internal/boot reads
     PROCESSOR_MODEL_TEMPERATURE (optional, defaulting to 0) and PROCESSOR_MODEL_TOP_P (optional, no
     default -- unset means the parameter is omitted from the request entirely, never sent as 0);
@@ -161,13 +194,13 @@ file changes):
     but the SAMPLING line is still read back off the record, never off the flag.
 
 Server lifecycle (build, free port, health wait, post, drain, stop) is reused from
-scripts/compare.py by import rather than copied a third time -- DiVoid #11326 already found eight
-functions drifted between compare.py and smoke.py and flagged a third copy as the thing not to do
-silently. Extracting scripts/_processor_harness.py so compare.py and smoke.py stop drifting from
+scripts/compare.py by import rather than copied a third time -- eight of those functions had
+already drifted between compare.py and smoke.py when this file was written, and a third copy was
+the thing not to do silently. Extracting scripts/_processor_harness.py so compare.py and smoke.py stop drifting from
 EACH OTHER is out of scope here (a judgement call the task explicitly leaves open) and is not done
 by this script.
 
-Every run writes one run record to the graph and this script never deletes it (DiVoid #11141): a
+Every run writes one run record to the graph and this script never deletes it: a
 repeated identical task text reads back the first run's own record rather than measuring anything
 new, so this script checks for a prior run of the exact input via the same semantic-recall probe
 compare.py uses (find_prior_run) and says so loudly rather than silently reusing or refusing it --
@@ -190,30 +223,56 @@ import compare as harness  # noqa: E402  -- reused, not copied; see module docst
 
 DEFAULT_MODEL_URL = "http://gangolf:12434/engines/v1"
 DEFAULT_MODEL_ID = "ai/qwen3-coder"
-DEFAULT_SUBJECT = 10422  # DiVoid #10422, "Processor -- memory-substrate agent harness": the project node.
+DEFAULT_SUBJECT = 10422  # the project node, "Processor -- memory-substrate agent harness".
 
-# Mirrors internal/loop/turn.go's unexported string constants -- duplicated here because the loop
-# package exports no vocabulary for its tool-round error strings (deliberately: DiVoid #10850's
-# scrubbing rule keeps them out of any surface an untrusted reader reaches). These two are matched
-# by exact string; anything else -- including a renamed one of these two, should turn.go's literals
-# ever change -- falls through to the "malformed / never dispatched" branch (see classify_round
-# below), which is the safe direction to fail in: it under-claims a dispatch rather than fabricating
-# one. That is what actually fixes W1's complaint, not a hard throw on an unrecognised string.
+# ARCHIVE LITERALS. Every one of these was a cause turn.go stamped on a round; none of them is any
+# more. `call cap reached` was deleted outright, and the two `... failed` sentences became log lines
+# while the record started carrying the underlying error itself. They are kept because this script
+# renders archived records and the archive still carries all three -- measured, 7 rounds across the
+# 42 dumped records -- and they are named here as archive-only so nobody reads their branches as
+# live. A record written by the current binary reaches none of them.
 ERR_CALL_CAP_REACHED = "call cap reached"
 ERR_SUPPLEMENTARY_RECALL_FAILED = "supplementary recall failed"
 ERR_FILE_WRITE_FAILED = "file write failed"
+
+# Live, and the only one of the write causes that still is: internal/loop/turn.go stamps it when the
+# service was started with no working directory at all.
 ERR_NO_WORKING_DIRECTORY = "no working directory is configured"
 
-# internal/loop/types.go's ToolRecall / ToolWriteFile -- the record's own tool vocabulary, which is
-# deliberately NOT the wire spelling the adapter sends ("write_file"). A record older than the field
-# carries no `tool` at all; such a round is read as a recall, which is what every round was before
-# the field existed.
+# internal/loop/turn.go's own refusal sentences, mirrored by exact text except the last, which is a
+# format string and is matched on the stable middle of it. These are sentences the LOOP authored and
+# showed the model, not failures of the model's request, and they can land on a round of any tool --
+# which is why they are matched before the tool is looked at. A sentence outside this set is one this
+# script cannot name, and the round is rendered as unrecognised rather than as any of these.
+REFUSAL_RESERVED_CALL = "the turn's last call was reserved for answering, so it offered no tool and dispatched none"
+REFUSAL_RECALL_CLOSED = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
+REFUSAL_NO_SUCH_NODE = "no part of memory has that id"
+REFUSAL_READ_OF_SUBJECT = "that id is this request's own subject, and the context block already carries it in full"
+REFUSAL_ALREADY_READ_IN_FULL = "that part has already been shown to you in full in this turn"
+REFUSAL_NODE_TOO_LARGE_MIDDLE = " bytes and one read carries at most "
+
+LOOP_REFUSALS = (
+    REFUSAL_RESERVED_CALL,
+    REFUSAL_RECALL_CLOSED,
+    REFUSAL_NO_SUCH_NODE,
+    REFUSAL_READ_OF_SUBJECT,
+    REFUSAL_ALREADY_READ_IN_FULL,
+)
+
+# internal/loop/types.go's ToolRecall / ToolWriteFile / ToolReadNode -- the record's own tool
+# vocabulary, which is deliberately NOT the wire spelling the adapter sends ("write_file",
+# "read_node"). A record older than the field carries no `tool` at all; such a round is read as a
+# recall, which is what every round was before the field existed. A `tool` this script does not know
+# is NOT read as a recall: it is rendered as unrecognised, because a fourth tool will find this file
+# the way the third one did.
 TOOL_RECALL = "recall"
 TOOL_WRITE_FILE = "writeFile"
+TOOL_READ_NODE = "readNode"
+
+KNOWN_TOOLS = (TOOL_RECALL, TOOL_WRITE_FILE, TOOL_READ_NODE)
 
 # internal/workspace's rejection prefix: a refusal by the path rules, whose reason is safe to show
-# and is shown verbatim. Distinct from ERR_FILE_WRITE_FAILED, which is the scrubbed stand-in for a
-# filesystem failure the record deliberately does not describe.
+# and is shown verbatim.
 WRITE_REJECTED_PREFIX = "write rejected: "
 CUT_SELF_PRODUCED = "self-produced"
 CUT_BYTE_BUDGET = "byte budget exceeded"
@@ -238,17 +297,18 @@ ENV_WORKSPACE_DIR = "PROCESSOR_WORKSPACE_DIR"
 
 # classify_round's return values.
 ROUND_DISPATCHED = "dispatched"          # error == "": real Graph.Recall call, real results.
-ROUND_CAPPED = "capped"                  # error == ERR_CALL_CAP_REACHED: recorded, never dispatched.
-ROUND_DISPATCH_FAILED = "dispatch-failed"  # error == ERR_SUPPLEMENTARY_RECALL_FAILED: dispatched, Graph.Recall itself errored.
-ROUND_MALFORMED = "malformed"            # any other non-empty error: malformed tool call, never dispatched.
+ROUND_REFUSED = "refused"                # error is one of LOOP_REFUSALS: the loop declined the round in its own words.
+ROUND_CAPPED = "capped"                  # error == ERR_CALL_CAP_REACHED: archive only.
+ROUND_DISPATCH_FAILED = "dispatch-failed"  # error == ERR_SUPPLEMENTARY_RECALL_FAILED: archive only.
+ROUND_UNRECOGNISED = "unrecognised"      # any other non-empty error: a cause this script cannot name.
 
 # classify_write_round's return values.
 WRITE_ACCEPTED = "write-accepted"          # error == "": the file was written.
-WRITE_CAPPED = "write-capped"              # error == ERR_CALL_CAP_REACHED: recorded, never dispatched.
 WRITE_REFUSED = "write-refused"            # error starts with WRITE_REJECTED_PREFIX: the path rules refused it.
-WRITE_FAILED = "write-failed"              # error == ERR_FILE_WRITE_FAILED: reached the filesystem and failed (scrubbed).
 WRITE_UNCONFIGURED = "write-unconfigured"  # error == ERR_NO_WORKING_DIRECTORY: the service has no directory to write into.
-WRITE_MALFORMED = "write-malformed"        # any other non-empty error: the tool call never parsed.
+WRITE_CAPPED = "write-capped"              # error == ERR_CALL_CAP_REACHED: archive only.
+WRITE_FAILED = "write-failed"              # error == ERR_FILE_WRITE_FAILED: archive only.
+WRITE_UNRECOGNISED = "write-unrecognised"  # any other non-empty error: a cause this script cannot name.
 
 RULE = "=" * 92
 THIN = "-" * 92
@@ -267,31 +327,91 @@ def one_line(value, width):
     return text if len(text) <= width else text[: width - 1] + "…"
 
 
+def loop_refusal(tool_call):
+    """The loop's own sentence for a round it declined, or "" when the error is not one of them.
+
+    Checked ahead of every per-tool classifier because these sentences are cross-tool: turn.go's
+    undispatchedExchange stamps the reserved-call refusal onto whichever tool the model asked for,
+    so the same string arrives on a recall, a write and a read round alike.
+    """
+    error = tool_call.get("error") or ""
+    if error in LOOP_REFUSALS:
+        return error
+    if REFUSAL_NODE_TOO_LARGE_MIDDLE in error:
+        return error
+    return ""
+
+
 def classify_round(tool_call):
-    """One of the ROUND_* constants for a single toolCalls[i] entry (C1).
+    """One of the ROUND_* constants for a single recall round.
 
     The record cannot distinguish "dispatched and got zero results" from "never dispatched" by
-    result-count alone -- only the `error` string does, and only three of its shapes are known. See
-    the module docstring's TOOL-ROUND CLASSIFICATION section for why each one means what it means.
+    result-count alone, and the `error` string does it only for the shapes named above. Anything
+    else is ROUND_UNRECOGNISED, which is a statement about this script, not about the round.
     """
     error = tool_call.get("error") or ""
     if error == "":
         return ROUND_DISPATCHED
+    if loop_refusal(tool_call):
+        return ROUND_REFUSED
     if error == ERR_CALL_CAP_REACHED:
         return ROUND_CAPPED
     if error == ERR_SUPPLEMENTARY_RECALL_FAILED:
         return ROUND_DISPATCH_FAILED
-    return ROUND_MALFORMED
+    return ROUND_UNRECOGNISED
 
 
 def round_tool(tool_call):
-    """Which tool a toolCalls[i] entry is for.
+    """Which tool a toolCalls[i] entry is for, as the record spells it.
 
     A record written before the `tool` field existed carries none, and every round in such a record
-    is a recall -- which is why the default is recall rather than an "unknown" branch that would
-    print a shrug on every historical record this script is pointed at.
+    is a recall -- which is why an ABSENT field defaults to recall rather than printing a shrug on
+    every historical record this script is pointed at. A field that is PRESENT is returned as it
+    stands, including a tool this script has never heard of; see known_tool below for the difference
+    that makes, which is the whole of this file's defence against the next tool the loop grows.
+
+    ABSENT AND EMPTY ARE READ APART, and the test is `is None` rather than falsiness. `""` is a
+    PRESENT value naming no tool, so it is returned as it stands and reaches the unrecognised arm; it
+    is not a record too old to carry the field. The difference is not academic: `ToolCallRecord.Tool`
+    carries no `omitempty`, so every round serialises the key and `""` is a legal value of it, and
+    with `or` here that one input rendered as a whole-graph recall -- this file's own defect, at the
+    one seam the restructure had left. The route in is a fourth tool whose dispatcher forgets to set
+    Tool, which is the same one-merge-behind failure this file has now suffered seven times.
     """
-    return tool_call.get("tool") or TOOL_RECALL
+    tool = tool_call.get("tool")
+    return TOOL_RECALL if tool is None else tool
+
+
+def known_tool(tool_call):
+    """Whether this round's tool is one this script can narrate."""
+    return round_tool(tool_call) in KNOWN_TOOLS
+
+
+def round_wanted(tool_call):
+    """What the round asked for, in the record's own terms, for any tool including an unknown one.
+
+    Every clause here is a field the record carries, and a field the record does NOT carry is said
+    to be missing rather than spelled `None`: turn.go builds the exchange for a malformed tool call
+    without ever setting the query, the path or the id, and `query=None` on such a round reads as a
+    search issued with an empty query. That is the smallest version of this file's whole defect.
+    """
+    tool = round_tool(tool_call)
+    if tool == TOOL_RECALL:
+        query = tool_call.get("query")
+        if not query:
+            return "wants recall, and the record carries no query for the round"
+        return f"wants recall (query={query!r})"
+    if tool == TOOL_READ_NODE:
+        node_id = tool_call.get("nodeId")
+        if node_id is None:
+            return "wants to read a part, and the record carries no id for the round"
+        return f"wants to read part #{node_id} in full"
+    if tool == TOOL_WRITE_FILE:
+        path = tool_call.get("path")
+        if not path:
+            return "wants to write, and the record carries no path for the round"
+        return f"wants to write {path!r} ({fmt_bytes(tool_call.get('bytes', 0))})"
+    return f"wants the tool the record names {tool!r}"
 
 
 def classify_write_round(tool_call):
@@ -315,7 +435,7 @@ def classify_write_round(tool_call):
         return WRITE_UNCONFIGURED
     if error.startswith(WRITE_REJECTED_PREFIX):
         return WRITE_REFUSED
-    return WRITE_MALFORMED
+    return WRITE_UNRECOGNISED
 
 
 def format_sources(sources, name_query):
@@ -753,9 +873,8 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
         call_no = i + 1
         u = usage[i] if i < len(usage) else None
         prompt_desc = f"{u['inTokens']} tok in" if u else "usage not reported"
-        wanted_recall = i < len(tool_calls)
-        tc = tool_calls[i] if wanted_recall else None
-        category = classify_round(tc) if wanted_recall else None
+        wanted_tool = i < len(tool_calls)
+        tc = tool_calls[i] if wanted_tool else None
         out_tok = f"{u['outTokens']} tok" if u else "? tok"
 
         prior_rounds = i  # how many completed tool exchanges are already replayed into this call's prompt
@@ -764,73 +883,17 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
             f"task input + {prior_rounds} prior tool round(s) replayed as tool messages "
             f"[{prompt_desc}]"
         )
-        if wanted_recall:
-            out.extend(source_lines(tc))
 
-        if wanted_recall and round_tool(tc) == TOOL_WRITE_FILE:
-            out.extend(write_round_lines(head, tc, out_tok, limits, cap_reached and i == model_calls - 1))
-            continue
-
-        if not wanted_recall:
+        if not wanted_tool:
             out.append(
                 f"{'':<24} output: {stop_reason.get('reason')!r} (endpoint raw={stop_reason.get('raw')!r}). "
                 f"out={out_tok}"
             )
-        elif category == ROUND_CAPPED:
-            out.append(
-                f"{'':<24} output: wants recall (query={tc.get('query')!r}), but the model-call cap "
-                f"(MaxModelCalls={limits.get('maxModelCalls')}) was reached -- NOT dispatched, "
-                f"counted only. out={out_tok}"
-            )
-        elif category == ROUND_DISPATCH_FAILED:
-            out.append(
-                f"{'':<24} output: wants recall (query={tc.get('query')!r}), dispatched, but the "
-                f"supplementary recall call itself FAILED (scrubbed reason on this surface by "
-                f"design -- internal/loop/turn.go's error-scrubbing rule, DiVoid #10850). "
-                f"out={out_tok}"
-            )
-        elif category == ROUND_MALFORMED:
-            ambiguous_cap = cap_reached and i == model_calls - 1
-            out.append(
-                f"{'':<24} output: wants recall, but the tool call itself was malformed and NEVER "
-                f"reached the graph -- error: {tc.get('error')!r}. query not recorded (turn.go's "
-                f"ToolExchange on this path never carries one). out={out_tok}"
-            )
-            if ambiguous_cap:
-                out.append(
-                    f"{'':<24} note: this is also the final model call and capReached=true, but "
-                    f"turn.go's malformed-request reason wins over the cap reason when both apply to "
-                    f"the same round -- whether the cap would separately have stopped this round "
-                    f"cannot be told from the record."
-                )
-        else:  # ROUND_DISPATCHED
-            out.append(
-                f"{'':<24} output: wants recall (query={tc.get('query')!r}). out={out_tok}"
-            )
-        out.append("")
-
-        if category == ROUND_DISPATCHED:
-            results = tc.get("results") or []
-            kept = sum(1 for r in results if r.get("included"))
-            kept_bytes = admitted_bytes(results)
-            out.append(
-                f"{head('tool call')} input: recall(query={tc.get('query')!r}, "
-                f"limit={candidate_limit}, scope=nil -- whole graph, deliberately unscoped)"
-            )
-            out.append(
-                f"{'':<24} output: {len(results)} candidate(s) returned, {kept} admitted under "
-                f"the supplementary budget ({fmt_bytes(supplementary_budget or 0)}), "
-                f"{fmt_bytes(kept_bytes)} kept"
-            )
-            if results:
-                out.append(
-                    f"{'':<24} note: a supplementary round is ONE unscoped Graph.Recall handed "
-                    f"straight to admit (turn.go's dispatchRecall) -- no second query, no scope, no "
-                    f"reserve and no fusion -- so these rows carry no recall sources and none is "
-                    f"shown for them. That is the round's construction, not a gap in this record."
-                )
-            out.extend(render_candidate_table(results, supplementary_budget))
             out.append("")
+            continue
+
+        out.extend(source_lines(tc))
+        out.extend(round_lines(head, tc, out_tok, limits, candidate_limit, supplementary_budget))
 
     # ---- RESULT -------------------------------------------------------------------------------
     out.extend(workspace_lines(record))
@@ -840,7 +903,7 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     out.append(RULE)
     out.append(
         f"RESULT  answer {fmt_bytes(answer_bytes)}, {model_calls} model call(s), "
-        f"{'cap reached' if cap_reached else 'cap not reached'}, "
+        f"capReached={cap_reached}, {reserved_call_phrase(record)}, "
         f"stopReason={stop_reason.get('reason')!r}, receipt={written.get('state')!r}"
         + (f", node #{written.get('nodeId')}" if written.get("nodeId") else "")
     )
@@ -853,41 +916,230 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     return "\n".join(out)
 
 
-def write_round_lines(head, tool_call, out_tok, limits, ambiguous_cap):
+def round_lines(head, tool_call, out_tok, limits, candidate_limit, supplementary_budget):
+    """Every line for one tool round, dispatched on what the record says the round was.
+
+    The dispatch is exhaustive by construction. The loop's own refusal sentences are checked first
+    because they are cross-tool; then the three tools this script can narrate, each named
+    explicitly; then one arm for a round that is none of those. NOTHING falls through into a
+    renderer written for a different tool, which is the failure this shape exists to make
+    impossible rather than to fix once: the fourth tool the loop grows will reach the last arm and
+    print what the record carries, not a story borrowed from the third.
+    """
+    refusal = loop_refusal(tool_call)
+    if refusal:
+        return refused_round_lines(tool_call, out_tok, refusal)
+
+    tool = round_tool(tool_call)
+    if tool == TOOL_WRITE_FILE:
+        return write_round_lines(head, tool_call, out_tok, limits)
+    if tool == TOOL_READ_NODE:
+        return read_round_lines(head, tool_call, out_tok, supplementary_budget)
+    if tool == TOOL_RECALL:
+        return recall_round_lines(head, tool_call, out_tok, limits, candidate_limit, supplementary_budget)
+    return unrecognised_round_lines(tool_call, out_tok)
+
+
+def refused_round_lines(tool_call, out_tok, refusal):
+    """A round the loop declined in a sentence of its own, printed as that sentence.
+
+    No tool-call step follows and none is invented: a refused round carries no rows. Whether the
+    fetch happened before the refusal is NOT stated, because the record does not carry it -- turn.go
+    raises one of the four read refusals before the graph and three after, and only the sentence
+    survives. An earlier version of this file claimed such a round "NEVER reached the graph"; that
+    claim was false of the reserved-call refusal, of a closed recall, and of three of the four read
+    refusals.
+    """
+    return [
+        f"{'':<24} output: {round_wanted(tool_call)}, and the LOOP refused the round in its own "
+        f"words -- {refusal!r}. That sentence is what the model was shown for the call it spent, "
+        f"and it is the whole of what the record says about the refusal. out={out_tok}",
+        "",
+    ]
+
+
+def unrecognised_round_lines(tool_call, out_tok, reason=None):
+    """A round this script cannot narrate: a tool it does not know, a cause it does not know, or both.
+
+    Every line here is a field of the record printed as it stands. Nothing is said about what the
+    round did, because this script does not know -- and filling that silence from the nearest tool
+    it DOES know is exactly the defect this arm exists to prevent. A trace that says "I cannot read
+    this round" is worth more to an operator than a confident sentence about a call never made.
+
+    `reason` is supplied by a tool's own renderer for the third case, which is neither of the two
+    computed here: a tool this script DOES know, on a round missing the field that renderer needs to
+    say anything true. A read with no id and a write with no path are the two, and both used to be
+    narrated with the missing field spelled `None` -- `read_node(id=None)`, and worse,
+    `ACCEPTED -- 0 B written to None ... A FILE NOW EXISTS ON DISK.`
+    """
+    results = tool_call.get("results") or []
+    fields = {key: value for key, value in tool_call.items() if key != "results"}
+    if reason is None:
+        reason = (
+            f"the tool is not one of {', '.join(repr(t) for t in KNOWN_TOOLS)}"
+            if not known_tool(tool_call)
+            else "the cause is not one this file knows"
+        )
+    return [
+        f"{'':<24} output: {round_wanted(tool_call)}. THIS SCRIPT CANNOT NARRATE THIS ROUND -- "
+        f"{reason}. out={out_tok}",
+        f"{'':<24} the record's own fields for it, verbatim: {fields!r}",
+        f"{'':<24} it carries {len(results)} result row(s). Nothing is claimed here about what the "
+        f"round did or whether it reached the graph: the record does not say and this script will "
+        f"not guess. Read internal/loop/turn.go and teach this file the tool and the cause.",
+        "",
+    ]
+
+
+def read_round_lines(head, tool_call, out_tok, supplementary_budget):
+    """The model-call output line and the tool-call step for a served addressed read.
+
+    An addressed read is a Graph.Node fetch BY ID, and rendering it through the recall branch was
+    the defect this function closes: a served read printed a whole-graph recall line complete with a
+    limit and a scope, none of which the round had. turn.go's four refusals of a read are caught by
+    loop_refusal before the dispatch reaches here, so any error still present is one this script
+    cannot name and goes to the unrecognised arm rather than to a story about a fetch.
+    """
+    if tool_call.get("error"):
+        return unrecognised_round_lines(tool_call, out_tok)
+
+    node_id = tool_call.get("nodeId")
+    if node_id is None:
+        return unrecognised_round_lines(
+            tool_call,
+            out_tok,
+            reason="the tool is the addressed read but the record carries no id for the round, and "
+            "a read with no id cannot be narrated as a fetch of anything",
+        )
+
+    results = tool_call.get("results") or []
+    kept = sum(1 for r in results if r.get("included"))
+    kept_bytes = admitted_bytes(results)
+    lines = [
+        f"{'':<24} output: {round_wanted(tool_call)}. out={out_tok}",
+        "",
+        f"{head('tool call')} input: read_node(id={node_id}) -- one part fetched by "
+        f"the id the model named, not a search",
+    ]
+    lines.append(
+        f"{'':<24} output: {len(results)} row(s) returned, {kept} admitted under the supplementary "
+        f"budget ({fmt_bytes(supplementary_budget or 0)}), {fmt_bytes(kept_bytes)} kept"
+    )
+    if results:
+        lines.append(
+            f"{'':<24} note: an addressed read is ONE Graph.Node handed straight to admit (turn.go's "
+            f"dispatchRead) -- no query, no ranking, no fusion, and a relevance floor of zero, so "
+            f"the row is here because the model named its id, not because it scored. It carries no "
+            f"recall sources and none is shown for it."
+        )
+    lines.extend(render_candidate_table(results, supplementary_budget))
+    lines.append("")
+    return lines
+
+
+def recall_round_lines(head, tool_call, out_tok, limits, candidate_limit, supplementary_budget):
+    """The model-call output line and, where one happened, the tool-call step for a recall round."""
+    category = classify_round(tool_call)
+    if category == ROUND_REFUSED:
+        return refused_round_lines(tool_call, out_tok, loop_refusal(tool_call))
+    if category == ROUND_UNRECOGNISED:
+        return unrecognised_round_lines(tool_call, out_tok)
+
+    lines = []
+    if category == ROUND_CAPPED:
+        lines.append(
+            f"{'':<24} output: {round_wanted(tool_call)}, but the model-call cap "
+            f"(MaxModelCalls={limits.get('maxModelCalls')}) was reached -- NOT dispatched, counted "
+            f"only. ARCHIVE SHAPE: the cause this reads is one turn.go no longer writes. out={out_tok}"
+        )
+    elif category == ROUND_DISPATCH_FAILED:
+        lines.append(
+            f"{'':<24} output: {round_wanted(tool_call)}, dispatched, but the supplementary recall "
+            f"call itself FAILED with its reason scrubbed off this surface. ARCHIVE SHAPE: the cause "
+            f"this reads is one turn.go no longer writes. out={out_tok}"
+        )
+    else:  # ROUND_DISPATCHED
+        lines.append(f"{'':<24} output: {round_wanted(tool_call)}. out={out_tok}")
+    lines.append("")
+
+    if category != ROUND_DISPATCHED:
+        return lines
+
+    results = tool_call.get("results") or []
+    kept = sum(1 for r in results if r.get("included"))
+    kept_bytes = admitted_bytes(results)
+    lines.append(
+        f"{head('tool call')} input: recall(query={tool_call.get('query')!r}, "
+        f"limit={candidate_limit}, scope=nil -- whole graph, deliberately unscoped)"
+    )
+    lines.append(
+        f"{'':<24} output: {len(results)} candidate(s) returned, {kept} admitted under "
+        f"the supplementary budget ({fmt_bytes(supplementary_budget or 0)}), "
+        f"{fmt_bytes(kept_bytes)} kept"
+    )
+    if results:
+        lines.append(
+            f"{'':<24} note: a supplementary round is ONE unscoped Graph.Recall handed "
+            f"straight to admit (turn.go's dispatchRecall) -- no second query, no scope, no "
+            f"reserve and no fusion -- so these rows carry no recall sources and none is "
+            f"shown for them. That is the round's construction, not a gap in this record."
+        )
+    lines.extend(render_candidate_table(results, supplementary_budget))
+    lines.append("")
+    return lines
+
+
+def reserved_call_phrase(record):
+    """The turn's reserved answering call, as the record spells its state.
+
+    The record carries `reservedCall` only since the loop started reserving one, and the three
+    states it can take are the only thing that separates a turn that answered from its reserved call
+    from one that never made it. Absent means the record predates the field, which is stated rather
+    than read as any of the three.
+    """
+    reserved = record.get("reservedCall")
+    if not isinstance(reserved, dict):
+        return "reservedCall absent -- the record predates the field"
+    state = reserved.get("state")
+    error = reserved.get("error")
+    return f"reservedCall={state!r}" + (f" ({error!r})" if error else "")
+
+
+def write_round_lines(head, tool_call, out_tok, limits):
     """The model-call output line and, where one happened, the tool-call step for a write round.
 
     A write round is NOT rendered through the recall branch, and that is the whole point of the
     `tool` field: without it a write round with an empty `error` classifies as ROUND_DISPATCHED and
     prints as "wants recall (query=None)" followed by a fabricated recall step -- the same class of
-    defect C1 was, one tool along.
+    defect the fabricated recall step was, one tool along.
     """
     path = tool_call.get("path")
     size = tool_call.get("bytes", 0)
     category = classify_write_round(tool_call)
     lines = []
 
+    if category == WRITE_UNRECOGNISED:
+        return unrecognised_round_lines(tool_call, out_tok)
+
+    if category != WRITE_CAPPED and not path:
+        return unrecognised_round_lines(
+            tool_call,
+            out_tok,
+            reason="the tool is the file write but the record carries no path for the round, and a "
+            "write with no path cannot be narrated as a file",
+        )
+
     if category == WRITE_CAPPED:
         lines.append(
-            f"{'':<24} output: wants to write {path!r} ({fmt_bytes(size)}), but the model-call cap "
+            f"{'':<24} output: {round_wanted(tool_call)}, but the model-call cap "
             f"(MaxModelCalls={limits.get('maxModelCalls')}) was reached -- NOT dispatched, counted "
-            f"only. Nothing was written. out={out_tok}"
+            f"only. Nothing was written. ARCHIVE SHAPE: the cause this reads is one turn.go no "
+            f"longer writes. out={out_tok}"
         )
+        lines.append("")
         return lines
 
-    if category == WRITE_MALFORMED:
-        lines.append(
-            f"{'':<24} output: wants to write, but the tool call itself was malformed and NEVER "
-            f"reached the working directory -- error: {tool_call.get('error')!r}. out={out_tok}"
-        )
-        if ambiguous_cap:
-            lines.append(
-                f"{'':<24} note: this is also the final model call and capReached=true; turn.go's "
-                f"malformed-request reason wins over the cap reason when both apply to the same "
-                f"round, so which one would have stopped it cannot be told from the record."
-            )
-        return lines
-
-    lines.append(f"{'':<24} output: wants to write {path!r} ({fmt_bytes(size)}). out={out_tok}")
+    lines.append(f"{'':<24} output: {round_wanted(tool_call)}. out={out_tok}")
     lines.append("")
     lines.append(f"{head('tool call')} input: write_file(path={path!r}, {fmt_bytes(size)})")
 
@@ -907,11 +1159,11 @@ def write_round_lines(head, tool_call, out_tok, limits, ambiguous_cap):
             f"without PROCESSOR_WORKSPACE_DIR, so no run can write anything; this is an operator "
             f"condition, not the model's."
         )
-    else:
+    else:  # WRITE_FAILED
         lines.append(
-            f"{'':<24} output: the write reached the working directory and FAILED. The reason is "
-            f"scrubbed off this surface by design and is in the server's stderr log, not here. "
-            f"Nothing was written."
+            f"{'':<24} output: the write reached the working directory and FAILED, with its reason "
+            f"scrubbed off this surface and left in the server's stderr log. Nothing was written. "
+            f"ARCHIVE SHAPE: the cause this reads is one turn.go no longer writes."
         )
 
     lines.append("")
@@ -972,7 +1224,7 @@ def check_prior_run(divoid_url, divoid_key, task_text):
     return (
         f"NOTE: this exact task text was already run -- graph node #{node_id} ({name!r}) carries a "
         f"run record whose input matches verbatim. This run's retrieval will read that record back "
-        f"(DiVoid #11141: a repeated input is not a second measurement of anything). Running anyway, "
+        f"-- a repeated input is not a second measurement of anything. Running anyway, "
         f"per instructions -- this note exists so the reader knows before reading the trace."
     )
 

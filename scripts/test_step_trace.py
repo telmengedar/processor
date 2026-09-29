@@ -54,6 +54,8 @@ two in step across languages stays a review obligation, not something this file 
 
 import contextlib
 import io
+import pathlib
+import re
 import unittest
 
 import step_trace
@@ -216,33 +218,136 @@ class ClassifyRoundTests(unittest.TestCase):
             step_trace.ROUND_DISPATCH_FAILED,
         )
 
-    def test_recall_error_message_is_malformed(self):
+    def test_recall_error_message_is_unrecognised(self):
         """The exact defect: a ToolError string (wire.go's own wording) is neither known literal
-        and must resolve to ROUND_MALFORMED, not fall through to "must be a real dispatch"."""
+        and must resolve to ROUND_UNRECOGNISED, not fall through to "must be a real dispatch"."""
         self.assertEqual(
             step_trace.classify_round({"error": "tool arguments could not be parsed: unexpected EOF"}),
-            step_trace.ROUND_MALFORMED,
+            step_trace.ROUND_UNRECOGNISED,
         )
 
-    def test_empty_query_recall_error_is_malformed(self):
+    def test_empty_query_recall_error_is_unrecognised(self):
         self.assertEqual(
             step_trace.classify_round({"error": "tool arguments had an empty query"}),
-            step_trace.ROUND_MALFORMED,
+            step_trace.ROUND_UNRECOGNISED,
         )
 
-    def test_unrecognised_future_error_string_is_malformed(self):
-        """W1: if turn.go's literals are ever renamed, an error string this script has never seen
-        must still resolve to the safe interpretation (no dispatch happened) rather than being
-        silently treated as a successful round -- the exact failure mode the reviewer's W1 named."""
+    def test_unrecognised_future_error_string_is_unrecognised(self):
+        """If turn.go's literals are ever renamed, an error string this script has never seen must
+        resolve to the arm that claims nothing rather than being silently treated as a successful
+        round -- the failure mode the first review of this file named."""
         self.assertEqual(
             step_trace.classify_round({"error": "some future error nobody has written yet"}),
-            step_trace.ROUND_MALFORMED,
+            step_trace.ROUND_UNRECOGNISED,
         )
+
+    def test_a_loop_refusal_sentence_is_refused_and_not_unrecognised(self):
+        """The reserved-call sentence arrives on a recall round and must not be read as a cause
+        this script cannot name: it is one it can, and the sentence is what gets printed."""
+        self.assertEqual(
+            step_trace.classify_round({"query": "q", "error": step_trace.REFUSAL_RESERVED_CALL}),
+            step_trace.ROUND_REFUSED,
+        )
+
+    def test_a_closed_recall_is_refused_not_unrecognised(self):
+        self.assertEqual(
+            step_trace.classify_round({"query": "q", "error": step_trace.REFUSAL_RECALL_CLOSED}),
+            step_trace.ROUND_REFUSED,
+        )
+
+
+class LoopRefusalTests(unittest.TestCase):
+    """loop_refusal recognises every sentence turn.go authors for a round it declined, including the
+    one that is a format string, and nothing else. The too-large refusal is the discriminating case:
+    matched on its stable middle rather than on the whole sentence, because the byte counts in it
+    vary per round -- an exact-match implementation passes every other case in this class."""
+
+    def test_every_fixed_sentence_is_recognised(self):
+        for sentence in step_trace.LOOP_REFUSALS:
+            self.assertEqual(step_trace.loop_refusal({"error": sentence}), sentence)
+
+    def test_the_too_large_refusal_is_recognised_at_any_byte_count(self):
+        for size in (1, 20_001, 987_654):
+            sentence = f"that part is {size} bytes and one read carries at most 20000, so it cannot be shown in full"
+            self.assertEqual(step_trace.loop_refusal({"error": sentence}), sentence)
+
+    def test_an_adapter_tool_error_is_not_a_loop_refusal(self):
+        self.assertEqual(step_trace.loop_refusal({"error": "tool arguments could not be parsed"}), "")
+
+    def test_a_served_round_is_not_a_loop_refusal(self):
+        self.assertEqual(step_trace.loop_refusal({"error": ""}), "")
+
+
+class UnrecognisedToolRoundTests(unittest.TestCase):
+    """The arm this whole shape exists for: a `tool` the script has never heard of must render as
+    unrecognised, not through the renderer that happens to be last. The fixture uses a tool name the
+    loop does not have, because the falsifier for "the fix was a third branch" is a FOURTH tool."""
+
+    def test_an_unknown_tool_is_named_and_nothing_is_narrated(self):
+        rec = record(
+            model_calls=2,
+            tool_calls=[{"tool": "grepRepo", "pattern": "func main", "error": "", "results": []}],
+        )
+        out = render(rec)
+        self.assertIn("THIS SCRIPT CANNOT NARRATE THIS ROUND", out)
+        self.assertIn("the tool is not one of", out)
+        self.assertIn("'grepRepo'", out)
+        self.assertIn("'pattern': 'func main'", out)
+
+    def test_an_unknown_tool_never_borrows_the_recall_narration(self):
+        rec = record(
+            model_calls=2,
+            tool_calls=[{"tool": "grepRepo", "error": "", "results": []}],
+        )
+        out = render(rec)
+        self.assertNotIn("wants recall", out.split("STEP 4")[1])
+        self.assertNotIn("scope=nil", out.split("STEP 4")[1])
+        self.assertNotIn("STEP 5  tool call", out)
+
+    def test_an_empty_tool_name_is_present_and_unrecognised_not_absent_and_a_recall(self):
+        """The seam a `get(k) or default` leaves, and the one input that still printed the
+        fabricated whole-graph recall after the dispatch was made exhaustive on tool NAMES.
+        `ToolCallRecord.Tool`
+        carries no `omitempty`, so every round serialises the key and "" is a legal value of it --
+        present, naming no tool. The falsifier for "the fall-through is closed" is the case one
+        branch past the ones the fix added, and for `or` that case is the empty string, not an
+        unknown name.
+        """
+        rec = record(
+            model_calls=2,
+            tool_calls=[{"tool": "", "nodeId": 42, "error": "", "results": []}],
+        )
+        out = render(rec)
+        self.assertIn("THIS SCRIPT CANNOT NARRATE THIS ROUND", out)
+        self.assertIn("the tool is not one of", out)
+        self.assertNotIn("scope=nil", out)
+        self.assertNotIn("recall(query=None", out)
+        self.assertNotIn("STEP 5  tool call", out)
+
+    def test_an_absent_tool_key_is_still_read_as_a_recall(self):
+        """The other half of the same seam, which must NOT move: a record older than the `tool`
+        field carries no key at all and every round in one was a recall. A fix that routed absence
+        to the unrecognised arm would print a shrug over the whole pre-field archive."""
+        self.assertEqual(step_trace.round_tool({"query": "q"}), step_trace.TOOL_RECALL)
+        self.assertEqual(step_trace.round_tool({"tool": ""}), "")
+
+    def test_an_unknown_cause_on_a_known_tool_is_also_unrecognised(self):
+        rec = record(
+            model_calls=2,
+            tool_calls=[{"tool": "readNode", "nodeId": 71, "error": "a cause written after this file", "results": []}],
+        )
+        out = render(rec)
+        self.assertIn("THIS SCRIPT CANNOT NARRATE THIS ROUND", out)
+        self.assertIn("the cause is not one this file knows", out)
+        self.assertIn("wants to read part #71 in full", out)
+        self.assertNotIn("STEP 5  tool call", out)
 
 
 class MalformedToolRequestUncappedTests(unittest.TestCase):
-    """C1, non-final round: the model's tool call was malformed on round 1 of 2. No graph call was
-    ever made -- dispatchRecall returns before calling Graph.Recall on this path (turn.go:230-233)."""
+    """A non-final round whose tool call was malformed, on round 1 of 2. The round gets no
+    fabricated tool-call step and no fabricated query -- and, since the loop now authors several
+    refusals that are NOT malformed and are not all raised before the graph, no claim about whether
+    the graph was reached either."""
 
     def test_no_tool_call_step_is_fabricated(self):
         rec = record(
@@ -253,9 +358,18 @@ class MalformedToolRequestUncappedTests(unittest.TestCase):
         out = render(rec)
         self.assertNotIn("STEP 5  tool call", out)
         self.assertNotIn("query=None", out)
-        self.assertIn("wants recall, but the tool call itself was malformed and NEVER reached the graph", out)
+        self.assertIn("THIS SCRIPT CANNOT NARRATE THIS ROUND", out)
         self.assertIn("tool arguments could not be parsed: unexpected end of JSON input", out)
-        self.assertIn("query not recorded", out)
+        self.assertIn("the record carries no query for the round", out)
+
+    def test_it_no_longer_claims_the_graph_was_never_reached(self):
+        """The retired claim, pinned as retired. Its falsifier is a refused round whose fetch
+        demonstrably happened: turn.go raises errNoSuchNode only after Graph.Node has returned."""
+        rec = record(
+            model_calls=2,
+            tool_calls=[{"error": "tool arguments had an empty query"}],
+        )
+        self.assertNotIn("NEVER reached the graph", render(rec))
 
     def test_no_ambiguous_cap_note_when_not_the_final_call(self):
         rec = record(
@@ -268,12 +382,12 @@ class MalformedToolRequestUncappedTests(unittest.TestCase):
 
 
 class MalformedToolRequestCappedTests(unittest.TestCase):
-    """C1's sharper case: the FINAL call both wanted recall and was malformed, and capReached is
-    also true on the record. turn.go's construction lets the malformed reason win outright over the
-    cap reason on the same round -- the trace must say that ambiguity exists, not silently print a
-    'cap reached' story invented from the top-level capReached flag."""
+    """The final call both wanted a tool and carried a cause this script cannot name, with
+    capReached true. The old renderer printed a note about turn.go choosing the malformed reason
+    over the cap reason; the cause that note was written against was deleted from turn.go, so the
+    note is gone and the flag is printed as the record spells it."""
 
-    def test_still_no_fabricated_dispatch_and_flags_the_ambiguity(self):
+    def test_still_no_fabricated_dispatch_and_no_invented_cap_story(self):
         rec = record(
             model_calls=1,
             tool_calls=[{"error": "tool arguments had an empty query"}],
@@ -281,9 +395,110 @@ class MalformedToolRequestCappedTests(unittest.TestCase):
         )
         out = render(rec)
         self.assertNotIn("STEP 5  tool call", out)
-        self.assertIn("wants recall, but the tool call itself was malformed and NEVER reached the graph", out)
+        self.assertIn("THIS SCRIPT CANNOT NARRATE THIS ROUND", out)
         self.assertIn("tool arguments had an empty query", out)
-        self.assertIn("malformed-request reason wins over the cap reason", out)
+        self.assertNotIn("malformed-request reason wins over the cap reason", out)
+        self.assertIn("capReached=True", out)
+
+
+class ReservedCallRoundTests(unittest.TestCase):
+    """The reserved-call refusal is cross-tool: turn.go stamps the same sentence onto whichever tool
+    the model asked for. Each fixture names a different tool so that a fix applied inside any one
+    tool's renderer, rather than ahead of the dispatch, fails here."""
+
+    def test_a_reserved_read_prints_the_loops_sentence(self):
+        rec = record(
+            model_calls=1,
+            tool_calls=[{"tool": "readNode", "nodeId": 105, "error": step_trace.REFUSAL_RESERVED_CALL, "results": []}],
+            cap_reached=True,
+        )
+        out = render(rec)
+        self.assertIn("the LOOP refused the round in its own words", out)
+        self.assertIn(step_trace.REFUSAL_RESERVED_CALL, out)
+        self.assertIn("wants to read part #105 in full", out)
+        self.assertNotIn("malformed", out)
+        self.assertNotIn("NEVER reached the graph", out)
+
+    def test_a_reserved_recall_prints_the_loops_sentence(self):
+        rec = record(
+            model_calls=1,
+            tool_calls=[{"tool": "recall", "query": "q", "error": step_trace.REFUSAL_RESERVED_CALL, "results": []}],
+            cap_reached=True,
+        )
+        out = render(rec)
+        self.assertIn("the LOOP refused the round in its own words", out)
+        self.assertNotIn("the model-call cap", out)
+
+    def test_a_reserved_write_prints_the_loops_sentence(self):
+        rec = record(
+            model_calls=1,
+            tool_calls=[{"tool": "writeFile", "path": "a.txt", "bytes": 3, "error": step_trace.REFUSAL_RESERVED_CALL, "results": []}],
+            cap_reached=True,
+        )
+        out = render(rec)
+        self.assertIn("the LOOP refused the round in its own words", out)
+        self.assertNotIn("NEVER reached the working directory", out)
+
+    def test_the_reserved_call_state_is_printed_as_the_record_spells_it(self):
+        rec = record(model_calls=1, cap_reached=True)
+        rec["reservedCall"] = {"state": "completed"}
+        self.assertIn("reservedCall='completed'", render(rec))
+
+    def test_a_record_without_the_field_says_so_rather_than_inventing_a_state(self):
+        self.assertIn("reservedCall absent", render(record(model_calls=1)))
+
+
+class ReadRoundRenderingTests(unittest.TestCase):
+    """An addressed read is a Graph.Node fetch by id. Before this arm existed a served read fell
+    through to the recall renderer and printed a whole-graph recall the run never issued."""
+
+    def test_a_served_read_names_the_id_and_no_recall(self):
+        rec = record(
+            model_calls=2,
+            tool_calls=[{
+                "tool": "readNode",
+                "nodeId": 71,
+                "error": "",
+                "results": [{"rank": 1, "id": 71, "type": "documentation", "name": "Read me", "size": 780, "included": True}],
+            }],
+        )
+        out = render(rec)
+        self.assertIn("read_node(id=71)", out)
+        self.assertIn("wants to read part #71 in full", out)
+        self.assertNotIn("wants recall", out.split("STEP 4")[1])
+        self.assertNotIn("scope=nil", out)
+        self.assertNotIn("query=None", out)
+
+    def test_a_served_read_with_no_id_is_unrecognised_rather_than_a_fetch_of_None(self):
+        """The same rule `round_wanted` keeps, kept two lines further down: a field the record does
+        not carry is said to be missing, never spelled `None`. This round used to print
+        `read_node(id=None) -- one part fetched by the id the model named` directly under a line
+        correctly saying the record carried no id."""
+        rec = record(
+            model_calls=2,
+            tool_calls=[{"tool": "readNode", "error": "", "results": []}],
+        )
+        out = render(rec)
+        self.assertNotIn("read_node(id=None)", out)
+        self.assertIn("THIS SCRIPT CANNOT NARRATE THIS ROUND", out)
+        self.assertIn("the record carries no id for the round", out)
+
+    def test_each_of_the_loops_four_read_refusals_prints_its_own_sentence(self):
+        for sentence in (
+            step_trace.REFUSAL_NO_SUCH_NODE,
+            step_trace.REFUSAL_READ_OF_SUBJECT,
+            step_trace.REFUSAL_ALREADY_READ_IN_FULL,
+            "that part is 20001 bytes and one read carries at most 20000, so it cannot be shown in full",
+        ):
+            rec = record(
+                model_calls=2,
+                tool_calls=[{"tool": "readNode", "nodeId": 72, "error": sentence, "results": []}],
+            )
+            out = render(rec)
+            self.assertIn(sentence, out)
+            self.assertIn("the LOOP refused the round in its own words", out)
+            self.assertNotIn("STEP 5  tool call", out)
+            self.assertNotIn("NEVER reached the graph", out)
 
 
 class CleanCapReachedTests(unittest.TestCase):
@@ -843,10 +1058,10 @@ class ClassifyWriteRoundTests(unittest.TestCase):
             step_trace.WRITE_REFUSED,
         )
 
-    def test_anything_else_never_reached_the_working_directory(self):
+    def test_anything_else_is_a_cause_this_script_cannot_name(self):
         self.assertEqual(
             step_trace.classify_write_round({"error": "tool arguments could not be parsed"}),
-            step_trace.WRITE_MALFORMED,
+            step_trace.WRITE_UNRECOGNISED,
         )
 
 
@@ -920,7 +1135,22 @@ class WriteRoundRenderingTests(unittest.TestCase):
         self.assertIn("NOT dispatched, counted only", out)
         self.assertEqual(out.count("write_file(path="), 2)
 
-    def test_a_malformed_write_round_gets_no_tool_call_step(self):
+    def test_an_accepted_write_with_no_path_never_claims_a_file_exists(self):
+        """The worst sentence the missing-field rule prevents. This round used to print
+        `ACCEPTED -- 0 B written to None inside the run's working directory. A FILE NOW EXISTS ON
+        DISK.` -- a claim about the filesystem, from a record naming no file."""
+        rec = record(
+            model_calls=2,
+            tool_calls=[{"tool": "writeFile", "bytes": 0, "error": "", "results": []}],
+            workspace="/runs/run-1",
+        )
+        out = render(rec)
+        self.assertNotIn("A FILE NOW EXISTS ON DISK", out)
+        self.assertNotIn("write_file(path=None", out)
+        self.assertIn("THIS SCRIPT CANNOT NARRATE THIS ROUND", out)
+        self.assertIn("the record carries no path for the round", out)
+
+    def test_a_write_round_with_a_cause_this_script_cannot_name_gets_no_tool_call_step(self):
         rec = record(
             model_calls=2,
             tool_calls=[{
@@ -930,8 +1160,11 @@ class WriteRoundRenderingTests(unittest.TestCase):
             }],
         )
         out = render(rec)
-        self.assertIn("NEVER reached the working directory", out)
+        self.assertIn("THIS SCRIPT CANNOT NARRATE THIS ROUND", out)
+        self.assertIn("tool arguments could not be parsed: unexpected EOF", out)
+        self.assertIn("the record carries no path for the round", out)
         self.assertNotIn("write_file(path=", out)
+        self.assertNotIn("NEVER reached the working directory", out)
 
 
 class WorkspaceLineTests(unittest.TestCase):
@@ -969,6 +1202,111 @@ class MixedRoundTests(unittest.TestCase):
         out = render(rec)
         self.assertIn("recall(query='the missing thing'", out)
         self.assertIn("write_file(path='index.html'", out)
+
+
+def go_string_constants(*relative_paths):
+    """Every `Ident = "literal"` declaration in the named Go files, as a name -> value map.
+
+    A deliberately narrow parser: it reads declarations only, so a literal that appears as a log
+    argument or inside a call is not collected. That is what lets the archive-only assertions below
+    mean "no longer a constant" rather than "no longer anywhere in the file".
+    """
+    pattern = re.compile(r'^\s*(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"', re.MULTILINE)
+    found = {}
+    for relative in relative_paths:
+        path = pathlib.Path(step_trace.REPO) / relative
+        found.update(dict(pattern.findall(path.read_text(encoding="utf-8"))))
+    return found
+
+
+def go_int_constants(*relative_paths):
+    """Every `Ident = <int>` declaration in the named Go files, as a name -> int map."""
+    pattern = re.compile(r"^\s*(\w+)\s*=\s*(\d[\d_]*)\s*$", re.MULTILINE)
+    found = {}
+    for relative in relative_paths:
+        path = pathlib.Path(step_trace.REPO) / relative
+        for name, value in pattern.findall(path.read_text(encoding="utf-8")):
+            found[name] = int(value.replace("_", ""))
+    return found
+
+
+class MirroredConstantTests(unittest.TestCase):
+    """The mirrors this script keeps of internal/loop's own vocabulary, pinned against the Go source
+    in this tree rather than against the memory of whoever last edited them.
+
+    This class exists because the mirrors were unpinned for six merges, and the seventh is what
+    nominated the whole change: a third tool arrived in the loop, this file kept two, and a served
+    read printed a whole-graph recall. A renamed literal, a deleted refusal or a new tool now reddens
+    here instead of reaching an operator as a confident sentence. It reads the repo, so it is the one
+    class in this suite that is not hermetic -- and a hermetic version of it would prove nothing,
+    which is the point.
+    """
+
+    TURN = "internal/loop/turn.go"
+    TYPES = "internal/loop/types.go"
+    ASSEMBLE = "internal/loop/assemble.go"
+
+    def test_the_three_tool_names_are_the_records_own_vocabulary(self):
+        go = go_string_constants(self.TYPES)
+        for mirrored, name in (
+            (step_trace.TOOL_RECALL, "ToolRecall"),
+            (step_trace.TOOL_WRITE_FILE, "ToolWriteFile"),
+            (step_trace.TOOL_READ_NODE, "ToolReadNode"),
+        ):
+            self.assertEqual(mirrored, go[name], f"{name} has drifted from this script's mirror")
+
+    def test_the_loop_declares_no_tool_this_script_cannot_narrate(self):
+        """The guard that would have caught the defect this change closes: a FOURTH `Tool*` constant
+        in types.go reddens here the day it lands, rather than the day a model reaches for it."""
+        declared = {
+            value
+            for name, value in go_string_constants(self.TYPES).items()
+            if name.startswith("Tool") and not name.startswith("ToolSource")
+        }
+        self.assertEqual(declared, set(step_trace.KNOWN_TOOLS))
+
+    def test_every_mirrored_refusal_sentence_is_the_loops_own(self):
+        go = go_string_constants(self.TURN)
+        for mirrored, name in (
+            (step_trace.REFUSAL_RESERVED_CALL, "errReservedCallRefused"),
+            (step_trace.REFUSAL_RECALL_CLOSED, "errRecallClosedToModel"),
+            (step_trace.REFUSAL_NO_SUCH_NODE, "errNoSuchNode"),
+            (step_trace.REFUSAL_READ_OF_SUBJECT, "errReadOfSubject"),
+            (step_trace.REFUSAL_ALREADY_READ_IN_FULL, "errAlreadyReadInFull"),
+            (step_trace.ERR_NO_WORKING_DIRECTORY, "errNoWorkingDirectory"),
+        ):
+            self.assertEqual(mirrored, go[name], f"{name} has drifted from this script's mirror")
+
+    def test_the_too_large_refusal_is_matched_on_a_substring_the_format_string_still_carries(self):
+        go = go_string_constants(self.TURN)
+        self.assertIn(step_trace.REFUSAL_NODE_TOO_LARGE_MIDDLE, go["errNodeTooLargeFormat"])
+
+    def test_the_archive_only_causes_are_no_longer_constants_in_the_loop(self):
+        """The falsifier for every ARCHIVE SHAPE line this script prints. If one of these comes back
+        as a constant the loop stamps on a round, the line is wrong and this reddens."""
+        declared = set(go_string_constants(self.TURN, self.TYPES).values())
+        for archived in (
+            step_trace.ERR_CALL_CAP_REACHED,
+            step_trace.ERR_SUPPLEMENTARY_RECALL_FAILED,
+            step_trace.ERR_FILE_WRITE_FAILED,
+        ):
+            self.assertNotIn(archived, declared)
+
+    def test_the_scope_reserve_is_the_loops_own_number(self):
+        self.assertEqual(step_trace.RECALL_SCOPE_RESERVE, go_int_constants(self.TURN)["RecallScopeReserve"])
+
+    def test_both_cut_reasons_are_assembles_own(self):
+        go = go_string_constants(self.ASSEMBLE)
+        self.assertEqual(step_trace.CUT_SELF_PRODUCED, go["cutReasonSelfProduced"])
+        self.assertEqual(step_trace.CUT_BYTE_BUDGET, go["cutReasonByteBudget"])
+
+    def test_the_write_rejection_prefix_is_built_from_the_loops_own_sentinel(self):
+        """The mirror this file's map calls the worst-behaved of them: a drifted prefix used to make
+        a refusal the model was actually shown print as a tool call that never parsed."""
+        text = (pathlib.Path(step_trace.REPO) / self.TURN).read_text(encoding="utf-8")
+        sentinel = re.search(r'ErrWriteRejected\s*=\s*errors\.New\("([^"]*)"\)', text)
+        self.assertIsNotNone(sentinel, "ErrWriteRejected is no longer declared where this mirror reads it")
+        self.assertEqual(step_trace.WRITE_REJECTED_PREFIX, sentinel.group(1) + ": ")
 
 
 if __name__ == "__main__":
