@@ -14,8 +14,8 @@ const (
 const (
 	// DerivationPromptCeiling bounds the bytes one derivation call sends: its instructions and exemplars, plus the run's input.
 	DerivationPromptCeiling = 12_000
-	// JudgementPromptCeiling bounds the bytes one judgement call sends: the assembled block, plus one supplementary round carried back into the prompt.
-	JudgementPromptCeiling = AssemblyByteBudget + SupplementaryByteBudget
+	// JudgementPromptCeiling bounds the bytes one judgement call sends: the assembled block, plus the larger of one supplementary round or one addressed read carried back into the prompt.
+	JudgementPromptCeiling = AssemblyByteBudget + max(SupplementaryByteBudget, AssemblyByteBudget)
 )
 
 // AffordabilitySafety is the share of a bound one call site's declared cost may claim, leaving the rest for everything the declaration does not model.

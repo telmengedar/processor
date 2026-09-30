@@ -12,7 +12,7 @@ const (
 	CandidateLimit     = 20
 	RecallScopeReserve = 3
 	// AssemblyByteBudget bounds the block's content bytes: the anchor plus admitted candidates.
-	AssemblyByteBudget = 60_000
+	AssemblyByteBudget = 30_000
 	// MaxModelCalls caps a turn's model calls: 6 is the measured knee, 17 of 20 sampled tasks reaching their own terminal.
 	MaxModelCalls           = 6
 	SupplementaryByteBudget = 20_000
@@ -627,13 +627,13 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 	}
 
 	threshold := SubstanceRatioThreshold
-	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, SupplementaryByteBudget, 0, 0, BlockOccupancy, threshold)
+	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, AssemblyByteBudget, 0, 0, BlockOccupancy, threshold)
 	if account.alreadyShown(dispositions[0]) {
 		exchange.Error = errAlreadyReadInFull
 		return exchange
 	}
 	if len(admitted) == 0 {
-		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, dispositions[0].Size, SupplementaryByteBudget)
+		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, dispositions[0].Size, AssemblyByteBudget)
 		return exchange
 	}
 

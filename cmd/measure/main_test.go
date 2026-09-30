@@ -222,8 +222,8 @@ func TestTheGraphServerRecordsAWriteWhenOneIsActuallyMade(t *testing.T) {
 func TestAMeasuredRunWithTheFillOnCondensesACandidateAndStillSendsTheGraphNoWriteAtAll(t *testing.T) {
 	recorder := &writeRecorder{}
 	bodies := map[int64]string{
-		202: strings.Repeat("the first candidate body, long enough to fill the budget on its own. ", 600),
-		303: strings.Repeat("the second candidate body, cut for want of room and worth condensing. ", 600),
+		202: strings.Repeat("the first candidate body, long enough to fill the budget on its own. ", 200),
+		303: strings.Repeat("the second candidate body, cut for want of room and worth condensing. ", 250),
 	}
 	bootEnv(t, graphServing(t, recorder, bodies).URL, testModel(t).URL)
 	condenseEnv(t, testCondenseModel(t, strings.Repeat("a condensed account of the second candidate. ", 80)).URL)

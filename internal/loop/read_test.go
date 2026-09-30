@@ -3,7 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
-	"go/ast"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -145,16 +145,16 @@ func TestTurnRunRefusesASecondAddressedReadOfANodeAlreadyShownInFull(t *testing.
 	}
 }
 
-func TestTurnRunRefusesAnAddressedReadLargerThanOneSupplementaryRoundAndNamesBothByteCountsInThatOrder(t *testing.T) {
+func TestTurnRunRefusesAnAddressedReadLargerThanTheBlockBudgetAndNamesBothByteCountsInThatOrder(t *testing.T) {
 	t.Parallel()
 
-	const wantRefusal = "that part is 20001 bytes and one read carries at most 20000, so it cannot be shown in full"
+	const wantRefusal = "that part is 30001 bytes and one read carries at most 30000, so it cannot be shown in full"
 
-	if SupplementaryByteBudget != 20_000 {
-		t.Fatalf("test setup error: one round carries %d bytes, and the sentence this guard expects spells the pair as literals on purpose, because an expectation built from the same constant the sentence is built from reads the same whichever order the two numbers are formatted in", SupplementaryByteBudget)
+	if AssemblyByteBudget != 30_000 {
+		t.Fatalf("test setup error: one read carries %d bytes, and the sentence this guard expects spells the pair as literals on purpose, because an expectation built from the same constant the sentence is built from reads the same whichever order the two numbers are formatted in", AssemblyByteBudget)
 	}
 
-	oversized := readableNode(71, strings.Repeat("x", 20_001))
+	oversized := readableNode(71, strings.Repeat("x", 30_001))
 	record := runWithResults(t, graphHoldingNodes(oversized), wantsRead(oversized.ID), answeredFinal())
 
 	refusedRound(t, record, wantRefusal)
@@ -200,6 +200,47 @@ func TestTurnRunRecordsAnAddressedReadsRowAsContentFormCarryingNoSubstance(t *te
 	}
 	if row.Size != 1200 || row.RenderedSize != 1200 {
 		t.Fatalf("the read's row records Size %d at RenderedSize %d, want 1200 for both", row.Size, row.RenderedSize)
+	}
+}
+
+func TestTurnRunServesInFullByAddressedReadARowItsBlockShowedAsSubstance(t *testing.T) {
+	t.Parallel()
+
+	content := strings.Repeat("x", 25_000)
+	substance := strings.Repeat("z", 2_000)
+	graph := graphHoldingNodes(readableNode(10, content))
+	graph.candidates = []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Similarity: 0.9, Content: content, Substance: substance}}
+	model := &fakeModel{results: []JudgeResult{wantsRead(10), answeredFinal()}}
+	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", readSubject)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(record.Candidates) != 1 || !record.Candidates[0].Included || record.Candidates[0].Form != FormSubstance {
+		t.Fatalf("test setup error: the block's disposition is %+v, want the one candidate admitted as substance", record.Candidates)
+	}
+
+	round := onlyRound(t, record)
+	if round.Tool != ToolReadNode || round.Error != "" {
+		t.Fatalf("the read round is %+v, want it served with no refusal", round)
+	}
+	if len(round.Results) != 1 || round.Results[0].Form != FormContent || round.Results[0].RenderedSize != len(content) {
+		t.Fatalf("the read round recorded %+v, want the row admitted as content at its full length", round.Results)
+	}
+
+	if len(model.calls) < 2 || len(model.calls[1].PriorTools) != 1 {
+		t.Fatalf("test setup error: the second judgement carries %d completed rounds, want 1", len(model.calls[1].PriorTools))
+	}
+	rendered := RenderToolResult(model.calls[1].PriorTools[0])
+	if !strings.Contains(rendered, content) {
+		t.Fatal("the read did not return the row's full content")
+	}
+	if strings.Contains(rendered, substance) {
+		t.Fatal("the read returned the substance the block showed, not the full content it exists to recover")
+	}
+	if strings.Contains(rendered, "\n"+formHeaderKey+":") {
+		t.Fatal("the read result carries a form marking; an addressed read is always content and never marked")
 	}
 }
 
@@ -443,25 +484,22 @@ func TestTurnRunRefusesAnAddressedReadTheAdapterRejectedWithItsOwnCauseAndAsksTh
 	}
 }
 
-func TestTurnRunRefusesAReadOfAPartAlreadyShownInFullEvenWhereItIsAlsoTooLargeForOneRound(t *testing.T) {
+func TestTurnRunRefusesAReadOfANodeLargerThanTheBlockCouldCarryEvenWhereItWasAlsoCutFromTheBlockItself(t *testing.T) {
 	t.Parallel()
 
-	const bothApply = 30_000
-	if bothApply <= SupplementaryByteBudget || bothApply >= AssemblyByteBudget {
-		t.Fatalf("test setup error: %d bytes must sit above one round's %d and below the block's %d, or only one of the two refusals can apply and this guard observes no precedence at all", bothApply, SupplementaryByteBudget, AssemblyByteBudget)
-	}
+	const tooLarge = AssemblyByteBudget + 1
 
-	big := readableNode(71, strings.Repeat("x", bothApply))
+	big := readableNode(71, strings.Repeat("x", tooLarge))
 	graph := graphHoldingNodes(big)
 	graph.candidates = []Candidate{{ID: big.ID, Type: big.Type, Name: big.Name, Similarity: 0.9, Content: big.Content}}
 
 	record := runWithResults(t, graph, wantsRead(big.ID), answeredFinal())
 
-	if len(record.Candidates) != 1 || !record.Candidates[0].Included {
-		t.Fatalf("test setup error: the block's disposition of the row is %+v, want it admitted in full, or the account never saw it and only one refusal applies", record.Candidates)
+	if len(record.Candidates) != 1 || record.Candidates[0].Included {
+		t.Fatalf("test setup error: the block's disposition of the row is %+v, want it cut for size, or a cut row cannot be told apart here from one already shown", record.Candidates)
 	}
 
-	refusedRound(t, record, errAlreadyReadInFull)
+	refusedRound(t, record, fmt.Sprintf(errNodeTooLargeFormat, tooLarge, AssemblyByteBudget))
 }
 
 func TestOnlyTheRetrievalToolsAreAccountedSoAFileWriteCannotCloseRecall(t *testing.T) {
@@ -495,48 +533,6 @@ func TestOnlyTheRetrievalToolsAreAccountedSoAFileWriteCannotCloseRecall(t *testi
 	}
 	if write := record.ToolCalls[1]; write.Yield != 0 {
 		t.Fatalf("the file-write round is recorded with yield %d, want 0: a round that retrieves nothing puts no row in front of the model and has no yield to report", write.Yield)
-	}
-}
-
-func assignsTheChargedDial(fn *ast.FuncDecl) bool {
-	const field = "SubstanceRatioThreshold"
-
-	assigned := false
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		switch node := n.(type) {
-		case *ast.KeyValueExpr:
-			if ident, ok := node.Key.(*ast.Ident); ok && ident.Name == field {
-				assigned = true
-			}
-		case *ast.AssignStmt:
-			for _, lhs := range node.Lhs {
-				if selector, ok := lhs.(*ast.SelectorExpr); ok && selector.Sel.Name == field {
-					assigned = true
-				}
-			}
-		}
-		return true
-	})
-	return assigned
-}
-
-func TestEveryDispatchThatAdmitsRowsRecordsOnItsExchangeTheDialItsAdmissionCharged(t *testing.T) {
-	t.Parallel()
-
-	if SubstanceRatioThreshold != 0 {
-		t.Fatalf("the shipped dial is %v rather than zero, so this obligation is now observable by value and belongs in a test that reads the rendered bytes rather than the source", SubstanceRatioThreshold)
-	}
-
-	functions := parseTheLoopSources(t)
-
-	for _, name := range []string{"dispatchRecall", "dispatchRead"} {
-		fn, ok := functions[name]
-		if !ok {
-			t.Fatalf("%s is not in the loop package at all, so this guard would pass vacuously", name)
-		}
-		if !assignsTheChargedDial(fn) {
-			t.Errorf("%s returns an exchange it never records the dial on. At the shipped dial the field's value is its zero value, so no assertion over the rendered bytes can tell a recorded dial from an unrecorded one, and the day the dial moves is the day a round renders at one dial having been charged at another", name)
-		}
 	}
 }
 

@@ -692,5 +692,5 @@ func TestTheSummaryCarriesTheScopeReserveBesideTheOtherLimits(t *testing.T) {
 
 	_, human := render(t, resultWith(intactControlRow()))
 
-	mustContainLine(t, human, "limits candidateLimit=20 assemblyByteBudget=60000 recallScopeReserve=3 substanceRatioThreshold=0.592")
+	mustContainLine(t, human, "limits candidateLimit=20 assemblyByteBudget=30000 recallScopeReserve=3 substanceRatioThreshold=0.592")
 }

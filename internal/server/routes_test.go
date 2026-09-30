@@ -452,7 +452,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 		MaxModelCalls           int
 		DerivationBudget        int
 		JudgementBudget         int
-	}{20, 60_000, 20_000, 6, 160, 192}
+	}{20, 30_000, 20_000, 6, 160, 192}
 	if got.Limits.CandidateLimit != wantLimits.CandidateLimit ||
 		got.Limits.AssemblyByteBudget != wantLimits.AssemblyByteBudget ||
 		got.Limits.SupplementaryByteBudget != wantLimits.SupplementaryByteBudget ||
