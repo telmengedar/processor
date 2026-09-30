@@ -160,8 +160,8 @@ func (f *writingFill) Fill(ctx context.Context, id int64) (loop.FillResult, erro
 func crowdedGraph() *recordingGraph {
 	live := newRecordingGraph()
 	live.candidates = []loop.Candidate{
-		{ID: 202, Type: "documentation", Name: "the candidate that fits", Similarity: 0.95, Content: strings.Repeat("the first candidate body. ", 1600)},
-		{ID: 303, Type: "documentation", Name: "the candidate cut for want of room", Similarity: 0.94, Content: strings.Repeat("the second candidate body. ", 1600)},
+		{ID: 202, Type: "documentation", Name: "the candidate that fits", Similarity: 0.95, Content: strings.Repeat("the first candidate body. ", 500)},
+		{ID: 303, Type: "documentation", Name: "the candidate cut for want of room", Similarity: 0.94, Content: strings.Repeat("the second candidate body. ", 650)},
 	}
 	return live
 }

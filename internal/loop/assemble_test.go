@@ -556,10 +556,12 @@ func TestAssembleRecordsSubstanceForACutCandidateToo(t *testing.T) {
 		{ID: 10, Content: strings.Repeat("x", 200)},
 		{ID: 20, Content: strings.Repeat("y", 80), Substance: "condensed form"},
 	}
-	const budget = 50
+	const budget = 10
 
-	if len(candidates[0].Content) <= budget || len(candidates[1].Content) <= budget {
-		t.Fatalf("test setup error: candidates are %d and %d bytes against budget %d; both must exceed it for the second to be cut", len(candidates[0].Content), len(candidates[1].Content), budget)
+	for _, c := range candidates {
+		if _, rendered := renderedPayload(c, SubstanceRatioThreshold); len(rendered) <= budget {
+			t.Fatalf("test setup error: candidate %d renders %d bytes against budget %d; it must exceed the budget to be cut", c.ID, len(rendered), budget)
+		}
 	}
 
 	_, dispositions := Assemble(anchor, candidates, budget, 0, SubstanceRatioThreshold)

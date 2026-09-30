@@ -39,7 +39,7 @@ func TestARunWhoseRemainingTimeCannotAffordOneJudgementCallMakesNoneAndNamesTheA
 	if len(model.calls) != 0 {
 		t.Fatalf("the model was called %d times, want 0 — the guard exists so the call is not made at all", len(model.calls))
 	}
-	for _, want := range []string{"192 output tokens", "10 tokens per second", "80000 prompt bytes", "3000 bytes per second"} {
+	for _, want := range []string{"192 output tokens", "10 tokens per second", "60000 prompt bytes", "3000 bytes per second"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("the refusal does not state %q, so a reader cannot recompute what the run could not afford; err = %v", want, err)
 		}

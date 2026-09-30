@@ -35,11 +35,11 @@ const nothingNewFormat = "%d results, and you have already been shown every one 
 // SubstanceRatio is a substance's byte length as a fraction of its content's.
 type SubstanceRatio float64
 
-// SubstanceRatioFloor is the form rule's measured lower bound: a substance compressed further than this renders as content whatever the threshold above it is raised to.
-const SubstanceRatioFloor SubstanceRatio = 0.10
+// SubstanceRatioFloor is the storage floor: a substance compressed further than this renders as content whatever the threshold above it is raised to.
+const SubstanceRatioFloor SubstanceRatio = 0.05
 
-// SubstanceRatioThreshold is the form rule's shipped dial, zero: it leaves the band empty, so every candidate renders as content until a later change raises it.
-const SubstanceRatioThreshold SubstanceRatio = 0
+// SubstanceRatioThreshold is the form rule's shipped dial: a substance renders whenever it is shorter than its content and not below the floor.
+const SubstanceRatioThreshold SubstanceRatio = 1.0
 
 const formHeaderKey = "form"
 
