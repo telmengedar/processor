@@ -119,7 +119,7 @@ func runOneTurn(t *testing.T, failing string) (*httptest.ResponseRecorder, []byt
 	turn := loop.NewTurn(graph, answeringModel{}, nil, systemtext.Text, "test-model-id", logger)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/runs", bytes.NewBufferString(`{"input":"what changed","subject":42}`))
+	req := httptest.NewRequest(http.MethodPost, "/runs?verbose=true", bytes.NewBufferString(`{"input":"what changed","subject":42}`))
 	server.NewHandler(turn).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
@@ -193,20 +193,21 @@ func TestTheRecordInsideTheStoredFenceIsTheResponseBodyMinusTheWriteReceiptAndNo
 	storedOrder, storedValues := topLevelMembers(t, extractJSONFence(t, stored))
 
 	const receiptKey = "written"
+	const replyKey = "reply"
 
 	var withoutReceipt []string
 	for _, key := range responseOrder {
-		if key == receiptKey {
+		if key == receiptKey || key == replyKey {
 			continue
 		}
 		withoutReceipt = append(withoutReceipt, key)
 	}
 
-	if len(withoutReceipt) != len(responseOrder)-1 {
-		t.Fatalf("the response has no %q key at all; keys=%v", receiptKey, responseOrder)
+	if len(withoutReceipt) != len(responseOrder)-2 {
+		t.Fatalf("the response lacks the %q or %q key; keys=%v", receiptKey, replyKey, responseOrder)
 	}
 	if len(storedOrder) != len(withoutReceipt) {
-		t.Fatalf("stored keys %v, response keys minus %q %v — the two differ by more than the one key", storedOrder, receiptKey, withoutReceipt)
+		t.Fatalf("stored keys %v, response keys minus %q and %q %v — the two differ by more than those two keys", storedOrder, receiptKey, replyKey, withoutReceipt)
 	}
 	for i, key := range withoutReceipt {
 		if storedOrder[i] != key {

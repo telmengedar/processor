@@ -445,7 +445,7 @@ def wait_for_health(proc, port, log_path):
 def post_run(port, text, subject):
     body = json.dumps({"input": text, "subject": subject}).encode("utf-8")
     request = urllib.request.Request(
-        f"http://127.0.0.1:{port}/runs", data=body,
+        f"http://127.0.0.1:{port}/runs?verbose=true", data=body,
         headers={"Content-Type": "application/json"}, method="POST",
     )
     try:

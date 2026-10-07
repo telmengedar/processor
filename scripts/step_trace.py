@@ -37,8 +37,9 @@ answer as prose for a person. A run in which the model describes the work instea
 therefore a result, not a misconfiguration -- and stopReason "answered" on a run that wrote nothing
 stays exactly as wrong as it was before, deliberately: nothing here was changed to make it right.
 
-One POST /runs is one turn and returns one JSON record (internal/loop/types.go's Record, wrapped in
-{ ...Record fields, "written": {state, nodeId} } by internal/server/routes.go). Every "step" below is
+One POST /runs is one turn and returns one JSON record (internal/loop/types.go's Record, wrapped by
+internal/server/routes.go, when asked for with ?verbose=true as compare.post_run does, in
+{ ...Record fields, "written": {state, nodeId}, "reply": string }). Every "step" below is
 reconstructed from that one record after the fact -- there is no intermediate progress feed -- so the
 ordering is inferred from the record's own structure (usage is one entry per model call, in call
 order; toolCalls is one entry per call that asked for a tool, in call order, including a call the
