@@ -85,6 +85,7 @@ func admitUnheld(candidates []Candidate, budget, spent int, floor float64, occup
 		switch {
 		case held != nil && held(c):
 			d.Included = true
+			d.Held = true
 			admitted = append(admitted, c)
 		case c.SelfProduced:
 			d.CutReason = cutReasonSelfProduced

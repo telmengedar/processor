@@ -91,8 +91,11 @@ type Disposition struct {
 	// Form is the representation the form rule selected for this candidate.
 	Form Form `json:"form"`
 
-	// RenderedSize is the byte length of the selected form, and it is what admission charged and the ceiling refused against.
+	// RenderedSize is the byte length of the selected form; admission charged it and the ceiling refused against it unless Held.
 	RenderedSize int `json:"renderedSize"`
+
+	// Held is true when the working memory already held this row in this form, so the round charged it nothing and it was Included whatever its rank or similarity.
+	Held bool `json:"held,omitempty"`
 }
 
 // UnmarshalJSON decodes one disposition, restoring the rendered size on a record written before the form rule existed: such a record carries no rendered size at all, and every candidate in it was charged its content's own byte length.

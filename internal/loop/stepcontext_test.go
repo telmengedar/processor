@@ -319,29 +319,6 @@ func TestAHeldRowCostsNoRoomToTheRowsBesideIt(t *testing.T) {
 	}
 }
 
-func TestAHeldRowIsNeverRecordedAsCutWhileItIsInTheNextBlock(t *testing.T) {
-	t.Parallel()
-
-	graph := nearTheCeiling([]Candidate{rowOf(21, strings.Repeat("#", 15_000))})
-	model := &fakeModel{results: []JudgeResult{recallFor("one"), recallFor("two"), answered("done")}}
-
-	record, _, err := turnComposing(graph, model, nil).Run(context.Background(), "hello", 42)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-
-	row := record.ToolCalls[1].Results[0]
-	if row.ID != 21 || !row.Included || row.CutReason != "" {
-		t.Errorf("row 21 was recorded as %+v, want Included with no cut reason: it is already held and is in the next block, so the record must not claim it was cut", row)
-	}
-	if ids := candidateIDsIn(model.calls[2].Block); !slices.Contains(ids, 21) {
-		t.Fatalf("test setup error: row 21 is not in the last call's block %v", ids)
-	}
-	if record.ToolCalls[1].Yield != 0 {
-		t.Errorf("the repeated round's yield is %d, want 0: it put nothing in front of the model that was not already there", record.ToolCalls[1].Yield)
-	}
-}
-
 func TestAReadOfAHeldRowWhoseBodyChangedIsCreditedTheBytesItReplaces(t *testing.T) {
 	t.Parallel()
 
@@ -417,5 +394,41 @@ func TestAHeldIdReturnedWithAGrowingBodyIsStillChargedAndBoundedByTheCeiling(t *
 	}
 	if held := strings.Count(model.calls[2].Block, "#"); held != 71_000 {
 		t.Errorf("the last call carries %d bytes of retrieved content, want 71000: the grown body must not have entered the memory past the ceiling", held)
+	}
+}
+
+func TestAHeldRowIsNeverRecordedAsCutWhileItIsInTheNextBlock(t *testing.T) {
+	t.Parallel()
+
+	body := func(n int) string { return strings.Repeat("#", n) }
+
+	belowFloor := rowOf(21, body(15_000))
+	belowFloor.Similarity = 0.3
+
+	for _, tc := range []struct {
+		name  string
+		again []Candidate
+	}{
+		{"for want of bytes", []Candidate{rowOf(21, body(15_000))}},
+		{"below the relevance floor", []Candidate{belowFloor}},
+	} {
+		graph := nearTheCeiling(tc.again)
+		model := &fakeModel{results: []JudgeResult{recallFor("one"), recallFor("two"), answered("done")}}
+
+		record, _, err := turnComposing(graph, model, nil).Run(context.Background(), "hello", 42)
+		if err != nil {
+			t.Fatalf("%s: Run: %v", tc.name, err)
+		}
+
+		row := record.ToolCalls[1].Results[0]
+		if row.ID != 21 || !row.Included || row.CutReason != "" || !row.Held {
+			t.Errorf("%s: row 21 was recorded as %+v, want Included and Held with no cut reason: it is already held and is in the next block, so the record must not claim it was cut", tc.name, row)
+		}
+		if ids := candidateIDsIn(model.calls[2].Block); !slices.Contains(ids, 21) {
+			t.Fatalf("%s: test setup error: row 21 is not in the last call's block %v", tc.name, ids)
+		}
+		if record.ToolCalls[1].Yield != 0 {
+			t.Errorf("%s: the repeated round's yield is %d, want 0: it put nothing in front of the model that was not already there", tc.name, record.ToolCalls[1].Yield)
+		}
 	}
 }
