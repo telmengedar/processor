@@ -43,7 +43,7 @@ func replyGraph() stubGraph {
 }
 
 func replyTurn(model loop.ModelPort) *loop.Turn {
-	return loop.NewTurn(replyGraph(), model, nil, "system text", "test-model", testLogger())
+	return loop.NewTurn(replyGraph(), model, nil, fixedSystem("system text"), "test-model", testLogger())
 }
 
 func postTo(t *testing.T, ctx context.Context, turn *loop.Turn, target string) *httptest.ResponseRecorder {
