@@ -31,9 +31,9 @@ unprompted, is the thing this trace exists to show. What it also shows is HOW it
 refuses, answers about the task, asks for recall, claims completion without writing anything, or
 produces something confidently wrong.
 
-The file tool is offered but not urged: cmd/processor/system_text.go names it in one neutral
-sentence, symmetric with the sentence that names recall, and still tells the model to write its
-answer as prose for a person. A run in which the model describes the work instead of doing it is
+The file tool is offered but not urged, and only where a working directory exists:
+internal/systemtext composes each call's system text from the tools that call offers, naming each in
+one neutral sentence, and still tells the model to write its answer as prose for a person. A run in which the model describes the work instead of doing it is
 therefore a result, not a misconfiguration -- and stopReason "answered" on a run that wrote nothing
 stays exactly as wrong as it was before, deliberately: nothing here was changed to make it right.
 
@@ -141,15 +141,14 @@ What the anchor IS exempt from is being CUT: its full content always reaches the
 size -- the M1 design puts it as "the anchor is exempt from being cut, not from being charged". This script computes and prints the actual per-run candidate
 budget (`assemblyByteBudget - anchor.size`, floored at zero) and tests admissibility against THAT
 number, not the raw constant -- a candidate that fits the constant but not the anchor-adjusted
-remainder is unadmittable for this run and previously got no marker at all (C3). The supplementary
-round is unaffected by this, but not for the reason an earlier version of this file claimed: the
-anchor IS re-sent on every model call -- `wire.go`'s `buildMessages` rebuilds the same
-`buildUserContent(in.Block, in.Input)` (the whole block, anchor included) on every call, so its bytes
-go over the wire again each time. The real reason `SupplementaryByteBudget` is used unadjusted is
-simpler: `dispatchRecall` has no anchor in scope at all -- it calls `admit(candidates,
-SupplementaryByteBudget)` directly, with nothing available to subtract even if the mechanism wanted
-to. The repeated anchor bytes are a token-cost fact (see WHAT THE RECORD CANNOT TELL A READER's
-system-prompt bullet), not a budget-arithmetic one.
+remainder is unadmittable for this run and previously got no marker at all (C3). A supplementary
+round is bounded differently: its room is the smaller of `SupplementaryByteBudget` and what
+`JudgementPromptCeiling` leaves after everything the turn's working memory already holds (anchor
+included). The record does not carry that room, so this script cannot print it; it prints the
+constant as the round's most and says so. A row the memory already held is admitted without being
+charged (`held` on its disposition), so a round's bytes are the rows it ADDED, not every row it
+returned. The anchor is in every call's block, which is a token-cost fact (see WHAT THE RECORD
+CANNOT TELL A READER's system-prompt bullet), not a budget-arithmetic one.
 
 WHAT THE RECORD CANNOT TELL A READER -- found while building this, not fixed (constraint: no Go
 file changes):
@@ -471,10 +470,9 @@ def render_candidate_table(dispositions, budget, attributed=False, name_query=Fa
     """`budget` is the cumulative admission ceiling this specific round of candidates was actually
     measured against -- for the initial round that is `assemblyByteBudget - anchor.size` (floored at
     zero), NOT the raw constant (C2/C3: the anchor is charged, not exempt); for a supplementary round
-    it is the raw `supplementaryByteBudget`, unadjusted, because `dispatchRecall` has no anchor in
-    scope to subtract -- NOT because the anchor is omitted from that call's prompt (it isn't: the
-    whole block, anchor included, is resent on every model call; see the module docstring's BUDGET
-    ARITHMETIC section for the corrected reasoning).
+    it is the raw `supplementaryByteBudget`, the most one round can take; the round's real room is
+    smaller once the working memory holds rows, and the record does not carry it (see the module
+    docstring's BUDGET ARITHMETIC section).
 
     `attributed` says whether recall sources are recorded for THIS round at all, which is a property
     of the round and not of the rows: `Retrieve` attributes every candidate it returns, and
@@ -491,7 +489,7 @@ def render_candidate_table(dispositions, budget, attributed=False, name_query=Fa
     """
     lines = []
     for d in dispositions:
-        mark = "IN " if d.get("included") else "cut"
+        mark = "held" if d.get("held") else ("IN " if d.get("included") else "cut")
         reason = f"  ({d.get('cutReason')})" if not d.get("included") and d.get("cutReason") else ""
         sources = d.get("sources") or []
         if not attributed:
@@ -573,6 +571,25 @@ def attribution_note(dispositions):
         f"The src column reports each row exactly as the record has it, and 'not recorded' is the "
         f"record's silence about that row, never a claim that no recall returned it."
     )
+
+
+def round_added(dispositions):
+    """(bytes the round added to memory, rows it already held) over a round's included dispositions,
+    the same two figures the Go summary prints: a held row is charged nothing."""
+    added = held = 0
+    for d in dispositions:
+        if not d.get("included"):
+            continue
+        if d.get("held"):
+            held += 1
+            continue
+        added += d.get("renderedSize", d.get("size", 0))
+    return added, held
+
+
+def added_phrase(dispositions):
+    added, held = round_added(dispositions)
+    return fmt_bytes(added) + " new" + (f", {held} already held" if held else "")
 
 
 def admitted_bytes(dispositions):
@@ -1019,7 +1036,6 @@ def read_round_lines(head, tool_call, out_tok, supplementary_budget):
 
     results = tool_call.get("results") or []
     kept = sum(1 for r in results if r.get("included"))
-    kept_bytes = admitted_bytes(results)
     lines = [
         f"{'':<24} output: {round_wanted(tool_call)}. out={out_tok}",
         "",
@@ -1027,8 +1043,8 @@ def read_round_lines(head, tool_call, out_tok, supplementary_budget):
         f"the id the model named, not a search",
     ]
     lines.append(
-        f"{'':<24} output: {len(results)} row(s) returned, {kept} admitted under the supplementary "
-        f"budget ({fmt_bytes(supplementary_budget or 0)}), {fmt_bytes(kept_bytes)} kept"
+        f"{'':<24} output: {len(results)} row(s) returned, {kept} admitted ({added_phrase(results)}), "
+        f"within at most {fmt_bytes(supplementary_budget or 0)}"
     )
     if results:
         lines.append(
@@ -1072,15 +1088,13 @@ def recall_round_lines(head, tool_call, out_tok, limits, candidate_limit, supple
 
     results = tool_call.get("results") or []
     kept = sum(1 for r in results if r.get("included"))
-    kept_bytes = admitted_bytes(results)
     lines.append(
         f"{head('tool call')} input: recall(query={tool_call.get('query')!r}, "
         f"limit={candidate_limit}, scope=nil -- whole graph, deliberately unscoped)"
     )
     lines.append(
-        f"{'':<24} output: {len(results)} candidate(s) returned, {kept} admitted under "
-        f"the supplementary budget ({fmt_bytes(supplementary_budget or 0)}), "
-        f"{fmt_bytes(kept_bytes)} kept"
+        f"{'':<24} output: {len(results)} candidate(s) returned, {kept} admitted "
+        f"({added_phrase(results)}), within at most {fmt_bytes(supplementary_budget or 0)}"
     )
     if results:
         lines.append(

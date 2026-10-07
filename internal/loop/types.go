@@ -94,7 +94,7 @@ type Disposition struct {
 	// RenderedSize is the byte length of the selected form; admission charged it and the ceiling refused against it unless Held.
 	RenderedSize int `json:"renderedSize"`
 
-	// Held is true when the working memory already held this row in this form, so the round charged it nothing and it was Included whatever its rank or similarity.
+	// Held is true when the working memory already held this row in this form with these exact rendered bytes, so the round charged it nothing and it was Included whatever its rank or similarity.
 	Held bool `json:"held,omitempty"`
 }
 

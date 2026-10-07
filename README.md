@@ -282,7 +282,9 @@ a system text and one user message. The system text is composed per call from th
 so a tool the call does not offer is not mentioned in it; and no tool call, query, error or write
 confirmation is ever replayed to the model. What a retrieval round *found* joins the turn's working memory
 and is rendered into the next call's context block, once per row and never beyond the prompt ceiling (the
-assembly byte budget plus one supplementary round); what the model *did* stays on the run record. The
+assembly byte budget plus one supplementary round). A row a later round returns again, unchanged, is
+recorded as included with `held: true` and charged nothing. What the model *did* stays on the run
+record. The
 turn's **last** call offers no tool: where the call budget is spent, or recall has closed on consecutive
 barren rounds, the loop reserves that call for answering, declares no tool list and composes a system text
 that describes answering alone, so prose is the only terminal the call can reach. No adapter may return a
