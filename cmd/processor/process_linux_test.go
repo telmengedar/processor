@@ -431,8 +431,8 @@ func TestSIGTERMDrainsAnInFlightRunInsteadOfDroppingIt(t *testing.T) {
 	if got.status != http.StatusOK {
 		t.Fatalf("POST /runs status = %d, want %d; body=%s", got.status, http.StatusOK, got.body)
 	}
-	if !strings.Contains(string(got.body), `"answer":"the drained answer"`) {
-		t.Fatalf("the drained response does not carry the model's answer; body=%s", got.body)
+	if !strings.Contains(string(got.body), `"reply":"the drained answer"`) {
+		t.Fatalf("the drained response does not carry the model's answer as its reply; body=%s", got.body)
 	}
 	if !strings.Contains(string(got.body), `"written":{"state":"stored"`) {
 		t.Fatalf("the drained response does not report the record as stored; body=%s", got.body)

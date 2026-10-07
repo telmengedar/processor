@@ -19,7 +19,7 @@ derives substance for a named, bounded set of graph nodes — offline, and never
 OpenAI-compatible model endpoint — a local runtime works with no key and no per-token spend — and one
 `POST /runs` gives you a full turn: it asks the model what to search for, pulls context out of the graph
 mechanically, asks the model again to answer — letting it request supplementary lookups of its own —
-writes the result back to the graph as a node, and hands you the whole record of what it retrieved, what it kept, what it cut and why. That
+writes the result back to the graph as a node, and hands you the reply — or, behind `?verbose=true`, the whole record of what it retrieved, what it kept, what it cut and why. That
 path has been run end to end against a real model, on both the plain-answer route and the tool-using
 one. There is also a second binary that scores how good the retrieval was — it builds and runs, but the
 hand-labelled answer key it scores against does not exist yet, **so today it can tell you nothing
@@ -132,7 +132,7 @@ words; that document carries the argument.
 - `GET /health` — returns `200` with `Content-Type: application/json` and body `{"status":"ok"}`.
 - `POST /runs` — assembles context for one input against one subject node, judges it against the
   configured model (dispatching the recall and file-write tools as needed), writes the run record to the
-  graph, and returns the record (see "`POST /runs`" below).
+  graph, and returns the reply, or the record with `?verbose=true` (see "`POST /runs`" below).
 - `Dockerfile` — builds `cmd/processor` into a `gcr.io/distroless/static-debian12:nonroot` image; no
   secret is ever baked in (see "Container" below).
 
@@ -289,7 +289,25 @@ that describes answering alone, so prose is the only terminal the call can reach
 tool-wanting terminal from such a call, not from a native tool field and not by recovering one from the
 response text.
 
-Response (`200`) is the run record: the input, the instant the prompt stated (`now`, absent when it
+Response (`200`) is chat-shaped by default:
+
+```json
+{"reply": "…", "written": {"state": "stored", "nodeId": 10525}}
+```
+
+`reply` is the model's answer verbatim when the run produced one, and is never empty: when the run produced
+no answer — an empty or whitespace-only one, a reserved answering call that failed, a turn stopped for want
+of time — it is the fixed sentence `Sorry — I couldn't put an answer together for that just now. Could you
+say a bit more, or ask it another way?`, which is product text and is never sent to the model.
+Every JSON body this route sends — the `200` bodies and the error envelopes — declares `Content-Type: application/json; charset=utf-8`, because Windows PowerShell 5.1's `Invoke-RestMethod` decodes a body with no declared charset as a legacy code page and garbles the dash in that sentence.
+Whether the fallback was served is readable from the stored record's `outcome.produced`, and the stored
+record is unchanged. Errors stay errors (the table below); an outage is never turned into a reply.
+
+`POST /runs?verbose=true` returns the record described next, plus `reply`. A bare `?verbose` means true;
+`verbose=false` or `verbose=0` is the default body; a value that is not a boolean is a `400`
+`invalid_request` before any run is made.
+
+With `?verbose=true`, the response (`200`) is the run record: the input, the instant the prompt stated (`now`, absent when it
 stated none), the query and the full query set the derivation produced (`queries`, with `input` always
 first) together with `derivationError` when that derivation failed, the update-time window retrieval was
 held to (`window`, absent when the run expressed no time constraint), the anchor summary, **every** candidate
@@ -339,10 +357,10 @@ cannot complete is recorded as a failed tool round with its `error`, never answe
 a value, or ignores it, yields a record that is true about the request and false about the generation. The
 record can be honest about only the near side of the wire, and this is that side.
 
-The response carries **one key more than the record**: `written`, the write receipt, which says where the
-record was filed. It is not a member of the record and never reaches the stored copy — a stored record is
-at the node it would be naming. **The record inside the stored node's last fenced `json` block is the
-response body minus that one key, and nothing else differs** (DiVoid **#10904**
+The verbose response carries **two keys more than the record**: `written`, the write receipt, which says
+where the record was filed, and `reply`. Neither is a member of the record and neither reaches the stored
+copy — a stored record is at the node it would be naming. **The record inside the stored node's last
+fenced `json` block is the verbose response body minus those two keys, and nothing else differs** (DiVoid **#10904**
 §8.1) — the account and the fence wrapped around the record are additions to the stored body, not a
 difference within the record itself.
 
@@ -350,7 +368,7 @@ difference within the record itself.
 |---|---|---|---|
 | `stored` | present | The record is at that node, bodied and linked to the subject | nothing — the ordinary outcome |
 | `unlinked` | present | The record is at that node and complete; the edge to the subject is missing | nothing; the record is safe, the edge is repairable, and the operator's log names the node |
-| `notStored` | absent | No node holds this record — **the response is the only copy** | keep the body if it matters |
+| `notStored` | absent | No node holds this record — **a `?verbose=true` response is the only copy**; the default body does not carry it | request `?verbose=true` where the record matters |
 
 A write-back failure does not fail the request: the record already carries everything of value, and the
 receipt names what happened. The receipt carries no reason string — every `notStored` cause produces the
@@ -363,7 +381,7 @@ the operating system's — bounded to 512 runes. The operator's log carries the 
 
 | Code | Status | Meaning |
 |---|---|---|
-| `invalid_request` | 400 | Body unparseable, or `input`/`subject` missing or empty |
+| `invalid_request` | 400 | Body unparseable, `input`/`subject` missing or empty, or `verbose` not a boolean |
 | `subject_not_found` | 404 | The subject id resolves to nothing |
 | `graph_unavailable` | 502 | The graph could not be read, or a failure the service does not classify; `message` names the cause |
 | `model_unavailable` | 502 | The model call did not complete (transport failure, non-2xx status, or an undecodable response). `message` names the model, the endpoint, the assembled request's size in bytes, the elapsed time against the client bound that was in force, and then the cause |
@@ -371,6 +389,10 @@ the operating system's — bounded to 512 runes. The operator's log carries the 
 
 ```sh
 curl -s -X POST http://127.0.0.1:8080/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"what changed in the assembler","subject":10521}' | jq .
+
+curl -s -X POST 'http://127.0.0.1:8080/runs?verbose=true' \
   -H 'Content-Type: application/json' \
   -d '{"input":"what changed in the assembler","subject":10521}' | jq .
 ```
@@ -583,7 +605,7 @@ flags it.
 - **The drain is covered by an automated process-level test** (`cmd/processor/process_linux_test.go`):
   the real binary is launched against local graph and model test servers, the model endpoint is made
   slow, `SIGTERM` is sent while a run is genuinely in flight (the model server signals when it has been
-  reached), and the test asserts that the caller still receives the full record, that the graph still
+  reached), and the test asserts that the caller still receives the run's reply and its write receipt, that the graph still
   receives the run node, and that the process exits `0` with the ordered shutdown records. **What it does
   not establish:** that the process survives `SIGKILL` (nothing can), that a container supervisor honours
   the grace (that is a deployment flag — see "Run" above), or the grace's *value* — the run it drives is
@@ -646,7 +668,7 @@ flags it.
   naming the surviving node on stderr. The two-artifact relationship (`cmd/processor/artifacts_test.go`)
   is asserted end-to-end: one turn through the real handler and the real graph adapter, both byte
   sequences taken, the record extracted from the stored body's last fenced `json` block, and that
-  record compared key-for-key against the response minus `written`.
+  record compared key-for-key against the verbose response minus `written` and `reply`.
   **Since verified live, which the suite structurally could not do** — every success fixture was written
   from the same reading of the protocol that produced the decoder, so a misreading would be reproduced on
   both sides: two real turns against a real OpenAI-compatible endpoint, in a container, covering the

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/telmengedar/processor/internal/loop"
@@ -34,6 +35,8 @@ type runRequest struct {
 	Subject int64  `json:"subject"`
 }
 
+const jsonContentType = "application/json; charset=utf-8"
+
 const (
 	codeInvalidRequest      = "invalid_request"
 	codeSubjectNotFound     = "subject_not_found"
@@ -42,9 +45,32 @@ const (
 	codeRunDeadlineExceeded = "run_deadline_exceeded"
 )
 
-type runResponse struct {
+const fallbackReply = "Sorry — I couldn't put an answer together for that just now. Could you say a bit more, or ask it another way?"
+
+type chatResponse struct {
+	Reply   string            `json:"reply"`
+	Written loop.WriteReceipt `json:"written"`
+}
+
+type verboseResponse struct {
 	loop.Record
 	Written loop.WriteReceipt `json:"written"`
+	Reply   string            `json:"reply"`
+}
+
+func replyFor(record loop.Record) string {
+	if record.Outcome.Produced {
+		return record.Answer
+	}
+	return fallbackReply
+}
+
+func verboseRequested(r *http.Request) (bool, error) {
+	values, present := r.URL.Query()["verbose"]
+	if !present || values[0] == "" {
+		return present, nil
+	}
+	return strconv.ParseBool(values[0])
 }
 
 // maxRequestBodyBytes bounds POST /runs' request body (W-6): generous for
@@ -54,6 +80,12 @@ const maxRequestBodyBytes = 1 << 20 // 1 MiB
 
 func handleRuns(turn *loop.Turn) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		verbose, err := verboseRequested(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, codeInvalidRequest, "verbose must be a boolean")
+			return
+		}
+
 		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 
 		var req runRequest
@@ -94,9 +126,14 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", jsonContentType)
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(runResponse{Record: record, Written: receipt})
+		reply := replyFor(record)
+		if verbose {
+			_ = json.NewEncoder(w).Encode(verboseResponse{Record: record, Written: receipt, Reply: reply})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(chatResponse{Reply: reply, Written: receipt})
 	}
 }
 
@@ -118,7 +155,7 @@ func withCause(class string, err, sentinel error) string {
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", jsonContentType)
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(errorEnvelope{Error: errorBody{Code: code, Message: message}})
 }

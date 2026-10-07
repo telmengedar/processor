@@ -169,18 +169,25 @@ func TestHealthWrongMethod(t *testing.T) {
 
 func postRuns(t *testing.T, turn *loop.Turn, body string) *httptest.ResponseRecorder {
 	t.Helper()
+	return postRunsAt(t, context.Background(), turn, "/runs", body)
+}
+
+func postRunsVerbose(t *testing.T, turn *loop.Turn, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return postRunsAt(t, context.Background(), turn, "/runs?verbose=true", body)
+}
+
+func postRunsAt(t *testing.T, ctx context.Context, turn *loop.Turn, target, body string) *httptest.ResponseRecorder {
+	t.Helper()
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/runs", bytes.NewBufferString(body))
+	req := httptest.NewRequest(http.MethodPost, target, bytes.NewBufferString(body)).WithContext(ctx)
 	NewHandler(turn).ServeHTTP(rec, req)
 	return rec
 }
 
 func postRunsWithContext(t *testing.T, ctx context.Context, turn *loop.Turn, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/runs", bytes.NewBufferString(body)).WithContext(ctx)
-	NewHandler(turn).ServeHTTP(rec, req)
-	return rec
+	return postRunsAt(t, ctx, turn, "/runs", body)
 }
 
 type deadlineGraph struct {
@@ -320,14 +327,12 @@ func TestRunsReturns200WithTheAssembledRecordOnSuccess(t *testing.T) {
 		},
 	})
 
-	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
+	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("Content-Type = %q, want %q", ct, "application/json")
-	}
+	assertDeclaresJSONInUTF8(t, rec.Result().Header.Get("Content-Type"))
 
 	var got runRecordWire
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
@@ -382,7 +387,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 	}}
 	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model-id", testLogger())
 
-	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
+	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -497,7 +502,7 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	}}
 	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
-	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
+	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -569,7 +574,7 @@ func TestRunsToolCallsResultsCutReasonIsPopulatedAtTheWireLevel(t *testing.T) {
 	}}
 	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
-	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
+	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -612,7 +617,7 @@ func TestRunsQueryReachesTheLoopVerbatim(t *testing.T) {
 		found:  true,
 	})
 
-	rec := postRuns(t, turn, `{"input":"`+rawInput+`","subject":42}`)
+	rec := postRunsVerbose(t, turn, `{"input":"`+rawInput+`","subject":42}`)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -639,7 +644,7 @@ func TestRunsCandidatesIsAnEmptyArrayNeverNullWhenThereAreNone(t *testing.T) {
 		// candidates left at its zero value (nil) — recall returned nothing.
 	})
 
-	rec := postRuns(t, turn, `{"input":"hello","subject":42}`)
+	rec := postRunsVerbose(t, turn, `{"input":"hello","subject":42}`)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -782,9 +787,7 @@ func assertErrorCode(t *testing.T, rec *httptest.ResponseRecorder, want string) 
 	if envelope.Error.Message == "" {
 		t.Fatal("error.message is empty")
 	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("Content-Type = %q, want %q", ct, "application/json")
-	}
+	assertDeclaresJSONInUTF8(t, rec.Result().Header.Get("Content-Type"))
 }
 
 func TestRunsReturns504WhenTheRunContextExpiresBeforeAnAnswerExists(t *testing.T) {
@@ -1035,7 +1038,7 @@ func TestRunsReturns200AndNamesTheDerivationCauseOnTheRecordWhenTheQuerySetFellB
 	model := &stubModel{deriveErr: errors.New(cause)}
 	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
-	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
+	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d: a degraded query set is not a failed run, and a non-2xx here would add a sixth code to the five this route maintains; body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -1059,7 +1062,7 @@ func TestRunsCarriesEveryDerivedQueryOntoTheWireAndLeavesTheCauseOffWhenThereIsN
 	model := &stubModel{derivedText: "a derived angle?\nanother derived angle?"}
 	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
-	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
+	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 
 	var got runRecordWire
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
