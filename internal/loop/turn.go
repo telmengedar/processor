@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 )
 
@@ -114,8 +115,8 @@ type Turn struct {
 	// Fill is the condensation behaviour that derives a candidate's substance on demand; nil refuses every fill with a recorded reason.
 	Fill FillPort
 
-	// System is the system text sent with every judgement step.
-	System string
+	// System composes the system text of one judgement call from the tools that call offers.
+	System func(offered []string) string
 
 	// ModelID is the model id sent with every judgement step, echoed into Record.Model.
 	ModelID string
@@ -129,7 +130,7 @@ type Turn struct {
 }
 
 // NewTurn builds a Turn over graph, model and files, judging with system and modelID.
-func NewTurn(graph GraphPort, model ModelPort, files FilePort, system, modelID string, logger *slog.Logger) *Turn {
+func NewTurn(graph GraphPort, model ModelPort, files FilePort, system func(offered []string) string, modelID string, logger *slog.Logger) *Turn {
 	return &Turn{Graph: graph, Model: model, Files: files, System: system, ModelID: modelID, clock: time.Now, logger: logger}
 }
 
@@ -202,7 +203,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		},
 	}
 
-	judged, err := t.judge(ctx, block, input, subject, now, window, dispositions)
+	judged, err := t.judge(ctx, newWorkingMemory(anchor, len(candidates) > 0, SubstanceRatioThreshold, includedCandidates(candidates, dispositions), dispositions), input, subject, now, window, dispositions)
 	if err != nil {
 		return t.failed(subject, started, err)
 	}
@@ -367,7 +368,7 @@ func (t *Turn) judgementShortfall(ctx context.Context) string {
 		JudgementBudget, floors.TokensPerSecond, JudgementPromptCeiling, floors.PromptBytesPerSecond))
 }
 
-func (t *Turn) judge(ctx context.Context, block, input string, subject int64, now time.Time, window UpdateWindow, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, memory *workingMemory, input string, subject int64, now time.Time, window UpdateWindow, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -395,15 +396,16 @@ func (t *Turn) judge(ctx context.Context, block, input string, subject int64, no
 
 		judged.modelCalls++
 
+		offered := t.offeredTools(reserved != "")
+
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
-			System:          t.System,
-			Block:           block,
+			System:          t.composeSystem(offered),
+			Block:           memory.render(offersRetrieval(offered)),
 			Input:           input,
-			PriorTools:      exchanges,
 			Now:             now,
 			Window:          window,
 			MaxOutputTokens: outputBudget(reserved),
-			WithholdTools:   reserved != "",
+			Offered:         offered,
 		})
 		if jerr != nil {
 			if reserved == "" {
@@ -428,7 +430,7 @@ func (t *Turn) judge(ctx context.Context, block, input string, subject int64, no
 		}
 
 		if result.UnofferedToolCalls > 0 {
-			t.log().Warn("the response carried a tool call on a request that offered none: the endpoint answered a tool list it was never sent",
+			t.log().Warn("the response carried a tool call the request did not offer: the endpoint answered a tool list it was never sent",
 				"adapter", result.Provider.Adapter, "unofferedToolCalls", result.UnofferedToolCalls)
 		}
 
@@ -463,9 +465,12 @@ func (t *Turn) judge(ctx context.Context, block, input string, subject int64, no
 			continue
 		}
 
-		exchange := t.dispatch(ctx, result, &judged.workspace, window, subject, account)
+		exchange := t.dispatch(ctx, result, &judged.workspace, window, subject, account, memory)
 		exchange.ToolSource = result.ToolSource
 		accountForYield(account, &exchange)
+		if retrieves(exchange.Tool) && exchange.Error == "" {
+			memory.absorb(exchange.Results, exchange.Dispositions)
+		}
 		exchanges = append(exchanges, exchange)
 		dispatched++
 	}
@@ -477,6 +482,29 @@ func (t *Turn) judge(ctx context.Context, block, input string, subject int64, no
 func (t *Turn) logReservation(reserved reservation, call, dispatched int) {
 	t.log().Info("the turn reserved its last judgement call for answering: no tool is offered on a call whose tool request it would not dispatch",
 		"condition", string(reserved), "call", call, "callCap", MaxModelCalls, "dispatched", dispatched, "budget", AnsweringBudget)
+}
+
+func (t *Turn) offeredTools(reserved bool) []string {
+	if reserved {
+		return nil
+	}
+
+	offered := []string{ToolRecall, ToolReadNode}
+	if t.Files != nil {
+		offered = append(offered, ToolWriteFile)
+	}
+	return offered
+}
+
+func (t *Turn) composeSystem(offered []string) string {
+	if t.System == nil {
+		return ""
+	}
+	return t.System(offered)
+}
+
+func offersRetrieval(offered []string) bool {
+	return slices.Contains(offered, ToolRecall) || slices.Contains(offered, ToolReadNode)
 }
 
 func outputBudget(reserved reservation) int {
@@ -506,13 +534,12 @@ func undispatchedExchange(result JudgeResult, cause string) ToolExchange {
 		return ToolExchange{Tool: toolFor(result.Reason), Error: BoundCause(result.ToolError)}
 	}
 	return ToolExchange{
-		Tool:    toolFor(result.Reason),
-		Query:   result.RecallQuery,
-		NodeID:  result.ReadNodeID,
-		Path:    result.WritePath,
-		Content: result.WriteContent,
-		Bytes:   len(result.WriteContent),
-		Error:   cause,
+		Tool:   toolFor(result.Reason),
+		Query:  result.RecallQuery,
+		NodeID: result.ReadNodeID,
+		Path:   result.WritePath,
+		Bytes:  len(result.WriteContent),
+		Error:  cause,
 	}
 }
 
@@ -521,7 +548,6 @@ func accountForYield(account *yieldAccount, exchange *ToolExchange) {
 		return
 	}
 	exchange.Yield = account.round(exchange.Dispositions)
-	exchange.NothingNew = exchange.Yield == 0 && len(exchange.Results) > 0
 }
 
 func retrieves(tool string) bool {
@@ -532,14 +558,14 @@ func closedRecallExchange(result JudgeResult) ToolExchange {
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errRecallClosedToModel, Dispositions: []Disposition{}}
 }
 
-func (t *Turn) dispatch(ctx context.Context, result JudgeResult, workspace *string, window UpdateWindow, subject int64, account *yieldAccount) ToolExchange {
+func (t *Turn) dispatch(ctx context.Context, result JudgeResult, workspace *string, window UpdateWindow, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
 	switch result.Reason {
 	case WantsWrite:
 		return t.dispatchWrite(ctx, result, workspace)
 	case WantsRead:
-		return t.dispatchRead(ctx, result, subject, account)
+		return t.dispatchRead(ctx, result, subject, account, memory)
 	default:
-		return t.dispatchRecall(ctx, result, window)
+		return t.dispatchRecall(ctx, result, window, memory)
 	}
 }
 
@@ -547,7 +573,6 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 	exchange := ToolExchange{
 		Tool:         ToolWriteFile,
 		Path:         result.WritePath,
-		Content:      result.WriteContent,
 		Bytes:        len(result.WriteContent),
 		Dispositions: []Disposition{},
 	}
@@ -587,7 +612,7 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 	return exchange
 }
 
-func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window UpdateWindow) ToolExchange {
+func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window UpdateWindow, memory *workingMemory) ToolExchange {
 	if result.ToolError != "" {
 		return ToolExchange{Tool: ToolRecall, Error: BoundCause(result.ToolError), Dispositions: []Disposition{}}
 	}
@@ -598,12 +623,11 @@ func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window Up
 		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}
 	}
 
-	threshold := SubstanceRatioThreshold
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, RelevanceFloor, BlockOccupancy, threshold)
-	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions, SubstanceRatioThreshold: threshold}
+	admitted, dispositions := admitUnheld(candidates, memory.room(SupplementaryByteBudget), 0, RelevanceFloor, BlockOccupancy, memory.threshold, memory.holds)
+	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions}
 }
 
-func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int64, account *yieldAccount) ToolExchange {
+func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
 	exchange := ToolExchange{Tool: ToolReadNode, NodeID: result.ReadNodeID, Dispositions: []Disposition{}}
 
 	if result.ToolError != "" {
@@ -626,21 +650,20 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 		return exchange
 	}
 
-	threshold := SubstanceRatioThreshold
-	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, SupplementaryByteBudget, 0, 0, BlockOccupancy, threshold)
+	room := memory.roomToReplace(result.ReadNodeID, SupplementaryByteBudget)
+	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, room, 0, 0, BlockOccupancy, memory.threshold)
 	if account.alreadyShown(dispositions[0]) {
 		exchange.Error = errAlreadyReadInFull
 		return exchange
 	}
 	if len(admitted) == 0 {
-		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, dispositions[0].Size, SupplementaryByteBudget)
+		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, dispositions[0].Size, room)
 		return exchange
 	}
 
 	t.log().Info("node read in full", "node", dispositions[0].ID, "bytes", dispositions[0].RenderedSize)
 	exchange.Results = admitted
 	exchange.Dispositions = dispositions
-	exchange.SubstanceRatioThreshold = threshold
 	return exchange
 }
 

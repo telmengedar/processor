@@ -329,28 +329,20 @@ type ToolExchange struct {
 	Query        string
 	NodeID       int64
 	Path         string
-	Content      string
 	Bytes        int
 	Error        string
 	Results      []Candidate
 	Dispositions []Disposition
 
-	// SubstanceRatioThreshold is the dial this round's admission charged at, and the one its results render at.
-	SubstanceRatioThreshold SubstanceRatio
-
 	// Yield is how many rows this round put in front of the model for the first time in the turn.
 	Yield int
-
-	// NothingNew is true when this round admitted rows and the model had already been shown every one of them.
-	NothingNew bool
 }
 
 // JudgeInput is everything one judgement step needs.
 type JudgeInput struct {
-	System     string
-	Block      string
-	Input      string
-	PriorTools []ToolExchange
+	System string
+	Block  string
+	Input  string
 
 	// Now is the instant the prompt states, zero when the caller supplies none.
 	Now time.Time
@@ -361,8 +353,8 @@ type JudgeInput struct {
 	// MaxOutputTokens is this call site's own output budget; an adapter refuses a call that carries none.
 	MaxOutputTokens int
 
-	// WithholdTools suppresses this call's tool list entirely, leaving prose as the only terminal it can reach; the zero value offers the tools every call has always carried.
-	WithholdTools bool
+	// Offered is the loop's names of the tools this call offers and the only ones it can dispatch; empty leaves prose as the only terminal the call can reach.
+	Offered []string
 }
 
 // JudgeResult is one judgement step's outcome.
@@ -383,6 +375,6 @@ type JudgeResult struct {
 	// ReasoningBytes is how much arrived on the response channel every request suppresses and no caller reads, zero when the suppression held.
 	ReasoningBytes int
 
-	// UnofferedToolCalls is how many tool calls the endpoint reported on a request that offered it none, none of which the adapter honoured.
+	// UnofferedToolCalls is how many tool calls the endpoint reported naming a tool the request did not offer, none of which the adapter honoured.
 	UnofferedToolCalls int
 }

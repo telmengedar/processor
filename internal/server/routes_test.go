@@ -96,7 +96,7 @@ func (s *stubModel) Judge(_ context.Context, in loop.JudgeInput) (loop.JudgeResu
 		idx = len(s.results) - 1
 	}
 	s.calls++
-	if in.WithholdTools {
+	if len(in.Offered) == 0 {
 		return withoutToolRequest(s.results[idx]), nil
 	}
 	return s.results[idx], nil
@@ -109,8 +109,12 @@ func withoutToolRequest(result loop.JudgeResult) loop.JudgeResult {
 	return loop.JudgeResult{Answer: result.Answer, Reason: loop.Answered, RawReason: "stop", Usage: result.Usage}
 }
 
+func fixedSystem(text string) func([]string) string {
+	return func([]string) string { return text }
+}
+
 func newTestTurn(graph loop.GraphPort) *loop.Turn {
-	return loop.NewTurn(graph, &stubModel{}, nil, "system text", "test-model", testLogger())
+	return loop.NewTurn(graph, &stubModel{}, nil, fixedSystem("system text"), "test-model", testLogger())
 }
 
 func TestHealth(t *testing.T) {
@@ -376,7 +380,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 			Sampling:  loop.Sampling{Temperature: &temperature, TopP: &topP},
 		},
 	}}
-	turn := loop.NewTurn(graph, model, nil, "system text", "test-model-id", testLogger())
+	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model-id", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
@@ -491,7 +495,7 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: fourth malformed request"},
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the query the reserved call never got to make", ToolError: "tool arguments could not be parsed: the malformed request no call was left to carry"},
 	}}
-	turn := loop.NewTurn(graph, model, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
@@ -550,19 +554,20 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 func TestRunsToolCallsResultsCutReasonIsPopulatedAtTheWireLevel(t *testing.T) {
 	t.Parallel()
 
+	smallHit := loop.Candidate{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"}
+	largeHit := loop.Candidate{ID: 8, Type: "task", Name: "Large", Similarity: 0.9, Content: strings.Repeat("x", 21_000)}
+	next := 0
 	graph := stubGraph{
-		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
-		found:  true,
-		candidates: []loop.Candidate{
-			{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
-			{ID: 8, Type: "task", Name: "Large", Similarity: 0.9, Content: strings.Repeat("x", 21_000)},
-		},
+		anchor:    loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		found:     true,
+		recallSeq: []stubRecallResponse{{candidates: []loop.Candidate{smallHit}}, {}, {candidates: []loop.Candidate{smallHit, largeHit}}},
+		recallIdx: &next,
 	}
 	model := &stubModel{results: []loop.JudgeResult{
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		{Answer: "final", Reason: loop.Answered, RawReason: "stop"},
 	}}
-	turn := loop.NewTurn(graph, model, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
@@ -749,7 +754,7 @@ func TestRunsReturns502WithModelUnavailableWhenTheModelCallFails(t *testing.T) {
 	t.Parallel()
 
 	graph := stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}
-	turn := loop.NewTurn(graph, &stubModel{err: errors.New("literal: connection reset")}, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(graph, &stubModel{err: errors.New("literal: connection reset")}, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"hello","subject":42}`)
 
@@ -1028,7 +1033,7 @@ func TestRunsReturns200AndNamesTheDerivationCauseOnTheRecordWhenTheQuerySetFellB
 	const cause = "openaicompat: unexpected status 503: model is loading"
 
 	model := &stubModel{deriveErr: errors.New(cause)}
-	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
 
@@ -1052,7 +1057,7 @@ func TestRunsCarriesEveryDerivedQueryOntoTheWireAndLeavesTheCauseOffWhenThereIsN
 	t.Parallel()
 
 	model := &stubModel{derivedText: "a derived angle?\nanother derived angle?"}
-	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"what is going on","subject":42}`)
 

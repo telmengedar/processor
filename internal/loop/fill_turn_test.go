@@ -20,7 +20,7 @@ func TestTurnRunCarriesTheFillOutcomesIntoTheRecordItWrites(t *testing.T) {
 
 	graph := fillPressureGraph()
 	port := &fakeFill{results: map[int64]FillResult{92: {Written: true, Model: "gemma-3-12b-it"}}}
-	turn := NewTurn(graph, &fakeModel{}, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, &fakeModel{}, nil, fixedSystem("system"), "test-model", testLogger())
 	turn.Fill = port
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
@@ -48,7 +48,7 @@ func TestTurnRunFilesTheSameFillOutcomesItReturns(t *testing.T) {
 	t.Parallel()
 
 	graph := fillPressureGraph()
-	turn := NewTurn(graph, &fakeModel{}, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, &fakeModel{}, nil, fixedSystem("system"), "test-model", testLogger())
 	turn.Fill = &fakeFill{}
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
@@ -76,7 +76,7 @@ func TestTurnRunFillsNothingWhenNoCandidateIsUnderByteBudgetPressure(t *testing.
 	graph := baseGraph()
 	graph.candidates = []Candidate{{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", FillSizeFloor)}}
 	port := &fakeFill{}
-	turn := NewTurn(graph, &fakeModel{}, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, &fakeModel{}, nil, fixedSystem("system"), "test-model", testLogger())
 	turn.Fill = port
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)

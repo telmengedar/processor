@@ -26,12 +26,6 @@ const (
 	nudgeThin = "Seems like your knowledge is still thin on the topic - your focus might be too narrow; try approaching the question from a different angle.\n"
 )
 
-const nudgeNarrowQuery = "The graph has matches for this, but they did not fit the budget - narrow the query.\n"
-
-const nudgeEscalate = "This does not appear to be in the graph - say so plainly and name what is missing, rather than repeating the same recall.\n"
-
-const nothingNewFormat = "%d results, and you have already been shown every one of them in this turn.\n"
-
 // SubstanceRatio is a substance's byte length as a fraction of its content's.
 type SubstanceRatio float64
 
@@ -49,10 +43,14 @@ func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64, 
 
 	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
 
-	return renderBlock(anchor, admitted, len(candidates) > 0, threshold), dispositions
+	return renderBlock(anchor, admitted, len(candidates) > 0, threshold, true), dispositions
 }
 
 func admit(candidates []Candidate, budget, spent int, floor float64, occupancy int, threshold SubstanceRatio) (admitted []Candidate, dispositions []Disposition) {
+	return admitUnheld(candidates, budget, spent, floor, occupancy, threshold, nil)
+}
+
+func admitUnheld(candidates []Candidate, budget, spent int, floor float64, occupancy int, threshold SubstanceRatio, held func(Candidate) bool) (admitted []Candidate, dispositions []Disposition) {
 	remaining := budget - spent
 	if remaining < 0 {
 		remaining = 0
@@ -85,6 +83,9 @@ func admit(candidates []Candidate, budget, spent int, floor float64, occupancy i
 		}
 
 		switch {
+		case held != nil && held(c):
+			d.Included = true
+			admitted = append(admitted, c)
 		case c.SelfProduced:
 			d.CutReason = cutReasonSelfProduced
 		case c.Similarity < floor:
@@ -127,15 +128,12 @@ func renderedPayload(c Candidate, threshold SubstanceRatio) (Form, string) {
 	return FormContent, c.Content
 }
 
-const (
-	sectionCandidate = "CANDIDATE"
-	sectionResult    = "RESULT"
-)
+const sectionCandidate = "CANDIDATE"
 
-func renderSection(b *strings.Builder, section string, c Candidate, threshold SubstanceRatio) {
+func renderSection(b *strings.Builder, c Candidate, threshold SubstanceRatio) {
 	form, rendered := renderedPayload(c, threshold)
 
-	fmt.Fprintf(b, "===== %s =====\nid: %d\ntype: %s\nname: %s\n", section, c.ID, c.Type, c.Name)
+	fmt.Fprintf(b, "===== %s =====\nid: %d\ntype: %s\nname: %s\n", sectionCandidate, c.ID, c.Type, c.Name)
 	if form == FormSubstance {
 		fmt.Fprintf(b, "%s: %s\n", formHeaderKey, form)
 	}
@@ -172,58 +170,11 @@ func windowLine(w UpdateWindow) string {
 	return fmt.Sprintf("retrieval is limited to nodes updated %s … %s", from, to)
 }
 
-// RenderToolResult renders one completed tool round as the text the model is shown for it.
-func RenderToolResult(r ToolExchange) string {
-	if r.Error != "" {
-		return "error: " + r.Error
-	}
-	if r.Tool == ToolWriteFile {
-		return fmt.Sprintf("wrote %d bytes to %s", r.Bytes, r.Path)
-	}
-	if r.NothingNew {
-		return fmt.Sprintf(nothingNewFormat, len(r.Results))
-	}
-	if len(r.Results) == 0 {
-		base := "no additional results found."
-		if len(r.Dispositions) > 0 {
-			base = "results were found, but none were included."
-		}
-		if r.Tool != ToolRecall {
-			return base
-		}
-		if anyCutForWantOfRoom(r.Dispositions) {
-			return base + "\n" + nudgeNarrowQuery
-		}
-		return base + "\n" + nudgeEscalate
-	}
-
-	var b strings.Builder
-	for i, c := range r.Results {
-		if i > 0 {
-			b.WriteString("\n")
-		}
-		renderSection(&b, sectionResult, c, r.SubstanceRatioThreshold)
-	}
-	return b.String()
-}
-
 func cutForWantOfRoom(reason string) bool {
 	return reason == cutReasonByteBudget || reason == cutReasonOversized
 }
 
-func anyCutForWantOfRoom(dispositions []Disposition) bool {
-	for _, d := range dispositions {
-		if cutForWantOfRoom(d.CutReason) {
-			return true
-		}
-	}
-	return false
-}
-
-// renderBlock renders the fixed layout of design §6.3: the anchor first
-// (the run's stable subject), then the admitted candidates ascending by
-// id (the volatile part).
-func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, threshold SubstanceRatio) string {
+func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, threshold SubstanceRatio, nudges bool) string {
 	var b strings.Builder
 
 	b.WriteString("===== ANCHOR =====\n")
@@ -233,11 +184,15 @@ func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, thresh
 
 	for _, c := range admitted {
 		b.WriteString("\n")
-		renderSection(&b, sectionCandidate, c, threshold)
+		renderSection(&b, c, threshold)
 	}
 
 	if len(admitted) == 0 && consideredAny {
 		b.WriteString("\nresults were found, but none were included.\n")
+	}
+
+	if !nudges {
+		return b.String()
 	}
 
 	switch {

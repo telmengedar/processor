@@ -26,8 +26,9 @@ const (
 	eventTurnCompleted = "turnCompleted"
 )
 
+func testSystem([]string) string { return "the system text" }
+
 const (
-	testSystem  = "the system text"
 	testModelID = "test-model-id"
 	testAnswer  = "the answer the model gave"
 	testInput   = "where does the change land"

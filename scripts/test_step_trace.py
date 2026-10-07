@@ -852,6 +852,28 @@ class SupplementaryRoundSourcesTests(unittest.TestCase):
         self.assertNotIn("no recall sources", out)
 
 
+class CallInputLineTests(unittest.TestCase):
+    """The per-call input line is prose this script PRINTS about what a call sent, so it is pinned by
+    reading the printed output: no call replays tool rounds, and only the first call's block is the
+    recorded Block."""
+
+    def two_calls(self):
+        return render(record(model_calls=2, candidates=[], block="x" * 900,
+                             tool_calls=[{"query": "second provider", "results": []}]))
+
+    def test_no_call_is_described_as_replaying_prior_tool_rounds(self):
+        out = self.two_calls()
+        self.assertNotIn("replayed", out)
+        self.assertNotIn("prior tool round", out)
+        self.assertNotIn("tool messages", out)
+
+    def test_only_a_later_calls_block_is_described_as_grown_by_what_earlier_rounds_found(self):
+        out = self.two_calls()
+        self.assertEqual(out.count("plus the rows earlier rounds found"), 1)
+        first = [line for line in out.splitlines() if "model call 1" in line][0]
+        self.assertNotIn("earlier rounds", first)
+
+
 class SamplingLineTests(unittest.TestCase):
     """The SAMPLING line is prose this script PRINTS, so it is tested by reading the printed output
     -- the whole reason this round exists is that a printed paragraph about sampling went false while

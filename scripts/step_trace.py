@@ -165,10 +165,12 @@ file changes):
     place actual node content survives in the record is the assembled Block string (for whatever was
     admitted) and the final Answer. A cut candidate's content is gone from the record forever, which
     means a reader can never audit what was cut, only that it was and why.
-  - No system prompt text. The record has no System field, so the exact bytes sent to the model on
-    calls after the first (which also replay prior tool rounds as synthetic assistant/tool messages,
-    internal/openaicompat/wire.go's buildMessages) are not reconstructable from the record alone --
-    only the token counts (Usage) are. This script does not reach past the record for it.
+  - No system prompt text and no per-call block. The record has no System field, and the system text
+    is composed per call from the tools that call offers; Record.Block is the FIRST call's block only,
+    while each later call carries that block plus the rows earlier rounds found (the working memory).
+    No call replays tool rounds as messages: every call is one system message and one user message.
+    The exact bytes of a later call are not reconstructable from the record alone -- only the token
+    counts (Usage) are. This script does not reach past the record for it.
   - Whether a REFUSED round reached the graph before it was refused. The record carries the loop's
     refusal sentence and nothing else, and the sentences do not divide along that line: of the four
     read refusals, THREE are raised after the fetch and ONE before it. This script prints the
@@ -877,11 +879,13 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
         tc = tool_calls[i] if wanted_tool else None
         out_tok = f"{u['outTokens']} tok" if u else "? tok"
 
-        prior_rounds = i  # how many completed tool exchanges are already replayed into this call's prompt
+        if i == 0:
+            block_desc = f"block ({fmt_bytes(block_size)})"
+        else:
+            block_desc = f"block (the {fmt_bytes(block_size)} block plus the rows earlier rounds found)"
         out.append(
-            f"{head('model call ' + str(call_no))} input: system + block ({fmt_bytes(block_size)}) + "
-            f"task input + {prior_rounds} prior tool round(s) replayed as tool messages "
-            f"[{prompt_desc}]"
+            f"{head('model call ' + str(call_no))} input: system + {block_desc} + "
+            f"task input [{prompt_desc}]"
         )
 
         if not wanted_tool:

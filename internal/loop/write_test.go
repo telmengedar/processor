@@ -58,7 +58,7 @@ func TestTurnRunHandsAWriteToolCallToTheWorkingDirectoryVerbatim(t *testing.T) {
 		wantsWriteOf("index.html", "<h1>hi</h1>"),
 		answered("done"),
 	}}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "make a page", 42)
 	if err != nil {
@@ -90,7 +90,7 @@ func TestTurnRunOpensOneWorkingDirectoryForTwoWriteRoundsOfTheSameRun(t *testing
 		wantsWriteOf("style.css", "second"),
 		answered("done"),
 	}}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "make a page", 42)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestTurnRunNeverOpensAWorkingDirectoryForARunThatAsksForNoWrite(t *testing.
 
 	files := &fakeFiles{dir: "/runs/run-1"}
 	model := &fakeModel{results: []JudgeResult{answered("just prose")}}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "explain something", 42)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestTurnRunRecordsAWriteRejectionReasonInsteadOfFailingTheRun(t *testing.T)
 		wantsWriteOf("/etc/passwd", "x"),
 		answered("done"),
 	}}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "make a page", 42)
 	if err != nil {
@@ -155,7 +155,7 @@ func TestTurnRunRecordsAWriteRejectionReasonInsteadOfFailingTheRun(t *testing.T)
 	}
 }
 
-func TestTurnRunShowsTheWriteRejectionReasonToTheModelOnTheFollowingCall(t *testing.T) {
+func TestTurnRunKeepsTheWriteRejectionReasonOutOfTheModelsFollowingCall(t *testing.T) {
 	t.Parallel()
 
 	const reason = "write rejected: path must not leave the working directory"
@@ -164,7 +164,7 @@ func TestTurnRunShowsTheWriteRejectionReasonToTheModelOnTheFollowingCall(t *test
 		wantsWriteOf("../escape.html", "x"),
 		answered("done"),
 	}}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", testLogger())
 
 	if _, _, err := turn.Run(context.Background(), "make a page", 42); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -173,12 +173,9 @@ func TestTurnRunShowsTheWriteRejectionReasonToTheModelOnTheFollowingCall(t *test
 	if len(model.calls) != 2 {
 		t.Fatalf("the model was called %d times, want 2", len(model.calls))
 	}
-	prior := model.calls[1].PriorTools
-	if len(prior) != 1 || prior[0].Error != reason {
-		t.Fatalf("second call's PriorTools = %+v, want the refusal reason %q replayed to the model", prior, reason)
-	}
-	if prior[0].Path != "../escape.html" || prior[0].Content != "x" {
-		t.Fatalf("second call's PriorTools[0] = %+v, want the model's own path and content replayed with it", prior[0])
+	second := model.calls[1]
+	if strings.Contains(second.Block, reason) || strings.Contains(second.Block, "../escape.html") {
+		t.Fatalf("the second call's block carries the write round's refusal or path, want neither:\n%s", second.Block)
 	}
 }
 
@@ -193,7 +190,7 @@ func TestTurnRunCarriesAnUnrecognisedWriteFailuresCauseIntoTheRoundAndLogsItWhol
 		wantsWriteOf("index.html", "x"),
 		answered("done"),
 	}}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", logger)
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "make a page", 42)
 	if err != nil {
@@ -219,7 +216,7 @@ func TestTurnRunRefusesEveryWriteWhenTheRunHasNoWorkingDirectoryConfigured(t *te
 		wantsWriteOf("index.html", "x"),
 		answered("done"),
 	}}
-	turn := NewTurn(baseGraph(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "make a page", 42)
 	if err != nil {
@@ -243,7 +240,7 @@ func TestTurnRunRecordsAMalformedWriteRequestWithoutOpeningTheWorkingDirectory(t
 		{Reason: WantsWrite, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed"},
 		answered("done"),
 	}}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "make a page", 42)
 	if err != nil {
@@ -270,7 +267,7 @@ func TestTurnRunOffersNoWriteToolOnTheCallItWouldNotDispatchOneFrom(t *testing.T
 		wantsWriteOf("b.html", "two"),
 		wantsWriteOf("c.html", "three"),
 	}}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "make three pages", 42)
 	if err != nil {
@@ -286,7 +283,7 @@ func TestTurnRunOffersNoWriteToolOnTheCallItWouldNotDispatchOneFrom(t *testing.T
 	if len(record.ToolCalls) != MaxModelCalls-1 {
 		t.Fatalf("record.ToolCalls has %d entries, want %d — the reserved call was offered no write tool, so it made no round to count", len(record.ToolCalls), MaxModelCalls-1)
 	}
-	if last := model.calls[len(model.calls)-1]; !last.WithholdTools {
+	if last := model.calls[len(model.calls)-1]; len(last.Offered) != 0 {
 		t.Fatal("the reserved call was issued with its tool list intact; a call that can still write is a call that can still end without prose")
 	}
 }
@@ -302,7 +299,7 @@ func TestRunRecordNamesTheToolOfEveryRoundSoARecallIsNotReadAsAWrite(t *testing.
 		wantsWriteOf("index.html", "<h1>hi</h1>"),
 		answered("done"),
 	}}
-	turn := NewTurn(graph, model, files, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "make a page", 42)
 	if err != nil {

@@ -3,6 +3,7 @@ package openaicompat
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/telmengedar/processor/internal/loop"
@@ -21,10 +22,8 @@ type chatRequest struct {
 }
 
 type wireMessage struct {
-	Role       string         `json:"role"`
-	Content    string         `json:"content,omitempty"`
-	ToolCalls  []wireToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Role    string `json:"role"`
+	Content string `json:"content,omitempty"`
 }
 
 type wireToolCall struct {
@@ -138,87 +137,78 @@ type wireError struct {
 }
 
 func buildMessages(in loop.JudgeInput) []wireMessage {
-	messages := []wireMessage{
+	return []wireMessage{
 		{Role: "system", Content: in.System},
 		{Role: "user", Content: loop.RenderUserContent(in.Block, in.Input, in.Now, in.Window)},
 	}
-
-	for i, r := range in.PriorTools {
-		callID := fmt.Sprintf("call-%d", i+1)
-
-		messages = append(messages,
-			wireMessage{
-				Role: "assistant",
-				ToolCalls: []wireToolCall{{
-					ID:   callID,
-					Type: "function",
-					Function: wireFunctionCall{
-						Name:      wireToolName(r.Tool),
-						Arguments: toolArguments(r),
-					},
-				}},
-			},
-			wireMessage{
-				Role:       "tool",
-				ToolCallID: callID,
-				Content:    loop.RenderToolResult(r),
-			},
-		)
-	}
-
-	return messages
 }
 
-func wireToolName(tool string) string {
-	switch tool {
-	case loop.ToolWriteFile:
-		return writeFileToolName
-	case loop.ToolReadNode:
-		return readNodeToolName
-	default:
-		return recallToolName
-	}
+type toolBinding struct {
+	loopName string
+	wireName string
+	declare  func() wireTool
 }
 
-func toolArguments(r loop.ToolExchange) string {
-	switch r.Tool {
-	case loop.ToolWriteFile:
-		encoded, _ := json.Marshal(writeFileToolArguments{Path: r.Path, Content: r.Content})
-		return string(encoded)
-	case loop.ToolReadNode:
-		encoded, _ := json.Marshal(readNodeToolArguments{ID: r.NodeID})
-		return string(encoded)
-	default:
-		encoded, _ := json.Marshal(recallToolArguments{Query: r.Query})
-		return string(encoded)
-	}
+var toolTable = []toolBinding{
+	{loop.ToolRecall, recallToolName, recallTool},
+	{loop.ToolWriteFile, writeFileToolName, writeFileTool},
+	{loop.ToolReadNode, readNodeToolName, readNodeTool},
 }
 
-func translate(wire chatResponse, withheld bool) (loop.JudgeResult, error) {
+func declaredTools(offered []string) []wireTool {
+	var declared []wireTool
+	for _, tool := range toolTable {
+		if slices.Contains(offered, tool.loopName) {
+			declared = append(declared, tool.declare())
+		}
+	}
+	return declared
+}
+
+func offeredWireNames(offered []string) []string {
+	var names []string
+	for _, tool := range toolTable {
+		if slices.Contains(offered, tool.loopName) {
+			names = append(names, tool.wireName)
+		}
+	}
+	return names
+}
+
+func isKnownWireTool(name string) bool {
+	return slices.ContainsFunc(toolTable, func(tool toolBinding) bool { return tool.wireName == name })
+}
+
+func translate(wire chatResponse, offered []string) (loop.JudgeResult, error) {
 	if len(wire.Choices) == 0 {
 		return loop.JudgeResult{}, fmt.Errorf("response has no choices")
 	}
 	choice := wire.Choices[0]
+	names := offeredWireNames(offered)
 
 	result := loop.JudgeResult{
+		RawReason:      choice.FinishReason,
 		ReasoningBytes: len(choice.Message.Reasoning),
 		Usage:          translateUsage(wire.Usage),
 	}
 	if choice.Message.Content != nil {
 		result.Answer = *choice.Message.Content
 	}
-
-	if withheld {
-		result.UnofferedToolCalls = len(choice.Message.ToolCalls)
-		result.RawReason = choice.FinishReason
-		result.Reason = mapFinishReason(choice.FinishReason)
-		return result, nil
+	for _, call := range choice.Message.ToolCalls {
+		if !slices.Contains(names, call.Function.Name) {
+			result.UnofferedToolCalls++
+		}
 	}
 
 	if len(choice.Message.ToolCalls) > 0 {
-		result.RawReason = choice.FinishReason
-		result.ToolSource = loop.ToolSourceNative
 		call := choice.Message.ToolCalls[0]
+
+		if !slices.Contains(names, call.Function.Name) && (len(names) == 0 || isKnownWireTool(call.Function.Name)) {
+			result.Reason = mapFinishReason(choice.FinishReason)
+			return result, nil
+		}
+
+		result.ToolSource = loop.ToolSourceNative
 
 		switch call.Function.Name {
 		case recallToolName:
