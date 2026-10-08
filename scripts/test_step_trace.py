@@ -852,6 +852,67 @@ class SupplementaryRoundSourcesTests(unittest.TestCase):
         self.assertNotIn("no recall sources", out)
 
 
+class CallInputLineTests(unittest.TestCase):
+    """The per-call input line is prose this script PRINTS about what a call sent, so it is pinned by
+    reading the printed output: no call replays tool rounds, and only the first call's block is the
+    recorded Block."""
+
+    def two_calls(self):
+        return render(record(model_calls=2, candidates=[], block="x" * 900,
+                             tool_calls=[{"query": "second provider", "results": []}]))
+
+    def test_no_call_is_described_as_replaying_prior_tool_rounds(self):
+        out = self.two_calls()
+        self.assertNotIn("replayed", out)
+        self.assertNotIn("prior tool round", out)
+        self.assertNotIn("tool messages", out)
+
+    def test_only_a_later_calls_block_is_described_as_grown_by_what_earlier_rounds_found(self):
+        out = self.two_calls()
+        self.assertEqual(out.count("plus the rows earlier rounds found"), 1)
+        first = [line for line in out.splitlines() if "model call 1" in line][0]
+        self.assertNotIn("earlier rounds", first)
+
+
+class RoundAddedBytesTests(unittest.TestCase):
+    """A round that re-returns a row the working memory already holds is charged nothing for it, so
+    the trace states the bytes the round ADDED and how many rows it already held -- the two figures
+    the Go summary prints for the same round -- and no longer calls the round's limit the
+    supplementary budget."""
+
+    def held_round(self, **extra):
+        rows = [dict(candidate(1, 11, size=8000), held=True), candidate(2, 52, size=2000)]
+        return render(record(model_calls=2, candidates=[], block="x" * 900,
+                             tool_calls=[dict({"query": "again", "results": rows}, **extra)]))
+
+    def test_a_recall_round_states_the_bytes_it_added_and_the_rows_it_already_held(self):
+        out = self.held_round()
+        self.assertIn("2 candidate(s) returned, 2 admitted (2,000 B new, 1 already held)", out)
+        self.assertNotIn("10,000 B", out)
+
+    def test_a_round_no_longer_claims_its_rows_were_admitted_under_the_supplementary_budget(self):
+        out = self.held_round()
+        self.assertNotIn("under the supplementary budget", out)
+        self.assertNotIn("B kept", out)
+        self.assertIn("within at most 20,000 B", out)
+
+    def test_a_round_that_held_nothing_prints_no_held_count(self):
+        out = render(record(model_calls=2, candidates=[], block="x" * 900,
+                            tool_calls=[{"query": "fresh", "results": [candidate(1, 11, size=300)]}]))
+        self.assertIn("1 admitted (300 B new)", out)
+        self.assertNotIn("already held", out)
+
+    def test_a_held_row_is_marked_held_in_the_candidate_table(self):
+        out = self.held_round()
+        self.assertEqual(len([line for line in out.splitlines() if line.strip().startswith("held rank")]), 1)
+
+    def test_a_served_read_states_its_added_bytes_the_same_way(self):
+        rows = [dict(candidate(1, 71, size=900), held=True)]
+        out = render(record(model_calls=2, candidates=[], block="x" * 900,
+                            tool_calls=[{"tool": "readNode", "nodeId": 71, "results": rows}]))
+        self.assertIn("1 admitted (0 B new, 1 already held)", out)
+
+
 class SamplingLineTests(unittest.TestCase):
     """The SAMPLING line is prose this script PRINTS, so it is tested by reading the printed output
     -- the whole reason this round exists is that a printed paragraph about sampling went false while

@@ -39,35 +39,6 @@ func toolNamed(tools []wireTool, name string) (wireTool, bool) {
 	return wireTool{}, false
 }
 
-func priorRound(t *testing.T, exchange loop.ToolExchange) (name string, arguments string) {
-	t.Helper()
-
-	srv, captured := capturingServer(t, doneResponse)
-	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
-
-	_, err := c.Judge(context.Background(), loop.JudgeInput{
-		System: "sys", Block: "block", Input: "in",
-		PriorTools:      []loop.ToolExchange{exchange},
-		MaxOutputTokens: judgeBudget,
-	})
-	if err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-
-	var got chatRequest
-	if err := json.Unmarshal(captured.Body, &got); err != nil {
-		t.Fatalf("decode request: %v; body=%s", err, captured.Body)
-	}
-	for _, message := range got.Messages {
-		if len(message.ToolCalls) == 0 {
-			continue
-		}
-		return message.ToolCalls[0].Function.Name, string(message.ToolCalls[0].Function.Arguments)
-	}
-	t.Fatalf("the request replays no tool call at all, so this guard would pass vacuously; body=%s", captured.Body)
-	return "", ""
-}
-
 func translateNativeCall(t *testing.T, name, arguments string) loop.JudgeResult {
 	t.Helper()
 
@@ -92,7 +63,7 @@ func translateNativeCall(t *testing.T, name, arguments string) loop.JudgeResult 
 func TestAJudgementCallOffersTheAddressedReadBesideRecallAndTheFileWrite(t *testing.T) {
 	t.Parallel()
 
-	tools := offeredTools(t, loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	tools := offeredTools(t, loop.JudgeInput{System: "sys", Block: "block", Input: "in", Offered: allTools})
 
 	for _, name := range []string{recallToolName, writeFileToolName, readNodeToolName} {
 		if _, present := toolNamed(tools, name); !present {
@@ -125,40 +96,14 @@ func TestAJudgementCallOffersTheAddressedReadBesideRecallAndTheFileWrite(t *test
 func TestTheReservedAnsweringCallOffersNoToolIncludingTheAddressedRead(t *testing.T) {
 	t.Parallel()
 
-	offered := offeredTools(t, loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
+	offered := offeredTools(t, loop.JudgeInput{System: "sys", Block: "block", Input: "in", Offered: allTools})
 	if _, present := toolNamed(offered, readNodeToolName); !present {
 		t.Fatalf("test setup error: a call that withholds nothing offers no read tool, so the withheld arm below proves nothing")
 	}
 
-	withheld := offeredTools(t, loop.JudgeInput{System: "sys", Block: "block", Input: "in", WithholdTools: true})
+	withheld := offeredTools(t, loop.JudgeInput{System: "sys", Block: "block", Input: "in"})
 	if len(withheld) != 0 {
 		t.Fatalf("the reserved answering call carries %d tools, want none: a third tool must be withheld no less than the two that already were", len(withheld))
-	}
-}
-
-func TestAPriorAddressedReadRoundIsReplayedAsTheReadToolAndNotAsARecall(t *testing.T) {
-	t.Parallel()
-
-	name, _ := priorRound(t, loop.ToolExchange{Tool: loop.ToolReadNode, NodeID: 71})
-
-	if name == recallToolName {
-		t.Fatal("a completed addressed read is announced back to the model as the recall tool, so every later call in the turn carries a false history of what the turn did")
-	}
-	if name != readNodeToolName {
-		t.Fatalf("a completed addressed read is announced back as %q, want %q", name, readNodeToolName)
-	}
-}
-
-func TestAPriorAddressedReadRoundIsReplayedWithTheIdItAskedForAndNoQueryArgument(t *testing.T) {
-	t.Parallel()
-
-	_, arguments := priorRound(t, loop.ToolExchange{Tool: loop.ToolReadNode, NodeID: 71})
-
-	if strings.Contains(arguments, "query") {
-		t.Fatalf("a completed addressed read is replayed with arguments %s, which carry a query: the round asked for an id and the replay must not invent a search the model never ran", arguments)
-	}
-	if arguments != `{"id":71}` {
-		t.Fatalf("a completed addressed read is replayed with arguments %s, want the id it asked for", arguments)
 	}
 }
 
@@ -288,35 +233,6 @@ func TestARecoveredAddressedReadCarriesTheIdTheResponseTextNamedEvenWhereItIsPad
 	}
 }
 
-func TestAPriorRecallRoundIsReplayedAsTheRecallToolWithTheQueryItAskedFor(t *testing.T) {
-	t.Parallel()
-
-	name, arguments := priorRound(t, loop.ToolExchange{Tool: loop.ToolRecall, Query: "what changed"})
-
-	if name == readNodeToolName {
-		t.Fatal("a completed recall round is announced back to the model as the addressed read, so every recall in every turn is relabelled: the fall-through arm now serves recall by default, and a default arm that names the wrong tool falsifies more of the turn's history than the read case it was widened for")
-	}
-	if name != recallToolName {
-		t.Fatalf("a completed recall round is announced back as %q, want %q", name, recallToolName)
-	}
-	if arguments != `{"query":"what changed"}` {
-		t.Fatalf("a completed recall round is replayed with arguments %s, want the query it asked for: replayed as an id, every recall in the turn loses the query that produced its rows and the model is shown a search it never ran", arguments)
-	}
-}
-
-func TestAPriorFileWriteRoundIsReplayedAsTheFileWriteWithItsPathAndContent(t *testing.T) {
-	t.Parallel()
-
-	name, arguments := priorRound(t, loop.ToolExchange{Tool: loop.ToolWriteFile, Path: "notes.md", Content: "what I have so far"})
-
-	if name != writeFileToolName {
-		t.Fatalf("a completed file write is announced back as %q, want %q", name, writeFileToolName)
-	}
-	if arguments != `{"path":"notes.md","content":"what I have so far"}` {
-		t.Fatalf("a completed file write is replayed with arguments %s, want the path and content it asked for", arguments)
-	}
-}
-
 func TestTheWireNameOfTheAddressedReadIsTheOneTheModelIsToldToCall(t *testing.T) {
 	t.Parallel()
 
@@ -325,7 +241,7 @@ func TestTheWireNameOfTheAddressedReadIsTheOneTheModelIsToldToCall(t *testing.T)
 	if readNodeToolName != wantName {
 		t.Fatalf("this adapter offers the addressed read as %q, want %q. The wire name is a contract with the endpoint and with the other adapter, so it is pinned against a literal here: every other assertion in this package names the same constant on both sides and cannot see it drift", readNodeToolName, wantName)
 	}
-	if _, present := toolNamed(offeredTools(t, loop.JudgeInput{System: "sys", Block: "block", Input: "in"}), wantName); !present {
+	if _, present := toolNamed(offeredTools(t, loop.JudgeInput{System: "sys", Block: "block", Input: "in", Offered: allTools}), wantName); !present {
 		t.Fatalf("no tool named %q reaches the wire", wantName)
 	}
 }

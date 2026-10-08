@@ -39,7 +39,7 @@ func answeredFinal() JudgeResult {
 func runWithResults(t *testing.T, graph *fakeGraph, results ...JudgeResult) Record {
 	t.Helper()
 
-	turn := NewTurn(graph, &fakeModel{results: results}, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, &fakeModel{results: results}, nil, fixedSystem("system"), "test-model", testLogger())
 	record, _, err := turn.Run(context.Background(), "hello", readSubject)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -94,8 +94,8 @@ func TestAnAddressedReadsRowRendersItsContentAtEveryThresholdTheFormRuleCanTake(
 		if dispositions[0].RenderedSize != 1000 {
 			t.Fatalf("at threshold %v the read's row has RenderedSize %d, want 1000", threshold, dispositions[0].RenderedSize)
 		}
-		if got := RenderToolResult(ToolExchange{Tool: ToolReadNode, NodeID: 71, Results: admitted, Dispositions: dispositions, SubstanceRatioThreshold: threshold}); !strings.Contains(got, content) {
-			t.Fatalf("at threshold %v the round renders %d bytes that do not carry the node's content", threshold, len(got))
+		if got := newWorkingMemory(Anchor{ID: 1}, false, threshold, admitted, dispositions).render(false); !strings.Contains(got, content) {
+			t.Fatalf("at threshold %v the memory renders %d bytes that do not carry the node's content", threshold, len(got))
 		}
 	}
 }
@@ -302,18 +302,8 @@ func TestATurnDispatchesAReadWantingTerminalToTheAddressedReadAndNotToRecall(t *
 	}
 }
 
-func TestARefusedAddressedReadRendersItsReasonAndCarriesNoResultRow(t *testing.T) {
+func TestAnAddressedReadRecordsOneResultRowAndNoError(t *testing.T) {
 	t.Parallel()
-
-	refused := ToolExchange{Tool: ToolReadNode, NodeID: 71, Error: errNoSuchNode, Dispositions: []Disposition{}}
-
-	rendered := RenderToolResult(refused)
-	if rendered != "error: "+errNoSuchNode {
-		t.Fatalf("a refused read renders as %q, want the refusal on the branch that already carries one", rendered)
-	}
-	if len(refused.Results) != 0 {
-		t.Fatalf("test setup error: the refused exchange carries %d rows", len(refused.Results))
-	}
 
 	served := readableNode(71, "a body")
 	round := onlyRound(t, runWithResults(t, graphHoldingNodes(served), wantsRead(served.ID), answeredFinal()))
@@ -379,7 +369,7 @@ func TestAnAddressedReadWantedOnTheReservedCallIsRefusedAndNamedAsTheReadTool(t 
 
 	graph := graphHoldingNodes(nodes...)
 	model := &fakeModel{ignoresWithheldToolList: true, results: results}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", readSubject)
 	if err != nil {
@@ -477,7 +467,7 @@ func TestOnlyTheRetrievalToolsAreAccountedSoAFileWriteCannotCloseRecall(t *testi
 		recallFor("what the block already carries, again"),
 		recallFor("the round the closure is read on"),
 	}}
-	turn := NewTurn(graph, model, files, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -498,29 +488,18 @@ func TestOnlyTheRetrievalToolsAreAccountedSoAFileWriteCannotCloseRecall(t *testi
 	}
 }
 
-func assignsTheChargedDial(fn *ast.FuncDecl) bool {
-	const field = "SubstanceRatioThreshold"
-
-	assigned := false
+func readsTheMemorysDial(fn *ast.FuncDecl) bool {
+	reads := false
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		switch node := n.(type) {
-		case *ast.KeyValueExpr:
-			if ident, ok := node.Key.(*ast.Ident); ok && ident.Name == field {
-				assigned = true
-			}
-		case *ast.AssignStmt:
-			for _, lhs := range node.Lhs {
-				if selector, ok := lhs.(*ast.SelectorExpr); ok && selector.Sel.Name == field {
-					assigned = true
-				}
-			}
+		if selector, ok := n.(*ast.SelectorExpr); ok && selector.Sel.Name == "threshold" {
+			reads = true
 		}
 		return true
 	})
-	return assigned
+	return reads
 }
 
-func TestEveryDispatchThatAdmitsRowsRecordsOnItsExchangeTheDialItsAdmissionCharged(t *testing.T) {
+func TestEveryDispatchThatAdmitsRowsChargesAtTheDialTheMemoryRendersAt(t *testing.T) {
 	t.Parallel()
 
 	if SubstanceRatioThreshold != 0 {
@@ -534,8 +513,8 @@ func TestEveryDispatchThatAdmitsRowsRecordsOnItsExchangeTheDialItsAdmissionCharg
 		if !ok {
 			t.Fatalf("%s is not in the loop package at all, so this guard would pass vacuously", name)
 		}
-		if !assignsTheChargedDial(fn) {
-			t.Errorf("%s returns an exchange it never records the dial on. At the shipped dial the field's value is its zero value, so no assertion over the rendered bytes can tell a recorded dial from an unrecorded one, and the day the dial moves is the day a round renders at one dial having been charged at another", name)
+		if !readsTheMemorysDial(fn) {
+			t.Errorf("%s admits rows without taking the dial from the memory that will render them. At the shipped dial the value is zero, so no assertion over the rendered bytes can tell a shared dial from two copies of it, and the day the dial moves is the day a row renders at one dial having been charged at another", name)
 		}
 	}
 }
@@ -550,7 +529,7 @@ func TestAFileWriteWantedOnTheReservedCallIsStillNamedAsTheFileWrite(t *testing.
 
 	files := &fakeFiles{dir: "/runs/run-1"}
 	model := &fakeModel{ignoresWithheldToolList: true, results: results}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -572,14 +551,14 @@ func TestAFileWriteWantedOnTheReservedCallIsStillNamedAsTheFileWrite(t *testing.
 	}
 }
 
-func TestAServedAddressedReadRendersTheWholePartWithItsIdTypeAndNameAndNoFormMarking(t *testing.T) {
+func TestAServedAddressedReadReachesTheNextCallsBlockWholeWithItsIdTypeAndNameAndNoFormMarking(t *testing.T) {
 	t.Parallel()
 
 	body := "the part's whole body, which is what a read is for"
 	served := readableNode(71, body)
 	graph := graphHoldingNodes(served)
 	model := &fakeModel{results: []JudgeResult{wantsRead(served.ID), answeredFinal()}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", readSubject)
 	if err != nil {
@@ -588,15 +567,15 @@ func TestAServedAddressedReadRendersTheWholePartWithItsIdTypeAndNameAndNoFormMar
 	if round := onlyRound(t, record); round.Error != "" || len(round.Results) != 1 {
 		t.Fatalf("test setup error: the round carries error %q over %d rows, want one served row", round.Error, len(round.Results))
 	}
-	if len(model.calls) < 2 || len(model.calls[1].PriorTools) != 1 {
-		t.Fatalf("test setup error: the second judgement carries %d completed rounds, want 1", len(model.calls[1].PriorTools))
+	if len(model.calls) < 2 {
+		t.Fatalf("test setup error: the model was called %d times, want 2", len(model.calls))
 	}
 
-	rendered := RenderToolResult(model.calls[1].PriorTools[0])
+	rendered := model.calls[1].Block
 
 	for _, want := range []string{"id: 71", "type: documentation", "name: Read me", body} {
 		if !strings.Contains(rendered, want) {
-			t.Fatalf("the text the model is shown for the read round does not carry %q. A round the record says admitted a row, rendered as anything but that row, is the charge-versus-render divergence in its purest form: the budget was spent and the model got nothing.\nrendered:\n%s", want, rendered)
+			t.Fatalf("the next call's block does not carry %q. A round the record says admitted a row, rendered as anything but that row, is the charge-versus-render divergence in its purest form: the budget was spent and the model got nothing.\nrendered:\n%s", want, rendered)
 		}
 	}
 	if strings.Contains(rendered, formHeaderKey+":") {
@@ -604,7 +583,7 @@ func TestAServedAddressedReadRendersTheWholePartWithItsIdTypeAndNameAndNoFormMar
 	}
 }
 
-func TestTheRefusalsAnAddressedReadCanReturnAreTheSentencesTheModelIsShown(t *testing.T) {
+func TestTheRefusalsAnAddressedReadCanReturnAreTheSentencesTheRecordCarries(t *testing.T) {
 	t.Parallel()
 
 	shown := readableNode(71, "the body the block already carries")

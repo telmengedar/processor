@@ -1,9 +1,6 @@
 package loop
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 const (
 	yieldHashA = "aaaa"
@@ -94,58 +91,5 @@ func TestARoundThatAddsSomethingResetsTheBarrenRunSoRecallStaysOpen(t *testing.T
 	account.round([]Disposition{shownRow(10, yieldHashA)})
 	if !account.closed() {
 		t.Fatal("recall stayed open once the two barren rounds were consecutive")
-	}
-}
-
-func TestARoundThatAdmittedOnlyRowsAlreadyShownSaysSoInsteadOfPresentingThemAsResults(t *testing.T) {
-	t.Parallel()
-
-	exchange := ToolExchange{
-		Tool:       ToolRecall,
-		Query:      "the query",
-		Results:    []Candidate{{ID: 10, Type: "documentation", Name: "Doc", Content: "zebrafish"}, {ID: 20, Type: "documentation", Name: "Other", Content: "zebrafish"}},
-		NothingNew: true,
-	}
-
-	rendered := RenderToolResult(exchange)
-
-	if strings.Contains(rendered, sectionResult) {
-		t.Fatalf("a round whose every row the model had already been shown still rendered them as results:\n%s", rendered)
-	}
-	if strings.Contains(rendered, "zebrafish") {
-		t.Fatalf("the rendering repeated the row content the model already holds:\n%s", rendered)
-	}
-	if !strings.Contains(rendered, "2 results") {
-		t.Fatalf("the rendering does not name how many rows it is declining to present again:\n%s", rendered)
-	}
-}
-
-func TestARoundThatBroughtSomethingNewStillRendersItsRows(t *testing.T) {
-	t.Parallel()
-
-	exchange := ToolExchange{
-		Tool:    ToolRecall,
-		Query:   "the query",
-		Results: []Candidate{{ID: 10, Type: "documentation", Name: "Doc", Content: "zebrafish"}},
-		Yield:   1,
-	}
-
-	rendered := RenderToolResult(exchange)
-
-	if !strings.Contains(rendered, sectionResult) || !strings.Contains(rendered, "zebrafish") {
-		t.Fatalf("a round that brought a row the model had not seen did not present it:\n%s", rendered)
-	}
-}
-
-func TestTheRefusedRecallRoundTellsTheModelRecallIsClosedRatherThanReturningNothing(t *testing.T) {
-	t.Parallel()
-
-	rendered := RenderToolResult(closedRecallExchange(JudgeResult{Reason: WantsRecall, RecallQuery: "the query"}))
-
-	if !strings.Contains(rendered, "recall is closed") {
-		t.Fatalf("the refusal does not tell the model recall is closed; it was:\n%s", rendered)
-	}
-	if strings.Contains(rendered, "no additional results found") {
-		t.Fatalf("the refusal reads as an empty graph rather than as a bound the loop imposed:\n%s", rendered)
 	}
 }

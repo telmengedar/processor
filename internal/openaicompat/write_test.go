@@ -15,7 +15,7 @@ func TestJudgeDecodesAWriteToolCallAsWantsWriteWithThePathAndContent(t *testing.
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget, Offered: allTools})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestJudgeFlagsUnparseableArgumentsOnAWriteToolCallWithoutInventingAPath(t *
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget, Offered: allTools})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -65,7 +65,7 @@ func TestJudgeAcceptsAWriteToolCallWithEmptyContentRatherThanCallingItMalformed(
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget, Offered: allTools})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestJudgeTreatsACallToAToolThatWasNeverOfferedAsUnrecognised(t *testing.T) 
 	srv, _ := capturingServer(t, resp)
 	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{MaxOutputTokens: judgeBudget, Offered: allTools})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -96,85 +96,6 @@ func TestJudgeTreatsACallToAToolThatWasNeverOfferedAsUnrecognised(t *testing.T) 
 	}
 	if result.RawReason != "tool_calls" {
 		t.Fatalf("RawReason = %q, want the endpoint's raw value preserved", result.RawReason)
-	}
-}
-
-func TestJudgeReplaysAPriorWriteRoundAsTheWriteToolAndItsReceipt(t *testing.T) {
-	t.Parallel()
-
-	srv, captured := capturingServer(t, stopResponse)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	in := loop.JudgeInput{
-		MaxOutputTokens: judgeBudget,
-		System:          "sys", Block: "block", Input: "in",
-		PriorTools: []loop.ToolExchange{
-			{Tool: loop.ToolWriteFile, Path: "index.html", Content: "<h1>hi</h1>", Bytes: 11},
-		},
-	}
-	if _, err := c.Judge(context.Background(), in); err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-
-	messages := decodeReplayedMessages(t, captured.Body)
-	if len(messages) != 4 {
-		t.Fatalf("messages has %d entries, want 4 (system, user, assistant, tool)", len(messages))
-	}
-
-	assistant, tool := messages[2], messages[3]
-	if assistant.Role != "assistant" || len(assistant.ToolCalls) != 1 {
-		t.Fatalf("messages[2] = %+v, want an assistant message with one tool call", assistant)
-	}
-	if assistant.ToolCalls[0].Function.Name != "write_file" {
-		t.Fatalf("messages[2] tool call function = %q, want %q", assistant.ToolCalls[0].Function.Name, "write_file")
-	}
-
-	var args struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
-	}
-	if err := json.Unmarshal([]byte(assistant.ToolCalls[0].Function.Arguments), &args); err != nil {
-		t.Fatalf("decode replayed arguments: %v; raw=%s", err, assistant.ToolCalls[0].Function.Arguments)
-	}
-	if args.Path != "index.html" || args.Content != "<h1>hi</h1>" {
-		t.Fatalf("replayed arguments = %+v, want the path and content the model originally sent", args)
-	}
-
-	if tool.Role != "tool" || tool.ToolCallID != assistant.ToolCalls[0].ID {
-		t.Fatalf("messages[3] = %+v, want a tool message whose tool_call_id matches messages[2]'s call id", tool)
-	}
-	if tool.Content != "wrote 11 bytes to index.html" {
-		t.Fatalf("messages[3].Content = %q, want the write receipt", tool.Content)
-	}
-}
-
-func TestJudgeReplaysARefusedWriteRoundAsTheRefusalTheModelMustSee(t *testing.T) {
-	t.Parallel()
-
-	srv, captured := capturingServer(t, stopResponse)
-	c := NewClient(srv.URL, "m", "", loop.Sampling{}, srv.Client())
-
-	const refusal = "write rejected: path must not leave the working directory"
-	in := loop.JudgeInput{
-		MaxOutputTokens: judgeBudget,
-		System:          "sys", Block: "block", Input: "in",
-		PriorTools: []loop.ToolExchange{
-			{Tool: loop.ToolWriteFile, Path: "../escape.html", Content: "x", Error: refusal},
-		},
-	}
-	if _, err := c.Judge(context.Background(), in); err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-
-	messages := decodeReplayedMessages(t, captured.Body)
-	if len(messages) != 4 {
-		t.Fatalf("messages has %d entries, want 4", len(messages))
-	}
-	if !contains(messages[3].Content, refusal) {
-		t.Fatalf("messages[3].Content = %q, want the refusal %q shown to the model", messages[3].Content, refusal)
-	}
-	if contains(messages[3].Content, "wrote ") {
-		t.Fatalf("messages[3].Content = %q, want no write receipt on a refused round", messages[3].Content)
 	}
 }
 

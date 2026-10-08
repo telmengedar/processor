@@ -69,7 +69,7 @@ func readsACandidatesBody(fn *ast.FuncDecl) bool {
 func TestOnlyAdmissionAndThePayloadSeamReadACandidatesBody(t *testing.T) {
 	t.Parallel()
 
-	allowed := []string{"admit", "renderedPayload"}
+	allowed := []string{"admitUnheld", "renderedPayload"}
 	functions := parseTheLoopSources(t)
 
 	for name, fn := range functions {
@@ -116,7 +116,7 @@ func reaches(functions map[string]*ast.FuncDecl, from, target string) bool {
 	return false
 }
 
-func TestTheBlockAndTheToolResultBothTakeTheirRowsFromThePayloadSeam(t *testing.T) {
+func TestTheBlockTakesItsRowsFromThePayloadSeam(t *testing.T) {
 	t.Parallel()
 
 	functions := parseTheLoopSources(t)
@@ -125,7 +125,7 @@ func TestTheBlockAndTheToolResultBothTakeTheirRowsFromThePayloadSeam(t *testing.
 		t.Fatalf("renderedPayload is not in the loop package at all, so this guard would pass vacuously")
 	}
 
-	for _, name := range []string{"renderBlock", "RenderToolResult"} {
+	for _, name := range []string{"renderBlock"} {
 		if _, ok := functions[name]; !ok {
 			t.Fatalf("%s is not in the loop package at all, so this guard would pass vacuously", name)
 		}

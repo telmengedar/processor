@@ -37,7 +37,7 @@ type Outcome struct {
 func ComputeOutcome(record Record) Outcome {
 	produced := producedText(record)
 	grounded := groundedInAdmittedRows(record)
-	curtailed := record.CapReached || record.RecallClosed || record.TimeShortfall != ""
+	curtailed := record.ReservedCall.State != "" || record.CapReached || record.RecallClosed || record.TimeShortfall != ""
 
 	return Outcome{
 		Verdict:   verdictFor(produced, grounded, curtailed),

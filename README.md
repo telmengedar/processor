@@ -272,13 +272,25 @@ record back to the graph as one `session-log` node linked to the subject. The no
 one fenced ` ```json ` block. The record — described next — is recovered by taking the content's last
 fenced `json` block and parsing it.
 
-Two tools are offered on every call the loop is still willing to dispatch one from: `recall`, which
-searches the same graph, and `write_file`, which writes one file into the run's working directory. Neither
-is urged — the system text names each in one sentence and still asks for prose — so whether a run reaches
-for the file tool is a property of the model and the task, not of the prompt. The turn's **last** call
-carries neither: where the call budget is spent, or recall has closed on consecutive barren rounds, the
-loop reserves that call for answering and sends no tool list, so prose is the only terminal the call can
-reach. The omission is the whole mechanism — nothing is added to the prompt, and no adapter may return a
+Up to three tools are offered on every call the loop is still willing to dispatch one from: `recall`,
+which searches the same graph, `read_node`, which returns one part of memory in full by id, and
+`write_file`, which writes one file into the run's working directory — the last only when a working
+directory is configured. None is urged — the system text names each in one sentence and still asks for
+prose — so whether a run reaches for the file tool is a property of the model and the task, not of the
+prompt. **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
+a system text and one user message. The system text is composed per call from the tools that call offers,
+so a tool the call does not offer is not mentioned in it; and no tool call, query, error or write
+confirmation is ever replayed to the model. What a retrieval round *found* joins the turn's working memory
+and is rendered into the next call's context block, once per row and never beyond the prompt ceiling (the
+assembly byte budget plus one supplementary round). A row a later round returns again, unchanged, is
+recorded as included with `held: true` and charged nothing. What the model *did* stays on the run
+record. The
+turn's **last** call offers no tool: where the call budget is spent, where recall has closed on consecutive
+barren rounds, or where the loop has just **refused** a retrieval request (a part already shown in full, the
+request's own subject, an id the graph does not hold, a part too large for one read, or a malformed call),
+it reserves the next call for answering, declares no tool list and composes a system text that describes
+answering alone, so prose is the only terminal the call can reach. A graph failure, a barren served recall and
+a file write do not reserve. Nothing about a refusal is shown to the model: the loop acts on it instead. No adapter may return a
 tool-wanting terminal from such a call, not from a native tool field and not by recovering one from the
 response text.
 
@@ -679,8 +691,7 @@ flags it.
   cap spelled `num_predict`, the `Authorization` header sent only when a key is configured, a tool call
   whose arguments arrive as a **JSON object** rather than a string holding encoded JSON, a call read even
   though `done_reason` says `stop`, usage read off `prompt_eval_count`/`eval_count`, and the error body
-  that is a bare string rather than an object. The prior-round replay is pinned to the assistant call plus
-  a `tool_name`-tagged result, the native protocol having no call id to pair by.
+  that is a bare string rather than an object.
 - **The content fallback is verified by unit test and has not fired in a live harness run.** The failing
   shape is real and was reproduced here against `qwen3-coder-fixed:30b` — `done_reason: stop`, no tool
   call, and a complete `<function=…><parameter=…>` block left in the response text — and the fixtures are

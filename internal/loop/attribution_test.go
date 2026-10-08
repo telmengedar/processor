@@ -16,7 +16,7 @@ func TestTheRecordCarriesTheAdapterAndEndpointTheModelPortReported(t *testing.T)
 		RawReason: "stop",
 		Provider:  Provider{Adapter: "an-adapter", Endpoint: "http://host.invalid/a/route"},
 	}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -40,7 +40,7 @@ func TestTheRecordsProviderComesFromTheAdapterAndNotFromTheModelIDTheTurnWasBuil
 		RawReason: "stop",
 		Provider:  Provider{Adapter: "the-reporting-adapter", Endpoint: "http://reported.invalid/route"},
 	}}}
-	turn := NewTurn(graph, model, nil, "system", "the-configured-model-id", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "the-configured-model-id", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -91,7 +91,7 @@ func TestAToolRoundRecordsWhetherTheAdapterReadTheCallNativelyOrRecoveredItFromT
 		{Reason: WantsRecall, RawReason: "stop", RecallQuery: "a query", ToolSource: ToolSourceContent},
 		{Answer: "done", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -114,7 +114,7 @@ func TestANativeToolRoundIsRecordedAsNativeAndNotAsRecoveredText(t *testing.T) {
 		{Reason: WantsRecall, RawReason: "stop", RecallQuery: "a query", ToolSource: ToolSourceNative},
 		{Answer: "done", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -135,7 +135,7 @@ func TestARoundRefusedOnTheReservedCallStillRecordsHowTheAdapterObtainedTheCall(
 		{Reason: WantsRecall, RawReason: "stop", RecallQuery: "two", ToolSource: ToolSourceContent},
 		{Reason: WantsRecall, RawReason: "stop", RecallQuery: "three", ToolSource: ToolSourceContent},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {

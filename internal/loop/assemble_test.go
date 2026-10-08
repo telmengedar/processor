@@ -924,9 +924,6 @@ func TestRenderBlockNudgesKnowNothingWhenNothingWasEvenConsidered(t *testing.T) 
 	if strings.Contains(block, nudgeThin) {
 		t.Fatalf("block = %q, contains the thin-knowledge nudge as well as the know-nothing nudge; only one may fire", block)
 	}
-	if strings.Contains(block, nudgeEscalate) {
-		t.Fatalf("block = %q, contains the tier-2 escalation nudge although the model has not acted yet", block)
-	}
 }
 
 func TestRenderBlockComposesTheCutSentenceWithTheKnowNothingNudge(t *testing.T) {
@@ -971,9 +968,6 @@ func TestRenderBlockNudgesThinKnowledgeAtFourAdmitted(t *testing.T) {
 	if strings.Contains(block, nudgeNone) {
 		t.Fatalf("block = %q, contains the know-nothing nudge although 4 candidates were admitted", block)
 	}
-	if strings.Contains(block, nudgeEscalate) {
-		t.Fatalf("block = %q, contains the tier-2 escalation nudge although the model has not acted yet", block)
-	}
 }
 
 func TestRenderBlockAddsNoNudgeAtFiveAdmitted(t *testing.T) {
@@ -993,7 +987,7 @@ func TestRenderBlockAddsNoNudgeAtFiveAdmitted(t *testing.T) {
 	if admitted != 5 {
 		t.Fatalf("test setup error: admitted %d candidates, want exactly 5 for this boundary", admitted)
 	}
-	if strings.Contains(block, nudgeNone) || strings.Contains(block, nudgeThin) || strings.Contains(block, nudgeEscalate) {
+	if strings.Contains(block, nudgeNone) || strings.Contains(block, nudgeThin) {
 		t.Fatalf("block = %q, contains a nudge although 5 candidates were admitted", block)
 	}
 }

@@ -28,7 +28,7 @@ func TestTurnRunPutsTheOutcomeOnTheRecordItFiles(t *testing.T) {
 	graph := baseGraph()
 	graph.candidates = []Candidate{{ID: 100, Type: "documentation", Name: "Doc", Similarity: 0.9, Content: "body"}}
 	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -55,7 +55,7 @@ func TestTurnRunRecordsAnOutcomeThatMatchesWhatItsOwnFieldsRecompute(t *testing.
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "more"},
 		{Answer: "the answer", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -119,7 +119,7 @@ func TestTheNotDeliveredWarnFiresOnAProducedAnswerNoAdmittedRowFed(t *testing.T)
 	graph := baseGraph()
 	graph.candidates = []Candidate{{ID: 100, Type: "documentation", Name: "Big", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)}}
 	model := &fakeModel{results: []JudgeResult{{Answer: "an answer from nothing this system held", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
