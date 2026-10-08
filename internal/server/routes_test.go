@@ -495,9 +495,6 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	model := &stubModel{results: []loop.JudgeResult{
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing budget row"},
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: unexpected token"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "final desperate query", ToolError: "tool arguments could not be parsed: second malformed request"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: third malformed request"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: fourth malformed request"},
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the query the reserved call never got to make", ToolError: "tool arguments could not be parsed: the malformed request no call was left to carry"},
 	}}
 	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
@@ -512,14 +509,14 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 		t.Fatalf("decode response: %v; body=%s", err, rec.Body.String())
 	}
 
-	if got.ModelCalls != loop.MaxModelCalls {
-		t.Fatalf("record.modelCalls = %d, want %d", got.ModelCalls, loop.MaxModelCalls)
+	if got.ModelCalls != 3 {
+		t.Fatalf("record.modelCalls = %d, want 3 — a failed recall, a refused malformed request, and the call the refusal reserved for answering", got.ModelCalls)
 	}
-	if !got.CapReached {
-		t.Fatal("record.capReached = false, want true — the turn's last call was reserved because the call budget was spent")
+	if got.CapReached {
+		t.Fatal("record.capReached = true, want false — the refusal reserved the last call, not the call budget")
 	}
-	if len(got.ToolCalls) != loop.MaxModelCalls-1 {
-		t.Fatalf("record.toolCalls has %d entries, want %d — the reserved call is offered no tool, so it contributes no round", len(got.ToolCalls), loop.MaxModelCalls-1)
+	if len(got.ToolCalls) != 2 {
+		t.Fatalf("record.toolCalls has %d entries, want 2 — the reserved call is offered no tool, so it contributes no round", len(got.ToolCalls))
 	}
 	if got.ReservedCall.State != "completed" {
 		t.Fatalf("record.reservedCall.state = %q, want %q — a reader must be able to tell a reserved call that ran from one that never happened", got.ReservedCall.State, "completed")
@@ -533,14 +530,7 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	if got.ToolCalls[1].Error != "tool arguments could not be parsed: unexpected token" {
 		t.Fatalf("record.toolCalls[1].error = %q, want %q", got.ToolCalls[1].Error, "tool arguments could not be parsed: unexpected token")
 	}
-	if got.ToolCalls[2].Error != "tool arguments could not be parsed: second malformed request" {
-		t.Fatalf("record.toolCalls[2].error = %q, want %q", got.ToolCalls[2].Error, "tool arguments could not be parsed: second malformed request")
-	}
-	lastRound := got.ToolCalls[loop.MaxModelCalls-2]
-	if lastRound.Error != "tool arguments could not be parsed: fourth malformed request" {
-		t.Fatalf("the last dispatched round's error = %q, want that round's own malformed-request sentence — the model queue gives it a string no other round shares, so the wire pin below cannot be satisfied by a different round", lastRound.Error)
-	}
-	const malformedRoundWire = `"error":"tool arguments could not be parsed: fourth malformed request","results":[]`
+	const malformedRoundWire = `"error":"tool arguments could not be parsed: unexpected token","results":[]`
 	if !strings.Contains(rec.Body.String(), malformedRoundWire) {
 		t.Fatalf("body does not contain %q — a round that reached no rows must serialise its results as [] not null; body=%s", malformedRoundWire, rec.Body.String())
 	}

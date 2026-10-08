@@ -285,9 +285,12 @@ and is rendered into the next call's context block, once per row and never beyon
 assembly byte budget plus one supplementary round). A row a later round returns again, unchanged, is
 recorded as included with `held: true` and charged nothing. What the model *did* stays on the run
 record. The
-turn's **last** call offers no tool: where the call budget is spent, or recall has closed on consecutive
-barren rounds, the loop reserves that call for answering, declares no tool list and composes a system text
-that describes answering alone, so prose is the only terminal the call can reach. No adapter may return a
+turn's **last** call offers no tool: where the call budget is spent, where recall has closed on consecutive
+barren rounds, or where the loop has just **refused** a retrieval request (a part already shown in full, the
+request's own subject, an id the graph does not hold, a part too large for one read, or a malformed call),
+it reserves the next call for answering, declares no tool list and composes a system text that describes
+answering alone, so prose is the only terminal the call can reach. A graph failure, a barren served recall and
+a file write do not reserve. Nothing about a refusal is shown to the model: the loop acts on it instead. No adapter may return a
 tool-wanting terminal from such a call, not from a native tool field and not by recovering one from the
 response text.
 

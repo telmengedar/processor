@@ -141,12 +141,21 @@ func TestRunsReplyIsTheFallbackWhenTheRunProducedNothing(t *testing.T) {
 	const fallback = "Sorry — I couldn't put an answer together for that just now. Could you say a bit more, or ask it another way?"
 
 	recallRound := func() loop.JudgeResult {
-		return loop.JudgeResult{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: unexpected token"}
+		return loop.JudgeResult{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "q"}
+	}
+
+	graphFailingEverySupplementaryRecall := func() stubGraph {
+		graph := replyGraph()
+		graph.recallSeq = []stubRecallResponse{{candidates: graph.candidates}, {candidates: graph.candidates}}
+		graph.recallIdx = new(int)
+		graph.recallErr = errors.New("graph unreachable")
+		return graph
 	}
 
 	cases := []struct {
 		name        string
 		model       func() *scriptedModel
+		graph       func() stubGraph
 		timeout     func() time.Duration
 		wantReserve string
 		wantStalled bool
@@ -169,6 +178,7 @@ func TestRunsReplyIsTheFallbackWhenTheRunProducedNothing(t *testing.T) {
 					return loop.JudgeResult{}, errors.New("connection reset by peer")
 				}}
 			},
+			graph:       graphFailingEverySupplementaryRecall,
 			wantReserve: "failed",
 		},
 		{
@@ -197,7 +207,11 @@ func TestRunsReplyIsTheFallbackWhenTheRunProducedNothing(t *testing.T) {
 
 			ctx, cancel := newCtx()
 			defer cancel()
-			verbose, _ := topLevelKeys(t, postTo(t, ctx, replyTurn(c.model()), "/runs?verbose=true"))
+			turn := replyTurn(c.model())
+			if c.graph != nil {
+				turn = loop.NewTurn(c.graph(), c.model(), nil, fixedSystem("system text"), "test-model", testLogger())
+			}
+			verbose, _ := topLevelKeys(t, postTo(t, ctx, turn, "/runs?verbose=true"))
 
 			var outcome struct {
 				Produced bool `json:"produced"`

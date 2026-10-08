@@ -339,6 +339,9 @@ type ToolExchange struct {
 
 	// Yield is how many rows this round put in front of the model for the first time in the turn.
 	Yield int
+
+	// Refused is true when the loop declined a retrieval request for a reason that holds for the same request against the same memory, as opposed to a graph failure a repeat may clear.
+	Refused bool
 }
 
 // JudgeInput is everything one judgement step needs.

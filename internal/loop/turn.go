@@ -39,6 +39,7 @@ type reservation string
 const (
 	reservedByCallCap      reservation = "callCap"
 	reservedByClosedRecall reservation = "closedRecall"
+	reservedByRefusedRound reservation = "refusedRound"
 )
 
 // CarriedCauseRunes bounds a cause carried to a durable, shared or prompt-bearing destination.
@@ -473,6 +474,12 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input string, s
 		}
 		exchanges = append(exchanges, exchange)
 		dispatched++
+
+		if exchange.Refused {
+			reserved = reservedByRefusedRound
+			judged.reservedCall = ReservedCall{State: ReservedCallUnmade}
+			t.logReservation(reserved, judged.modelCalls+1, dispatched)
+		}
 	}
 
 	judged.toolCalls = toolCallRecords(exchanges)
@@ -614,7 +621,7 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 
 func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window UpdateWindow, memory *workingMemory) ToolExchange {
 	if result.ToolError != "" {
-		return ToolExchange{Tool: ToolRecall, Error: BoundCause(result.ToolError), Dispositions: []Disposition{}}
+		return ToolExchange{Tool: ToolRecall, Error: BoundCause(result.ToolError), Dispositions: []Disposition{}, Refused: true}
 	}
 
 	candidates, err := t.Graph.Recall(ctx, result.RecallQuery, CandidateLimit, nil, window)
@@ -632,10 +639,12 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 
 	if result.ToolError != "" {
 		exchange.Error = BoundCause(result.ToolError)
+		exchange.Refused = true
 		return exchange
 	}
 	if result.ReadNodeID == subject {
 		exchange.Error = errReadOfSubject
+		exchange.Refused = true
 		return exchange
 	}
 
@@ -647,6 +656,7 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 	}
 	if !found {
 		exchange.Error = errNoSuchNode
+		exchange.Refused = true
 		return exchange
 	}
 
@@ -654,10 +664,12 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, room, 0, 0, BlockOccupancy, memory.threshold)
 	if account.alreadyShown(dispositions[0]) {
 		exchange.Error = errAlreadyReadInFull
+		exchange.Refused = true
 		return exchange
 	}
 	if len(admitted) == 0 {
 		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, dispositions[0].Size, room)
+		exchange.Refused = true
 		return exchange
 	}
 
