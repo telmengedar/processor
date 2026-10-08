@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
@@ -223,5 +224,28 @@ func TestNothingAboutARefusalReachesTheAnsweringCall(t *testing.T) {
 				t.Errorf("the answering call's %s carries %q: nothing about a refusal may reach any call", name, leaked)
 			}
 		}
+	}
+}
+
+func TestARefusalReservedTurnIsRecordedAsCurtailedAndRaisesTheDidNotDeliverWarning(t *testing.T) {
+	t.Parallel()
+
+	var logged strings.Builder
+	model := &fakeModel{results: []JudgeResult{wantsRead(91), answered("the answer")}}
+	turn := NewTurn(graphHoldingAShownPart(), model, nil, offeringSystem, "test-model", slog.New(slog.NewTextHandler(&logged, nil)))
+
+	record, _, err := turn.Run(context.Background(), "hello", readSubject)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if record.CapReached || record.RecallClosed || record.ReservedCall.State != ReservedCallCompleted {
+		t.Fatalf("test setup error: capReached=%v recallClosed=%v reservedCall=%q, want a turn reserved by the refusal alone", record.CapReached, record.RecallClosed, record.ReservedCall.State)
+	}
+	if record.Outcome.Verdict != VerdictCurtailed || !record.Outcome.Curtailed {
+		t.Errorf("outcome = %+v, want verdict %q and curtailed: the model still wanted a tool round and was denied one", record.Outcome, VerdictCurtailed)
+	}
+	if !strings.Contains(logged.String(), "the run did not deliver") || !strings.Contains(logged.String(), "verdict=curtailed") {
+		t.Errorf("a refusal-reserved turn raised no did-not-deliver warning naming verdict=curtailed; log:\n%s", logged.String())
 	}
 }

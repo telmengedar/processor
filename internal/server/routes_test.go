@@ -494,7 +494,7 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	}
 	model := &stubModel{results: []loop.JudgeResult{
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing budget row"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: unexpected token"},
+		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "final desperate query", ToolError: "tool arguments could not be parsed: unexpected token"},
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the query the reserved call never got to make", ToolError: "tool arguments could not be parsed: the malformed request no call was left to carry"},
 	}}
 	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
@@ -543,6 +543,50 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	const wantReceiptWire = `"written":{"state":"notStored"}`
 	if !strings.Contains(rec.Body.String(), wantReceiptWire) {
 		t.Fatalf("body does not contain %s — the receipt names the fate and carries nothing else; body=%s", wantReceiptWire, rec.Body.String())
+	}
+}
+
+func TestRunsRecordWireCarriesCapReachedTrueOnATurnThatRunsToTheCap(t *testing.T) {
+	t.Parallel()
+
+	row := loop.Candidate{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}
+	failing := 0
+	graph := stubGraph{
+		anchor:     loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		found:      true,
+		candidates: []loop.Candidate{row},
+		recallSeq:  []stubRecallResponse{{candidates: []loop.Candidate{row}}, {candidates: []loop.Candidate{row}}},
+		recallIdx:  &failing,
+		recallErr:  errors.New("literal: graph unreachable"),
+	}
+	results := make([]loop.JudgeResult, 0, loop.MaxModelCalls)
+	for i := range loop.MaxModelCalls - 1 {
+		results = append(results, loop.JudgeResult{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: fmt.Sprintf("query %d", i)})
+	}
+	results = append(results, loop.JudgeResult{Answer: "final", Reason: loop.Answered, RawReason: "stop"})
+	turn := loop.NewTurn(graph, &stubModel{results: results}, nil, fixedSystem("system text"), "test-model", testLogger())
+
+	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var got runRecordWire
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, rec.Body.String())
+	}
+
+	if got.ModelCalls != loop.MaxModelCalls || len(got.ToolCalls) != loop.MaxModelCalls-1 {
+		t.Fatalf("test setup error: %d model calls and %d rounds, want %d and %d: transport-failed recalls do not reserve, so the turn runs to the cap", got.ModelCalls, len(got.ToolCalls), loop.MaxModelCalls, loop.MaxModelCalls-1)
+	}
+	if !got.CapReached {
+		t.Fatal("record.capReached = false, want true — the turn's last call was reserved because the call budget was spent")
+	}
+	if !strings.Contains(rec.Body.String(), `"capReached":true`) {
+		t.Fatalf("body does not contain %q — the wire key is what stored records and every reader outside this module read; body=%s", `"capReached":true`, rec.Body.String())
+	}
+	if got.ReservedCall.State != "completed" {
+		t.Fatalf("record.reservedCall.state = %q, want %q", got.ReservedCall.State, "completed")
 	}
 }
 

@@ -366,3 +366,35 @@ func TestARunTheRemainingTimeGuardStoppedIsCurtailedLikeAnyOtherBoundThatEndedTh
 		t.Fatal("the same run reads as curtailed with no shortfall recorded, so the shortfall is not what the verdict turns on")
 	}
 }
+
+func TestEveryWayAnAnsweringCallGetsReservedMakesTheTurnCurtailedAndAPlainTurnIsDelivered(t *testing.T) {
+	t.Parallel()
+
+	for _, c := range []struct {
+		name          string
+		shape         func(*Record)
+		wantCurtailed bool
+	}{
+		{"the call budget was spent", func(r *Record) { r.CapReached = true; r.ReservedCall = ReservedCall{State: ReservedCallCompleted} }, true},
+		{"recall closed on barren rounds", func(r *Record) { r.RecallClosed = true; r.ReservedCall = ReservedCall{State: ReservedCallCompleted} }, true},
+		{"a refusal reserved the call and the call answered", func(r *Record) { r.ReservedCall = ReservedCall{State: ReservedCallCompleted} }, true},
+		{"a refusal reserved the call and the call failed", func(r *Record) { r.ReservedCall = ReservedCall{State: ReservedCallFailed, Error: "connection reset"} }, true},
+		{"a refusal reserved the call and the turn stopped before it was issued", func(r *Record) { r.ReservedCall = ReservedCall{State: ReservedCallUnmade} }, true},
+		{"the remaining-time guard stopped the turn", func(r *Record) { r.TimeShortfall = "the run's remaining time cannot afford another judgement call" }, true},
+		{"a record written before reservedCall existed that reached the cap", func(r *Record) { r.CapReached = true }, true},
+		{"nothing bound the turn", func(*Record) {}, false},
+	} {
+		record := outcomeRecord()
+		c.shape(&record)
+
+		outcome := ComputeOutcome(record)
+
+		wantVerdict := VerdictDelivered
+		if c.wantCurtailed {
+			wantVerdict = VerdictCurtailed
+		}
+		if outcome.Curtailed != c.wantCurtailed || outcome.Verdict != wantVerdict {
+			t.Errorf("%s: curtailed = %t, verdict = %q, want %t and %q", c.name, outcome.Curtailed, outcome.Verdict, c.wantCurtailed, wantVerdict)
+		}
+	}
+}
