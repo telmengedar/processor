@@ -155,6 +155,7 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 // RunWithHistory executes one turn for input against subject after the supplied earlier exchanges, oldest first, returning the record and where it was filed.
 func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, history []Exchange) (Record, WriteReceipt, error) {
 	started := time.Now()
+	ctx = withPrepaid(ctx)
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
 
 	anchor, found, err := t.Graph.Node(ctx, subject)
@@ -392,7 +393,13 @@ func (t *Turn) judgementShortfall(ctx context.Context) string {
 	floors := t.Floors.Resolved()
 	need := JudgementCost(floors)
 	remaining := deadline.Sub(t.now())
+	phase, granted := prepaidFrom(ctx).spend()
 	if remaining >= need {
+		return ""
+	}
+	if granted && ctx.Err() == nil {
+		t.log().Info("the next judgement call was paid for when the substance step began waiting, and is issued on that decision",
+			"remaining", remaining.Round(time.Millisecond), "need", need.Round(time.Millisecond), "phase", phase)
 		return ""
 	}
 
@@ -702,14 +709,18 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 		return exchange
 	}
 
+	createdHere := false
 	if anchor.Substance == "" {
 		created, fills := t.createSubstances(ctx, phaseRead, []int64{anchor.ID})
 		exchange.Fills = fills
 		anchor.Substance = created[anchor.ID]
+		createdHere = anchor.Substance != ""
 	}
 
 	room := memory.roomToReplace(result.ReadNodeID, SupplementaryByteBudget)
-	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, room, 0)
+	read := candidateFromAnchor(anchor)
+	read.Created = createdHere
+	admitted, dispositions := admit([]Candidate{read}, room, 0)
 	if account.alreadyShown(dispositions[0]) {
 		exchange.Error = errAlreadyReadInFull
 		exchange.Refused = true

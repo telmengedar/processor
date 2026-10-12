@@ -106,7 +106,7 @@ func run(human io.Writer) int {
 	turn := loop.NewTurn(graph, model, files, systemtext.Compose, modelCfg.ID, logger)
 	turn.Floors = floors
 
-	fillPort, err := ports.Fill(fillCfg, ports.FillGraph(graph))
+	fillPort, err := ports.Fill(fillCfg, ports.FillGraph(graph), logger)
 	if err != nil {
 		logger.Error("boot configuration", "error", err)
 		return 1

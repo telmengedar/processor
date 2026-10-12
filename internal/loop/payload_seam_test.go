@@ -50,24 +50,11 @@ func callsByName(fn *ast.FuncDecl) map[string]bool {
 	return called
 }
 
-func rootedAtTheAnchorOrAResult(expr ast.Expr) bool {
-	switch x := expr.(type) {
-	case *ast.Ident:
-		return x.Name == "anchor" || x.Name == "result"
-	case *ast.SelectorExpr:
-		return x.Sel.Name == "result"
-	}
-	return false
-}
-
-func readsACandidatesField(fn *ast.FuncDecl, field string) bool {
+func readsTheField(fn *ast.FuncDecl, field string) bool {
 	found := false
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		selector, ok := n.(*ast.SelectorExpr)
 		if !ok || selector.Sel.Name != field {
-			return true
-		}
-		if rootedAtTheAnchorOrAResult(selector.X) {
 			return true
 		}
 		found = true
@@ -80,14 +67,14 @@ func TestOnlyAdmissionAndThePayloadSeamReadACandidatesBody(t *testing.T) {
 	t.Parallel()
 
 	allowed := map[string][]string{
-		"Content":   {"admitUnheld"},
-		"Substance": {"admitUnheld", "renderedPayload", "lacksSubstance", "withCreated"},
+		"Content":   {"admitUnheld", "candidateFromAnchor", "summarizeAnchor"},
+		"Substance": {"admitUnheld", "renderedPayload", "lacksSubstance", "withCreated", "candidateFromAnchor", "summarizeAnchor", "newWorkingMemory", "renderBlock", "Assemble", "dispatchRead", "fillInitial", "awaitFills"},
 	}
 	functions := parseTheLoopSources(t)
 
 	for field, readers := range allowed {
 		for name, fn := range functions {
-			if readsACandidatesField(fn, field) && !slices.Contains(readers, name) {
+			if readsTheField(fn, field) && !slices.Contains(readers, name) {
 				t.Errorf("%s reads a candidate's %s directly; only %v may, because admission charges what renderedPayload returns and a renderer that reaches past it writes bytes nobody counted", name, field, readers)
 			}
 		}
@@ -97,7 +84,7 @@ func TestOnlyAdmissionAndThePayloadSeamReadACandidatesBody(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s is not in the loop package at all, so the list this guard permits is stale and the guard admits whatever replaced it", name)
 			}
-			if !readsACandidatesField(fn, field) && field == "Content" {
+			if !readsTheField(fn, field) {
 				t.Errorf("%s no longer reads a candidate's %s, so permitting it here widens the guard for nothing", name, field)
 			}
 		}

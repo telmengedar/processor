@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -58,6 +59,43 @@ type fillAttempt struct {
 	elapsed time.Duration
 }
 
+type prepaidKey struct{}
+
+type prepaid struct {
+	mu    sync.Mutex
+	phase string
+}
+
+func withPrepaid(ctx context.Context) context.Context {
+	return context.WithValue(ctx, prepaidKey{}, &prepaid{})
+}
+
+func prepaidFrom(ctx context.Context) *prepaid {
+	grant, _ := ctx.Value(prepaidKey{}).(*prepaid)
+	return grant
+}
+
+func (p *prepaid) set(phase string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.phase = phase
+	p.mu.Unlock()
+}
+
+func (p *prepaid) spend() (string, bool) {
+	if p == nil {
+		return "", false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	phase := p.phase
+	p.phase = ""
+	return phase, phase != ""
+}
+
 func lacksSubstance(c Candidate) bool {
 	return c.Substance == "" && !c.SelfProduced
 }
@@ -89,6 +127,10 @@ func (t *Turn) createSubstances(ctx context.Context, phase string, ids []int64) 
 
 	if wait > 0 {
 		t.awaitFills(ctx, phase, ids, wait, outcomes, finished, created)
+	}
+
+	if wait > 0 && ctx.Err() == nil {
+		prepaidFrom(ctx).set(phase)
 	}
 
 	reason := fillReasonWaitExpired

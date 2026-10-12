@@ -4,6 +4,7 @@ package ports
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/telmengedar/processor/internal/boot"
 	"github.com/telmengedar/processor/internal/condense"
@@ -118,13 +119,13 @@ func FillModel(condensing boot.ModelConfig, configured bool, judgement boot.Mode
 }
 
 // Fill builds the loop's fill port over graph, running on cfg.
-func Fill(cfg boot.ModelConfig, graph condense.GraphPort) (*fill.Port, error) {
+func Fill(cfg boot.ModelConfig, graph condense.GraphPort, logger *slog.Logger) (*fill.Port, error) {
 	sampling := loop.Sampling{Temperature: cfg.Temperature, TopP: cfg.TopP}
 	model, err := fillModel(cfg, sampling)
 	if err != nil {
 		return nil, err
 	}
-	return fill.New(graph, model, nil), nil
+	return fill.New(graph, model, nil, logger), nil
 }
 
 // Model builds the model port that cfg's protocol names, sending sampling with every call.

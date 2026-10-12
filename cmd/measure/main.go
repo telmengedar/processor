@@ -103,7 +103,7 @@ func build(logger *slog.Logger) (*measure.Runner, error) {
 	client := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 	substances := measure.NewCondenseGraph(ports.FillGraph(client))
 
-	fillPort, err := ports.Fill(fillCfg, substances)
+	fillPort, err := ports.Fill(fillCfg, substances, logger)
 	if err != nil {
 		return nil, err
 	}

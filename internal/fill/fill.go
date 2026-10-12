@@ -3,6 +3,7 @@ package fill
 
 import (
 	"context"
+	"log/slog"
 	"slices"
 	"sync"
 	"time"
@@ -18,18 +19,22 @@ type Port struct {
 	Graph condense.GraphPort
 	Model condense.ModelPort
 	Now   func() time.Time
+	Log   *slog.Logger
 
 	mu     sync.Mutex
 	queued []int64
 	wake   chan struct{}
 }
 
-// New builds a Port over graph and model, defaulting now to time.Now when nil.
-func New(graph condense.GraphPort, model condense.ModelPort, now func() time.Time) *Port {
+// New builds a Port over graph and model, defaulting now to time.Now and logger to a discarding logger when nil.
+func New(graph condense.GraphPort, model condense.ModelPort, now func() time.Time, logger *slog.Logger) *Port {
 	if now == nil {
 		now = time.Now
 	}
-	return &Port{Graph: graph, Model: model, Now: now, wake: make(chan struct{}, 1)}
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
+	}
+	return &Port{Graph: graph, Model: model, Now: now, Log: logger, wake: make(chan struct{}, 1)}
 }
 
 // Fill condenses id's content into a substance and stores it, or reports why it did not; a substance already present is returned unwritten.
@@ -81,8 +86,20 @@ func (p *Port) work(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		_, _ = p.Fill(ctx, id)
+		p.fillDeferred(ctx, id)
 	}
+}
+
+func (p *Port) fillDeferred(ctx context.Context, id int64) {
+	started := p.Now()
+	result, _ := p.Fill(ctx, id)
+	elapsed := p.Now().Sub(started)
+
+	if result.Written {
+		p.Log.Info("deferred substance written", "node", id, "model", result.Model, "elapsed", elapsed)
+		return
+	}
+	p.Log.Warn("deferred substance not written", "node", id, "model", result.Model, "elapsed", elapsed, "reason", result.Reason)
 }
 
 func (p *Port) next() (int64, bool) {

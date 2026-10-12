@@ -65,7 +65,7 @@ func TestBootBuildsTheFillPortOverTheJudgementModelWhenNoCondenseModelIsConfigur
 	}
 
 	graph := FillGraph(divoid.NewClient("https://graph.example", "key", nil, nil))
-	port, err := Fill(cfg, graph)
+	port, err := Fill(cfg, graph, nil)
 	if err != nil {
 		t.Fatalf("building the fill port failed: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestTheFillPortIsALivePortOverTheGraphItWasGivenWhenACondenseModelIsConfigu
 	graph := FillGraph(divoid.NewClient("https://graph.example", "key", nil, nil))
 	cfg := boot.ModelConfig{Protocol: boot.ProtocolOpenAICompat, URL: "http://condense.invalid/v1", ID: "gemma-3-12b-it"}
 
-	port, err := Fill(cfg, graph)
+	port, err := Fill(cfg, graph, nil)
 	if err != nil {
 		t.Fatalf("building the fill port failed: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestTheFillPortSurfacesAnUnsupportedProtocolAsABootError(t *testing.T) {
 	graph := FillGraph(divoid.NewClient("https://graph.example", "key", nil, nil))
 	cfg := boot.ModelConfig{Protocol: "responses", URL: "http://condense.invalid", ID: "m"}
 
-	port, err := Fill(cfg, graph)
+	port, err := Fill(cfg, graph, nil)
 	if err == nil {
 		t.Fatalf("the fill port came back as %T with no error for a protocol it has no adapter for, want a refusal", port)
 	}

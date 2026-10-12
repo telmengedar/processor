@@ -1,8 +1,11 @@
 package fill
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -102,7 +105,7 @@ func TestACreatedSubstanceIsWrittenBackThroughThePort(t *testing.T) {
 	t.Parallel()
 
 	graph := newFakeGraph(prose(1))
-	port := New(graph, &fakeModel{text: "the condensed text"}, nil)
+	port := New(graph, &fakeModel{text: "the condensed text"}, nil, nil)
 
 	result, err := port.Fill(context.Background(), 1)
 	if err != nil {
@@ -124,7 +127,7 @@ func TestASubstanceAlreadyPresentIsReturnedUnwritten(t *testing.T) {
 	node.Substance = "somebody else got there first"
 	graph := newFakeGraph(node)
 	model := &fakeModel{text: "never asked for"}
-	port := New(graph, model, nil)
+	port := New(graph, model, nil, nil)
 
 	result, err := port.Fill(context.Background(), 1)
 	if err != nil {
@@ -142,7 +145,7 @@ func TestASubstanceAlreadyPresentIsReturnedUnwritten(t *testing.T) {
 func TestAProducerSkipIsReportedAsAReasonWithNoSubstance(t *testing.T) {
 	t.Parallel()
 
-	port := New(newFakeGraph(prose(1)), &fakeModel{text: "Here is the condensed text"}, nil)
+	port := New(newFakeGraph(prose(1)), &fakeModel{text: "Here is the condensed text"}, nil, nil)
 
 	result, err := port.Fill(context.Background(), 1)
 	if err != nil {
@@ -157,7 +160,7 @@ func TestAProducerSkipIsReportedAsAReasonWithNoSubstance(t *testing.T) {
 func TestAModelFailureIsReportedAsAReasonWithNoSubstance(t *testing.T) {
 	t.Parallel()
 
-	port := New(newFakeGraph(prose(1)), &fakeModel{err: errors.New("endpoint down")}, nil)
+	port := New(newFakeGraph(prose(1)), &fakeModel{err: errors.New("endpoint down")}, nil, nil)
 
 	result, err := port.Fill(context.Background(), 1)
 	if err != nil {
@@ -174,7 +177,7 @@ func TestTheDeferredWorkerCondensesQueuedNodesAfterTheTurnAndDeduplicatesThem(t 
 
 	graph := newFakeGraph(prose(1), prose(2))
 	model := &fakeModel{text: "the condensed text"}
-	port := New(graph, model, nil)
+	port := New(graph, model, nil, nil)
 
 	port.Defer(1)
 	port.Defer(1)
@@ -214,7 +217,7 @@ func TestAPortThatWasNeverStartedOnlyRecordsWhatIsDeferred(t *testing.T) {
 	t.Parallel()
 
 	model := &fakeModel{text: "the condensed text"}
-	port := New(newFakeGraph(prose(1)), model, nil)
+	port := New(newFakeGraph(prose(1)), model, nil, nil)
 
 	port.Defer(1)
 
@@ -230,7 +233,7 @@ func TestAPortThatWasNeverStartedOnlyRecordsWhatIsDeferred(t *testing.T) {
 func TestDeferNeverBlocksEvenWhenNothingIsDrainingTheQueue(t *testing.T) {
 	t.Parallel()
 
-	port := New(newFakeGraph(), &fakeModel{}, nil)
+	port := New(newFakeGraph(), &fakeModel{}, nil, nil)
 
 	done := make(chan struct{})
 	go func() {
@@ -252,7 +255,7 @@ func TestTheWorkerStopsWithItsContext(t *testing.T) {
 
 	graph := newFakeGraph(prose(1))
 	model := &fakeModel{text: "the condensed text"}
-	port := New(graph, model, nil)
+	port := New(graph, model, nil, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	port.Start(ctx)
@@ -264,5 +267,94 @@ func TestTheWorkerStopsWithItsContext(t *testing.T) {
 
 	if model.called() != 0 {
 		t.Fatalf("the model was called %d times after the worker's context ended", model.called())
+	}
+}
+
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) lines() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return strings.Split(strings.TrimSpace(b.buf.String()), "\n")
+}
+
+func TestTheDeferredWorkerLogsEveryAttemptWithItsOutcome(t *testing.T) {
+	t.Parallel()
+
+	graph := newFakeGraph(prose(1), prose(2))
+	logs := &syncBuffer{}
+	logger := slog.New(slog.NewTextHandler(logs, nil))
+
+	written := New(graph, &fakeModel{text: "the condensed text"}, nil, logger)
+	written.Defer(1)
+	failing := New(graph, &fakeModel{text: "Here is the condensed text"}, nil, logger)
+	failing.Defer(2)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	written.Start(ctx)
+	failing.Start(ctx)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(logs.lines()) < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	var info, warn string
+	for _, line := range logs.lines() {
+		switch {
+		case strings.Contains(line, "level=INFO"):
+			info = line
+		case strings.Contains(line, "level=WARN"):
+			warn = line
+		}
+	}
+	for _, want := range []string{"node=1", "model=test-condense-model", "elapsed="} {
+		if !strings.Contains(info, want) {
+			t.Errorf("the line for the written node = %q, want it at Info and to carry %q", info, want)
+		}
+	}
+	for _, want := range []string{"node=2", "elapsed=", "reason=", "preamble"} {
+		if !strings.Contains(warn, want) {
+			t.Errorf("the line for the failed node = %q, want it at Warn and to carry %q", warn, want)
+		}
+	}
+}
+
+func TestTheDeferredWorkerDrainsInTheOrderTheNodesWereDeferred(t *testing.T) {
+	t.Parallel()
+
+	graph := newFakeGraph(prose(1), prose(2), prose(3))
+	port := New(graph, &fakeModel{text: "the condensed text"}, nil, nil)
+
+	port.Defer(3)
+	port.Defer(1)
+	port.Defer(2)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	port.Start(ctx)
+
+	var order []int64
+	for range 3 {
+		select {
+		case id := <-graph.wrote:
+			order = append(order, id)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("the worker wrote only %v", order)
+		}
+	}
+
+	if want := []int64{3, 1, 2}; !slices.Equal(order, want) {
+		t.Fatalf("the worker wrote nodes in order %v, want %v: first deferred, first condensed", order, want)
 	}
 }

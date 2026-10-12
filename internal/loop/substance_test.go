@@ -354,6 +354,9 @@ func TestTheSubstanceStepRunsOnAnAddressedReadOfANodeWithoutASubstance(t *testin
 	if round.Error != "" || len(round.Results) != 1 || round.Results[0].Form != FormSubstance {
 		t.Fatalf("the read round = %+v, want one served row in form %q", round, FormSubstance)
 	}
+	if round.Results[0].SubstanceAvailable {
+		t.Fatalf("the read row = %+v, want SubstanceAvailable false because the read created the substance", round.Results[0])
+	}
 }
 
 func TestACreationStillRunningAtTheWaitIsCancelledDeferredAndRenderedUnavailable(t *testing.T) {
@@ -653,5 +656,114 @@ func TestMissingSubstancesNamesNoRecordThisSystemWrote(t *testing.T) {
 
 	if len(got) != 1 || got[0] != 2 {
 		t.Fatalf("missingSubstances = %v, want only the row that lacks a substance and is not a record this system wrote", got)
+	}
+}
+
+const realClockSlack = 300 * time.Millisecond
+
+func realClockDeadline(turn *Turn) (context.Context, context.CancelFunc) {
+	return context.WithDeadline(context.Background(), time.Now().Add(JudgementCost(turn.Floors)+realClockSlack))
+}
+
+func TestAClippedInitialWaitStillIssuesTheFirstJudgementCallOnARealClock(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.node = Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "body"}
+	port := &fakeFill{blocked: map[int64]bool{42: true}}
+	model := &fakeModel{results: []JudgeResult{answeredFinal()}}
+	turn := turnWithFill(graph, model, port)
+
+	ctx, cancel := realClockDeadline(turn)
+	defer cancel()
+
+	record, _, err := turn.Run(ctx, "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v, want the first judgement call issued: the wait was clipped to protect it", err)
+	}
+
+	if record.ModelCalls != 1 || len(model.calls) != 1 {
+		t.Fatalf("modelCalls = %d and the model received %d calls, want 1 and 1", record.ModelCalls, len(model.calls))
+	}
+	if !graph.writeRunCalled {
+		t.Fatal("no record was filed")
+	}
+	slow := outcomeFor(t, record.Fills, 42)
+	if !slow.Deferred || slow.Phase != phaseInitial {
+		t.Fatalf("the outcome = %+v, want deferred in phase %q", slow, phaseInitial)
+	}
+}
+
+func recallAfterAClippedWait(t *testing.T, results ...JudgeResult) (Record, *fakeModel) {
+	t.Helper()
+
+	graph := baseGraph()
+	graph.recallQueue = []recallResponse{
+		{Candidates: nil},
+		{Candidates: []Candidate{bareRow(91)}},
+		{Candidates: []Candidate{{ID: 92, Type: "documentation", Name: "Held", Similarity: 0.8, Substance: "already condensed"}}},
+	}
+	port := &fakeFill{blocked: map[int64]bool{91: true}}
+	model := &fakeModel{results: results}
+	turn := turnWithFill(graph, model, port)
+
+	ctx, cancel := realClockDeadline(turn)
+	defer cancel()
+
+	record, _, err := turn.Run(ctx, "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return record, model
+}
+
+func TestAClippedRecallWaitStillIssuesTheNextJudgementCallOnARealClock(t *testing.T) {
+	t.Parallel()
+
+	record, model := recallAfterAClippedWait(t, recallFor("more"), answeredFinal())
+
+	if record.ModelCalls != 2 || len(model.calls) != 2 {
+		t.Fatalf("modelCalls = %d and the model received %d calls, want 2 and 2: the rows the step waited for must be judged", record.ModelCalls, len(model.calls))
+	}
+	if record.TimeShortfall != "" {
+		t.Fatalf("the turn was stopped by a time shortfall: %s", record.TimeShortfall)
+	}
+	slow := outcomeFor(t, record.Fills, 91)
+	if !slow.Deferred || slow.Phase != phaseRecall {
+		t.Fatalf("the outcome = %+v, want deferred in phase %q", slow, phaseRecall)
+	}
+}
+
+func TestAPrepaidCallIsSpentOnceAndTheCallAfterItIsGuardedAgain(t *testing.T) {
+	t.Parallel()
+
+	record, model := recallAfterAClippedWait(t, recallFor("more"), recallFor("again"), answeredFinal())
+
+	if record.ModelCalls != 2 || len(model.calls) != 2 {
+		t.Fatalf("modelCalls = %d and the model received %d calls, want 2 and 2: the grant paid for one call only", record.ModelCalls, len(model.calls))
+	}
+	if record.TimeShortfall == "" {
+		t.Fatal("TimeShortfall is empty, want the call after the prepaid one refused by the guard")
+	}
+}
+
+func TestAStepEnteredWithLessThanOneCallsCostGrantsNothing(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.node = Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "body"}
+	port := &fakeFill{}
+	model := &fakeModel{results: []JudgeResult{answeredFinal()}}
+	turn := turnWithFill(graph, model, port)
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(JudgementCost(turn.Floors)/2))
+	defer cancel()
+
+	_, _, err := turn.Run(ctx, "hello", 42)
+	if !errors.Is(err, ErrRunTimeExhausted) {
+		t.Fatalf("Run error = %v, want ErrRunTimeExhausted", err)
+	}
+	if len(model.calls) != 0 {
+		t.Fatalf("the model received %d calls, want none: a step that could not wait grants no call", len(model.calls))
 	}
 }
