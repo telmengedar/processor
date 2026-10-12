@@ -11,7 +11,7 @@ import (
 var guardInstant = time.Date(2026, 9, 23, 9, 0, 0, 0, time.UTC)
 
 func turnWithClock(model ModelPort, graph GraphPort, clock func() time.Time) *Turn {
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 	turn.clock = clock
 	return turn
 }
@@ -131,7 +131,7 @@ func TestEveryJudgementCallCarriesTheJudgementSitesOwnBudget(t *testing.T) {
 	t.Parallel()
 
 	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(baseGraph(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
 		t.Fatalf("Run: %v", err)

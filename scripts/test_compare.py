@@ -808,6 +808,21 @@ class PrintTaskOutputTests(unittest.TestCase):
         transcript = {"answer": "transcript answer", "finishReason": "stop"}
         return capture(compare.print_task, t, rec, transcript)
 
+    def test_a_supplementary_round_that_re_returned_held_rows_says_how_many_were_already_held(self):
+        rows = [{"id": 11, "rank": 1, "included": True, "held": True}, {"id": 52, "rank": 2, "included": True}]
+        out = self._run(task([52]), record(tool_calls=[{"query": "again", "results": rows}]))
+        self.assertIn("-> 2 of 2 admitted (1 already held)", out)
+
+    def test_a_round_that_held_nothing_prints_no_held_note(self):
+        rows = [{"id": 52, "rank": 1, "included": True}]
+        out = self._run(task([52]), record(tool_calls=[{"query": "fresh", "results": rows}]))
+        self.assertIn("-> 1 of 1 admitted", out)
+        self.assertNotIn("already held", out)
+
+    def test_the_supplementary_cut_stage_no_longer_calls_its_room_the_raw_budget(self):
+        self.assertIn("at most SupplementaryByteBudget", compare.RETRIEVED_CUT_SUPPLEMENTARY.indictment)
+        self.assertIn("working memory", compare.RETRIEVED_CUT_SUPPLEMENTARY.indictment)
+
     def test_t4_shape_arrival_present_completion_absent(self):
         """t4: one named node is the anchor, the other (#7506) was never retrieved. The arrival
         line must print (something reached the model, worth reading the answers), the completion

@@ -3,6 +3,7 @@ package ollama
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -30,10 +31,8 @@ type wireOptions struct {
 }
 
 type wireMessage struct {
-	Role      string         `json:"role"`
-	Content   string         `json:"content,omitempty"`
-	ToolCalls []wireToolCall `json:"tool_calls,omitempty"`
-	ToolName  string         `json:"tool_name,omitempty"`
+	Role    string `json:"role"`
+	Content string `json:"content,omitempty"`
 }
 
 type wireToolCall struct {
@@ -135,74 +134,72 @@ type wireError struct {
 }
 
 func buildMessages(in loop.JudgeInput) []wireMessage {
-	messages := []wireMessage{
+	return []wireMessage{
 		{Role: "system", Content: in.System},
 		{Role: "user", Content: loop.RenderUserContent(in.Block, in.Input, in.Now, in.Window)},
 	}
-
-	for _, r := range in.PriorTools {
-		name := wireToolName(r.Tool)
-
-		messages = append(messages,
-			wireMessage{
-				Role: "assistant",
-				ToolCalls: []wireToolCall{{
-					Function: wireFunctionCall{Name: name, Arguments: toolArguments(r)},
-				}},
-			},
-			wireMessage{
-				Role:     "tool",
-				ToolName: name,
-				Content:  loop.RenderToolResult(r),
-			},
-		)
-	}
-
-	return messages
 }
 
-func wireToolName(tool string) string {
-	switch tool {
-	case loop.ToolWriteFile:
-		return writeFileToolName
-	case loop.ToolReadNode:
-		return readNodeToolName
-	default:
-		return recallToolName
-	}
+type toolBinding struct {
+	loopName string
+	wireName string
+	declare  func() wireTool
 }
 
-func toolArguments(r loop.ToolExchange) json.RawMessage {
-	switch r.Tool {
-	case loop.ToolWriteFile:
-		encoded, _ := json.Marshal(writeFileToolArguments{Path: r.Path, Content: r.Content})
-		return encoded
-	case loop.ToolReadNode:
-		encoded, _ := json.Marshal(readNodeToolArguments{ID: r.NodeID})
-		return encoded
-	default:
-		encoded, _ := json.Marshal(recallToolArguments{Query: r.Query})
-		return encoded
-	}
+var toolTable = []toolBinding{
+	{loop.ToolRecall, recallToolName, recallTool},
+	{loop.ToolWriteFile, writeFileToolName, writeFileTool},
+	{loop.ToolReadNode, readNodeToolName, readNodeTool},
 }
 
-func translate(wire chatResponse, withheld bool) loop.JudgeResult {
+func declaredTools(offered []string) []wireTool {
+	var declared []wireTool
+	for _, tool := range toolTable {
+		if slices.Contains(offered, tool.loopName) {
+			declared = append(declared, tool.declare())
+		}
+	}
+	return declared
+}
+
+func offeredWireNames(offered []string) []string {
+	var names []string
+	for _, tool := range toolTable {
+		if slices.Contains(offered, tool.loopName) {
+			names = append(names, tool.wireName)
+		}
+	}
+	return names
+}
+
+func isKnownWireTool(name string) bool {
+	return slices.ContainsFunc(toolTable, func(tool toolBinding) bool { return tool.wireName == name })
+}
+
+func translate(wire chatResponse, offered []string) loop.JudgeResult {
+	names := offeredWireNames(offered)
+
 	result := loop.JudgeResult{
 		Answer:         wire.Message.Content,
 		RawReason:      wire.DoneReason,
 		ReasoningBytes: len(wire.Message.Thinking),
 		Usage:          translateUsage(wire.PromptEvalCount, wire.EvalCount),
 	}
-
-	if withheld {
-		result.UnofferedToolCalls = len(wire.Message.ToolCalls)
-		result.Reason = mapDoneReason(wire.DoneReason)
-		return result
+	for _, call := range wire.Message.ToolCalls {
+		if !slices.Contains(names, call.Function.Name) {
+			result.UnofferedToolCalls++
+		}
 	}
 
 	if len(wire.Message.ToolCalls) > 0 {
-		result.ToolSource = loop.ToolSourceNative
 		call := wire.Message.ToolCalls[0]
+
+		if !slices.Contains(names, call.Function.Name) && (len(names) == 0 || isKnownWireTool(call.Function.Name)) {
+			result.Reason = mapDoneReason(wire.DoneReason)
+			return result
+		}
+
+		result.ToolSource = loop.ToolSourceNative
 
 		switch call.Function.Name {
 		case recallToolName:
@@ -217,16 +214,23 @@ func translate(wire chatResponse, withheld bool) loop.JudgeResult {
 		return result
 	}
 
-	if call, detected := recoverCall(wire.Message.Content); detected {
-		return translateRecoveredCall(result, call)
+	if len(names) > 0 {
+		if call, detected := recoverCall(wire.Message.Content); detected {
+			return translateRecoveredCall(result, call, names)
+		}
 	}
 
 	result.Reason = mapDoneReason(wire.DoneReason)
 	return result
 }
 
-func translateRecoveredCall(result loop.JudgeResult, call recoveredCall) loop.JudgeResult {
+func translateRecoveredCall(result loop.JudgeResult, call recoveredCall, names []string) loop.JudgeResult {
 	result.ToolSource = loop.ToolSourceContent
+
+	if !slices.Contains(names, call.name) {
+		result.Reason = loop.Unrecognised
+		return result
+	}
 
 	switch call.name {
 	case recallToolName:

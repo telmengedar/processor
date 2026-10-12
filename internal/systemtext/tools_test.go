@@ -47,9 +47,52 @@ func TestTheSystemTextDescribesEveryToolTheJudgementCallOffers(t *testing.T) {
 
 	for tool, phrase := range described {
 		offered := "A " + phrase + " is available."
-		if !strings.Contains(systemtext.Text, offered) {
+		if !strings.Contains(systemtext.Compose([]string{tool}), offered) {
 			t.Errorf("the system text never offers the %q tool as %q; every tool the call offers is introduced there in that one neutral register, or the model is left to infer a tool from its schema alone, or to read an emphasis between them that the call does not intend", tool, offered)
 		}
+	}
+}
+
+func TestTheSystemTextNamesExactlyTheOfferedTools(t *testing.T) {
+	t.Parallel()
+
+	phrases := map[string]string{
+		loop.ToolRecall:    "A recall tool is available.",
+		loop.ToolReadNode:  "A read tool is available.",
+		loop.ToolWriteFile: "A file tool is available.",
+	}
+	every := []string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}
+
+	for mask := 0; mask < 1<<len(every); mask++ {
+		var offered []string
+		for i, tool := range every {
+			if mask&(1<<i) != 0 {
+				offered = append(offered, tool)
+			}
+		}
+
+		text := systemtext.Compose(offered)
+		for _, tool := range every {
+			if got, want := strings.Contains(text, phrases[tool]), slices.Contains(offered, tool); got != want {
+				t.Errorf("offering %v: the system text mentions %q = %v, want %v: a tool the call does not declare must not be described, and one it declares must be", offered, tool, got, want)
+			}
+		}
+	}
+}
+
+func TestTheSystemTextOfACallThatOffersNothingNamesNoToolAndNoToolResults(t *testing.T) {
+	t.Parallel()
+
+	text := strings.ToLower(systemtext.Compose(nil))
+
+	for _, forbidden := range []string{"tool", "recall", "search process", "query"} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("the system text of a call that offers nothing contains %q: the answering call describes only answering, and a sentence about a tool the call withholds is what invites the model to emit one", forbidden)
+		}
+	}
+
+	if !strings.Contains(text, "base it on the context block and on the request") {
+		t.Errorf("the system text of a call that offers nothing does not tell the model what to base its answer on: %q", text)
 	}
 }
 

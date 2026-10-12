@@ -18,7 +18,7 @@ func TestOpenAICompatJudgeRedactsUserinfoFromProviderEndpointOnTheSuccessPath(t 
 	credentialed := "http://alice:s3cr3t@" + strings.TrimPrefix(srv.URL, "http://")
 
 	c := NewClient(credentialed, "model-x", "", loop.Sampling{}, srv.Client())
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget, Offered: allTools})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -82,7 +82,7 @@ func assertCredentialRedacted(t *testing.T, err error, composed, mustKeep string
 }
 
 func judgeInput() loop.JudgeInput {
-	return loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget}
+	return loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget, Offered: allTools}
 }
 
 func TestOpenAICompatJudgeRedactsTheCredentialFromTheBuildRequestError(t *testing.T) {

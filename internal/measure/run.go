@@ -23,7 +23,7 @@ type Runner struct {
 }
 
 // NewRunner builds a runner whose turn reads graph, fills through substances, judges model with system and modelID, and writes files through files.
-func NewRunner(graph *Graph, substances *CondenseGraph, model loop.ModelPort, files loop.FilePort, fill loop.FillPort, system, modelID string, logger *slog.Logger) *Runner {
+func NewRunner(graph *Graph, substances *CondenseGraph, model loop.ModelPort, files loop.FilePort, fill loop.FillPort, system func(offered []string) string, modelID string, logger *slog.Logger) *Runner {
 	turn := loop.NewTurn(graph, model, files, system, modelID, logger)
 	turn.Fill = fill
 

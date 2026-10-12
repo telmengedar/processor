@@ -33,7 +33,7 @@ func TestRunsReports502WithTheModelCallsOwnCauseBehindTheClassSentence(t *testin
 
 	const cause = "openaicompat: model=ai/llama3.2 endpoint=http://host.example/v1/chat/completions request=76490 B elapsed=3.7s (client bound 5m0s): unexpected status 500: the endpoint rejected the request"
 	graph := stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}
-	turn := loop.NewTurn(graph, &stubModel{err: errors.New(cause)}, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(graph, &stubModel{err: errors.New(cause)}, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"hello","subject":42}`)
 	if rec.Code != http.StatusBadGateway {
@@ -68,7 +68,7 @@ func TestRunsBoundsTheCauseItPutsInTheErrorEnvelope(t *testing.T) {
 
 	cause := strings.Repeat("z", loop.CarriedCauseRunes+400)
 	graph := stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}
-	turn := loop.NewTurn(graph, &stubModel{err: errors.New(cause)}, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(graph, &stubModel{err: errors.New(cause)}, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"hello","subject":42}`)
 	carried := strings.TrimPrefix(errorMessage(t, rec), "the model call did not complete: ")
@@ -128,7 +128,7 @@ func TestRunsKeepsEveryErrorCodeAndStatusUnchangedWhileCarryingTheCause(t *testi
 		{"invalid request", newTestTurn(graph), `{"input":"","subject":42}`, http.StatusBadRequest, codeInvalidRequest},
 		{"subject not found", newTestTurn(stubGraph{found: false}), `{"input":"hello","subject":42}`, http.StatusNotFound, codeSubjectNotFound},
 		{"graph unavailable", newTestTurn(stubGraph{nodeErr: errors.New("literal: refused")}), `{"input":"hello","subject":42}`, http.StatusBadGateway, codeGraphUnavailable},
-		{"model unavailable", loop.NewTurn(graph, &stubModel{err: errors.New("literal: reset")}, nil, "system text", "test-model", testLogger()), `{"input":"hello","subject":42}`, http.StatusBadGateway, codeModelUnavailable},
+		{"model unavailable", loop.NewTurn(graph, &stubModel{err: errors.New("literal: reset")}, nil, fixedSystem("system text"), "test-model", testLogger()), `{"input":"hello","subject":42}`, http.StatusBadGateway, codeModelUnavailable},
 	}
 
 	for _, c := range cases {

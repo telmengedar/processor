@@ -96,7 +96,7 @@ func (s *stubModel) Judge(_ context.Context, in loop.JudgeInput) (loop.JudgeResu
 		idx = len(s.results) - 1
 	}
 	s.calls++
-	if in.WithholdTools {
+	if len(in.Offered) == 0 {
 		return withoutToolRequest(s.results[idx]), nil
 	}
 	return s.results[idx], nil
@@ -109,8 +109,12 @@ func withoutToolRequest(result loop.JudgeResult) loop.JudgeResult {
 	return loop.JudgeResult{Answer: result.Answer, Reason: loop.Answered, RawReason: "stop", Usage: result.Usage}
 }
 
+func fixedSystem(text string) func([]string) string {
+	return func([]string) string { return text }
+}
+
 func newTestTurn(graph loop.GraphPort) *loop.Turn {
-	return loop.NewTurn(graph, &stubModel{}, nil, "system text", "test-model", testLogger())
+	return loop.NewTurn(graph, &stubModel{}, nil, fixedSystem("system text"), "test-model", testLogger())
 }
 
 func TestHealth(t *testing.T) {
@@ -381,7 +385,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 			Sampling:  loop.Sampling{Temperature: &temperature, TopP: &topP},
 		},
 	}}
-	turn := loop.NewTurn(graph, model, nil, "system text", "test-model-id", testLogger())
+	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model-id", testLogger())
 
 	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
@@ -490,13 +494,10 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	}
 	model := &stubModel{results: []loop.JudgeResult{
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing budget row"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: unexpected token"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "final desperate query", ToolError: "tool arguments could not be parsed: second malformed request"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: third malformed request"},
-		{Reason: loop.WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: fourth malformed request"},
+		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "final desperate query", ToolError: "tool arguments could not be parsed: unexpected token"},
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the query the reserved call never got to make", ToolError: "tool arguments could not be parsed: the malformed request no call was left to carry"},
 	}}
-	turn := loop.NewTurn(graph, model, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
@@ -508,14 +509,14 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 		t.Fatalf("decode response: %v; body=%s", err, rec.Body.String())
 	}
 
-	if got.ModelCalls != loop.MaxModelCalls {
-		t.Fatalf("record.modelCalls = %d, want %d", got.ModelCalls, loop.MaxModelCalls)
+	if got.ModelCalls != 3 {
+		t.Fatalf("record.modelCalls = %d, want 3 — a failed recall, a refused malformed request, and the call the refusal reserved for answering", got.ModelCalls)
 	}
-	if !got.CapReached {
-		t.Fatal("record.capReached = false, want true — the turn's last call was reserved because the call budget was spent")
+	if got.CapReached {
+		t.Fatal("record.capReached = true, want false — the refusal reserved the last call, not the call budget")
 	}
-	if len(got.ToolCalls) != loop.MaxModelCalls-1 {
-		t.Fatalf("record.toolCalls has %d entries, want %d — the reserved call is offered no tool, so it contributes no round", len(got.ToolCalls), loop.MaxModelCalls-1)
+	if len(got.ToolCalls) != 2 {
+		t.Fatalf("record.toolCalls has %d entries, want 2 — the reserved call is offered no tool, so it contributes no round", len(got.ToolCalls))
 	}
 	if got.ReservedCall.State != "completed" {
 		t.Fatalf("record.reservedCall.state = %q, want %q — a reader must be able to tell a reserved call that ran from one that never happened", got.ReservedCall.State, "completed")
@@ -529,14 +530,7 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	if got.ToolCalls[1].Error != "tool arguments could not be parsed: unexpected token" {
 		t.Fatalf("record.toolCalls[1].error = %q, want %q", got.ToolCalls[1].Error, "tool arguments could not be parsed: unexpected token")
 	}
-	if got.ToolCalls[2].Error != "tool arguments could not be parsed: second malformed request" {
-		t.Fatalf("record.toolCalls[2].error = %q, want %q", got.ToolCalls[2].Error, "tool arguments could not be parsed: second malformed request")
-	}
-	lastRound := got.ToolCalls[loop.MaxModelCalls-2]
-	if lastRound.Error != "tool arguments could not be parsed: fourth malformed request" {
-		t.Fatalf("the last dispatched round's error = %q, want that round's own malformed-request sentence — the model queue gives it a string no other round shares, so the wire pin below cannot be satisfied by a different round", lastRound.Error)
-	}
-	const malformedRoundWire = `"error":"tool arguments could not be parsed: fourth malformed request","results":[]`
+	const malformedRoundWire = `"error":"tool arguments could not be parsed: unexpected token","results":[]`
 	if !strings.Contains(rec.Body.String(), malformedRoundWire) {
 		t.Fatalf("body does not contain %q — a round that reached no rows must serialise its results as [] not null; body=%s", malformedRoundWire, rec.Body.String())
 	}
@@ -552,22 +546,67 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	}
 }
 
+func TestRunsRecordWireCarriesCapReachedTrueOnATurnThatRunsToTheCap(t *testing.T) {
+	t.Parallel()
+
+	row := loop.Candidate{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}
+	failing := 0
+	graph := stubGraph{
+		anchor:     loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		found:      true,
+		candidates: []loop.Candidate{row},
+		recallSeq:  []stubRecallResponse{{candidates: []loop.Candidate{row}}, {candidates: []loop.Candidate{row}}},
+		recallIdx:  &failing,
+		recallErr:  errors.New("literal: graph unreachable"),
+	}
+	results := make([]loop.JudgeResult, 0, loop.MaxModelCalls)
+	for i := range loop.MaxModelCalls - 1 {
+		results = append(results, loop.JudgeResult{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: fmt.Sprintf("query %d", i)})
+	}
+	results = append(results, loop.JudgeResult{Answer: "final", Reason: loop.Answered, RawReason: "stop"})
+	turn := loop.NewTurn(graph, &stubModel{results: results}, nil, fixedSystem("system text"), "test-model", testLogger())
+
+	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var got runRecordWire
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, rec.Body.String())
+	}
+
+	if got.ModelCalls != loop.MaxModelCalls || len(got.ToolCalls) != loop.MaxModelCalls-1 {
+		t.Fatalf("test setup error: %d model calls and %d rounds, want %d and %d: transport-failed recalls do not reserve, so the turn runs to the cap", got.ModelCalls, len(got.ToolCalls), loop.MaxModelCalls, loop.MaxModelCalls-1)
+	}
+	if !got.CapReached {
+		t.Fatal("record.capReached = false, want true — the turn's last call was reserved because the call budget was spent")
+	}
+	if !strings.Contains(rec.Body.String(), `"capReached":true`) {
+		t.Fatalf("body does not contain %q — the wire key is what stored records and every reader outside this module read; body=%s", `"capReached":true`, rec.Body.String())
+	}
+	if got.ReservedCall.State != "completed" {
+		t.Fatalf("record.reservedCall.state = %q, want %q", got.ReservedCall.State, "completed")
+	}
+}
+
 func TestRunsToolCallsResultsCutReasonIsPopulatedAtTheWireLevel(t *testing.T) {
 	t.Parallel()
 
+	smallHit := loop.Candidate{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"}
+	largeHit := loop.Candidate{ID: 8, Type: "task", Name: "Large", Similarity: 0.9, Content: strings.Repeat("x", 21_000)}
+	next := 0
 	graph := stubGraph{
-		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
-		found:  true,
-		candidates: []loop.Candidate{
-			{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
-			{ID: 8, Type: "task", Name: "Large", Similarity: 0.9, Content: strings.Repeat("x", 21_000)},
-		},
+		anchor:    loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		found:     true,
+		recallSeq: []stubRecallResponse{{candidates: []loop.Candidate{smallHit}}, {}, {candidates: []loop.Candidate{smallHit, largeHit}}},
+		recallIdx: &next,
 	}
 	model := &stubModel{results: []loop.JudgeResult{
 		{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		{Answer: "final", Reason: loop.Answered, RawReason: "stop"},
 	}}
-	turn := loop.NewTurn(graph, model, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 	if rec.Code != http.StatusOK {
@@ -754,7 +793,7 @@ func TestRunsReturns502WithModelUnavailableWhenTheModelCallFails(t *testing.T) {
 	t.Parallel()
 
 	graph := stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}
-	turn := loop.NewTurn(graph, &stubModel{err: errors.New("literal: connection reset")}, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(graph, &stubModel{err: errors.New("literal: connection reset")}, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"hello","subject":42}`)
 
@@ -1031,7 +1070,7 @@ func TestRunsReturns200AndNamesTheDerivationCauseOnTheRecordWhenTheQuerySetFellB
 	const cause = "openaicompat: unexpected status 503: model is loading"
 
 	model := &stubModel{deriveErr: errors.New(cause)}
-	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 
@@ -1055,7 +1094,7 @@ func TestRunsCarriesEveryDerivedQueryOntoTheWireAndLeavesTheCauseOffWhenThereIsN
 	t.Parallel()
 
 	model := &stubModel{derivedText: "a derived angle?\nanother derived angle?"}
-	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, "system text", "test-model", testLogger())
+	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 

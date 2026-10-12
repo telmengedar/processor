@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -78,7 +79,7 @@ func TestFiveRecallsDifferingOnlyByADateSuffixStopBuyingRoundsOnceTwoInARowAdded
 
 	graph := graphReturningTheSameRowsToEveryRecall()
 	model := &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -111,29 +112,23 @@ func TestFiveRecallsDifferingOnlyByADateSuffixStopBuyingRoundsOnceTwoInARowAdded
 	}
 }
 
-func TestTheRoundsThatAddedNothingAreShownToTheModelAsRowsItAlreadyHasRatherThanAsResults(t *testing.T) {
+func TestTheRoundsThatAddedNothingLeaveTheModelsContextExactlyWhatTheFirstRoundMadeIt(t *testing.T) {
 	t.Parallel()
 
 	graph := graphReturningTheSameRowsToEveryRecall()
 	model := &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	final := model.calls[len(model.calls)-1]
-	if len(final.PriorTools) != 4 {
-		t.Fatalf("the final call was shown %d rounds, want 4", len(final.PriorTools))
-	}
-
-	if first := RenderToolResult(final.PriorTools[0]); !strings.Contains(first, sectionResult) {
-		t.Fatalf("the round that brought rows was not presented to the model:\n%s", first)
-	}
-	for i, round := range final.PriorTools[1:3] {
-		rendered := RenderToolResult(round)
-		if !strings.Contains(rendered, "already been shown") {
-			t.Fatalf("round %d returned only rows the model already held and was still presented as fresh results:\n%s", i+2, rendered)
+	for i, call := range model.calls[1:] {
+		if ids := candidateIDsIn(call.Block); !slices.Equal(ids, []int64{100, 101, 102, 103, 104}) {
+			t.Fatalf("call %d carries candidates %v, want the five rows the first round found, once each: a repeated round adds nothing to what the model holds", i+2, ids)
+		}
+		if strings.Contains(call.Block, "already been shown") {
+			t.Fatalf("call %d tells the model about the repeated rounds:\n%s", i+2, call.Block)
 		}
 	}
 }
@@ -143,7 +138,7 @@ func TestARunWhoseEveryRoundBringsNewRowsIsNeverRefusedAndStillEndsAtTheCallCap(
 
 	graph := graphYieldingNewRowsToEveryRecall()
 	model := &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -164,10 +159,9 @@ func TestARunWhoseEveryRoundBringsNewRowsIsNeverRefusedAndStillEndsAtTheCallCap(
 	}
 
 	final := model.calls[len(model.calls)-1]
-	for i, round := range final.PriorTools {
-		if rendered := RenderToolResult(round); strings.Contains(rendered, "already been shown") {
-			t.Fatalf("round %d brought rows the model had not seen and was still refused as a repeat:\n%s", i+1, rendered)
-		}
+	ids := candidateIDsIn(final.Block)
+	if len(ids) != 25 || !slices.IsSorted(ids) {
+		t.Fatalf("the final call carries candidates %v, want all 25 rows the five rounds brought, in ascending id order", ids)
 	}
 }
 
@@ -177,7 +171,7 @@ func TestOneRoundThatBringsSomethingBetweenTwoBarrenOnesKeepsRecallOpen(t *testi
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{{}, {Candidates: repeatedRows()}, {Candidates: repeatedRows()}, {Candidates: freshRows(3)}, {Candidates: freshRows(3)}, {Candidates: freshRows(5)}}
 	model := &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -200,7 +194,7 @@ func TestTheAnswerTheFinalJudgementProducesAfterRecallClosesIsKept(t *testing.T)
 	graph := graphReturningTheSameRowsToEveryRecall()
 	results := append(recallsDifferingOnlyByADateSuffix(4), JudgeResult{Answer: answer, Reason: Answered, RawReason: "stop"})
 	model := &fakeModel{results: results}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -286,7 +280,7 @@ func TestEveryRoundTheLoopCalledBarrenIsBarrenUnderTheRecordOnlyReadingToo(t *te
 	graph.recallQueue = []recallResponse{{Candidates: repeatedRows()}, {Candidates: freshRows(1)}, {Candidates: repeatedRows()}, {Candidates: freshRows(3)}}
 	results := append(recallsDifferingOnlyByADateSuffix(3), JudgeResult{Answer: "an answer", Reason: Answered, RawReason: "stop"})
 	model := &fakeModel{results: results}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -365,7 +359,7 @@ func TestAToolWantedOnTheReservedCallAfterRecallClosedIsRecordedRatherThanDispat
 	queries := recallsDifferingOnlyByADateSuffix(MaxModelCalls)
 	graph := graphReturningTheSameRowsToEveryRecall()
 	model := &fakeModel{ignoresWithheldToolList: true, results: queries}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -400,7 +394,7 @@ func TestAWriteRequestedAfterRecallClosedIsStillDispatched(t *testing.T) {
 		wantsWriteOf("index.html", page),
 		answered("done"),
 	}}
-	turn := NewTurn(graph, model, files, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -435,7 +429,7 @@ func TestTwoRecallRoundsThatFailedAtTransportDoNotCloseRecall(t *testing.T) {
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{{}, unavailable, unavailable, unavailable}
 	model := &fakeModel{results: append(recallsDifferingOnlyByADateSuffix(3), answered("done"))}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -460,7 +454,7 @@ func TestAGraphWithNothingToGiveClosesRecallAfterTwoEmptyRoundsRatherThanRunning
 
 	graph := baseGraph()
 	model := &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -484,19 +478,12 @@ func TestAGraphWithNothingToGiveClosesRecallAfterTwoEmptyRoundsRatherThanRunning
 	}
 
 	final := model.calls[len(model.calls)-1]
-	if len(final.PriorTools) != 3 {
-		t.Fatalf("the final call was shown %d rounds, want 3", len(final.PriorTools))
+	if len(final.Offered) != 0 {
+		t.Fatalf("the final call offers %v, want nothing: closing recall reserves the call for answering", final.Offered)
 	}
-	for i, round := range final.PriorTools[:2] {
-		rendered := RenderToolResult(round)
-		if !strings.Contains(rendered, "no additional results found") {
-			t.Fatalf("round %d returned nothing at all and was not said to have:\n%s", i+1, rendered)
+	for _, phrase := range []string{"no additional results", "recall is closed", "already been shown"} {
+		if strings.Contains(final.Block, phrase) {
+			t.Fatalf("the final call's block tells the model %q about rounds that found nothing; what was tried is not memory:\n%s", phrase, final.Block)
 		}
-		if strings.Contains(rendered, "already been shown") {
-			t.Fatalf("round %d returned nothing at all and was described as rows the model already holds:\n%s", i+1, rendered)
-		}
-	}
-	if closed := RenderToolResult(final.PriorTools[2]); !strings.Contains(closed, "recall is closed") {
-		t.Fatalf("the third round did not tell the model recall is closed:\n%s", closed)
 	}
 }

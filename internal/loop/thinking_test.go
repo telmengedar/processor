@@ -19,7 +19,7 @@ func runWithReasoning(t *testing.T, reasoningBytes int) string {
 		ReasoningBytes: reasoningBytes,
 		Provider:       Provider{Adapter: "some-adapter"},
 	}}}
-	turn := NewTurn(baseGraph(), model, nil, "system", "test-model", slog.New(slog.NewTextHandler(&logged, nil)))
+	turn := NewTurn(baseGraph(), model, nil, fixedSystem("system"), "test-model", slog.New(slog.NewTextHandler(&logged, nil)))
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
 		t.Fatalf("Run: %v", err)

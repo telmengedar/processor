@@ -45,7 +45,7 @@ func admissionBeforeTheCeilingExisted(candidates []Candidate, budget, spent int,
 func blockOver(anchor Anchor, admitted []Candidate, considered int) string {
 	rows := append([]Candidate(nil), admitted...)
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
-	return renderBlock(anchor, rows, considered > 0, SubstanceRatioThreshold)
+	return renderBlock(anchor, rows, considered > 0, SubstanceRatioThreshold, true)
 }
 
 func TestTheShippedBlockOccupancyLeavesNoCeilingInForce(t *testing.T) {

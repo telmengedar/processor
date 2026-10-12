@@ -241,14 +241,31 @@ func renderRecallResults(b *strings.Builder, results []Disposition) {
 		cutText = " / cut: " + strings.Join(reasons, ", ")
 	}
 
+	charged, held := chargedAndHeld(admitted)
+	bytesText := summaryBytes(charged)
+	if held > 0 {
+		bytesText += fmt.Sprintf(" new, %d already held", held)
+	}
+
 	fmt.Fprintf(b, "      -> %d results, %d admitted (%s)%s\n",
-		len(results), len(admitted), summaryBytes(sumRenderedSizes(admitted)), cutText)
+		len(results), len(admitted), bytesText, cutText)
 
 	if len(admitted) == 0 {
 		b.WriteString("      (none admitted)\n")
 		return
 	}
 	b.WriteString("      " + strings.Join(dispositionIDs(admitted), " ") + "\n")
+}
+
+func chargedAndHeld(admitted []Disposition) (charged, held int) {
+	for _, d := range admitted {
+		if d.Held {
+			held++
+			continue
+		}
+		charged += d.RenderedSize
+	}
+	return charged, held
 }
 
 func renderSummaryOutcome(b *strings.Builder, record Record) {

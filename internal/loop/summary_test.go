@@ -362,7 +362,7 @@ func TestRenderSummaryReportsTheLastCallAsUnrecordedRatherThanAsZeroWhenNoRespon
 	t.Parallel()
 
 	model := &fakeModel{results: researchToTheCap(), failOn: MaxModelCalls, failErr: errors.New("connection reset")}
-	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1157,5 +1157,24 @@ func TestARecordCarryingItsPerSiteBudgetsStillRendersTheNumbersRatherThanTheAbse
 	}
 	if strings.Contains(summary, "— tok") {
 		t.Fatalf("a record carrying both budgets renders one of them as absent.summary:%s", summary)
+	}
+}
+
+func TestRenderSummaryStatesOnlyTheBytesARoundAddedAndHowManyRowsItAlreadyHeld(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.ToolCalls = []ToolCallRecord{
+		{Tool: ToolRecall, Source: ToolSourceNative, Query: "again", Yield: 1, Results: []Disposition{
+			{Rank: 1, ID: 11, Size: 8000, RenderedSize: 8000, Included: true, Held: true},
+			{Rank: 2, ID: 52, Size: 2000, RenderedSize: 2000, Included: true},
+		}},
+	}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	const want = "-> 2 results, 2 admitted (2000 B new, 1 already held)"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the round is not summarised as %q: a held row is charged nothing, so its 8000 bytes did not enter the memory.\nsummary:\n%s", want, summary)
 	}
 }

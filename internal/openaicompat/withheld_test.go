@@ -28,7 +28,7 @@ func responseWithContent(t *testing.T, content string) string {
 
 func judgeWithheld(t *testing.T, c *Client) loop.JudgeResult {
 	t.Helper()
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget, WithholdTools: true})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}

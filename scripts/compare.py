@@ -584,8 +584,9 @@ RETRIEVED_CUT_SUPPLEMENTARY = Stage(
     "retrieved, cut (supplementary)",
     "the initial recall query never returned the answer at all; a supplementary round did, and "
     "assembly cut it there too -- the byte budget or the self-produced check; the per-node "
-    "detail below names which. This is not the same cut as RETRIEVED_CUT: the budget in play "
-    "here is the supplementary round's own SupplementaryByteBudget, a different number from the "
+    "detail below names which. This is not the same cut as RETRIEVED_CUT: the room in play "
+    "here is the supplementary round's own -- at most SupplementaryByteBudget, and less once the "
+    "turn's working memory holds rows -- a different number from the "
     "initial round's anchor-charged remaining budget that describe_cut reports against, and the "
     "candidates this was ranked among are the supplementary round's own results, not the initial "
     "round's",
@@ -1053,9 +1054,11 @@ def print_task(task, record, transcript):
                 print(f"  round {index}: ERROR {call['error']}")
             else:
                 kept = sum(1 for r in results if r.get("included"))
+                held = sum(1 for r in results if r.get("included") and r.get("held"))
+                held_note = f" ({held} already held)" if held else ""
                 print(
                     f"  round {index}: query {one_line(call.get('query'), 55)!r} "
-                    f"-> {kept} of {len(results)} admitted"
+                    f"-> {kept} of {len(results)} admitted{held_note}"
                 )
 
 

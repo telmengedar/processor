@@ -27,7 +27,7 @@ func TestTurnRunLogsTheModelCallCauseWholeOnARunFailedRecord(t *testing.T) {
 
 	var buf strings.Builder
 	const cause = "model double: upstream said the peg-native format did not match"
-	turn := NewTurn(baseGraph(), &fakeModel{err: errors.New(cause)}, nil, "system", "test-model",
+	turn := NewTurn(baseGraph(), &fakeModel{err: errors.New(cause)}, nil, fixedSystem("system"), "test-model",
 		slog.New(slog.NewTextHandler(&buf, nil)))
 
 	line := runFailedLog(t, turn, &buf)
@@ -43,7 +43,7 @@ func TestTurnRunFailedRecordNamesTheSubjectAndTheWallClock(t *testing.T) {
 	t.Parallel()
 
 	var buf strings.Builder
-	turn := NewTurn(baseGraph(), &fakeModel{err: errors.New("model double: refused")}, nil, "system", "test-model",
+	turn := NewTurn(baseGraph(), &fakeModel{err: errors.New("model double: refused")}, nil, fixedSystem("system"), "test-model",
 		slog.New(slog.NewTextHandler(&buf, nil)))
 
 	line := runFailedLog(t, turn, &buf)
@@ -64,7 +64,7 @@ func TestTurnRunLogsTheAnchorReadCauseWholeOnARunFailedRecord(t *testing.T) {
 	var buf strings.Builder
 	const cause = "graph double: dial tcp 10.0.0.55:443: connect: connection refused"
 	graph := &fakeGraph{nodeErr: errors.New(cause)}
-	turn := NewTurn(graph, &fakeModel{}, nil, "system", "test-model", slog.New(slog.NewTextHandler(&buf, nil)))
+	turn := NewTurn(graph, &fakeModel{}, nil, fixedSystem("system"), "test-model", slog.New(slog.NewTextHandler(&buf, nil)))
 
 	line := runFailedLog(t, turn, &buf)
 	if line == "" {
@@ -82,7 +82,7 @@ func TestTurnRunLogsTheRetrievalCauseWholeOnARunFailedRecord(t *testing.T) {
 	const cause = "graph double: recall returned 503 while draining"
 	graph := baseGraph()
 	graph.recallErr = errors.New(cause)
-	turn := NewTurn(graph, &fakeModel{}, nil, "system", "test-model", slog.New(slog.NewTextHandler(&buf, nil)))
+	turn := NewTurn(graph, &fakeModel{}, nil, fixedSystem("system"), "test-model", slog.New(slog.NewTextHandler(&buf, nil)))
 
 	line := runFailedLog(t, turn, &buf)
 	if !strings.Contains(line, cause) {
@@ -94,7 +94,7 @@ func TestTurnRunLogsNoRunFailedRecordWhenTheRunReachedAnAnswer(t *testing.T) {
 	t.Parallel()
 
 	var buf strings.Builder
-	turn := NewTurn(baseGraph(), &fakeModel{}, nil, "system", "test-model", slog.New(slog.NewTextHandler(&buf, nil)))
+	turn := NewTurn(baseGraph(), &fakeModel{}, nil, fixedSystem("system"), "test-model", slog.New(slog.NewTextHandler(&buf, nil)))
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -109,7 +109,7 @@ func firstRoundErrorOfAFailedWrite(t *testing.T, writeErr error) string {
 
 	files := &fakeFiles{dir: "/runs/run-1", writeErr: writeErr}
 	model := &fakeModel{results: []JudgeResult{wantsWriteOf("index.html", "x"), answered("done")}}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "make a page", 42)
 	if err != nil {
@@ -147,7 +147,7 @@ func TestTurnRunOpeningTheWorkingDirectoryCarriesItsOwnCause(t *testing.T) {
 	const cause = "mkdir /data/runs/run-4149672001: permission denied"
 	files := &fakeFiles{openErr: errors.New(cause)}
 	model := &fakeModel{results: []JudgeResult{wantsWriteOf("index.html", "x"), answered("done")}}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "make a page", 42)
 	if err != nil {
@@ -166,7 +166,7 @@ func TestTurnRunReportsARefusedReservedCallAsTheLoopsOwnSentence(t *testing.T) {
 
 	wantsRecall := JudgeResult{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"}
 	model := &fakeModel{ignoresWithheldToolList: true, results: []JudgeResult{wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall}}
-	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -188,7 +188,7 @@ func TestTurnRunStillReportsAnAbsentWorkingDirectoryAsTheLoopsOwnSentence(t *tes
 	t.Parallel()
 
 	model := &fakeModel{results: []JudgeResult{wantsWriteOf("index.html", "x"), answered("done")}}
-	turn := NewTurn(baseGraph(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "make a page", 42)
 	if err != nil {
@@ -247,7 +247,7 @@ func TestTurnRunBoundsACauseLongerThanTheBoundBeforeItReachesTheRound(t *testing
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		answered("done"),
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -269,7 +269,7 @@ func TestTurnRunBoundsAToolErrorPassedThroughFromTheModelsOwnRound(t *testing.T)
 		{Reason: WantsRecall, RawReason: "tool_calls", ToolError: toolError},
 		answered("done"),
 	}}
-	turn := NewTurn(baseGraph(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -291,7 +291,7 @@ func TestTurnRunBoundsAWriteToolErrorPassedThroughFromTheModelsOwnRound(t *testi
 		{Reason: WantsWrite, RawReason: "tool_calls", ToolError: toolError},
 		answered("done"),
 	}}
-	turn := NewTurn(baseGraph(), model, &fakeFiles{dir: "/runs/run-1"}, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, &fakeFiles{dir: "/runs/run-1"}, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "make a page", 42)
 	if err != nil {
@@ -312,7 +312,7 @@ func TestTurnRunBoundsAToolErrorTheReservedCallRefused(t *testing.T) {
 	wantsRecall := JudgeResult{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"}
 	capped := JudgeResult{Reason: WantsRecall, RawReason: "tool_calls", ToolError: toolError}
 	model := &fakeModel{ignoresWithheldToolList: true, results: []JudgeResult{wantsRecall, wantsRecall, wantsRecall, wantsRecall, wantsRecall, capped}}
-	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -344,7 +344,7 @@ func writeRoundLog(t *testing.T, writeErr, openErr error) string {
 	var buf strings.Builder
 	files := &fakeFiles{dir: "/runs/run-1", writeErr: writeErr, openErr: openErr}
 	model := &fakeModel{results: []JudgeResult{wantsWriteOf("index.html", "x"), answered("done")}}
-	turn := NewTurn(baseGraph(), model, files, "system", "test-model", slog.New(slog.NewTextHandler(&buf, nil)))
+	turn := NewTurn(baseGraph(), model, files, fixedSystem("system"), "test-model", slog.New(slog.NewTextHandler(&buf, nil)))
 
 	if _, _, err := turn.Run(context.Background(), "make a page", 42); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -385,7 +385,7 @@ func TestTurnRunLogsARunFailedRecordWhenTheSubjectResolvesToNothing(t *testing.T
 	t.Parallel()
 
 	var buf strings.Builder
-	turn := NewTurn(&fakeGraph{nodeFound: false}, &fakeModel{}, nil, "system", "test-model",
+	turn := NewTurn(&fakeGraph{nodeFound: false}, &fakeModel{}, nil, fixedSystem("system"), "test-model",
 		slog.New(slog.NewTextHandler(&buf, nil)))
 
 	line := runFailedLog(t, turn, &buf)

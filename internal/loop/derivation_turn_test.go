@@ -26,7 +26,7 @@ func runDerivedTurn(t *testing.T, model *fakeModel) (*fakeGraph, Record) {
 	t.Helper()
 
 	graph := derivingGraph()
-	record, _, err := NewTurn(graph, model, nil, "system", "test-model", testLogger()).Run(context.Background(), derivedInput, 42)
+	record, _, err := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger()).Run(context.Background(), derivedInput, 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestTheOperatorLogTimesTheDerivationStepOnBothPathsAndCarriesTheWholeCauseO
 
 	var fallbackLog strings.Builder
 	graph := derivingGraph()
-	_, _, err := NewTurn(graph, &fakeModel{deriveErr: errors.New(strings.Repeat(longCause, 12))}, nil, "system", "test-model",
+	_, _, err := NewTurn(graph, &fakeModel{deriveErr: errors.New(strings.Repeat(longCause, 12))}, nil, fixedSystem("system"), "test-model",
 		slog.New(slog.NewTextHandler(&fallbackLog, nil))).Run(context.Background(), derivedInput, 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -255,7 +255,7 @@ func TestTheOperatorLogTimesTheDerivationStepOnBothPathsAndCarriesTheWholeCauseO
 	}
 
 	var successLog strings.Builder
-	_, _, err = NewTurn(derivingGraph(), &fakeModel{derivedText: distinctiveDerived}, nil, "system", "test-model",
+	_, _, err = NewTurn(derivingGraph(), &fakeModel{derivedText: distinctiveDerived}, nil, fixedSystem("system"), "test-model",
 		slog.New(slog.NewTextHandler(&successLog, nil))).Run(context.Background(), derivedInput, 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)

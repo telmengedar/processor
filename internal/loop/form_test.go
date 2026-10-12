@@ -494,7 +494,7 @@ func TestTurnRunRendersTheBlockAtTheDialItsOwnRecordDeclares(t *testing.T) {
 	graph := baseGraph()
 	graph.candidates = []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Similarity: 0.9, Content: content, Substance: substance}}
 	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "the system text", "test-model-id", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("the system text"), "test-model-id", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -537,7 +537,7 @@ func TestTurnRunRendersASupplementaryHitAtTheDialItsAdmissionCharged(t *testing.
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		{Answer: "final", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -555,93 +555,15 @@ func TestTurnRunRendersASupplementaryHitAtTheDialItsAdmissionCharged(t *testing.
 		t.Fatalf("the round charged Form %q at RenderedSize %d, want %q at 1000 - the supplementary path runs the same dial as the block and it ships off", charged.Form, charged.RenderedSize, FormContent)
 	}
 
-	if len(model.calls) < 2 || len(model.calls[1].PriorTools) != 1 {
-		t.Fatalf("test setup error: the second judgement carries %d completed rounds, want 1", len(model.calls[1].PriorTools))
+	if len(model.calls) < 2 {
+		t.Fatalf("test setup error: the model was called %d times, want 2", len(model.calls))
 	}
-	rendered := RenderToolResult(model.calls[1].PriorTools[0])
+	rendered := model.calls[1].Block
 	if !strings.Contains(rendered, content) {
-		t.Fatal("the tool result does not carry the content the round charged for")
+		t.Fatal("the second call's block does not carry the content the round charged for")
 	}
 	if strings.Contains(rendered, substance) {
-		t.Fatal("the tool result carries the substance although the round charged the content; the supplementary path must not charge one form and render another")
-	}
-}
-
-func TestRenderToolResultRendersTheFormItsAdmissionChargedForAtTheSameDial(t *testing.T) {
-	t.Parallel()
-
-	content := strings.Repeat("x", 1000)
-	substance := strings.Repeat("z", 300)
-	candidates := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
-
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, 0, BlockOccupancy, formRuleTestThreshold)
-	if !dispositions[0].Included || dispositions[0].Form != FormSubstance {
-		t.Fatalf("test setup error: the candidate was admitted %v as Form %q, want admitted as %q or the divergence this test looks for cannot arise", dispositions[0].Included, dispositions[0].Form, FormSubstance)
-	}
-
-	got := RenderToolResult(ToolExchange{
-		Tool:                    ToolRecall,
-		Query:                   "q",
-		Results:                 admitted,
-		Dispositions:            dispositions,
-		SubstanceRatioThreshold: formRuleTestThreshold,
-	})
-
-	want := "===== RESULT =====\nid: 91\ntype: documentation\nname: Bravo\nform: substance\n\n" + substance + "\n"
-	if got != want {
-		t.Fatalf("a round that charged %d bytes rendered:\n%q\nwant:\n%q", dispositions[0].RenderedSize, got, want)
-	}
-}
-
-func TestRenderToolResultRendersTheContentAtTheOffPositionForAResultCarryingASubstance(t *testing.T) {
-	t.Parallel()
-
-	content := strings.Repeat("x", 1000)
-	substance := strings.Repeat("z", 300)
-
-	got := RenderToolResult(ToolExchange{
-		Tool:    ToolRecall,
-		Query:   "q",
-		Results: []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}},
-	})
-
-	want := "===== RESULT =====\nid: 91\ntype: documentation\nname: Bravo\n\n" + content + "\n"
-	if got != want {
-		t.Fatalf("at the dial's off position the tool result rendered:\n%q\nwant:\n%q", got, want)
-	}
-}
-
-func TestRenderToolResultRendersTheFormItsAdmissionChargedForUnderBothBounds(t *testing.T) {
-	t.Parallel()
-
-	content := strings.Repeat("x", 1000)
-	banded := strings.Repeat("z", 300)
-	overCompressed := strings.Repeat("y", 50)
-	candidates := []Candidate{
-		{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: banded},
-		{ID: 92, Type: "documentation", Name: "Charlie", Content: content, Substance: overCompressed},
-	}
-
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, 0, BlockOccupancy, formRuleTestThreshold)
-	if len(admitted) != 2 {
-		t.Fatalf("test setup error: %d of 2 results were admitted; a cut row renders nothing and the two sides of the band cannot then be compared", len(admitted))
-	}
-	if dispositions[0].Form != FormSubstance || dispositions[1].Form != FormContent {
-		t.Fatalf("test setup error: admission charged %q then %q, want %q then %q or this test observes only one side of the band", dispositions[0].Form, dispositions[1].Form, FormSubstance, FormContent)
-	}
-
-	got := RenderToolResult(ToolExchange{
-		Tool:                    ToolRecall,
-		Query:                   "q",
-		Results:                 admitted,
-		Dispositions:            dispositions,
-		SubstanceRatioThreshold: formRuleTestThreshold,
-	})
-
-	want := "===== RESULT =====\nid: 91\ntype: documentation\nname: Bravo\nform: substance\n\n" + banded + "\n" +
-		"\n===== RESULT =====\nid: 92\ntype: documentation\nname: Charlie\n\n" + content + "\n"
-	if got != want {
-		t.Fatalf("the supplementary surface applies a different band from the one its admission charged at:\n%q\nwant:\n%q", got, want)
+		t.Fatal("the second call's block carries the substance although the round charged the content; the supplementary path must not charge one form and render another")
 	}
 }
 
@@ -651,7 +573,7 @@ func TestTurnRunRecordsBothBoundsOfTheFormRuleItRenderedAt(t *testing.T) {
 	graph := baseGraph()
 	graph.candidates = []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Similarity: 0.9, Content: strings.Repeat("x", 1000), Substance: strings.Repeat("z", 300)}}
 	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "the system text", "test-model-id", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("the system text"), "test-model-id", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {

@@ -20,28 +20,28 @@ func TestTurnRunRecordsTheLastResponseExactlyWhenThatCallAnswered(t *testing.T) 
 		{
 			name: "an ordinary call ends the turn",
 			turn: func(t *testing.T) *Turn {
-				return NewTurn(baseGraph(), &fakeModel{results: []JudgeResult{answered("hi")}}, nil, "system", "test-model", testLogger())
+				return NewTurn(baseGraph(), &fakeModel{results: []JudgeResult{answered("hi")}}, nil, fixedSystem("system"), "test-model", testLogger())
 			},
 			want: true,
 		},
 		{
 			name: "the reserved call is issued at the call cap and completes",
 			turn: func(t *testing.T) *Turn {
-				return NewTurn(graphYieldingNewRowsToEveryRecall(), &fakeModel{results: researchThenAnswer("done")}, nil, "system", "test-model", testLogger())
+				return NewTurn(graphYieldingNewRowsToEveryRecall(), &fakeModel{results: researchThenAnswer("done")}, nil, fixedSystem("system"), "test-model", testLogger())
 			},
 			want: true,
 		},
 		{
 			name: "the reserved call follows a closed recall and completes",
 			turn: func(t *testing.T) *Turn {
-				return NewTurn(graphReturningTheSameRowsToEveryRecall(), &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}, nil, "system", "test-model", testLogger())
+				return NewTurn(graphReturningTheSameRowsToEveryRecall(), &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}, nil, fixedSystem("system"), "test-model", testLogger())
 			},
 			want: true,
 		},
 		{
 			name: "the reserved call is issued at the call cap and fails",
 			turn: func(t *testing.T) *Turn {
-				return NewTurn(graphYieldingNewRowsToEveryRecall(), &fakeModel{results: researchToTheCap(), failOn: MaxModelCalls, failErr: errors.New("connection reset")}, nil, "system", "test-model", testLogger())
+				return NewTurn(graphYieldingNewRowsToEveryRecall(), &fakeModel{results: researchToTheCap(), failOn: MaxModelCalls, failErr: errors.New("connection reset")}, nil, fixedSystem("system"), "test-model", testLogger())
 			},
 			want: false,
 		},
@@ -66,7 +66,7 @@ func TestTurnRunRecordOmitsTheLastResponseKeyWhenNoResponseArrived(t *testing.T)
 	t.Parallel()
 
 	model := &fakeModel{results: researchToTheCap(), failOn: MaxModelCalls, failErr: errors.New("connection reset")}
-	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -86,7 +86,7 @@ func TestTurnRunRecordCarriesTheLastResponseKeyWhenACallAnswered(t *testing.T) {
 	t.Parallel()
 
 	model := &fakeModel{results: []JudgeResult{answered("hi")}}
-	turn := NewTurn(baseGraph(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -106,7 +106,7 @@ func TestTurnRunRecordOmitsTheReservedCallKeyWhenNothingWasReserved(t *testing.T
 	t.Parallel()
 
 	model := &fakeModel{results: []JudgeResult{answered("hi")}}
-	turn := NewTurn(baseGraph(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(baseGraph(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -132,7 +132,7 @@ func TestTurnRunEveryReservingConditionRecordsAReservedCallState(t *testing.T) {
 		{
 			name: "the call budget was spent, and the reserved call completes",
 			run: func(t *testing.T) Record {
-				turn := NewTurn(graphYieldingNewRowsToEveryRecall(), &fakeModel{results: researchToTheCap()}, nil, "system", "test-model", testLogger())
+				turn := NewTurn(graphYieldingNewRowsToEveryRecall(), &fakeModel{results: researchToTheCap()}, nil, fixedSystem("system"), "test-model", testLogger())
 				record, _, err := turn.Run(context.Background(), "hello", 42)
 				if err != nil {
 					t.Fatalf("Run: %v", err)
@@ -143,7 +143,7 @@ func TestTurnRunEveryReservingConditionRecordsAReservedCallState(t *testing.T) {
 		{
 			name: "recall closed on consecutive barren rounds, and the reserved call completes",
 			run: func(t *testing.T) Record {
-				turn := NewTurn(graphReturningTheSameRowsToEveryRecall(), &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}, nil, "system", "test-model", testLogger())
+				turn := NewTurn(graphReturningTheSameRowsToEveryRecall(), &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}, nil, fixedSystem("system"), "test-model", testLogger())
 				record, _, err := turn.Run(context.Background(), "hello", 42)
 				if err != nil {
 					t.Fatalf("Run: %v", err)
@@ -200,19 +200,19 @@ func TestTurnRunRecordsOneUsageEntryPerModelCall(t *testing.T) {
 		{
 			name: "a turn that reserves and completes",
 			turn: func(t *testing.T) *Turn {
-				return NewTurn(graphYieldingNewRowsToEveryRecall(), &fakeModel{results: researchThenAnswer("done")}, nil, "system", "test-model", testLogger())
+				return NewTurn(graphYieldingNewRowsToEveryRecall(), &fakeModel{results: researchThenAnswer("done")}, nil, fixedSystem("system"), "test-model", testLogger())
 			},
 		},
 		{
 			name: "a turn whose reserved call fails",
 			turn: func(t *testing.T) *Turn {
-				return NewTurn(graphYieldingNewRowsToEveryRecall(), &fakeModel{results: researchToTheCap(), failOn: MaxModelCalls, failErr: errors.New("connection reset")}, nil, "system", "test-model", testLogger())
+				return NewTurn(graphYieldingNewRowsToEveryRecall(), &fakeModel{results: researchToTheCap(), failOn: MaxModelCalls, failErr: errors.New("connection reset")}, nil, fixedSystem("system"), "test-model", testLogger())
 			},
 		},
 		{
 			name: "a turn that ends ordinarily",
 			turn: func(t *testing.T) *Turn {
-				return NewTurn(baseGraph(), &fakeModel{results: []JudgeResult{answered("hi")}}, nil, "system", "test-model", testLogger())
+				return NewTurn(baseGraph(), &fakeModel{results: []JudgeResult{answered("hi")}}, nil, fixedSystem("system"), "test-model", testLogger())
 			},
 		},
 	}
@@ -245,7 +245,7 @@ func TestTurnJudgeEndsTheTurnOnEveryTerminalThatWantsNoTool(t *testing.T) {
 				{Answer: "first call's prose", Reason: reason, RawReason: "raw", ReasoningBytes: 7, UnofferedToolCalls: 2},
 				{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "would be a second call"},
 			}}
-			turn := NewTurn(baseGraph(), model, nil, "system", "test-model", testLogger())
+			turn := NewTurn(baseGraph(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 			record, _, err := turn.Run(context.Background(), "hello", 42)
 			if err != nil {

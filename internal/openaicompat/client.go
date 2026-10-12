@@ -104,9 +104,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		Temperature:     c.sampling.Temperature,
 		TopP:            c.sampling.TopP,
 	}
-	if !in.WithholdTools {
-		reqBody.Tools = []wireTool{recallTool(), writeFileTool(), readNodeTool()}
-	}
+	reqBody.Tools = declaredTools(in.Offered)
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -138,7 +136,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		return loop.JudgeResult{}, len(body), fmt.Errorf("decode response: %w", err)
 	}
 
-	result, err := translate(wire, in.WithholdTools)
+	result, err := translate(wire, in.Offered)
 	if err != nil {
 		return loop.JudgeResult{}, len(body), err
 	}

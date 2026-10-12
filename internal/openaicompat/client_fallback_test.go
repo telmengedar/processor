@@ -38,7 +38,7 @@ func TestModelClientBuiltByAnExternalKeyedLiteralSurvivesTheNilHTTPClientBranch(
 
 	c := openaicompat.Client{}
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: 173})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: 173, Offered: []string{loop.ToolRecall, loop.ToolWriteFile, loop.ToolReadNode}})
 	if err == nil {
 		t.Fatal("Judge on a zero-value Client returned no error, want a transport error")
 	}
@@ -64,7 +64,7 @@ func TestJudgeSendsItsRequestThroughTheHTTPClientSuppliedToNewClient(t *testing.
 	rt := &recordingTransport{}
 	c := openaicompat.NewClient("http://model.invalid", "m", "supplied-key", loop.Sampling{}, &http.Client{Transport: rt})
 
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: 173})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: 173, Offered: []string{loop.ToolRecall, loop.ToolWriteFile, loop.ToolReadNode}})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}

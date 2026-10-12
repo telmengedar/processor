@@ -35,7 +35,7 @@ func TestEveryJudgementStepOfOneTurnStatesTheOneInstantTheClockWasReadFor(t *tes
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "more please"},
 		{Answer: "done", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(promptClockGraph(), model, nil, "system text", "test-model", testLogger())
+	turn := NewTurn(promptClockGraph(), model, nil, fixedSystem("system text"), "test-model", testLogger())
 	turn.clock = advancingClock(time.Hour)
 
 	if _, _, err := turn.Run(context.Background(), "what changed today", 42); err != nil {
@@ -57,7 +57,7 @@ func TestATurnBuiltByNewTurnStatesARealInstantRatherThanTheZeroTime(t *testing.T
 	t.Parallel()
 
 	model := &fakeModel{}
-	turn := NewTurn(promptClockGraph(), model, nil, "system text", "test-model", testLogger())
+	turn := NewTurn(promptClockGraph(), model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	if _, _, err := turn.Run(context.Background(), "what changed today", 42); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -84,7 +84,7 @@ func TestTheWindowIsBuiltInTheZoneOfTheInstantTheRunStates(t *testing.T) {
 	t.Parallel()
 
 	model := &fakeModel{derivedText: "DATES: 2026-09-12..2026-09-12\nfirst question?"}
-	turn := NewTurn(promptClockGraph(), model, nil, "system text", "test-model", testLogger())
+	turn := NewTurn(promptClockGraph(), model, nil, fixedSystem("system text"), "test-model", testLogger())
 	turn.clock = func() time.Time { return recordInstantLocal }
 
 	record, _, err := turn.Run(context.Background(), "what changed today", 42)
@@ -105,7 +105,7 @@ func TestTheRunRecordCarriesTheSameInstantTheAssembledPromptStates(t *testing.T)
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "more please"},
 		{Answer: "done", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(promptClockGraph(), model, nil, "system text", "test-model", testLogger())
+	turn := NewTurn(promptClockGraph(), model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	reads := 0
 	turn.clock = func() time.Time {

@@ -269,9 +269,11 @@ def print_turn(number, record):
                 print(f"  round {index}: ERROR {call['error']}")
             else:
                 kept_here = sum(1 for r in results if r.get("included"))
+                held_here = sum(1 for r in results if r.get("included") and r.get("held"))
+                held_note = f" ({held_here} already held)" if held_here else ""
                 print(
                     f"  round {index}: query {one_line(call.get('query'), 60)!r} "
-                    f"-> {kept_here} of {len(results)} admitted"
+                    f"-> {kept_here} of {len(results)} admitted{held_note}"
                 )
 
     print()

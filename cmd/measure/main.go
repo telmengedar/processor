@@ -116,7 +116,7 @@ func build(logger *slog.Logger) (*measure.Runner, error) {
 
 	graph := measure.NewGraph(client, nil, logger)
 
-	return measure.NewRunner(graph, substances, model, files, fillPort, systemtext.Text, modelCfg.ID, logger), nil
+	return measure.NewRunner(graph, substances, model, files, fillPort, systemtext.Compose, modelCfg.ID, logger), nil
 }
 
 func readTask(task io.Reader, human io.Writer) (string, bool) {

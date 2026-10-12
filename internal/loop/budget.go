@@ -14,7 +14,7 @@ const (
 const (
 	// DerivationPromptCeiling bounds the bytes one derivation call sends: its instructions and exemplars, plus the run's input.
 	DerivationPromptCeiling = 12_000
-	// JudgementPromptCeiling bounds the bytes one judgement call sends: the assembled block, plus one supplementary round carried back into the prompt.
+	// JudgementPromptCeiling bounds the bytes one judgement call sends: the working memory, which is the assembled block plus one supplementary round and never more.
 	JudgementPromptCeiling = AssemblyByteBudget + SupplementaryByteBudget
 )
 

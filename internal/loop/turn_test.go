@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -163,7 +165,7 @@ func (f *fakeModel) Judge(_ context.Context, in JudgeInput) (JudgeResult, error)
 	if idx >= len(f.results) {
 		idx = len(f.results) - 1
 	}
-	if !in.WithholdTools || f.ignoresWithheldToolList {
+	if len(in.Offered) != 0 || f.ignoresWithheldToolList {
 		return f.results[idx], nil
 	}
 	return withoutToolRequest(f.results[idx]), nil
@@ -184,8 +186,23 @@ func withoutToolRequest(result JudgeResult) JudgeResult {
 	return result
 }
 
+func fixedSystem(text string) func([]string) string {
+	return func([]string) string { return text }
+}
+
+var candidateSection = regexp.MustCompile(`(?m)^===== CANDIDATE =====\nid: (\d+)\n`)
+
+func candidateIDsIn(block string) []int64 {
+	var ids []int64
+	for _, match := range candidateSection.FindAllStringSubmatch(block, -1) {
+		id, _ := strconv.ParseInt(match[1], 10, 64)
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func newTurnWithGraph(graph GraphPort) *Turn {
-	return NewTurn(graph, &fakeModel{}, nil, "system text", "test-model", testLogger())
+	return NewTurn(graph, &fakeModel{}, nil, fixedSystem("system text"), "test-model", testLogger())
 }
 
 func TestTurnRunReturnsSubjectNotFound(t *testing.T) {
@@ -253,7 +270,7 @@ func TestTurnRunDoesNotCallModelWhenRecallFails(t *testing.T) {
 		nodeFound: true,
 		recallErr: errors.New("literal: 500 from graph"),
 	}
-	turn := NewTurn(graph, model, nil, "system text", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); !errors.Is(err, ErrGraphUnavailable) {
 		t.Fatalf("Run() err = %v, want ErrGraphUnavailable", err)
@@ -362,7 +379,7 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 
 	graph := baseGraph()
 	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "the system text", "test-model-id", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("the system text"), "test-model-id", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -410,7 +427,7 @@ func TestTurnRunRecordsTheSamplingTheModelReportedApplying(t *testing.T) {
 	graph := baseGraph()
 	temperature := 0.4
 	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop", Sampling: Sampling{Temperature: &temperature}}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -429,7 +446,7 @@ func TestTurnRunRecordsNoSamplingWhenTheModelReportsNone(t *testing.T) {
 
 	graph := baseGraph()
 	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -452,7 +469,7 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing thing"},
 		{Answer: "final answer", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -485,8 +502,8 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 	if record.CapReached {
 		t.Fatal("record.CapReached = true, want false — the model answered on the second call, the cap never fired")
 	}
-	if len(model.calls[1].PriorTools) != 1 || model.calls[1].PriorTools[0].Query != "the missing thing" {
-		t.Fatalf("second Judge call's PriorTools = %+v, want the completed round", model.calls[1].PriorTools)
+	if ids := candidateIDsIn(model.calls[1].Block); !slices.Equal(ids, []int64{99}) {
+		t.Fatalf("second Judge call's block carries candidates %v, want the one row the round found, [99]", ids)
 	}
 }
 
@@ -498,7 +515,7 @@ func TestTurnRunRecordsAMalformedToolRequestAsAnErrorFlaggedRoundAndContinues(t 
 		{Reason: WantsRecall, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed"},
 		{Answer: "answered anyway", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -539,7 +556,7 @@ func TestTurnRunRecordsASupplementaryRecallTransportFailureAsAnErrorFlaggedRound
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		{Answer: "answered anyway", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -562,7 +579,7 @@ func TestTurnRunStopsAtTheModelCallCapWithoutDispatchingAFinalRecall(t *testing.
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q2"},
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q3"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -603,7 +620,7 @@ func TestACappedRunCarriesNoRoundThatWasRefusedForWantOfBudget(t *testing.T) {
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q2"},
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q3"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -639,7 +656,7 @@ func TestTurnRunCarriesTheSupplementaryRecallCauseIntoTheRoundAndLogsItWhole(t *
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		{Answer: "answered anyway", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -656,7 +673,7 @@ func TestTurnRunCarriesTheSupplementaryRecallCauseIntoTheRoundAndLogsItWhole(t *
 	}
 }
 
-func TestTurnRunReplaysTheSupplementaryRecallCauseToTheModelOnTheNextCall(t *testing.T) {
+func TestTurnRunKeepsTheSupplementaryRecallCauseOutOfTheModelsNextCall(t *testing.T) {
 	t.Parallel()
 
 	const cause = "literal: 503 from graph: upstream is draining"
@@ -669,7 +686,7 @@ func TestTurnRunReplaysTheSupplementaryRecallCauseToTheModelOnTheNextCall(t *tes
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		{Answer: "answered anyway", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -677,12 +694,9 @@ func TestTurnRunReplaysTheSupplementaryRecallCauseToTheModelOnTheNextCall(t *tes
 	if len(model.calls) != 2 {
 		t.Fatalf("the model was called %d times, want 2", len(model.calls))
 	}
-	prior := model.calls[1].PriorTools
-	if len(prior) != 1 {
-		t.Fatalf("second call's PriorTools has %d entries, want 1", len(prior))
-	}
-	if got := RenderToolResult(prior[0]); got != "error: "+cause {
-		t.Fatalf("the model was shown %q, want the recall's own cause %q", got, "error: "+cause)
+	second := model.calls[1]
+	if strings.Contains(second.Block, cause) || strings.Contains(second.System, cause) {
+		t.Fatalf("the second call carries the recall's failure %q, want the cause on the record alone:\nblock=%q", cause, second.Block)
 	}
 }
 
@@ -691,7 +705,7 @@ func TestTurnRunPreservesBothTheMappedAndRawStopReason(t *testing.T) {
 
 	graph := baseGraph()
 	model := &fakeModel{results: []JudgeResult{{Reason: Unrecognised, RawReason: "some-vendor-string"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -710,7 +724,7 @@ func TestTurnRunLeavesUsageAbsentWhenTheModelReportedNone(t *testing.T) {
 
 	graph := baseGraph()
 	model := &fakeModel{results: []JudgeResult{{Reason: Answered, RawReason: "stop", Usage: nil}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -730,7 +744,7 @@ func TestTurnRunCarriesUsageWhenTheModelReportedIt(t *testing.T) {
 	graph := baseGraph()
 	usage := &Usage{InTokens: 100, OutTokens: 20}
 	model := &fakeModel{results: []JudgeResult{{Reason: Answered, RawReason: "stop", Usage: usage}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -754,7 +768,7 @@ func TestTurnRunUsageArrayLengthAlwaysEqualsModelCalls(t *testing.T) {
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q", Usage: usage1},
 		{Answer: "final", Reason: Answered, RawReason: "stop", Usage: nil},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -776,7 +790,7 @@ func TestTurnRunWrapsModelFailureAsModelUnavailableAndWritesNothing(t *testing.T
 
 	graph := baseGraph()
 	model := &fakeModel{err: errors.New("literal: connection reset")}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	_, _, err := turn.Run(context.Background(), "hello", 42)
 	if !errors.Is(err, ErrModelUnavailable) {
@@ -793,7 +807,7 @@ func TestTurnRunWritesTheRecordAndReportsTheReceiptTheAdapterReturned(t *testing
 	graph := baseGraph()
 	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: 999}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	_, receipt, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -826,7 +840,7 @@ func TestTurnRunReportsEachWriteStateVerbatimAndInterpretsNone(t *testing.T) {
 			graph := baseGraph()
 			graph.writeRunReceipt = want
 			model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-			turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+			turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 			_, receipt, err := turn.Run(context.Background(), "hello", 42)
 			if err != nil {
@@ -845,7 +859,7 @@ func TestTurnRunRecordSerialisesWithNoKeyAboutItsOwnFiling(t *testing.T) {
 	graph := baseGraph()
 	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: 4242}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -875,7 +889,7 @@ func TestTurnRunFilesTheRecordAfterTheRequestContextIsCancelled(t *testing.T) {
 	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: 999}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	model.beforeReturn = cancel
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	_, receipt, err := turn.Run(ctx, "hello", 42)
 	if err != nil {
@@ -901,7 +915,7 @@ func TestTurnRunDoesNotFailTheRunWhenNoNodeHoldsTheRecord(t *testing.T) {
 	graph := baseGraph()
 	graph.writeRunReceipt = WriteReceipt{State: NotStored}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, receipt, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -935,7 +949,7 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		{Answer: "final", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -968,9 +982,8 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 		t.Fatalf("round.Results[2].Size = %d, want 5000 — a cut row must still carry the size that caused the cut", round.Results[2].Size)
 	}
 
-	seen := model.calls[1].PriorTools[0].Results
-	if len(seen) != 3 || seen[0].ID != 91 || seen[1].ID != 92 || seen[2].ID != 94 {
-		t.Fatalf("PriorTools[0].Results = %+v, want the three admitted candidates [91 92 94], in rank order", seen)
+	if seen := candidateIDsIn(model.calls[1].Block); !slices.Equal(seen, []int64{91, 92, 94}) {
+		t.Fatalf("the second call's block carries candidates %v, want exactly the three admitted [91 92 94]", seen)
 	}
 }
 
@@ -990,7 +1003,7 @@ func TestTurnRunSupplementaryAdmissionStaysInRankOrderEvenWhenIDsDescend(t *test
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		{Answer: "final", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1010,9 +1023,8 @@ func TestTurnRunSupplementaryAdmissionStaysInRankOrderEvenWhenIDsDescend(t *test
 		}
 	}
 
-	seen := model.calls[1].PriorTools[0].Results
-	if len(seen) != 3 || seen[0].ID != 300 || seen[1].ID != 200 || seen[2].ID != 100 {
-		t.Fatalf("PriorTools[0].Results = %+v, want [300 200 100] in rank order, not resorted by id", seen)
+	if seen := candidateIDsIn(model.calls[1].Block); !slices.Equal(seen, []int64{100, 200, 300}) {
+		t.Fatalf("the second call's block carries candidates %v, want all three admitted, in the block's own ascending id order [100 200 300]", seen)
 	}
 }
 
@@ -1030,7 +1042,7 @@ func TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRo
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		{Answer: "final", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1050,9 +1062,8 @@ func TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRo
 		t.Fatal("round.Results[0].CutReason is empty, want the budget cut recorded")
 	}
 
-	seen := model.calls[1].PriorTools[0].Results
-	if len(seen) != 0 {
-		t.Fatalf("PriorTools[0].Results has %d entries, want 0 — nothing was admitted", len(seen))
+	if seen := candidateIDsIn(model.calls[1].Block); len(seen) != 0 {
+		t.Fatalf("the second call's block carries candidates %v, want none — nothing was admitted", seen)
 	}
 }
 
@@ -1068,7 +1079,7 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
 		{Answer: "final", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1099,7 +1110,7 @@ func TestTurnRunLogsRunStartedBeforeTheAnchorRead(t *testing.T) {
 	graph := baseGraph()
 	atNode := ""
 	graph.onNode = func() { atNode = logBuf.String() }
-	turn := NewTurn(graph, &fakeModel{}, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, &fakeModel{}, nil, fixedSystem("system"), "test-model", logger)
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -1117,7 +1128,7 @@ func TestTurnRunStartedRecordCarriesTheInputLengthAndNeverTheInputText(t *testin
 	var logBuf strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
-	turn := NewTurn(baseGraph(), &fakeModel{}, nil, "system", "test-model", logger)
+	turn := NewTurn(baseGraph(), &fakeModel{}, nil, fixedSystem("system"), "test-model", logger)
 
 	if _, _, err := turn.Run(context.Background(), secretInput, 42); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -1149,7 +1160,7 @@ func TestTurnRunFinishedRecordCarriesTheReceiptCountsAndWallClock(t *testing.T) 
 	}
 	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: 999}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop", Usage: &Usage{InTokens: 11, OutTokens: 22}}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model-id", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model-id", logger)
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -1184,7 +1195,7 @@ func TestTurnRunFinishedRecordNamesANodeOnlyWhenOneExists(t *testing.T) {
 	graph := baseGraph()
 	graph.writeRunReceipt = WriteReceipt{State: NotStored}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -1211,7 +1222,7 @@ func TestTurnRunFinishedRecordSumsUsageAcrossCallsAndCountsTheCallsThatReportedI
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "more"},
 		{Answer: "ok", Reason: Answered, RawReason: "stop", Usage: &Usage{InTokens: 100, OutTokens: 7}},
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -1237,7 +1248,7 @@ func TestTurnRunWarnsWhenAssemblyAdmittedNothing(t *testing.T) {
 		{ID: 8, Type: "task", Name: "AlsoTooBig", Similarity: 0.8, Content: strings.Repeat("y", AssemblyByteBudget+1)},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1270,7 +1281,7 @@ func TestTurnRunDoesNotWarnWhenAnythingWasAdmitted(t *testing.T) {
 		{ID: 8, Type: "task", Name: "TooBig", Similarity: 0.8, Content: strings.Repeat("x", AssemblyByteBudget+1)},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1293,7 +1304,7 @@ func TestTurnRunDoesNotWarnWhenRecallReturnedNothing(t *testing.T) {
 
 	graph := baseGraph()
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1321,7 +1332,7 @@ func TestTurnRunWarnsWhenTheAnchorAloneConsumesTheWholeBudget(t *testing.T) {
 		{ID: 8, Type: "task", Name: "AlsoSmall", Similarity: 0.8, Content: "also small body"},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1367,7 +1378,7 @@ func TestTurnRunWarnsWhenTheTopRankedCandidateWasDroppedForTheByteBudget(t *test
 		{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1405,7 +1416,7 @@ func TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasAdmittedEvenThoughOthersW
 		{ID: 102, Type: "documentation", Name: "Big2", Similarity: 0.7, Content: strings.Repeat("y", AssemblyByteBudget+1)},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1486,7 +1497,7 @@ func TestTurnRunRaisesBothTheShutoutAndTheDroppedTopCandidateRecordsWhenNothingW
 		{ID: 101, Type: "documentation", Name: "Big2", Similarity: 0.8, Content: strings.Repeat("y", AssemblyByteBudget+1)},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1513,7 +1524,7 @@ func TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped
 		{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1565,7 +1576,7 @@ func TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries(t *testing.T) {
 			graph := baseGraph()
 			graph.candidates = tc.candidates
 			model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-			turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+			turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 			record, _, err := turn.Run(context.Background(), "hello", 42)
 			if err != nil {
@@ -1615,7 +1626,7 @@ func TestAShortApertureIsWarnedEvenWhenNothingWasCutBecauseNothingWasFetched(t *
 		{ID: 902, Type: "session-log", Name: "another record this run wrote", Similarity: 0.8, Content: "another record body", SelfProduced: true},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1645,7 +1656,7 @@ func TestAFullApertureRaisesNoUnderDeliveryAlarm(t *testing.T) {
 		graph.candidates = append(graph.candidates, Candidate{ID: int64(700 + i), Type: "documentation", Name: "A real document", Similarity: 0.9, Content: "a small body"})
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1677,7 +1688,7 @@ func TestTurnRunLogsNoRunFinishedWhenTheRunNeverReachedAnAnswer(t *testing.T) {
 
 	graph := baseGraph()
 	model := &fakeModel{err: errors.New("literal: connection reset")}
-	turn := NewTurn(graph, model, nil, "system", "test-model", logger)
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err == nil {
 		t.Fatal("Run returned no error although the model call failed")
@@ -1700,7 +1711,7 @@ func TestTheSupplementaryRecallSendsTheModelsOwnQueryUnscopedAsExactlyOneCall(t 
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the query the model composed"},
 		{Answer: "done", Reason: Answered, RawReason: "stop"},
 	}}
-	turn := NewTurn(graph, model, nil, "system text", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	if _, _, err := turn.Run(context.Background(), "the input", 7); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -1730,7 +1741,7 @@ func TestTheSupplementaryRecallCarriesTheRunsWindow(t *testing.T) {
 			{Answer: "done", Reason: Answered, RawReason: "stop"},
 		},
 	}
-	turn := NewTurn(graph, model, nil, "system text", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "the input", 7)
 	if err != nil {
@@ -1760,7 +1771,7 @@ func TestTheTurnHoldsThreeOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *t
 		graph.scopedCandidates = append(graph.scopedCandidates, Candidate{ID: id, Type: "documentation", Name: "neighbourhood"})
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "done", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1785,7 +1796,7 @@ func TestTheRecordCarriesTheFloorThatGovernedTheRun(t *testing.T) {
 
 	graph := baseGraph()
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1801,7 +1812,7 @@ func TestTheRecordCarriesTheQuerySetEachCandidatesAttributionIndexesInto(t *test
 	t.Parallel()
 
 	graph := baseGraph()
-	turn := NewTurn(graph, &fakeModel{}, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, &fakeModel{}, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1822,7 +1833,7 @@ func TestTheRecordSaysWhichRecallReturnedEachCandidateAndAtWhatRank(t *testing.T
 
 	graph := baseGraph()
 	graph.candidates = []Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "body"}}
-	turn := NewTurn(graph, &fakeModel{}, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, &fakeModel{}, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -1846,7 +1857,7 @@ func TestTheAnchorIsNeverAdmittedAsACandidateAgainstTheBlockThatAlreadyRendersIt
 		{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
 		{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"},
 	}
-	turn := NewTurn(graph, &fakeModel{}, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, &fakeModel{}, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {

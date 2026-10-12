@@ -29,13 +29,13 @@ func researchThenAnswer(answer string) []JudgeResult {
 func capturingTurn(t *testing.T, model ModelPort) (*Turn, *bytes.Buffer) {
 	t.Helper()
 	var logged bytes.Buffer
-	return NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", slog.New(slog.NewTextHandler(&logged, nil))), &logged
+	return NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", slog.New(slog.NewTextHandler(&logged, nil))), &logged
 }
 
 func withheldFlags(calls []JudgeInput) []bool {
 	flags := make([]bool, len(calls))
 	for i, call := range calls {
-		flags[i] = call.WithholdTools
+		flags[i] = len(call.Offered) == 0
 	}
 	return flags
 }
@@ -44,7 +44,7 @@ func TestTheCallTheLoopWouldNotDispatchAToolFromIsTheOnlyOneIssuedWithNoToolList
 	t.Parallel()
 
 	model := &fakeModel{results: researchToTheCap()}
-	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -62,7 +62,7 @@ func TestTheCallThatFollowsAClosedRecallIsIssuedWithNoToolList(t *testing.T) {
 
 	graph := graphReturningTheSameRowsToEveryRecall()
 	model := &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -88,7 +88,7 @@ func TestAReservedCallProducesTheAnswerACappedRunUsedToReturnEmpty(t *testing.T)
 	const answer = "Here is what the five rounds of retrieval support, and what remains open."
 
 	model := &fakeModel{results: researchThenAnswer(answer)}
-	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -113,7 +113,7 @@ func TestReservingTheLastCallCostsNoDispatchedResearchRound(t *testing.T) {
 
 	graph := graphYieldingNewRowsToEveryRecall()
 	model := &fakeModel{results: researchToTheCap()}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -135,7 +135,7 @@ func TestARunThatAnswersBeforeItsLastCallIsOfferedBothToolsThroughout(t *testing
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q1"},
 		answered("the answer the run reached on its own"),
 	}}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -158,7 +158,7 @@ func TestTheReservedCallIsIssuedTheAnsweringSitesOwnBudget(t *testing.T) {
 	t.Parallel()
 
 	model := &fakeModel{results: researchThenAnswer("done")}
-	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -179,7 +179,7 @@ func TestAFailedReservedCallEndsTheTurnWithTheRecordItAlreadyHoldsRatherThanFail
 
 	graph := graphYieldingNewRowsToEveryRecall()
 	model := &fakeModel{results: researchToTheCap(), failOn: MaxModelCalls, failErr: errors.New(cause)}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -206,7 +206,7 @@ func TestAFailedReservedCallDoesNotPromoteTheProseTheModelWroteBesideAnEarlierTo
 	t.Parallel()
 
 	model := &fakeModel{results: researchToTheCap(), failOn: MaxModelCalls, failErr: errors.New("connection reset")}
-	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -221,7 +221,7 @@ func TestAResearchCallThatFailsStillFailsTheRun(t *testing.T) {
 	t.Parallel()
 
 	model := &fakeModel{results: researchToTheCap(), failOn: 2, failErr: errors.New("connection reset")}
-	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	if _, _, err := turn.Run(context.Background(), "hello", 42); !errors.Is(err, ErrModelUnavailable) {
 		t.Fatalf("Run() err = %v, want ErrModelUnavailable: only the reserved call is allowed to fail without failing the run", err)
@@ -233,7 +233,7 @@ func TestAToolWantedOnAReservedCallIsRefusedRatherThanDispatched(t *testing.T) {
 
 	graph := graphYieldingNewRowsToEveryRecall()
 	model := &fakeModel{ignoresWithheldToolList: true, results: researchToTheCap()}
-	turn := NewTurn(graph, model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -273,7 +273,7 @@ func TestTheTurnLogsWhichConditionReservedItsLastCall(t *testing.T) {
 			turn: func(t *testing.T) (*Turn, *bytes.Buffer) {
 				var logged bytes.Buffer
 				model := &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}
-				return NewTurn(graphReturningTheSameRowsToEveryRecall(), model, nil, "system", "test-model", slog.New(slog.NewTextHandler(&logged, nil))), &logged
+				return NewTurn(graphReturningTheSameRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", slog.New(slog.NewTextHandler(&logged, nil))), &logged
 			},
 			condition:  string(reservedByClosedRecall),
 			dispatched: barrenRoundsToClose + 1,
@@ -312,7 +312,7 @@ func TestACurtailedRunThatProducedAnAnswerIsStillCountedAmongTheCurtailed(t *tes
 	t.Parallel()
 
 	model := &fakeModel{results: researchThenAnswer("a grounded partial answer")}
-	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -377,7 +377,7 @@ func TestAReservedCallThatAnsweredWithNothingIsDistinguishableFromOneNeverMade(t
 	t.Parallel()
 
 	model := &fakeModel{results: researchThenAnswer("")}
-	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, "system", "test-model", testLogger())
+	turn := NewTurn(graphYieldingNewRowsToEveryRecall(), model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {

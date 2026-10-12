@@ -41,9 +41,11 @@ const doneResponse = `{"message":{"role":"assistant","content":"the answer"},"do
 
 const judgeBudget = 173
 
+var allTools = []string{loop.ToolRecall, loop.ToolWriteFile, loop.ToolReadNode}
+
 func judgeOnce(t *testing.T, c *Client) loop.JudgeResult {
 	t.Helper()
-	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
+	result, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget, Offered: allTools})
 	if err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
@@ -114,7 +116,7 @@ func TestJudgeNativeRequestCarriesModelSystemBlockInputAndEveryTool(t *testing.T
 	srv, captured := capturingServer(t, doneResponse)
 	c := NewClient(srv.URL, "the-model-id", "", loop.Sampling{}, srv.Client())
 
-	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "the system text", Block: "the block", Input: "the input", MaxOutputTokens: judgeBudget}); err != nil {
+	if _, err := c.Judge(context.Background(), loop.JudgeInput{System: "the system text", Block: "the block", Input: "the input", MaxOutputTokens: judgeBudget, Offered: allTools}); err != nil {
 		t.Fatalf("Judge: %v", err)
 	}
 
@@ -310,123 +312,6 @@ func TestJudgeSendsAuthorizationBearerToTheNativeEndpointWhenKeyIsSet(t *testing
 	const want = "Bearer native-secret"
 	if captured.Auth != want {
 		t.Fatalf("Authorization = %q, want %q", captured.Auth, want)
-	}
-}
-
-func TestJudgeReplaysPriorToolRoundsAsAssistantToolCallsAndNamedToolResults(t *testing.T) {
-	t.Parallel()
-
-	srv, captured := capturingServer(t, doneResponse)
-	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
-
-	in := loop.JudgeInput{
-		MaxOutputTokens: judgeBudget,
-		System:          "sys",
-		Block:           "block",
-		Input:           "in",
-		PriorTools: []loop.ToolExchange{{
-			Tool:    loop.ToolWriteFile,
-			Path:    "site/index.html",
-			Content: "<h1>a page</h1>",
-			Bytes:   15,
-		}},
-	}
-	if _, err := c.Judge(context.Background(), in); err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-
-	var got struct {
-		Messages []struct {
-			Role      string `json:"role"`
-			Content   string `json:"content"`
-			ToolName  string `json:"tool_name"`
-			ToolCalls []struct {
-				Function struct {
-					Name      string          `json:"name"`
-					Arguments json.RawMessage `json:"arguments"`
-				} `json:"function"`
-			} `json:"tool_calls"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(captured.Body, &got); err != nil {
-		t.Fatalf("decode request body: %v; body=%s", err, captured.Body)
-	}
-
-	if len(got.Messages) != 4 {
-		t.Fatalf("messages = %d, want the system and user messages plus the assistant call and its result", len(got.Messages))
-	}
-	if got.Messages[2].Role != "assistant" {
-		t.Fatalf("message 2 role = %q, want %q", got.Messages[2].Role, "assistant")
-	}
-	if len(got.Messages[2].ToolCalls) != 1 {
-		t.Fatalf("message 2 carries %d tool calls, want 1", len(got.Messages[2].ToolCalls))
-	}
-	if got.Messages[2].ToolCalls[0].Function.Name != "write_file" {
-		t.Fatalf("replayed call name = %q, want the wire spelling %q", got.Messages[2].ToolCalls[0].Function.Name, "write_file")
-	}
-	if got.Messages[3].Role != "tool" {
-		t.Fatalf("message 3 role = %q, want %q", got.Messages[3].Role, "tool")
-	}
-	if got.Messages[3].ToolName != "write_file" {
-		t.Fatalf("result message tool_name = %q, want %q — the native protocol pairs a result to its call by name, having no call id to pair by", got.Messages[3].ToolName, "write_file")
-	}
-	if got.Messages[3].Content != "wrote 15 bytes to site/index.html" {
-		t.Fatalf("result message content = %q, want the write receipt", got.Messages[3].Content)
-	}
-}
-
-func TestJudgeReplaysToolArgumentsAsAJSONObjectRatherThanAnEncodedString(t *testing.T) {
-	t.Parallel()
-
-	srv, captured := capturingServer(t, doneResponse)
-	c := NewClient(srv.URL, "model-x", "", loop.Sampling{}, srv.Client())
-
-	in := loop.JudgeInput{
-		MaxOutputTokens: judgeBudget,
-		System:          "sys",
-		Block:           "block",
-		Input:           "in",
-		PriorTools: []loop.ToolExchange{{
-			Tool:    loop.ToolWriteFile,
-			Path:    "site/index.html",
-			Content: "<h1>a page</h1>",
-			Bytes:   15,
-		}},
-	}
-	if _, err := c.Judge(context.Background(), in); err != nil {
-		t.Fatalf("Judge: %v", err)
-	}
-
-	var got struct {
-		Messages []struct {
-			ToolCalls []struct {
-				Function struct {
-					Arguments json.RawMessage `json:"arguments"`
-				} `json:"function"`
-			} `json:"tool_calls"`
-		} `json:"messages"`
-	}
-	if err := json.Unmarshal(captured.Body, &got); err != nil {
-		t.Fatalf("decode request body: %v; body=%s", err, captured.Body)
-	}
-
-	arguments := got.Messages[2].ToolCalls[0].Function.Arguments
-	if len(arguments) == 0 || arguments[0] != '{' {
-		t.Fatalf("replayed arguments = %s, want a JSON object; a leading quote means they were encoded as a string, which is the other protocol's shape", arguments)
-	}
-
-	var args struct {
-		Path    string `json:"path"`
-		Content string `json:"content"`
-	}
-	if err := json.Unmarshal(arguments, &args); err != nil {
-		t.Fatalf("replayed arguments do not decode as an object: %v; arguments=%s", err, arguments)
-	}
-	if args.Path != "site/index.html" {
-		t.Fatalf("replayed path = %q, want %q", args.Path, "site/index.html")
-	}
-	if args.Content != "<h1>a page</h1>" {
-		t.Fatalf("replayed content = %q, want %q", args.Content, "<h1>a page</h1>")
 	}
 }
 
@@ -715,7 +600,7 @@ func TestJudgeSurfacesTheNativeErrorStringWhichIsNotAnErrorObject(t *testing.T) 
 
 	c := NewClient(srv.URL, "no-such-model:1b", "", loop.Sampling{}, srv.Client())
 
-	_, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
+	_, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget, Offered: allTools})
 	if err == nil {
 		t.Fatal("Judge returned no error for a 404, want one")
 	}
@@ -732,7 +617,7 @@ func TestJudgeOnUnreachableNativeHostReturnsAnError(t *testing.T) {
 
 	c := NewClient("http://127.0.0.1:1", "model-x", "", loop.Sampling{}, &http.Client{})
 
-	_, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget})
+	_, err := c.Judge(context.Background(), loop.JudgeInput{System: "sys", Block: "block", Input: "in", MaxOutputTokens: judgeBudget, Offered: allTools})
 	if err == nil {
 		t.Fatal("Judge returned no error against an unreachable host, want one")
 	}
