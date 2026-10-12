@@ -40,10 +40,11 @@ type graphEvent struct {
 }
 
 type recallCall struct {
-	query  string
-	limit  int
-	scope  []int64
-	window loop.UpdateWindow
+	queries []string
+	limit   int
+	scope   []int64
+	exclude []int64
+	window  loop.UpdateWindow
 }
 
 type recordingGraph struct {
@@ -54,7 +55,6 @@ type recordingGraph struct {
 	anchor     loop.Anchor
 	found      bool
 	candidates []loop.Candidate
-	neighbours []int64
 	receipt    loop.WriteReceipt
 }
 
@@ -65,8 +65,7 @@ func newRecordingGraph() *recordingGraph {
 		candidates: []loop.Candidate{
 			{ID: 202, Type: "documentation", Name: "a candidate", Similarity: 0.91, Content: "the candidate body recall returned"},
 		},
-		neighbours: []int64{303},
-		receipt:    loop.WriteReceipt{State: loop.Stored, NodeID: 900},
+		receipt: loop.WriteReceipt{State: loop.Stored, NodeID: 900},
 	}
 }
 
@@ -93,11 +92,11 @@ func (g *recordingGraph) Node(_ context.Context, id int64) (loop.Anchor, bool, e
 	return g.anchor, g.found, nil
 }
 
-func (g *recordingGraph) Recall(_ context.Context, query string, limit int, scope []int64, window loop.UpdateWindow) ([]loop.Candidate, error) {
+func (g *recordingGraph) Recall(_ context.Context, queries []string, limit int, scope, exclude []int64, window loop.UpdateWindow) ([]loop.Candidate, error) {
 	g.mark(eventRecall, 0)
 
 	g.mu.Lock()
-	g.recalls = append(g.recalls, recallCall{query: query, limit: limit, scope: scope, window: window})
+	g.recalls = append(g.recalls, recallCall{queries: queries, limit: limit, scope: scope, exclude: exclude, window: window})
 	g.mu.Unlock()
 
 	return g.candidates, nil
@@ -105,7 +104,7 @@ func (g *recordingGraph) Recall(_ context.Context, query string, limit int, scop
 
 func (g *recordingGraph) Neighbours(_ context.Context, id int64) ([]int64, error) {
 	g.mark(eventNeighbours, id)
-	return g.neighbours, nil
+	return []int64{303}, nil
 }
 
 func (g *recordingGraph) WriteRun(_ context.Context, record loop.Record) loop.WriteReceipt {
@@ -131,7 +130,9 @@ func (m *answeringModel) Judge(_ context.Context, in loop.JudgeInput) (loop.Judg
 	}, nil
 }
 
-func (m *answeringModel) Derive(context.Context, string, int) (string, error) { return "", nil }
+func (m *answeringModel) Derive(context.Context, string, int) (string, error) {
+	return "a second phrasing of the task?\na third phrasing of the task?", nil
+}
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -278,7 +279,7 @@ func TestAMeasuredRunsReadsStillReachTheGraphAndItsBlockCarriesWhatTheyReturned(
 	}
 }
 
-func TestAMeasuredRunsRecallsCarryTheSameQueryLimitScopeAndWindowAnUndecoratedRunCarries(t *testing.T) {
+func TestAMeasuredRunsRecallsCarryTheSameQueriesLimitAndWindowAnUndecoratedRunCarries(t *testing.T) {
 	measuredLive := newRecordingGraph()
 	_, runner := measuredRunner(measuredLive)
 	if _, err := runner.Run(context.Background(), testInput, 101); err != nil {

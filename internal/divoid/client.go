@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -35,13 +36,19 @@ const (
 const (
 	nodesPath = "/api/nodes"
 	linksPath = "/api/nodes/links"
+
+	queriesParam     = "queries"
+	excludeIDParam   = "excludeId"
+	excludeNameParam = "excludeName"
 )
 
 const linksPageSize = 500
 
-const errorBodyBytes = 4096
-
 const logPartialNeighbourhood = "neighbourhood read stopped before the graph's last page"
+
+var errNoQuery = errors.New("divoid: recall needs at least one query")
+
+const errorBodyBytes = 4096
 
 // Client is a client for one specific external system, not a generic
 // "graph" (#6836's naming rule).
@@ -158,15 +165,27 @@ func (c *Client) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) 
 	return loop.Anchor{}, false, nil
 }
 
-// Recall returns up to limit candidates in the graph's own rank order, never re-sorted; an empty scope ranks the whole graph. A non-zero window sets updatedFrom and updatedTo; a zero window sets neither, leaving the request byte-identical to one carrying no window at all.
-func (c *Client) Recall(ctx context.Context, query string, limit int, scope []int64, window loop.UpdateWindow) ([]loop.Candidate, error) {
+// Recall returns the graph's top limit candidates for queries in its own rank order, never re-sorted; several queries are one request ranked by their mean similarity. An empty scope ranks the whole graph, excluded ids and every run record are left out before the count, and a zero window sets neither updatedFrom nor updatedTo.
+func (c *Client) Recall(ctx context.Context, queries []string, limit int, scope, exclude []int64, window loop.UpdateWindow) ([]loop.Candidate, error) {
+	if len(queries) == 0 {
+		return nil, errNoQuery
+	}
+
 	q := url.Values{}
-	q.Set("query", query)
+	if len(queries) == 1 {
+		q.Set("query", queries[0])
+	} else {
+		q[queriesParam] = queries
+	}
 	q.Set("count", strconv.Itoa(limit))
 	q.Set("fields", candidateFields)
 	for _, id := range scope {
 		q.Add("linkedto", strconv.FormatInt(id, 10))
 	}
+	for _, id := range exclude {
+		q.Add(excludeIDParam, strconv.FormatInt(id, 10))
+	}
+	q.Set(excludeNameParam, RunNamePrefix+"%")
 	if !window.IsZero() {
 		q.Set("updatedFrom", window.From.Format(time.RFC3339))
 		q.Set("updatedTo", window.To.Format(time.RFC3339))

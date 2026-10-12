@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -12,14 +13,18 @@ import (
 const (
 	cutReasonByteBudget   = "byte budget exceeded"
 	cutReasonSelfProduced = "self-produced"
-	cutReasonBelowFloor   = "below relevance floor"
 	cutReasonOversized    = "oversized"
 )
 
 const noPayloadCeiling = 0
 
-// ThinKnowledgeThreshold is the admitted-row count below which the block tells the model its knowledge of the topic is still thin.
-const ThinKnowledgeThreshold = 5
+// ThinKnowledgeSimilarity is the best admitted similarity a block must reach to escape the thin-knowledge hint; it signals and never cuts.
+const ThinKnowledgeSimilarity = 0.63
+
+// Thin reports whether none of the admitted similarities reaches ThinKnowledgeSimilarity; a block that admitted nothing is thin.
+func Thin(similarities []float64) bool {
+	return len(similarities) == 0 || slices.Max(similarities) < ThinKnowledgeSimilarity
+}
 
 const (
 	nudgeNone = "Seems you know nothing about this topic - or maybe you are asking the wrong question; try looking at it from a different angle.\n"
@@ -38,19 +43,19 @@ const SubstanceRatioThreshold SubstanceRatio = 0
 const formHeaderKey = "form"
 
 // Assemble is a pure function: no I/O, no clock, no randomness.
-func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64, threshold SubstanceRatio) (block string, dispositions []Disposition) {
-	admitted, dispositions := admit(candidates, budget, len(anchor.Content), floor, BlockOccupancy, threshold)
+func Assemble(anchor Anchor, candidates []Candidate, budget int, threshold SubstanceRatio) (block string, dispositions []Disposition) {
+	admitted, dispositions := admit(candidates, budget, len(anchor.Content), BlockOccupancy, threshold)
 
 	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
 
 	return renderBlock(anchor, admitted, len(candidates) > 0, threshold, true), dispositions
 }
 
-func admit(candidates []Candidate, budget, spent int, floor float64, occupancy int, threshold SubstanceRatio) (admitted []Candidate, dispositions []Disposition) {
-	return admitUnheld(candidates, budget, spent, floor, occupancy, threshold, nil)
+func admit(candidates []Candidate, budget, spent, occupancy int, threshold SubstanceRatio) (admitted []Candidate, dispositions []Disposition) {
+	return admitUnheld(candidates, budget, spent, occupancy, threshold, nil)
 }
 
-func admitUnheld(candidates []Candidate, budget, spent int, floor float64, occupancy int, threshold SubstanceRatio, held func(Candidate) bool) (admitted []Candidate, dispositions []Disposition) {
+func admitUnheld(candidates []Candidate, budget, spent, occupancy int, threshold SubstanceRatio, held func(Candidate) bool) (admitted []Candidate, dispositions []Disposition) {
 	remaining := budget - spent
 	if remaining < 0 {
 		remaining = 0
@@ -89,8 +94,6 @@ func admitUnheld(candidates []Candidate, budget, spent int, floor float64, occup
 			admitted = append(admitted, c)
 		case c.SelfProduced:
 			d.CutReason = cutReasonSelfProduced
-		case c.Similarity < floor:
-			d.CutReason = cutReasonBelowFloor
 		case refusedForItsSize(payload, capBytes):
 			d.CutReason = cutReasonOversized
 		case cumulative+payload <= remaining:
@@ -135,6 +138,9 @@ func renderSection(b *strings.Builder, c Candidate, threshold SubstanceRatio) {
 	form, rendered := renderedPayload(c, threshold)
 
 	fmt.Fprintf(b, "===== %s =====\nid: %d\ntype: %s\nname: %s\n", sectionCandidate, c.ID, c.Type, c.Name)
+	if !c.Read {
+		fmt.Fprintf(b, "similarity: %.3f\n", c.Similarity)
+	}
 	if form == FormSubstance {
 		fmt.Fprintf(b, "%s: %s\n", formHeaderKey, form)
 	}
@@ -202,7 +208,7 @@ func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, thresh
 	case len(admitted) == 0:
 		b.WriteString("\n")
 		b.WriteString(nudgeNone)
-	case len(admitted) < ThinKnowledgeThreshold:
+	case Thin(rankedSimilarities(admitted)):
 		b.WriteString("\n")
 		b.WriteString(nudgeThin)
 	}
@@ -220,7 +226,17 @@ func contentHash(content string) string {
 }
 
 func candidateFromAnchor(anchor Anchor) Candidate {
-	return Candidate{ID: anchor.ID, Type: anchor.Type, Name: anchor.Name, Content: anchor.Content}
+	return Candidate{ID: anchor.ID, Type: anchor.Type, Name: anchor.Name, Content: anchor.Content, Read: true}
+}
+
+func rankedSimilarities(candidates []Candidate) []float64 {
+	similarities := make([]float64, 0, len(candidates))
+	for _, c := range candidates {
+		if !c.Read {
+			similarities = append(similarities, c.Similarity)
+		}
+	}
+	return similarities
 }
 
 func summarizeAnchor(anchor Anchor) AnchorSummary {

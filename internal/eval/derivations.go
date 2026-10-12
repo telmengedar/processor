@@ -156,7 +156,7 @@ func validateDerivation(entry Derivation, known map[string]bool, seen map[string
 			return fmt.Errorf("eval: derivation %q: query %d is blank, and a blank query ranks the whole graph by nothing (design 4.5)", entry.Row, i)
 		}
 		if slices.Contains(entry.Queries[:i], query) {
-			return fmt.Errorf("eval: derivation %q: query %d repeats an earlier one, which doubles that list's weight in the reciprocal-rank sum (design 4.2)", entry.Row, i)
+			return fmt.Errorf("eval: derivation %q: query %d repeats an earlier one, which doubles that query's weight in the mean (design 4.2)", entry.Row, i)
 		}
 	}
 	return nil

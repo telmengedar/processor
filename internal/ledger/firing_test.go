@@ -32,11 +32,11 @@ func TestDispositionFiringCountsEveryDispositionOverTheSelectionItNames(t *testi
 
 	archive := archiveOfRecords("four runs",
 		loop.Record{Candidates: admitted(1, 2)},
-		loop.Record{Candidates: admitted(1, 2, 3, 4, 5), ToolCalls: []loop.ToolCallRecord{recall("new", admitted(9))}},
-		loop.Record{Candidates: admitted(1, 2, 3, 4, 5), ToolCalls: []loop.ToolCallRecord{
+		loop.Record{Candidates: strongly(1, 2, 3, 4, 5), ToolCalls: []loop.ToolCallRecord{recall("new", admitted(9))}},
+		loop.Record{Candidates: strongly(1, 2, 3, 4, 5), ToolCalls: []loop.ToolCallRecord{
 			recall("old", admitted(1)), recall("old again", admitted(2)),
 		}},
-		loop.Record{Candidates: admitted(1, 2, 3, 4, 5, 6)},
+		loop.Record{Candidates: strongly(1, 2, 3, 4, 5, 6)},
 	)
 
 	result := DispositionFiring(archive)
