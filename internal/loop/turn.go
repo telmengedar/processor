@@ -32,6 +32,7 @@ const (
 	errReadOfSubject       = "that id is this request's own subject, and the context block already carries it in full"
 	errAlreadyReadInFull   = "that part has already been shown to you in full in this turn"
 	errNodeTooLargeFormat  = "that part is %d bytes and one read carries at most %d, so it cannot be shown in full"
+	errNoSuchSegmentFormat = "that part has %d segments and none is numbered %d"
 )
 
 type reservation string
@@ -541,12 +542,13 @@ func undispatchedExchange(result JudgeResult, cause string) ToolExchange {
 		return ToolExchange{Tool: toolFor(result.Reason), Error: BoundCause(result.ToolError)}
 	}
 	return ToolExchange{
-		Tool:   toolFor(result.Reason),
-		Query:  result.RecallQuery,
-		NodeID: result.ReadNodeID,
-		Path:   result.WritePath,
-		Bytes:  len(result.WriteContent),
-		Error:  cause,
+		Tool:    toolFor(result.Reason),
+		Query:   result.RecallQuery,
+		NodeID:  result.ReadNodeID,
+		Segment: result.ReadSegment,
+		Path:    result.WritePath,
+		Bytes:   len(result.WriteContent),
+		Error:   cause,
 	}
 }
 
@@ -635,7 +637,7 @@ func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window Up
 }
 
 func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
-	exchange := ToolExchange{Tool: ToolReadNode, NodeID: result.ReadNodeID, Dispositions: []Disposition{}}
+	exchange := ToolExchange{Tool: ToolReadNode, NodeID: result.ReadNodeID, Segment: result.ReadSegment, Dispositions: []Disposition{}}
 
 	if result.ToolError != "" {
 		exchange.Error = BoundCause(result.ToolError)
@@ -660,6 +662,10 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 		return exchange
 	}
 
+	if result.ReadSegment > 0 {
+		return t.readSegment(exchange, anchor, result.ReadSegment, account, memory)
+	}
+
 	room := memory.roomToReplace(result.ReadNodeID, SupplementaryByteBudget)
 	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, room, 0, 0, BlockOccupancy, memory.threshold)
 	if account.alreadyShown(dispositions[0]) {
@@ -668,14 +674,50 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 		return exchange
 	}
 	if len(admitted) == 0 {
-		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, dispositions[0].Size, room)
-		exchange.Refused = true
-		return exchange
+		return t.readOutline(exchange, anchor, memory)
 	}
 
 	t.log().Info("node read in full", "node", dispositions[0].ID, "bytes", dispositions[0].RenderedSize)
 	exchange.Results = admitted
 	exchange.Dispositions = dispositions
+	return exchange
+}
+
+func (t *Turn) readOutline(exchange ToolExchange, anchor Anchor, memory *workingMemory) ToolExchange {
+	segments := Segments(anchor.Content, SupplementaryByteBudget)
+	outline := Outline(anchor.ID, anchor.Name, len(anchor.Content), segments)
+
+	return t.servePart(exchange, anchor, FormOutline, 0, outline, memory.roomToReplacePart(keyOf(anchor.ID, FormOutline, 0), SupplementaryByteBudget))
+}
+
+func (t *Turn) readSegment(exchange ToolExchange, anchor Anchor, index int, account *yieldAccount, memory *workingMemory) ToolExchange {
+	segments := Segments(anchor.Content, SupplementaryByteBudget)
+	if index > len(segments) {
+		exchange.Error = fmt.Sprintf(errNoSuchSegmentFormat, len(segments), index)
+		exchange.Refused = true
+		return exchange
+	}
+
+	body := segments[index-1]
+	if account.alreadyShown(partDisposition(anchor, FormSegment, index, body)) || account.alreadyShown(partDisposition(anchor, FormContent, 0, anchor.Content)) {
+		exchange.Error = errAlreadyReadInFull
+		exchange.Refused = true
+		return exchange
+	}
+
+	return t.servePart(exchange, anchor, FormSegment, index, body, memory.roomToReplacePart(keyOf(anchor.ID, FormSegment, index), SupplementaryByteBudget))
+}
+
+func (t *Turn) servePart(exchange ToolExchange, anchor Anchor, form Form, segment int, body string, room int) ToolExchange {
+	if len(body) > room {
+		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, len(body), room)
+		exchange.Refused = true
+		return exchange
+	}
+
+	t.log().Info("part of a node read", "node", anchor.ID, "form", string(form), "segment", segment, "bytes", len(body))
+	exchange.Results = []Candidate{partCandidate(anchor, form, segment, body)}
+	exchange.Dispositions = []Disposition{partDisposition(anchor, form, segment, body)}
 	return exchange
 }
 
@@ -686,7 +728,7 @@ func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {
 		if results == nil {
 			results = []Disposition{}
 		}
-		records[i] = ToolCallRecord{Tool: e.Tool, Source: e.ToolSource, Query: e.Query, NodeID: e.NodeID, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results, Yield: e.Yield}
+		records[i] = ToolCallRecord{Tool: e.Tool, Source: e.ToolSource, Query: e.Query, NodeID: e.NodeID, Segment: e.Segment, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results, Yield: e.Yield}
 	}
 	return records
 }

@@ -8,16 +8,39 @@ type heldRow struct {
 	size      int
 }
 
+type partKey struct {
+	id      int64
+	form    Form
+	segment int
+}
+
+func keyOf(id int64, form Form, segment int) partKey {
+	if form == FormSubstance {
+		form = FormContent
+	}
+	return partKey{id: id, form: form, segment: segment}
+}
+
+func (k partKey) before(other partKey) bool {
+	if k.id != other.id {
+		return k.id < other.id
+	}
+	if k.form != other.form {
+		return k.form < other.form
+	}
+	return k.segment < other.segment
+}
+
 type workingMemory struct {
 	anchor     Anchor
 	considered bool
 	threshold  SubstanceRatio
-	rows       map[int64]heldRow
+	rows       map[partKey]heldRow
 	spent      int
 }
 
 func newWorkingMemory(anchor Anchor, considered bool, threshold SubstanceRatio, admitted []Candidate, dispositions []Disposition) *workingMemory {
-	memory := &workingMemory{anchor: anchor, considered: considered, threshold: threshold, rows: map[int64]heldRow{}, spent: len(anchor.Content)}
+	memory := &workingMemory{anchor: anchor, considered: considered, threshold: threshold, rows: map[partKey]heldRow{}, spent: len(anchor.Content)}
 	memory.absorb(admitted, dispositions)
 	return memory
 }
@@ -47,15 +70,28 @@ func (m *workingMemory) absorb(admitted []Candidate, dispositions []Disposition)
 }
 
 func (m *workingMemory) hold(c Candidate, form Form, size int) {
-	held, present := m.rows[c.ID]
+	key := keyOf(c.ID, form, c.Part.Segment)
+	held, present := m.rows[key]
 	if present && held.form == FormContent && form == FormSubstance {
 		return
+	}
+	if form == FormContent {
+		m.evictPartsOf(c.ID)
 	}
 	if present {
 		m.spent -= held.size
 	}
-	m.rows[c.ID] = heldRow{candidate: c, form: form, size: size}
+	m.rows[key] = heldRow{candidate: c, form: form, size: size}
 	m.spent += size
+}
+
+func (m *workingMemory) evictPartsOf(id int64) {
+	for key, held := range m.rows {
+		if key.id == id && (key.form == FormOutline || key.form == FormSegment) {
+			m.spent -= held.size
+			delete(m.rows, key)
+		}
+	}
 }
 
 func (m *workingMemory) room(round int) int {
@@ -63,11 +99,21 @@ func (m *workingMemory) room(round int) int {
 }
 
 func (m *workingMemory) roomToReplace(id int64, round int) int {
-	return max(0, min(round, JudgementPromptCeiling-m.spent+m.rows[id].size))
+	freed := 0
+	for key, held := range m.rows {
+		if key.id == id {
+			freed += held.size
+		}
+	}
+	return max(0, min(round, JudgementPromptCeiling-m.spent+freed))
+}
+
+func (m *workingMemory) roomToReplacePart(key partKey, round int) int {
+	return max(0, min(round, JudgementPromptCeiling-m.spent+m.rows[key].size))
 }
 
 func (m *workingMemory) holds(c Candidate) bool {
-	held, present := m.rows[c.ID]
+	held, present := m.rows[keyOf(c.ID, FormContent, c.Part.Segment)]
 	if !present {
 		return false
 	}
@@ -77,11 +123,16 @@ func (m *workingMemory) holds(c Candidate) bool {
 }
 
 func (m *workingMemory) render(nudges bool) string {
-	rows := make([]Candidate, 0, len(m.rows))
-	for _, held := range m.rows {
-		rows = append(rows, held.candidate)
+	keys := make([]partKey, 0, len(m.rows))
+	for key := range m.rows {
+		keys = append(keys, key)
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
+	sort.Slice(keys, func(i, j int) bool { return keys[i].before(keys[j]) })
+
+	rows := make([]Candidate, len(keys))
+	for i, key := range keys {
+		rows[i] = m.rows[key].candidate
+	}
 
 	return renderBlock(m.anchor, rows, m.considered, m.threshold, nudges)
 }

@@ -34,3 +34,39 @@ func TestTheSystemTextStatesWhatACondensedMarkingMeansAndThatTheBodyIsFetchableB
 		}
 	}
 }
+
+func TestTheReadParagraphDescribesOutlinesAndSegmentsOnlyWhenReadIsOffered(t *testing.T) {
+	t.Parallel()
+
+	const outlineSentence = "A part too large to be returned in full is answered with its outline"
+	const segmentSentence = "give the same id together with the segment's number"
+
+	offered := Compose([]string{loop.ToolRecall, loop.ToolReadNode})
+	for _, want := range []string{outlineSentence, segmentSentence} {
+		if !strings.Contains(offered, want) {
+			t.Errorf("a call that offers the read tool is not told %q: a model that is never told an oversized part answers with an outline cannot read past it", want)
+		}
+	}
+
+	for _, withheld := range [][]string{nil, {loop.ToolRecall}, {loop.ToolWriteFile}} {
+		text := Compose(withheld)
+		for _, forbidden := range []string{outlineSentence, segmentSentence} {
+			if strings.Contains(text, forbidden) {
+				t.Errorf("offering %v: the system text still carries %q, a sentence about a tool the call does not offer", withheld, forbidden)
+			}
+		}
+	}
+}
+
+func TestTheBaseTextNamesWhatAnOutlineAndASegmentMarkingMeanWhateverIsOffered(t *testing.T) {
+	t.Parallel()
+
+	for _, offered := range [][]string{nil, {loop.ToolReadNode}} {
+		text := Compose(offered)
+		for _, want := range []string{`"form: outline"`, `"form: segment"`, "only the list of that part's numbered segments", "only that one numbered segment"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("offering %v: the system text lacks %q: the answering call still reads a memory that holds an outline or a segment, and an unmarked partial body reads as a whole one", offered, want)
+			}
+		}
+	}
+}

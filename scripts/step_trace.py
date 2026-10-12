@@ -252,6 +252,7 @@ REFUSAL_NO_SUCH_NODE = "no part of memory has that id"
 REFUSAL_READ_OF_SUBJECT = "that id is this request's own subject, and the context block already carries it in full"
 REFUSAL_ALREADY_READ_IN_FULL = "that part has already been shown to you in full in this turn"
 REFUSAL_NODE_TOO_LARGE_MIDDLE = " bytes and one read carries at most "
+REFUSAL_NO_SUCH_SEGMENT_MIDDLE = " segments and none is numbered "
 
 LOOP_REFUSALS = (
     REFUSAL_RESERVED_CALL,
@@ -340,6 +341,8 @@ def loop_refusal(tool_call):
     if error in LOOP_REFUSALS:
         return error
     if REFUSAL_NODE_TOO_LARGE_MIDDLE in error:
+        return error
+    if REFUSAL_NO_SUCH_SEGMENT_MIDDLE in error:
         return error
     return ""
 
@@ -1036,17 +1039,33 @@ def read_round_lines(head, tool_call, out_tok, supplementary_budget):
 
     results = tool_call.get("results") or []
     kept = sum(1 for r in results if r.get("included"))
+    segment = tool_call.get("segment")
+    segment_argument = f", segment={segment}" if segment else ""
     lines = [
         f"{'':<24} output: {round_wanted(tool_call)}. out={out_tok}",
         "",
-        f"{head('tool call')} input: read_node(id={node_id}) -- one part fetched by "
+        f"{head('tool call')} input: read_node(id={node_id}{segment_argument}) -- one part fetched by "
         f"the id the model named, not a search",
     ]
     lines.append(
         f"{'':<24} output: {len(results)} row(s) returned, {kept} admitted ({added_phrase(results)}), "
         f"within at most {fmt_bytes(supplementary_budget or 0)}"
     )
-    if results:
+    served_form = results[0].get("form") if results else None
+    if served_form == "outline":
+        lines.append(
+            f"{'':<24} note: the part did not fit the room left for one read, so the loop served its "
+            f"outline (turn.go's dispatchRead): it lists the part's numbered segments, and a read "
+            f"naming a segment returns that one segment verbatim. The row is the part's own id with "
+            f"the outline's bytes, not the part."
+        )
+    elif served_form == "segment":
+        lines.append(
+            f"{'':<24} note: the model named a segment, so the loop returned that one segment of the "
+            f"part verbatim (turn.go's dispatchRead). The row is the part's own id with the "
+            f"segment's bytes, not the part."
+        )
+    elif results:
         lines.append(
             f"{'':<24} note: an addressed read is ONE Graph.Node handed straight to admit (turn.go's "
             f"dispatchRead) -- no query, no ranking, no fusion, and a relevance floor of zero, so "

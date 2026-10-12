@@ -9,7 +9,10 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
-const errNoNodeID = "tool arguments named no node id to read"
+const (
+	errNoNodeID   = "tool arguments named no node id to read"
+	errBadSegment = "tool arguments named a segment that is not a positive index"
+)
 
 type chatRequest struct {
 	Model           string        `json:"model"`
@@ -58,7 +61,8 @@ type writeFileToolArguments struct {
 }
 
 type readNodeToolArguments struct {
-	ID int64 `json:"id"`
+	ID      int64 `json:"id"`
+	Segment *int  `json:"segment"`
 }
 
 func recallTool() wireTool {
@@ -99,10 +103,10 @@ func readNodeTool() wireTool {
 		Type: "function",
 		Function: wireFunction{
 			Name:        readNodeToolName,
-			Description: "Read one part of memory in full. Takes one argument: id, the integer id that part is printed with.",
+			Description: "Read one part of memory in full. Takes id, the integer id that part is printed with, and optionally segment, the 1-based index of one segment of a part too large to read in full, as its outline lists them.",
 			Parameters: json.RawMessage(`{
 				"type": "object",
-				"properties": {"id": {"type": "integer"}},
+				"properties": {"id": {"type": "integer"}, "segment": {"type": "integer"}},
 				"required": ["id"]
 			}`),
 		},
@@ -239,6 +243,14 @@ func translateRead(result loop.JudgeResult, arguments string) loop.JudgeResult {
 	if args.ID <= 0 {
 		result.ToolError = errNoNodeID
 		return result
+	}
+
+	if args.Segment != nil {
+		if *args.Segment <= 0 {
+			result.ToolError = fmt.Sprintf("%s: %d", errBadSegment, *args.Segment)
+			return result
+		}
+		result.ReadSegment = *args.Segment
 	}
 
 	result.ReadNodeID = args.ID

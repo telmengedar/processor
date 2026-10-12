@@ -211,7 +211,7 @@ func renderSummaryTools(b *strings.Builder, record Record) {
 			fmt.Fprintf(b, "  %d %s%s  %q\n", i+1, tool, source, summaryTrunc(call.Query, summaryRecallRunes))
 			renderRecallResults(b, call.Results)
 		case call.Tool == ToolReadNode:
-			fmt.Fprintf(b, "  %d %s%s  #%d\n", i+1, tool, source, call.NodeID)
+			fmt.Fprintf(b, "  %d %s%s  #%d%s\n", i+1, tool, source, call.NodeID, readPartText(call))
 		case call.Tool == "" && call.Path == "":
 			fmt.Fprintf(b, "  %d %s%s\n", i+1, tool, source)
 		default:
@@ -222,6 +222,16 @@ func renderSummaryTools(b *strings.Builder, record Record) {
 			fmt.Fprintf(b, "      ERROR: %s\n", summaryTrunc(call.Error, summaryErrorRunes))
 		}
 	}
+}
+
+func readPartText(call ToolCallRecord) string {
+	switch {
+	case call.Segment > 0:
+		return fmt.Sprintf(" segment %d", call.Segment)
+	case len(call.Results) == 1 && call.Results[0].Form == FormOutline:
+		return " outline"
+	}
+	return ""
 }
 
 func renderRecallResults(b *strings.Builder, results []Disposition) {

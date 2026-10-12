@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"fmt"
 	"go/ast"
 	"strings"
 	"testing"
@@ -145,19 +146,26 @@ func TestTurnRunRefusesASecondAddressedReadOfANodeAlreadyShownInFull(t *testing.
 	}
 }
 
-func TestTurnRunRefusesAnAddressedReadLargerThanOneSupplementaryRoundAndNamesBothByteCountsInThatOrder(t *testing.T) {
+func TestAnOutlineLargerThanOneReadIsRefusedNamingItsOwnSizeAndOneReadInThatOrder(t *testing.T) {
 	t.Parallel()
 
-	const wantRefusal = "that part is 20001 bytes and one read carries at most 20000, so it cannot be shown in full"
-
 	if SupplementaryByteBudget != 20_000 {
-		t.Fatalf("test setup error: one round carries %d bytes, and the sentence this guard expects spells the pair as literals on purpose, because an expectation built from the same constant the sentence is built from reads the same whichever order the two numbers are formatted in", SupplementaryByteBudget)
+		t.Fatalf("test setup error: one round carries %d bytes, and the sentence this guard expects spells the read cap as the literal 20000 on purpose, because an expectation built from the same constant the sentence is built from cannot see that constant drift; the outline size beside it is computed from the fixture", SupplementaryByteBudget)
 	}
 
-	oversized := readableNode(71, strings.Repeat("x", 20_001))
+	var content strings.Builder
+	for content.Len() < SupplementaryByteBudget+1 {
+		fmt.Fprintf(&content, "# h%04d\nxx\n", content.Len()/12)
+	}
+	oversized := readableNode(71, content.String()[:SupplementaryByteBudget+1])
+	outline := len(Outline(oversized.ID, oversized.Name, len(oversized.Content), Segments(oversized.Content, SupplementaryByteBudget)))
+	if outline <= SupplementaryByteBudget {
+		t.Fatalf("test setup error: the outline is %d bytes, which fits one read, so no refusal is due", outline)
+	}
+
 	record := runWithResults(t, graphHoldingNodes(oversized), wantsRead(oversized.ID), answeredFinal())
 
-	refusedRound(t, record, wantRefusal)
+	refusedRound(t, record, fmt.Sprintf("that part is %d bytes and one read carries at most 20000, so it cannot be shown in full", outline))
 }
 
 func TestTurnRunRefusesAnAddressedReadTheGraphCouldNotServeRatherThanFailingTheRun(t *testing.T) {
@@ -433,12 +441,12 @@ func TestTurnRunRefusesAnAddressedReadTheAdapterRejectedWithItsOwnCauseAndAsksTh
 	}
 }
 
-func TestTurnRunRefusesAReadOfAPartAlreadyShownInFullEvenWhereItIsAlsoTooLargeForOneRound(t *testing.T) {
+func TestTurnRunRefusesAReadOfAPartAlreadyShownInFullEvenWhereItsOutlineWouldOtherwiseBeServed(t *testing.T) {
 	t.Parallel()
 
 	const bothApply = 30_000
 	if bothApply <= SupplementaryByteBudget || bothApply >= AssemblyByteBudget {
-		t.Fatalf("test setup error: %d bytes must sit above one round's %d and below the block's %d, or only one of the two refusals can apply and this guard observes no precedence at all", bothApply, SupplementaryByteBudget, AssemblyByteBudget)
+		t.Fatalf("test setup error: %d bytes must sit above one round's %d and below the block's %d, or the node fits a read, its outline is never due, and this guard observes no precedence of the already-shown refusal over the outline at all", bothApply, SupplementaryByteBudget, AssemblyByteBudget)
 	}
 
 	big := readableNode(71, strings.Repeat("x", bothApply))

@@ -42,6 +42,15 @@ type Candidate struct {
 
 	// Sources is every recall that returned this row, in the order the recalls were issued.
 	Sources []Source
+
+	// Part names the piece of the node Content carries, zero for every row recall returned.
+	Part Part
+}
+
+// Part is the outline or the 1-based segment of a node that an addressed read returned in place of the node.
+type Part struct {
+	Form    Form
+	Segment int
 }
 
 // Source is one recall that returned a candidate: which of the queries Retrieve was given carried it, whether that recall was scoped, and at what rank it came back.
@@ -94,6 +103,9 @@ type Disposition struct {
 	// RenderedSize is the byte length of the selected form; admission charged it and the ceiling refused against it unless Held.
 	RenderedSize int `json:"renderedSize"`
 
+	// Segment is the 1-based index of the segment this row carries, zero otherwise.
+	Segment int `json:"segment,omitempty"`
+
 	// Held is true when the working memory already held this row in this form with these exact rendered bytes, so the round charged it nothing and it was Included whatever its rank or similarity.
 	Held bool `json:"held,omitempty"`
 }
@@ -123,6 +135,10 @@ const (
 	FormContent Form = "content"
 	// FormSubstance is the candidate's condensed substance.
 	FormSubstance Form = "substance"
+	// FormOutline is the table of contents of a node that does not fit the room left for one read.
+	FormOutline Form = "outline"
+	// FormSegment is one segment of a node, verbatim.
+	FormSegment Form = "segment"
 )
 
 // TerminalReason is the loop's own closed set of ways a judgement step can end.
@@ -187,6 +203,9 @@ type ToolCallRecord struct {
 
 	// NodeID is the id an addressed read asked for, absent on every round that was not one.
 	NodeID int64 `json:"nodeId,omitempty"`
+
+	// Segment is the segment index an addressed read asked for, absent when it asked for none.
+	Segment int `json:"segment,omitempty"`
 
 	Error   string        `json:"error,omitempty"`
 	Results []Disposition `json:"results"`
@@ -331,6 +350,7 @@ type ToolExchange struct {
 	ToolSource   ToolSource
 	Query        string
 	NodeID       int64
+	Segment      int
 	Path         string
 	Bytes        int
 	Error        string
@@ -370,6 +390,7 @@ type JudgeResult struct {
 	RawReason    string
 	RecallQuery  string
 	ReadNodeID   int64
+	ReadSegment  int
 	WritePath    string
 	WriteContent string
 	ToolError    string

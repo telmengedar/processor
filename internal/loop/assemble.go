@@ -35,7 +35,10 @@ const SubstanceRatioFloor SubstanceRatio = 0.10
 // SubstanceRatioThreshold is the form rule's shipped dial, zero: it leaves the band empty, so every candidate renders as content until a later change raises it.
 const SubstanceRatioThreshold SubstanceRatio = 0
 
-const formHeaderKey = "form"
+const (
+	formHeaderKey    = "form"
+	segmentHeaderKey = "segment"
+)
 
 // Assemble is a pure function: no I/O, no clock, no randomness.
 func Assemble(anchor Anchor, candidates []Candidate, budget int, floor float64, threshold SubstanceRatio) (block string, dispositions []Disposition) {
@@ -119,6 +122,9 @@ func refusedForItsSize(payload, ceiling int) bool {
 }
 
 func renderedPayload(c Candidate, threshold SubstanceRatio) (Form, string) {
+	if c.Part.Form != "" {
+		return c.Part.Form, c.Content
+	}
 	if c.Substance == "" || c.Content == "" {
 		return FormContent, c.Content
 	}
@@ -135,8 +141,11 @@ func renderSection(b *strings.Builder, c Candidate, threshold SubstanceRatio) {
 	form, rendered := renderedPayload(c, threshold)
 
 	fmt.Fprintf(b, "===== %s =====\nid: %d\ntype: %s\nname: %s\n", sectionCandidate, c.ID, c.Type, c.Name)
-	if form == FormSubstance {
+	if form != FormContent {
 		fmt.Fprintf(b, "%s: %s\n", formHeaderKey, form)
+	}
+	if form == FormSegment {
+		fmt.Fprintf(b, "%s: %d\n", segmentHeaderKey, c.Part.Segment)
 	}
 	fmt.Fprintf(b, "\n%s\n", rendered)
 }
@@ -221,6 +230,25 @@ func contentHash(content string) string {
 
 func candidateFromAnchor(anchor Anchor) Candidate {
 	return Candidate{ID: anchor.ID, Type: anchor.Type, Name: anchor.Name, Content: anchor.Content}
+}
+
+func partCandidate(anchor Anchor, form Form, segment int, body string) Candidate {
+	return Candidate{ID: anchor.ID, Type: anchor.Type, Name: anchor.Name, Content: body, Part: Part{Form: form, Segment: segment}}
+}
+
+func partDisposition(anchor Anchor, form Form, segment int, body string) Disposition {
+	return Disposition{
+		Rank:         1,
+		ID:           anchor.ID,
+		Type:         anchor.Type,
+		Name:         anchor.Name,
+		Size:         len(anchor.Content),
+		ContentHash:  contentHash(anchor.Content),
+		Included:     true,
+		Form:         form,
+		Segment:      segment,
+		RenderedSize: len(body),
+	}
 }
 
 func summarizeAnchor(anchor Anchor) AnchorSummary {

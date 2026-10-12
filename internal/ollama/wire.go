@@ -13,6 +13,7 @@ import (
 const (
 	errNoNodeID               = "tool arguments named no node id to read"
 	errRecoveredCallWithoutID = "the call in the response text was missing its id argument"
+	errBadSegment             = "tool arguments named a segment that is not a positive index"
 )
 
 type chatRequest struct {
@@ -65,7 +66,8 @@ type writeFileToolArguments struct {
 }
 
 type readNodeToolArguments struct {
-	ID int64 `json:"id"`
+	ID      int64 `json:"id"`
+	Segment *int  `json:"segment"`
 }
 
 func recallTool() wireTool {
@@ -106,10 +108,10 @@ func readNodeTool() wireTool {
 		Type: "function",
 		Function: wireFunction{
 			Name:        readNodeToolName,
-			Description: "Read one part of memory in full. Takes one argument: id, the integer id that part is printed with.",
+			Description: "Read one part of memory in full. Takes id, the integer id that part is printed with, and optionally segment, the 1-based index of one segment of a part too large to read in full, as its outline lists them.",
 			Parameters: json.RawMessage(`{
 				"type": "object",
-				"properties": {"id": {"type": "integer"}},
+				"properties": {"id": {"type": "integer"}, "segment": {"type": "integer"}},
 				"required": ["id"]
 			}`),
 		},
@@ -294,6 +296,15 @@ func recoverRead(result loop.JudgeResult, call recoveredCall) loop.JudgeResult {
 		return result
 	}
 
+	if raw, present := call.parameters["segment"]; present {
+		segment, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || segment <= 0 {
+			result.ToolError = fmt.Sprintf("%s: %q", errBadSegment, raw)
+			return result
+		}
+		result.ReadSegment = segment
+	}
+
 	result.ReadNodeID = id
 	return result
 }
@@ -309,6 +320,14 @@ func translateRead(result loop.JudgeResult, arguments json.RawMessage) loop.Judg
 	if args.ID <= 0 {
 		result.ToolError = errNoNodeID
 		return result
+	}
+
+	if args.Segment != nil {
+		if *args.Segment <= 0 {
+			result.ToolError = fmt.Sprintf("%s: %d", errBadSegment, *args.Segment)
+			return result
+		}
+		result.ReadSegment = *args.Segment
 	}
 
 	result.ReadNodeID = args.ID

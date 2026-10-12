@@ -6,10 +6,12 @@ type rowIdentity struct {
 	id   int64
 	hash string
 	form Form
+
+	segment int
 }
 
 func identityOf(row Disposition) rowIdentity {
-	return rowIdentity{id: row.ID, hash: row.ContentHash, form: row.Form}
+	return rowIdentity{id: row.ID, hash: row.ContentHash, form: row.Form, segment: row.Segment}
 }
 
 type yieldAccount struct {

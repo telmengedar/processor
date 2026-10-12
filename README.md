@@ -273,7 +273,7 @@ one fenced ` ```json ` block. The record — described next — is recovered by 
 fenced `json` block and parsing it.
 
 Up to three tools are offered on every call the loop is still willing to dispatch one from: `recall`,
-which searches the same graph, `read_node`, which returns one part of memory in full by id, and
+which searches the same graph, `read_node`, which returns one part of memory in full by id (a part that does not fit the room left for one read — at most 20,000 bytes, less when the working memory is nearly full — is answered with its **outline** instead, a list of its heading-delimited segments with their sizes, and a second call naming `segment` — the 1-based index the outline prints — returns that one segment verbatim), and
 `write_file`, which writes one file into the run's working directory — the last only when a working
 directory is configured. None is urged — the system text names each in one sentence and still asks for
 prose — so whether a run reaches for the file tool is a property of the model and the task, not of the
@@ -287,7 +287,7 @@ recorded as included with `held: true` and charged nothing. What the model *did*
 record. The
 turn's **last** call offers no tool: where the call budget is spent, where recall has closed on consecutive
 barren rounds, or where the loop has just **refused** a retrieval request (a part already shown in full, the
-request's own subject, an id the graph does not hold, a part too large for one read, or a malformed call),
+request's own subject, an id the graph does not hold, a segment already shown or any segment of a part already shown whole, a segment the part does not have, an outline or a segment larger than the room left, or a malformed call),
 it reserves the next call for answering, declares no tool list and composes a system text that describes
 answering alone, so prose is the only terminal the call can reach. A graph failure, a barren served recall and
 a file write do not reserve. Nothing about a refusal is shown to the model: the loop acts on it instead. No adapter may return a

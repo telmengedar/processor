@@ -251,7 +251,7 @@ func TestTheFirstCallCarriesTheBlockTheRecordKeeps(t *testing.T) {
 	}
 }
 
-func TestAnAddressedReadIsBoundedByTheWorkingMemoryCeilingToo(t *testing.T) {
+func TestAPartTheCeilingLeavesNoRoomForIsAnsweredWithItsOutlineAndItsOnlySegmentIsThenRefused(t *testing.T) {
 	t.Parallel()
 
 	body := func(n int) string { return strings.Repeat("#", n) }
@@ -261,7 +261,7 @@ func TestAnAddressedReadIsBoundedByTheWorkingMemoryCeilingToo(t *testing.T) {
 		{Candidates: []Candidate{rowOf(11, body(14_000)), rowOf(12, body(14_000)), rowOf(13, body(14_000)), rowOf(14, body(14_000))}},
 		{Candidates: []Candidate{rowOf(21, body(15_000))}},
 	}
-	model := &fakeModel{results: []JudgeResult{recallFor("one"), wantsRead(71), answered("done")}}
+	model := &fakeModel{results: []JudgeResult{recallFor("one"), wantsRead(71), wantsSegment(71, 1), answered("done")}}
 
 	record, _, err := turnComposing(graph, model, nil).Run(context.Background(), "hello", readSubject)
 	if err != nil {
@@ -269,11 +269,16 @@ func TestAnAddressedReadIsBoundedByTheWorkingMemoryCeilingToo(t *testing.T) {
 	}
 
 	read := record.ToolCalls[1]
-	if want := "that part is 15000 bytes and one read carries at most 8989, so it cannot be shown in full"; read.Error != want {
-		t.Fatalf("the read of a 15000-byte part with 8989 bytes of memory left was recorded with error %q, want %q", read.Error, want)
+	if read.Error != "" || len(read.Results) != 1 || read.Results[0].Form != FormOutline {
+		t.Fatalf("the read of a 15000-byte part with 8989 bytes of memory left is %+v, want its outline served: the whole part does not fit the room left", read)
 	}
 	if held := strings.Count(model.calls[2].Block, "#"); held != 71_000 {
-		t.Fatalf("the last call carries %d bytes of retrieved content, want 71000: the refused read must add nothing", held)
+		t.Fatalf("the next call carries %d bytes of retrieved content, want 71000: an outline adds none of the part's bytes", held)
+	}
+
+	segment := record.ToolCalls[2]
+	if !strings.HasPrefix(segment.Error, "that part is 15000 bytes and one read carries at most ") || len(segment.Results) != 0 {
+		t.Fatalf("the read of the part's one segment is %+v, want the too-large refusal naming the segment's 15000 bytes: no read can return it in the room left", segment)
 	}
 }
 

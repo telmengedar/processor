@@ -73,7 +73,11 @@ func TestEveryRefusedRetrievalRoundReservesTheNextCallForAnswering(t *testing.T)
 	t.Parallel()
 
 	malformed := "tool arguments could not be parsed: unexpected token"
-	tooLarge := readableNode(71, strings.Repeat("x", 25_000))
+	var oversized strings.Builder
+	for i := 0; i < 1_500; i++ {
+		fmt.Fprintf(&oversized, "# h%04d\nxxxxxxxx\n", i)
+	}
+	tooLarge := readableNode(71, oversized.String())
 
 	for _, tc := range []struct {
 		name  string
@@ -83,7 +87,7 @@ func TestEveryRefusedRetrievalRoundReservesTheNextCallForAnswering(t *testing.T)
 		{"a part already shown in full", graphHoldingAShownPart, wantsRead(91)},
 		{"the request's own subject", func() *fakeGraph { return graphHoldingNodes() }, wantsRead(readSubject)},
 		{"an id the graph does not hold", func() *fakeGraph { return graphHoldingNodes() }, wantsRead(72)},
-		{"a part too large for one read", func() *fakeGraph { return graphHoldingNodes(tooLarge) }, wantsRead(71)},
+		{"a part whose outline is too large for one read", func() *fakeGraph { return graphHoldingNodes(tooLarge) }, wantsRead(71)},
 		{"a malformed recall", func() *fakeGraph { return graphHoldingNodes() }, JudgeResult{Reason: WantsRecall, RawReason: "tool_calls", ToolError: malformed}},
 		{"a malformed read", func() *fakeGraph { return graphHoldingNodes() }, JudgeResult{Reason: WantsRead, RawReason: "tool_calls", ToolError: malformed}},
 	} {

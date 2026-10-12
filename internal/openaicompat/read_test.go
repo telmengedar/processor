@@ -10,7 +10,7 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
-const wantReadDescription = "Read one part of memory in full. Takes one argument: id, the integer id that part is printed with."
+const wantReadDescription = "Read one part of memory in full. Takes id, the integer id that part is printed with, and optionally segment, the 1-based index of one segment of a part too large to read in full, as its outline lists them."
 
 func offeredTools(t *testing.T, in loop.JudgeInput) []wireTool {
 	t.Helper()
@@ -87,11 +87,11 @@ func TestAJudgementCallOffersTheAddressedReadBesideRecallAndTheFileWrite(t *test
 	}
 	want := map[string]any{
 		"type":       "object",
-		"properties": map[string]any{"id": map[string]any{"type": "integer"}},
+		"properties": map[string]any{"id": map[string]any{"type": "integer"}, "segment": map[string]any{"type": "integer"}},
 		"required":   []any{"id"},
 	}
 	if !reflect.DeepEqual(schema, want) {
-		t.Fatalf("the read tool's parameters are %#v, want %#v: the argument is one required integer and the schema is what says so", schema, want)
+		t.Fatalf("the read tool's parameters are %#v, want %#v: the id is the one required integer and the segment an optional one, and the schema is what says so", schema, want)
 	}
 }
 
@@ -179,5 +179,29 @@ func TestTheWireNameOfTheAddressedReadIsTheOneTheModelIsToldToCall(t *testing.T)
 	}
 	if _, present := toolNamed(offeredTools(t, loop.JudgeInput{System: "sys", Block: "block", Input: "in", Offered: allTools}), wantName); !present {
 		t.Fatalf("no tool named %q reaches the wire", wantName)
+	}
+}
+
+func TestTheReadToolCarriesAnOptionalSegmentArgumentOnTheWire(t *testing.T) {
+	t.Parallel()
+
+	whole := translateNativeCall(t, readNodeToolName, `{"id":71}`)
+	if whole.ReadSegment != 0 {
+		t.Errorf("a read naming no segment gave ReadSegment %d, want 0: absent is a whole read", whole.ReadSegment)
+	}
+
+	segment := translateNativeCall(t, readNodeToolName, `{"id":71,"segment":3}`)
+	if segment.ReadNodeID != 71 || segment.ReadSegment != 3 || segment.ToolError != "" {
+		t.Errorf("a read naming segment 3 gave id %d, segment %d, tool error %q, want 71, 3 and none", segment.ReadNodeID, segment.ReadSegment, segment.ToolError)
+	}
+
+	for _, arguments := range []string{`{"id":71,"segment":0}`, `{"id":71,"segment":-2}`} {
+		result := translateNativeCall(t, readNodeToolName, arguments)
+		if result.Reason != loop.WantsRead || result.ReadNodeID != 0 || result.ReadSegment != 0 {
+			t.Errorf("%s: gave Reason %q, id %d, segment %d, want a read that names neither: a segment that is not a positive index must not become a whole read of the node", arguments, result.Reason, result.ReadNodeID, result.ReadSegment)
+		}
+		if !strings.HasPrefix(result.ToolError, errBadSegment) {
+			t.Errorf("%s: the cause is %q, want it to begin %q", arguments, result.ToolError, errBadSegment)
+		}
 	}
 }

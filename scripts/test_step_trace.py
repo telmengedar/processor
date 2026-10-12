@@ -469,6 +469,32 @@ class ReadRoundRenderingTests(unittest.TestCase):
         self.assertNotIn("scope=nil", out)
         self.assertNotIn("query=None", out)
 
+    def test_a_served_outline_and_a_served_segment_are_narrated_as_what_they_are(self):
+        for form, segment, argument in (("outline", None, "read_node(id=71)"), ("segment", 3, "read_node(id=71, segment=3)")):
+            call = {
+                "tool": "readNode",
+                "nodeId": 71,
+                "error": "",
+                "results": [{"rank": 1, "id": 71, "type": "documentation", "name": "Big", "size": 57902, "included": True, "form": form}],
+            }
+            if segment:
+                call["segment"] = segment
+            out = render(record(model_calls=2, tool_calls=[call]))
+            self.assertIn(argument, out)
+            self.assertIn("served its outline" if form == "outline" else "the model named a segment", out)
+            self.assertNotIn("handed straight to admit", out)
+
+    def test_a_served_whole_read_is_still_narrated_as_a_node_handed_to_admit(self):
+        call = {
+            "tool": "readNode",
+            "nodeId": 71,
+            "error": "",
+            "results": [{"rank": 1, "id": 71, "type": "documentation", "name": "Read me", "size": 780, "included": True, "form": "content"}],
+        }
+        out = render(record(model_calls=2, tool_calls=[call]))
+        self.assertIn("handed straight to admit", out)
+        self.assertNotIn("segment=", out)
+
     def test_a_served_read_with_no_id_is_unrecognised_rather_than_a_fetch_of_None(self):
         """The same rule `round_wanted` keeps, kept two lines further down: a field the record does
         not carry is said to be missing, never spelled `None`. This round used to print
@@ -489,6 +515,7 @@ class ReadRoundRenderingTests(unittest.TestCase):
             step_trace.REFUSAL_READ_OF_SUBJECT,
             step_trace.REFUSAL_ALREADY_READ_IN_FULL,
             "that part is 20001 bytes and one read carries at most 20000, so it cannot be shown in full",
+            "that part has 40 segments and none is numbered 41",
         ):
             rec = record(
                 model_calls=2,
@@ -1395,6 +1422,10 @@ class MirroredConstantTests(unittest.TestCase):
     def test_the_too_large_refusal_is_matched_on_a_substring_the_format_string_still_carries(self):
         go = go_string_constants(self.TURN)
         self.assertIn(step_trace.REFUSAL_NODE_TOO_LARGE_MIDDLE, go["errNodeTooLargeFormat"])
+
+    def test_the_no_such_segment_refusal_is_matched_on_a_substring_the_format_string_still_carries(self):
+        go = go_string_constants(self.TURN)
+        self.assertIn(step_trace.REFUSAL_NO_SUCH_SEGMENT_MIDDLE, go["errNoSuchSegmentFormat"])
 
     def test_the_archive_only_causes_are_no_longer_constants_in_the_loop(self):
         """The falsifier for every ARCHIVE SHAPE line this script prints. If one of these comes back
