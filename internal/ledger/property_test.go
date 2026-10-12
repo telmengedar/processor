@@ -84,40 +84,15 @@ func TestDialExerciseCallsADialUnrecordedWhenNoRecordCarriesItsFieldAtAll(t *tes
 
 	result := DialExercise(archive)
 
-	reading := readingFor(t, result, "SubstanceRatioThreshold")
+	reading := readingFor(t, result, "FillWait")
 	if reading.Verdict != DialUnrecorded {
 		t.Fatalf("a dial no record carries is %q, want %q; decoding an absent field as its zero value would make it look recorded", reading.Verdict, DialUnrecorded)
 	}
 	if reading.RecordedIn != 0 || len(reading.Values) != 0 {
 		t.Fatalf("an absent field is recorded nowhere and has no values, got %+v", reading)
 	}
-	if !failedOn(result.Failures, "SubstanceRatioThreshold") {
+	if !failedOn(result.Failures, "FillWait") {
 		t.Fatalf("an unrecorded dial must fail the property, got %+v", result.Failures)
-	}
-}
-
-func TestDialExerciseDeclaresTheSubstanceRatioFloorAsADialTheArchiveCannotYetAnswer(t *testing.T) {
-	t.Parallel()
-
-	archive := archiveOf(t, "records written before the floor was recorded",
-		`{"limits":{"substanceRatioThreshold":0}}`,
-		`{"limits":{"substanceRatioThreshold":0}}`,
-	)
-
-	result := DialExercise(archive)
-
-	reading := readingFor(t, result, "SubstanceRatioFloor")
-	if reading.Field != "substanceRatioFloor" {
-		t.Fatalf("the floor is declared against record field %q, want %q - a dial naming a field the record does not write is unreadable forever", reading.Field, "substanceRatioFloor")
-	}
-	if reading.Verdict != DialUnrecorded {
-		t.Fatalf("a bound no archived record carries is %q, want %q - the honest verdict against records that predate it, never a fabricated single value", reading.Verdict, DialUnrecorded)
-	}
-	if reading.RecordedIn != 0 || len(reading.Values) != 0 {
-		t.Fatalf("an absent field is recorded nowhere and has no values, got %+v", reading)
-	}
-	if !failedOn(result.Failures, "SubstanceRatioFloor") {
-		t.Fatalf("a bound the product will later move and cannot report must fail the property, got %+v", result.Failures)
 	}
 }
 
@@ -274,25 +249,18 @@ func TestAnExercisedDialWhoseValuesDoNotShareASpanIsRenderedWithACaveat(t *testi
 	}
 }
 
-func TestDialExerciseDeclaresTheKnobNoRecordFieldCarriesAndCanNeverClearIt(t *testing.T) {
+func TestDialExerciseClearsEveryDialTheRecordCarriesAtTwoValues(t *testing.T) {
 	t.Parallel()
 
 	archive := archiveOf(t, "every dial the record can carry, all at two values",
-		`{"limits":{"candidateLimit":20,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":3,"derivationBudget":160,"judgementBudget":192,"recallScopeReserve":2,"thinKnowledgeSimilarity":0,"maxFills":3,"fillSizeFloor":1,"maxFillContentBytes":1,"substanceRatioFloor":0.1,"substanceRatioThreshold":0}}`,
-		`{"limits":{"candidateLimit":21,"assemblyByteBudget":60001,"supplementaryByteBudget":20001,"maxModelCalls":6,"derivationBudget":161,"judgementBudget":193,"recallScopeReserve":3,"thinKnowledgeSimilarity":0.63,"maxFills":4,"fillSizeFloor":2,"maxFillContentBytes":2,"substanceRatioFloor":0.2,"substanceRatioThreshold":0.5}}`,
+		`{"limits":{"candidateLimit":20,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":3,"derivationBudget":160,"judgementBudget":192,"recallScopeReserve":2,"thinKnowledgeSimilarity":0,"fillWait":1}}`,
+		`{"limits":{"candidateLimit":21,"assemblyByteBudget":60001,"supplementaryByteBudget":20001,"maxModelCalls":6,"derivationBudget":161,"judgementBudget":193,"recallScopeReserve":3,"thinKnowledgeSimilarity":0.63,"fillWait":2}}`,
 	)
 
 	result := DialExercise(archive)
 
-	reading := readingFor(t, result, "BlockOccupancy")
-	if reading.Field != "" {
-		t.Fatalf("BlockOccupancy is declared with a record field %q; it has none", reading.Field)
-	}
-	if reading.Verdict != DialUnrecorded {
-		t.Fatalf("a knob with no record field is %q, want %q", reading.Verdict, DialUnrecorded)
-	}
-	if len(result.Failures) != 1 || result.Failures[0].Subject != "BlockOccupancy" {
-		t.Fatalf("every other dial moved, so BlockOccupancy alone must fail, got %+v", result.Failures)
+	if len(result.Failures) != 0 {
+		t.Fatalf("every dial moved, so none may fail, got %+v", result.Failures)
 	}
 }
 
@@ -317,7 +285,7 @@ func TestARecordWhoseOwnBytesCarryNoReadableLimitsIsNamedRatherThanSwallowed(t *
 			t.Errorf("the unreadable record contributes to no dial, so %s is recorded in 1, got %d", name, got)
 		}
 	}
-	for _, name := range []string{"MaxFills", "SubstanceRatioThreshold"} {
+	for _, name := range []string{"FillWait"} {
 		if got := readingFor(t, result, name).RecordedIn; got != 0 {
 			t.Errorf("neither record carries %s, so it is recorded in 0, got %d", name, got)
 		}
@@ -366,7 +334,7 @@ func TestMechanismObservationFailsForAMechanismNoRecordObserves(t *testing.T) {
 	if len(result.Failures) != len(mechanisms) {
 		t.Fatalf("no mechanism was observed, so all %d must fail, got %+v", len(mechanisms), result.Failures)
 	}
-	if !failedOn(result.Failures, "on-demand fill") || !failedOn(result.Failures, "substance form") {
+	if !failedOn(result.Failures, "substance fill") || !failedOn(result.Failures, "substance form") {
 		t.Fatalf("want both declared mechanisms named, got %+v", result.Failures)
 	}
 	if result.Population != 2 {
@@ -384,11 +352,11 @@ func TestMechanismObservationClearsAMechanismOneRecordObserves(t *testing.T) {
 
 	result := MechanismObservation(archive)
 
-	if failedOn(result.Failures, "on-demand fill") {
+	if failedOn(result.Failures, "substance fill") {
 		t.Fatalf("one observation clears the mechanism, got %+v", result.Failures)
 	}
 	for _, reading := range result.Readings {
-		if reading.Mechanism == "on-demand fill" && reading.ObservedIn != 1 {
+		if reading.Mechanism == "substance fill" && reading.ObservedIn != 1 {
 			t.Fatalf("fill observed in %d records, want 1", reading.ObservedIn)
 		}
 	}
@@ -411,11 +379,11 @@ func TestMechanismObservationSeesASubstanceFormInASupplementaryRoundAsWellAsInTh
 		t.Errorf("a substance rendered in the block is an observation")
 	}
 
-	neither := runarchive.Archive{Selector: "content everywhere", Entries: []runarchive.Entry{{
-		Record: loop.Record{Candidates: []loop.Disposition{{ID: 1, Form: loop.FormContent}}},
+	neither := runarchive.Archive{Selector: "unavailable everywhere", Entries: []runarchive.Entry{{
+		Record: loop.Record{Candidates: []loop.Disposition{{ID: 1, Form: loop.FormUnavailable}}},
 	}}}
 	if !failedOn(MechanismObservation(neither).Failures, "substance form") {
-		t.Errorf("a record that rendered only content observes no substance form")
+		t.Errorf("a record that rendered nothing but unavailable rows observes no substance form")
 	}
 }
 
@@ -426,7 +394,7 @@ func TestRenderedPropertiesNameEveryFailureItsSelectorAndItsPopulation(t *testin
 
 	rendered := RenderProperties(DialExercise(archive), MechanismObservation(archive))
 
-	for _, want := range []string{"the whole archive", "BlockOccupancy", "SubstanceRatioThreshold", "on-demand fill", "substance form", "unrecorded", "FAIL"} {
+	for _, want := range []string{"the whole archive", "FillWait", "substance fill", "substance form", "unrecorded", "FAIL"} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("rendered properties do not name %q\n%s", want, rendered)
 		}

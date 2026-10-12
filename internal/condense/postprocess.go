@@ -5,8 +5,6 @@ import (
 	"strings"
 )
 
-const substanceFloorFraction = 0.05
-
 const fenceMarker = "```"
 
 var (
@@ -20,14 +18,10 @@ func Postprocess(raw string) string {
 }
 
 // Defect names the storage rule a postprocessed condensation fails, or the empty string when it may be written.
-func Defect(content, substance string) string {
+func Defect(substance string) string {
 	switch {
 	case substance == "":
 		return skipEmptyCondensation
-	case len(substance) >= len(content):
-		return skipNotShorter
-	case float64(len(substance)) < substanceFloorFraction*float64(len(content)):
-		return skipBelowFloor
 	case preamblePattern.MatchString(firstLine(substance)):
 		return skipPreamble
 	default:

@@ -33,8 +33,6 @@ const (
 	SiteDerivation = "derivation"
 	// SiteJudgement names the judgement call site.
 	SiteJudgement = "judgement"
-	// SiteFill names the on-demand condensation call site.
-	SiteFill = "fill"
 	// SiteAnswering names the reserved answering call site.
 	SiteAnswering = "answering"
 )
@@ -62,9 +60,6 @@ type CallSite struct {
 	Budget        int
 	PromptCeiling int
 	Bound         time.Duration
-
-	// Deferred marks a site whose budget this product does not choose, so an unaffordable result is a fact to report rather than a condition the deployment can act on.
-	Deferred bool
 }
 
 // Headroom is one call site's affordability at a deployment's declared floors.
@@ -87,23 +82,19 @@ func (h Headroom) Affordable() bool {
 	return h.Spare > 0
 }
 
-// JudgementBound is the bound that cuts one judgement call: the adapter's own client bound, or the run bound's per-call share once the derivation and the fill phase are spent, whichever is smaller.
+// JudgementBound is the bound that cuts one judgement call: the adapter's own client bound, or the run bound's per-call share once the derivation and one substance wait are spent, whichever is smaller.
 func JudgementBound(clientBound, runBound time.Duration) time.Duration {
-	return min(clientBound, (runBound-DerivationBound-MaxFills*FillBound)/MaxModelCalls)
+	return min(clientBound, (runBound-DerivationBound-FillWait)/MaxModelCalls)
 }
 
-// CallSites is every site a run issues a model call at; a fillBudget of zero or less leaves the fill site out, which is the shape of a deployment configured with no condensation model.
-func CallSites(clientBound, runBound time.Duration, fillBudget int) []CallSite {
+// CallSites is every site a run issues a model call at.
+func CallSites(clientBound, runBound time.Duration) []CallSite {
 	judgement := JudgementBound(clientBound, runBound)
-	sites := []CallSite{
+	return []CallSite{
 		{Name: SiteDerivation, Budget: DerivationBudget, PromptCeiling: DerivationPromptCeiling, Bound: DerivationBound},
 		{Name: SiteJudgement, Budget: JudgementBudget, PromptCeiling: JudgementPromptCeiling, Bound: judgement},
 		{Name: SiteAnswering, Budget: AnsweringBudget, PromptCeiling: JudgementPromptCeiling, Bound: judgement},
 	}
-	if fillBudget > 0 {
-		sites = append(sites, CallSite{Name: SiteFill, Budget: fillBudget, PromptCeiling: MaxFillContentBytes, Bound: FillBound, Deferred: true})
-	}
-	return sites
 }
 
 // Afford reports every site's headroom at floors: what its budget and its prompt cost at the declared rates, against the share of its bound the safety factor leaves.

@@ -50,40 +50,44 @@ func TestAnExponentWithNoClosingPairOnTheSameLineIsLeftAlone(t *testing.T) {
 	}
 }
 
-func TestAnEmptyCondensationIsRejectedBeforeAnyLengthRuleIsConsulted(t *testing.T) {
-	if got := Defect(strings.Repeat("a", 1000), ""); got != skipEmptyCondensation {
+func TestAnEmptyCondensationIsRejected(t *testing.T) {
+	if got := Defect(""); got != skipEmptyCondensation {
 		t.Fatalf("want %q, got %q", skipEmptyCondensation, got)
 	}
 }
 
-func TestTheNotShorterRuleIsCheckedBeforeTheFloorSoAnOversizeCondensationReportsTheRightReason(t *testing.T) {
-	if got := Defect(strings.Repeat("a", 10), strings.Repeat("b", 1000)); got != skipNotShorter {
-		t.Fatalf("want %q, got %q", skipNotShorter, got)
+func TestDefectAcceptsACondensationNoShorterThanItsContent(t *testing.T) {
+	if got := Defect(strings.Repeat("b", 1000)); got != "" {
+		t.Fatalf("want no defect for a long condensation, got %q", got)
+	}
+}
+
+func TestDefectAcceptsACondensationBelowFivePercent(t *testing.T) {
+	if got := Defect("b"); got != "" {
+		t.Fatalf("want no defect for a one-byte condensation, got %q", got)
 	}
 }
 
 func TestAPreambleIsDetectedOnTheFirstNonBlankLineAndNeverRewritten(t *testing.T) {
-	content := strings.Repeat("a", 1000)
 
 	for _, opening := range []string{"Here is the condensed document:", "below is the extract", "Sure, here you go", "Okay.", "This is the result", "I have condensed it"} {
 		substance := opening + "\n" + strings.Repeat("b", 200)
-		if got := Defect(content, substance); got != skipPreamble {
+		if got := Defect(substance); got != skipPreamble {
 			t.Fatalf("want %q for opening %q, got %q", skipPreamble, opening, got)
 		}
 	}
 }
 
 func TestThePreambleRuleMatchesAWordPrefixSoALineOpeningWithHeredityIsRejectedToo(t *testing.T) {
-	content := strings.Repeat("a", 1000)
 	substance := "Heredity is not discussed.\n" + strings.Repeat("b", 200)
 
-	if got := Defect(content, substance); got != skipPreamble {
+	if got := Defect(substance); got != skipPreamble {
 		t.Fatalf("this test pins that the preamble rule matches on a word prefix, not a whole word; got %q", got)
 	}
 }
 
-func TestACleanCondensationInsideBothBoundsPassesEveryStorageRule(t *testing.T) {
-	if got := Defect(strings.Repeat("a", 1000), strings.Repeat("b", 200)); got != "" {
+func TestACleanCondensationPassesEveryStorageRule(t *testing.T) {
+	if got := Defect(strings.Repeat("b", 200)); got != "" {
 		t.Fatalf("want no defect, got %q", got)
 	}
 }

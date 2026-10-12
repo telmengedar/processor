@@ -12,9 +12,6 @@ type Limits struct {
 	CandidateLimit     int `json:"candidateLimit"`
 	AssemblyByteBudget int `json:"assemblyByteBudget"`
 	RecallScopeReserve int `json:"recallScopeReserve"`
-
-	// SubstanceRatioThreshold is the form-rule dial this sweep ran at.
-	SubstanceRatioThreshold loop.SubstanceRatio `json:"substanceRatioThreshold"`
 }
 
 // RowResult is one row's outcome, the diagnostics that make its number actionable,
@@ -58,8 +55,8 @@ type Result struct {
 	Rows               []RowResult `json:"rows"`
 }
 
-// NewResult opens a result for corpus swept on derivations' arm at threshold, carrying both identities and the loop limits a sweep runs under.
-func NewResult(corpus Corpus, derivations Derivations, sweptAt time.Time, threshold loop.SubstanceRatio) Result {
+// NewResult opens a result for corpus swept on derivations' arm, carrying both identities and the loop limits a sweep runs under.
+func NewResult(corpus Corpus, derivations Derivations, sweptAt time.Time) Result {
 	return Result{
 		CorpusHash:         corpus.Hash,
 		Arm:                derivations.Arm(),
@@ -70,10 +67,9 @@ func NewResult(corpus Corpus, derivations Derivations, sweptAt time.Time, thresh
 		ProvenanceRecorded: derivations.SourcesRecorded(corpus),
 		SweptAt:            sweptAt,
 		Limits: Limits{
-			CandidateLimit:          loop.CandidateLimit,
-			AssemblyByteBudget:      loop.AssemblyByteBudget,
-			RecallScopeReserve:      loop.RecallScopeReserve,
-			SubstanceRatioThreshold: threshold,
+			CandidateLimit:     loop.CandidateLimit,
+			AssemblyByteBudget: loop.AssemblyByteBudget,
+			RecallScopeReserve: loop.RecallScopeReserve,
 		},
 		RowCount: len(corpus.Rows),
 		Rows:     make([]RowResult, 0, len(corpus.Rows)),

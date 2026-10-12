@@ -1,4 +1,4 @@
-// Command condense derives substance for a named, bounded set of graph nodes, offline and never inside a turn.
+// Command condense derives substance for a named, bounded set of graph nodes offline, outside a turn.
 package main
 
 import (

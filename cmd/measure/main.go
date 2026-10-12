@@ -92,21 +92,20 @@ func build(logger *slog.Logger) (*measure.Runner, error) {
 		return nil, err
 	}
 
-	if condenseConfigured {
-		if err := ports.StateThinkingSuppression(logger, "fill", condenseCfg.Protocol); err != nil {
-			return nil, err
-		}
+	fillCfg, fillFromJudgement := ports.FillModel(condenseCfg, condenseConfigured, modelCfg)
+	if fillFromJudgement {
+		logger.Info("no PROCESSOR_CONDENSE_MODEL_* configuration was found: the fill runs on the judgement model's configuration")
+	}
+	if err := ports.StateThinkingSuppression(logger, "fill", fillCfg.Protocol); err != nil {
+		return nil, err
 	}
 
 	client := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 	substances := measure.NewCondenseGraph(ports.FillGraph(client))
 
-	fillPort, err := ports.Fill(condenseCfg, condenseConfigured, substances)
+	fillPort, err := ports.Fill(fillCfg, substances)
 	if err != nil {
 		return nil, err
-	}
-	if fillPort == nil {
-		logger.Info("the fill is off: no PROCESSOR_CONDENSE_MODEL_* configuration was found, and a measured run with the fill off is not the configuration the service runs")
 	}
 
 	var files loop.FilePort

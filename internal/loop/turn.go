@@ -19,8 +19,6 @@ const (
 	// MaxModelCalls caps a turn's model calls: 6 is the measured knee, 17 of 20 sampled tasks reaching their own terminal.
 	MaxModelCalls           = 6
 	SupplementaryByteBudget = 20_000
-	// BlockOccupancy is how many rows the per-candidate payload ceiling reserves room for in the byte budget; zero leaves no ceiling in force.
-	BlockOccupancy = 0
 )
 
 const (
@@ -29,9 +27,9 @@ const (
 	errRecallClosedToModel = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
 	errReservedCallRefused = "the turn's last call was reserved for answering, so it offered no tool and dispatched none"
 	errNoSuchNode          = "no part of memory has that id"
-	errReadOfSubject       = "that id is this request's own subject, and the context block already carries it in full"
-	errAlreadyReadInFull   = "that part has already been shown to you in full in this turn"
-	errNodeTooLargeFormat  = "that part is %d bytes and one read carries at most %d, so it cannot be shown in full"
+	errReadOfSubject       = "that id is this request's own subject, and the context block already carries it"
+	errAlreadyReadInFull   = "that part has already been shown to you in this turn"
+	errNodeTooLargeFormat  = "that part's substance is %d bytes and one read carries at most %d, so it cannot be shown"
 )
 
 type reservation string
@@ -113,7 +111,7 @@ type Turn struct {
 	// Files is the working directory writes go to; nil refuses every write.
 	Files FilePort
 
-	// Fill is the condensation behaviour that derives a candidate's substance on demand; nil refuses every fill with a recorded reason.
+	// Fill is the condensation behaviour that creates a missing substance; nil refuses every creation with a recorded reason.
 	Fill FillPort
 
 	// System composes the system text of one judgement call from the tools that call offers.
@@ -182,9 +180,9 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 		return t.failed(subject, started, fmt.Errorf("%w: %v", ErrGraphUnavailable, err))
 	}
 
-	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget, SubstanceRatioThreshold)
+	anchor, candidates, fills := t.fillInitial(ctx, anchor, candidates)
 
-	fills := t.fill(ctx, dispositions)
+	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget)
 
 	record := Record{
 		Input:           input,
@@ -210,21 +208,19 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 			AnsweringBudget:         AnsweringBudget,
 			RecallScopeReserve:      RecallScopeReserve,
 			ThinKnowledgeSimilarity: ThinKnowledgeSimilarity,
-			MaxFills:                MaxFills,
-			FillSizeFloor:           FillSizeFloor,
-			MaxFillContentBytes:     MaxFillContentBytes,
-			SubstanceRatioFloor:     SubstanceRatioFloor,
-			SubstanceRatioThreshold: SubstanceRatioThreshold,
+			FillWait:                FillWait,
 			HistoryExchangeLimit:    HistoryExchangeLimit,
 			HistorySafetyLimit:      HistorySafetyLimit,
 		},
 	}
 
-	memory := newWorkingMemory(anchor, len(candidates) > 0, SubstanceRatioThreshold, includedCandidates(candidates, dispositions), dispositions)
+	memory := newWorkingMemory(anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions)
 	memory.charge(len(conversation))
 
 	judged, err := t.judge(ctx, memory, input, conversation, subject, now, window, dispositions)
+	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
+		t.deferFills(record.Fills)
 		return t.failed(subject, started, err)
 	}
 
@@ -245,10 +241,25 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 	record.Outcome = ComputeOutcome(record)
 
 	receipt := t.Graph.WriteRun(context.WithoutCancel(ctx), record)
+	t.deferFills(record.Fills)
 
 	t.logFinished(record, receipt, time.Since(started))
 
 	return record, receipt, nil
+}
+
+func (t *Turn) fillInitial(ctx context.Context, anchor Anchor, candidates []Candidate) (Anchor, []Candidate, []FillOutcome) {
+	var ids []int64
+	if anchor.Substance == "" {
+		ids = append(ids, anchor.ID)
+	}
+	ids = append(ids, missingSubstances(candidates, nil)...)
+
+	created, fills := t.createSubstances(ctx, phaseInitial, ids)
+	if text, ok := created[anchor.ID]; ok && anchor.Substance == "" {
+		anchor.Substance = text
+	}
+	return anchor, withCreated(candidates, created), fills
 }
 
 func (t *Turn) derive(ctx context.Context, input string, subject int64, now time.Time) ([]string, UpdateWindow, string) {
@@ -308,8 +319,8 @@ func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Dur
 		t.log().Warn("assembly admitted no candidate: the block carried the anchor alone", "subject", record.Subject, "candidates", len(record.Candidates))
 	}
 
-	if top, ok := topRankedDisposition(record.Candidates); ok && cutForWantOfRoom(top.CutReason) {
-		remaining := summaryRemainingAfterAnchor(record.Limits, record.Anchor.Size)
+	if top, ok := topRankedDisposition(record.Candidates); ok && top.CutReason == cutReasonByteBudget {
+		remaining := summaryRemainingAfterAnchor(record.Limits, record.Anchor.RenderedSize)
 		t.log().Warn("the top-ranked candidate was cut for want of room: the best match the graph found did not reach the model",
 			"subject", record.Subject, "candidateId", top.ID, "candidateName", top.Name, "candidateSize", top.RenderedSize, "cutReason", top.CutReason, "remaining", remaining)
 	}
@@ -362,6 +373,8 @@ type judgement struct {
 	recallClosed  bool
 	timeShortfall string
 
+	fills []FillOutcome
+
 	reservedCall ReservedCall
 
 	usages       []*Usage
@@ -399,7 +412,7 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversa
 	for {
 		if shortfall := t.judgementShortfall(ctx); shortfall != "" {
 			if judged.modelCalls == 0 {
-				return judgement{}, fmt.Errorf("%w: %s", ErrRunTimeExhausted, shortfall)
+				return judgement{fills: judged.fills}, fmt.Errorf("%w: %s", ErrRunTimeExhausted, shortfall)
 			}
 			t.log().Warn("the run stopped short of its call cap: its remaining time cannot afford another judgement call at the declared floor",
 				"modelCalls", judged.modelCalls, "shortfall", shortfall)
@@ -430,7 +443,7 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversa
 		})
 		if jerr != nil {
 			if reserved == "" {
-				return judgement{}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
+				return judgement{fills: judged.fills}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
 			}
 			judged.answer = ""
 			judged.usages = append(judged.usages, nil)
@@ -493,6 +506,7 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversa
 			memory.absorb(exchange.Results, exchange.Dispositions)
 		}
 		exchanges = append(exchanges, exchange)
+		judged.fills = append(judged.fills, exchange.Fills...)
 		dispatched++
 
 		if exchange.Refused {
@@ -655,8 +669,11 @@ func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window Up
 		t.log().Warn(logLeakedRows, "subject", subject, "rows", leaked)
 	}
 
-	admitted, dispositions := admitUnheld(candidates, memory.room(SupplementaryByteBudget), 0, BlockOccupancy, memory.threshold, memory.holds)
-	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions}
+	created, fills := t.createSubstances(ctx, phaseRecall, missingSubstances(candidates, func(c Candidate) bool { return memory.holds(c) }))
+	candidates = withCreated(candidates, created)
+
+	admitted, dispositions := admitUnheld(candidates, memory.room(SupplementaryByteBudget), 0, memory.holds)
+	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions, Fills: fills}
 }
 
 func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
@@ -685,20 +702,26 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 		return exchange
 	}
 
+	if anchor.Substance == "" {
+		created, fills := t.createSubstances(ctx, phaseRead, []int64{anchor.ID})
+		exchange.Fills = fills
+		anchor.Substance = created[anchor.ID]
+	}
+
 	room := memory.roomToReplace(result.ReadNodeID, SupplementaryByteBudget)
-	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, room, 0, BlockOccupancy, memory.threshold)
+	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, room, 0)
 	if account.alreadyShown(dispositions[0]) {
 		exchange.Error = errAlreadyReadInFull
 		exchange.Refused = true
 		return exchange
 	}
 	if len(admitted) == 0 {
-		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, dispositions[0].Size, room)
+		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, dispositions[0].RenderedSize, room)
 		exchange.Refused = true
 		return exchange
 	}
 
-	t.log().Info("node read in full", "node", dispositions[0].ID, "bytes", dispositions[0].RenderedSize)
+	t.log().Info("node read", "node", dispositions[0].ID, "bytes", dispositions[0].RenderedSize)
 	exchange.Results = admitted
 	exchange.Dispositions = dispositions
 	return exchange

@@ -6,7 +6,6 @@ import (
 
 	"github.com/telmengedar/processor/internal/boot"
 	"github.com/telmengedar/processor/internal/divoid"
-	"github.com/telmengedar/processor/internal/fill"
 	"github.com/telmengedar/processor/internal/loop"
 )
 
@@ -55,17 +54,35 @@ func TestTheFillModelRefusesAProtocolItHasNoAdapterFor(t *testing.T) {
 	}
 }
 
-func TestTheFillPortIsNilWhenNoCondenseModelIsConfigured(t *testing.T) {
+func TestBootBuildsTheFillPortOverTheJudgementModelWhenNoCondenseModelIsConfigured(t *testing.T) {
 	t.Parallel()
 
-	graph := FillGraph(divoid.NewClient("https://graph.example", "key", nil, nil))
+	judgement := boot.ModelConfig{Protocol: boot.ProtocolOpenAICompat, URL: "http://judge.invalid/v1", ID: "judge-model"}
 
-	port, err := Fill(boot.ModelConfig{}, false, graph)
+	cfg, fromJudgement := FillModel(boot.ModelConfig{}, false, judgement)
+	if !fromJudgement || cfg != judgement {
+		t.Fatalf("FillModel = %+v (from judgement %v), want the judgement model's configuration", cfg, fromJudgement)
+	}
+
+	graph := FillGraph(divoid.NewClient("https://graph.example", "key", nil, nil))
+	port, err := Fill(cfg, graph)
 	if err != nil {
 		t.Fatalf("building the fill port failed: %v", err)
 	}
-	if port != nil {
-		t.Fatalf("the fill port came back as %T, want nil when configured is false", port)
+	if port == nil {
+		t.Fatal("the fill port came back nil with no condense model configured, want a live port over the judgement model")
+	}
+}
+
+func TestACondenseModelWhenConfiguredIsTheOneTheFillRunsOn(t *testing.T) {
+	t.Parallel()
+
+	judgement := boot.ModelConfig{Protocol: boot.ProtocolOpenAICompat, URL: "http://judge.invalid/v1", ID: "judge-model"}
+	condensing := boot.ModelConfig{Protocol: boot.ProtocolOllama, URL: "http://condense.invalid", ID: "condense-model"}
+
+	cfg, fromJudgement := FillModel(condensing, true, judgement)
+	if fromJudgement || cfg != condensing {
+		t.Fatalf("FillModel = %+v (from judgement %v), want the condense model's configuration", cfg, fromJudgement)
 	}
 }
 
@@ -73,7 +90,7 @@ func TestTheFillPortIsALivePortOverTheGraphItWasGivenWhenACondenseModelIsConfigu
 	graph := FillGraph(divoid.NewClient("https://graph.example", "key", nil, nil))
 	cfg := boot.ModelConfig{Protocol: boot.ProtocolOpenAICompat, URL: "http://condense.invalid/v1", ID: "gemma-3-12b-it"}
 
-	port, err := Fill(cfg, true, graph)
+	port, err := Fill(cfg, graph)
 	if err != nil {
 		t.Fatalf("building the fill port failed: %v", err)
 	}
@@ -81,12 +98,8 @@ func TestTheFillPortIsALivePortOverTheGraphItWasGivenWhenACondenseModelIsConfigu
 		t.Fatal("the fill port came back nil with a condense model configured, want a live port")
 	}
 
-	built, ok := port.(*fill.Port)
-	if !ok {
-		t.Fatalf("the fill port came back as %T, want the port that carries the graph it was built over", port)
-	}
-	if built.Graph != graph {
-		t.Fatalf("the fill port reads %#v, want the graph it was given, %#v — a port that substitutes its own graph can write past a decorator on this seam", built.Graph, graph)
+	if port.Graph != graph {
+		t.Fatalf("the fill port reads %#v, want the graph it was given, %#v — a port that substitutes its own graph can write past a decorator on this seam", port.Graph, graph)
 	}
 }
 
@@ -96,7 +109,7 @@ func TestTheFillPortSurfacesAnUnsupportedProtocolAsABootError(t *testing.T) {
 	graph := FillGraph(divoid.NewClient("https://graph.example", "key", nil, nil))
 	cfg := boot.ModelConfig{Protocol: "responses", URL: "http://condense.invalid", ID: "m"}
 
-	port, err := Fill(cfg, true, graph)
+	port, err := Fill(cfg, graph)
 	if err == nil {
 		t.Fatalf("the fill port came back as %T with no error for a protocol it has no adapter for, want a refusal", port)
 	}

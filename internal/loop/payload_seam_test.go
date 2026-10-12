@@ -50,14 +50,24 @@ func callsByName(fn *ast.FuncDecl) map[string]bool {
 	return called
 }
 
-func readsACandidatesBody(fn *ast.FuncDecl) bool {
+func rootedAtTheAnchorOrAResult(expr ast.Expr) bool {
+	switch x := expr.(type) {
+	case *ast.Ident:
+		return x.Name == "anchor" || x.Name == "result"
+	case *ast.SelectorExpr:
+		return x.Sel.Name == "result"
+	}
+	return false
+}
+
+func readsACandidatesField(fn *ast.FuncDecl, field string) bool {
 	found := false
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		selector, ok := n.(*ast.SelectorExpr)
-		if !ok || (selector.Sel.Name != "Content" && selector.Sel.Name != "Substance") {
+		if !ok || selector.Sel.Name != field {
 			return true
 		}
-		if ident, ok := selector.X.(*ast.Ident); ok && ident.Name == "anchor" {
+		if rootedAtTheAnchorOrAResult(selector.X) {
 			return true
 		}
 		found = true
@@ -69,25 +79,27 @@ func readsACandidatesBody(fn *ast.FuncDecl) bool {
 func TestOnlyAdmissionAndThePayloadSeamReadACandidatesBody(t *testing.T) {
 	t.Parallel()
 
-	allowed := []string{"admitUnheld", "renderedPayload"}
+	allowed := map[string][]string{
+		"Content":   {"admitUnheld"},
+		"Substance": {"admitUnheld", "renderedPayload", "lacksSubstance", "withCreated"},
+	}
 	functions := parseTheLoopSources(t)
 
-	for name, fn := range functions {
-		if !readsACandidatesBody(fn) {
-			continue
+	for field, readers := range allowed {
+		for name, fn := range functions {
+			if readsACandidatesField(fn, field) && !slices.Contains(readers, name) {
+				t.Errorf("%s reads a candidate's %s directly; only %v may, because admission charges what renderedPayload returns and a renderer that reaches past it writes bytes nobody counted", name, field, readers)
+			}
 		}
-		if !slices.Contains(allowed, name) {
-			t.Errorf("%s reads a candidate's Content or Substance directly; only %v may, because the cap is charged against renderedPayload and a renderer that reaches past it writes bytes nobody counted, in either form", name, allowed)
-		}
-	}
 
-	for _, name := range allowed {
-		fn, ok := functions[name]
-		if !ok {
-			t.Fatalf("%s is not in the loop package at all, so the list this guard permits is stale and the guard admits whatever replaced it", name)
-		}
-		if !readsACandidatesBody(fn) {
-			t.Errorf("%s no longer reads a candidate's Content or Substance, so permitting it here widens the guard for nothing", name)
+		for _, name := range readers {
+			fn, ok := functions[name]
+			if !ok {
+				t.Fatalf("%s is not in the loop package at all, so the list this guard permits is stale and the guard admits whatever replaced it", name)
+			}
+			if !readsACandidatesField(fn, field) && field == "Content" {
+				t.Errorf("%s no longer reads a candidate's %s, so permitting it here widens the guard for nothing", name, field)
+			}
 		}
 	}
 }
@@ -130,7 +142,7 @@ func TestTheBlockTakesItsRowsFromThePayloadSeam(t *testing.T) {
 			t.Fatalf("%s is not in the loop package at all, so this guard would pass vacuously", name)
 		}
 		if !reaches(functions, name, "renderedPayload") {
-			t.Errorf("%s reaches renderedPayload by no path, so the bytes it writes and the bytes admission charged against the ceiling are two independent quantities that agree only by accident", name)
+			t.Errorf("%s reaches renderedPayload by no path, so the bytes it writes and the bytes admission charged are two independent quantities that agree only by accident", name)
 		}
 	}
 }

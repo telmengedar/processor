@@ -11,13 +11,12 @@ type heldRow struct {
 type workingMemory struct {
 	anchor     Anchor
 	considered bool
-	threshold  SubstanceRatio
 	rows       map[int64]heldRow
 	spent      int
 }
 
-func newWorkingMemory(anchor Anchor, considered bool, threshold SubstanceRatio, admitted []Candidate, dispositions []Disposition) *workingMemory {
-	memory := &workingMemory{anchor: anchor, considered: considered, threshold: threshold, rows: map[int64]heldRow{}, spent: len(anchor.Content)}
+func newWorkingMemory(anchor Anchor, considered bool, admitted []Candidate, dispositions []Disposition) *workingMemory {
+	memory := &workingMemory{anchor: anchor, considered: considered, rows: map[int64]heldRow{}, spent: len(anchor.Substance)}
 	memory.absorb(admitted, dispositions)
 	return memory
 }
@@ -48,7 +47,7 @@ func (m *workingMemory) absorb(admitted []Candidate, dispositions []Disposition)
 
 func (m *workingMemory) hold(c Candidate, form Form, size int) {
 	held, present := m.rows[c.ID]
-	if present && held.form == FormContent && form == FormSubstance {
+	if present && held.form == FormSubstance && form == FormUnavailable {
 		return
 	}
 	if present {
@@ -75,8 +74,8 @@ func (m *workingMemory) holds(c Candidate) bool {
 	if !present {
 		return false
 	}
-	form, payload := renderedPayload(c, m.threshold)
-	_, heldPayload := renderedPayload(held.candidate, m.threshold)
+	form, payload := renderedPayload(c)
+	_, heldPayload := renderedPayload(held.candidate)
 	return held.form == form && payload == heldPayload
 }
 
@@ -87,5 +86,5 @@ func (m *workingMemory) render(nudges bool) string {
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
 
-	return renderBlock(m.anchor, rows, m.considered, m.threshold, nudges)
+	return renderBlock(m.anchor, rows, m.considered, nudges)
 }

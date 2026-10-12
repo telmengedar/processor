@@ -123,16 +123,11 @@ var dials = []dial{
 	{name: "JudgementBudget", field: "judgementBudget"},
 	{name: "RecallScopeReserve", field: "recallScopeReserve"},
 	{name: "ThinKnowledgeSimilarity", field: "thinKnowledgeSimilarity"},
-	{name: "MaxFills", field: "maxFills"},
-	{name: "FillSizeFloor", field: "fillSizeFloor"},
-	{name: "MaxFillContentBytes", field: "maxFillContentBytes"},
-	{name: "SubstanceRatioFloor", field: "substanceRatioFloor"},
-	{name: "SubstanceRatioThreshold", field: "substanceRatioThreshold"},
-	{name: "BlockOccupancy"},
+	{name: "FillWait", field: "fillWait"},
 }
 
 var mechanisms = []mechanism{
-	{name: "on-demand fill", field: "fills", observed: observedFill},
+	{name: "substance fill", field: "fills", observed: observedFill},
 	{name: "substance form", field: "candidates[].form", observed: observedSubstanceForm},
 	{name: "addressed read", field: "toolCalls[].tool", observed: observedAddressedRead},
 }

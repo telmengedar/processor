@@ -274,7 +274,7 @@ func TestTurnRunWrapsRecallFailureAsGraphUnavailable(t *testing.T) {
 	t.Parallel()
 
 	graph := &fakeGraph{
-		node:      Anchor{ID: 42, Content: "anchor body"},
+		node:      Anchor{ID: 42, Substance: "anchor body"},
 		nodeFound: true,
 		recallErr: errors.New("literal: 500 from graph"),
 	}
@@ -291,7 +291,7 @@ func TestTurnRunDoesNotCallModelWhenRecallFails(t *testing.T) {
 
 	model := &fakeModel{}
 	graph := &fakeGraph{
-		node:      Anchor{ID: 42, Content: "anchor body"},
+		node:      Anchor{ID: 42, Substance: "anchor body"},
 		nodeFound: true,
 		recallErr: errors.New("literal: 500 from graph"),
 	}
@@ -353,7 +353,7 @@ func TestTurnRunSummarizesTheFetchedAnchorIntoTheRecord(t *testing.T) {
 	t.Parallel()
 
 	graph := &fakeGraph{
-		node:      Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "body text"},
+		node:      Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "body text", Substance: "body text"},
 		nodeFound: true,
 	}
 	turn := newTurnWithGraph(graph)
@@ -378,8 +378,8 @@ func TestTurnRunSummarizesTheFetchedAnchorIntoTheRecord(t *testing.T) {
 func TestTurnRunTwoTurnsDoNotShareState(t *testing.T) {
 	t.Parallel()
 
-	turnA := newTurnWithGraph(&fakeGraph{node: Anchor{ID: 1, Content: "a"}, nodeFound: true})
-	turnB := newTurnWithGraph(&fakeGraph{node: Anchor{ID: 2, Content: "b"}, nodeFound: true})
+	turnA := newTurnWithGraph(&fakeGraph{node: Anchor{ID: 1, Substance: "a"}, nodeFound: true})
+	turnB := newTurnWithGraph(&fakeGraph{node: Anchor{ID: 2, Substance: "b"}, nodeFound: true})
 
 	recA, _, err := turnA.Run(context.Background(), "qa", 1)
 	if err != nil {
@@ -396,7 +396,7 @@ func TestTurnRunTwoTurnsDoNotShareState(t *testing.T) {
 }
 
 func baseGraph() *fakeGraph {
-	return &fakeGraph{node: Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"}, nodeFound: true}
+	return &fakeGraph{node: Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"}, nodeFound: true}
 }
 
 func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T) {
@@ -428,7 +428,7 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	if record.CapReached {
 		t.Fatal("record.CapReached = true, want false — the model answered on the first call, the cap never fired")
 	}
-	wantLimits := Limits{CandidateLimit: CandidateLimit, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, AnsweringBudget: 192, RecallScopeReserve: RecallScopeReserve, ThinKnowledgeSimilarity: ThinKnowledgeSimilarity, MaxFills: 2, FillSizeFloor: 8_000, MaxFillContentBytes: 100_000, SubstanceRatioFloor: 0.10, HistoryExchangeLimit: 4, HistorySafetyLimit: 8_000}
+	wantLimits := Limits{CandidateLimit: CandidateLimit, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, AnsweringBudget: 192, RecallScopeReserve: RecallScopeReserve, ThinKnowledgeSimilarity: ThinKnowledgeSimilarity, FillWait: FillWait, HistoryExchangeLimit: 4, HistorySafetyLimit: 8_000}
 	if record.Limits != wantLimits {
 		t.Fatalf("record.Limits = %+v, want %+v", record.Limits, wantLimits)
 	}
@@ -487,8 +487,8 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
-		{Candidates: []Candidate{{ID: 99, Type: "task", Name: "Found", Similarity: 0.8, Content: "tool result body"}}},
+		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: []Candidate{{ID: 99, Type: "task", Name: "Found", Similarity: 0.8, Substance: "tool result body"}}},
 	}
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the missing thing"},
@@ -574,7 +574,7 @@ func TestTurnRunRecordsASupplementaryRecallTransportFailureAsAnErrorFlaggedRound
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
+		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
 		{Err: errors.New("literal: 500 from graph")},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -674,7 +674,7 @@ func TestTurnRunCarriesTheSupplementaryRecallCauseIntoTheRoundAndLogsItWhole(t *
 	const cause = "literal: dial tcp 10.0.0.55:443: connect: connection refused"
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
+		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
 		{Err: errors.New(cause)},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -704,7 +704,7 @@ func TestTurnRunKeepsTheSupplementaryRecallCauseOutOfTheModelsNextCall(t *testin
 	const cause = "literal: 503 from graph: upstream is draining"
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
+		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
 		{Err: errors.New(cause)},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -785,8 +785,8 @@ func TestTurnRunUsageArrayLengthAlwaysEqualsModelCalls(t *testing.T) {
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
-		{Candidates: []Candidate{{ID: 2, Content: "tool result"}}},
+		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: []Candidate{{ID: 2, Substance: "tool result"}}},
 	}
 	usage1 := &Usage{InTokens: 10, OutTokens: 1}
 	model := &fakeModel{results: []JudgeResult{
@@ -962,12 +962,12 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
+		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
 		{Candidates: []Candidate{
-			{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", 9_000)},
-			{ID: 92, Similarity: 0.8, Content: strings.Repeat("b", 9_000)},
-			{ID: 93, Similarity: 0.7, Content: strings.Repeat("c", 5_000)},
-			{ID: 94, Similarity: 0.65, Content: strings.Repeat("d", 100)},
+			{ID: 91, Similarity: 0.9, Substance: strings.Repeat("a", 9_000)},
+			{ID: 92, Similarity: 0.8, Substance: strings.Repeat("b", 9_000)},
+			{ID: 93, Similarity: 0.7, Substance: strings.Repeat("c", 5_000)},
+			{ID: 94, Similarity: 0.65, Substance: strings.Repeat("d", 100)},
 		}},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -1003,8 +1003,8 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 	if round.Results[2].CutReason == "" {
 		t.Fatal("a cut supplementary hit has an empty CutReason, want it recorded")
 	}
-	if round.Results[2].Size != 5_000 {
-		t.Fatalf("round.Results[2].Size = %d, want 5000 — a cut row must still carry the size that caused the cut", round.Results[2].Size)
+	if round.Results[2].RenderedSize != 5_000 {
+		t.Fatalf("round.Results[2].Size = %d, want 5000 — a cut row must still carry the size that caused the cut", round.Results[2].RenderedSize)
 	}
 
 	if seen := candidateIDsIn(model.calls[1].Block); !slices.Equal(seen, []int64{91, 92, 94}) {
@@ -1017,11 +1017,11 @@ func TestTurnRunSupplementaryAdmissionStaysInRankOrderEvenWhenIDsDescend(t *test
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
+		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
 		{Candidates: []Candidate{
-			{ID: 300, Similarity: 0.9, Content: "third-ranked-by-id-descending"},
-			{ID: 200, Similarity: 0.8, Content: "second"},
-			{ID: 100, Similarity: 0.7, Content: "first"},
+			{ID: 300, Similarity: 0.9, Substance: "third-ranked-by-id-descending"},
+			{ID: 200, Similarity: 0.8, Substance: "second"},
+			{ID: 100, Similarity: 0.7, Substance: "first"},
 		}},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -1058,9 +1058,9 @@ func TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRo
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
+		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
 		{Candidates: []Candidate{
-			{ID: 91, Content: strings.Repeat("a", 25_000)},
+			{ID: 91, Substance: strings.Repeat("a", 25_000)},
 		}},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -1097,8 +1097,8 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
-		{Candidates: []Candidate{{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", SupplementaryByteBudget)}}},
+		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: []Candidate{{ID: 91, Similarity: 0.9, Substance: strings.Repeat("a", SupplementaryByteBudget)}}},
 	}
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
@@ -1179,9 +1179,9 @@ func TestTurnRunFinishedRecordCarriesTheReceiptCountsAndWallClock(t *testing.T) 
 
 	graph := baseGraph()
 	graph.candidates = []Candidate{
-		{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
-		{ID: 8, Type: "task", Name: "Large", Similarity: 0.8, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-		{ID: 9, Type: "task", Name: "AlsoLarge", Similarity: 0.7, Content: strings.Repeat("y", AssemblyByteBudget+1)},
+		{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Substance: "small body"},
+		{ID: 8, Type: "task", Name: "Large", Similarity: 0.8, Substance: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 9, Type: "task", Name: "AlsoLarge", Similarity: 0.7, Substance: strings.Repeat("y", AssemblyByteBudget+1)},
 	}
 	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: 999}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop", Usage: &Usage{InTokens: 11, OutTokens: 22}}}}
@@ -1242,7 +1242,7 @@ func TestTurnRunFinishedRecordSumsUsageAcrossCallsAndCountsTheCallsThatReportedI
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	graph := baseGraph()
-	graph.candidates = []Candidate{{ID: 7, Type: "task", Name: "C", Similarity: 0.9, Content: "body"}}
+	graph.candidates = []Candidate{{ID: 7, Type: "task", Name: "C", Similarity: 0.9, Substance: "body"}}
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "more"},
 		{Answer: "ok", Reason: Answered, RawReason: "stop", Usage: &Usage{InTokens: 100, OutTokens: 7}},
@@ -1269,8 +1269,8 @@ func TestTurnRunWarnsWhenAssemblyAdmittedNothing(t *testing.T) {
 
 	graph := baseGraph()
 	graph.candidates = []Candidate{
-		{ID: 7, Type: "task", Name: "TooBig", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-		{ID: 8, Type: "task", Name: "AlsoTooBig", Similarity: 0.8, Content: strings.Repeat("y", AssemblyByteBudget+1)},
+		{ID: 7, Type: "task", Name: "TooBig", Similarity: 0.9, Substance: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 8, Type: "task", Name: "AlsoTooBig", Similarity: 0.8, Substance: strings.Repeat("y", AssemblyByteBudget+1)},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
@@ -1302,8 +1302,8 @@ func TestTurnRunDoesNotWarnWhenAnythingWasAdmitted(t *testing.T) {
 
 	graph := baseGraph()
 	graph.candidates = []Candidate{
-		{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
-		{ID: 8, Type: "task", Name: "TooBig", Similarity: 0.8, Content: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Substance: "small body"},
+		{ID: 8, Type: "task", Name: "TooBig", Similarity: 0.8, Substance: strings.Repeat("x", AssemblyByteBudget+1)},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
@@ -1351,10 +1351,10 @@ func TestTurnRunWarnsWhenTheAnchorAloneConsumesTheWholeBudget(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	graph := baseGraph()
-	graph.node.Content = strings.Repeat("a", AssemblyByteBudget+1)
+	graph.node.Substance = strings.Repeat("a", AssemblyByteBudget+1)
 	graph.candidates = []Candidate{
-		{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
-		{ID: 8, Type: "task", Name: "AlsoSmall", Similarity: 0.8, Content: "also small body"},
+		{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Substance: "small body"},
+		{ID: 8, Type: "task", Name: "AlsoSmall", Similarity: 0.8, Substance: "also small body"},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
@@ -1399,8 +1399,8 @@ func TestTurnRunWarnsWhenTheTopRankedCandidateWasDroppedForTheByteBudget(t *test
 
 	graph := baseGraph()
 	graph.candidates = []Candidate{
-		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-		{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
+		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Substance: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Substance: "small body"},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
@@ -1420,7 +1420,7 @@ func TestTurnRunWarnsWhenTheTopRankedCandidateWasDroppedForTheByteBudget(t *test
 	if warning == "" {
 		t.Fatalf("no top-cut record for a run whose rank-1 candidate was dropped for the byte budget; log:\n%s", logBuf.String())
 	}
-	wantRemaining := AssemblyByteBudget - len(graph.node.Content)
+	wantRemaining := AssemblyByteBudget - len(graph.node.Substance)
 	for _, want := range []string{"level=WARN", "subject=42", "candidateId=100", "candidateName=BigDoc", fmt.Sprintf("candidateSize=%d", AssemblyByteBudget+1), `cutReason="byte budget exceeded"`, fmt.Sprintf("remaining=%d", wantRemaining)} {
 		if !strings.Contains(warning, want) {
 			t.Fatalf("the top-cut record does not carry %q; it was:\n%s", want, warning)
@@ -1436,9 +1436,9 @@ func TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasAdmittedEvenThoughOthersW
 
 	graph := baseGraph()
 	graph.candidates = []Candidate{
-		{ID: 100, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
-		{ID: 101, Type: "documentation", Name: "Big1", Similarity: 0.8, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-		{ID: 102, Type: "documentation", Name: "Big2", Similarity: 0.7, Content: strings.Repeat("y", AssemblyByteBudget+1)},
+		{ID: 100, Type: "task", Name: "Small", Similarity: 0.9, Substance: "small body"},
+		{ID: 101, Type: "documentation", Name: "Big1", Similarity: 0.8, Substance: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 102, Type: "documentation", Name: "Big2", Similarity: 0.7, Substance: strings.Repeat("y", AssemblyByteBudget+1)},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
@@ -1456,36 +1456,6 @@ func TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasAdmittedEvenThoughOthersW
 	}
 }
 
-func TestTheTopCutWarnFiresWhenTheTopCandidateWasRefusedForItsSize(t *testing.T) {
-	t.Parallel()
-
-	var logBuf strings.Builder
-	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
-	turn := &Turn{logger: logger}
-
-	record := Record{
-		Subject: 42,
-		Anchor:  AnchorSummary{Size: 100},
-		Limits:  Limits{AssemblyByteBudget: AssemblyByteBudget},
-		Candidates: []Disposition{
-			{Rank: 1, ID: 900, Name: "BigDoc", CutReason: cutReasonOversized, Included: false, Size: 43_000, RenderedSize: 43_000},
-			{Rank: 2, ID: 901, Name: "Doc", Included: true, Size: 200, RenderedSize: 200},
-		},
-	}
-
-	turn.logFinished(record, WriteReceipt{}, 0)
-
-	warning := topCutLogLine(logBuf.String())
-	if warning == "" {
-		t.Fatalf("a run whose rank-1 candidate was refused for its size raised no top-cut alarm: the best match the graph found did not reach the model and nothing said so; log:\n%s", logBuf.String())
-	}
-	for _, want := range []string{"candidateId=900", "candidateSize=43000", "cutReason=oversized"} {
-		if !strings.Contains(warning, want) {
-			t.Fatalf("the top-cut record does not carry %q; it was:\n%s", want, warning)
-		}
-	}
-}
-
 func TestTheTopCutWarnIsSilentWhenTheTopCandidateWasCutAsSelfProduced(t *testing.T) {
 	t.Parallel()
 
@@ -1495,7 +1465,7 @@ func TestTheTopCutWarnIsSilentWhenTheTopCandidateWasCutAsSelfProduced(t *testing
 
 	record := Record{
 		Subject: 42,
-		Anchor:  AnchorSummary{Size: 100},
+		Anchor:  AnchorSummary{Size: 100, RenderedSize: 100},
 		Limits:  Limits{AssemblyByteBudget: AssemblyByteBudget},
 		Candidates: []Disposition{
 			{Rank: 1, ID: 900, Name: "SelfProducedRecord", CutReason: cutReasonSelfProduced, Included: false, Size: 70_000},
@@ -1518,8 +1488,8 @@ func TestTurnRunRaisesBothTheShutoutAndTheDroppedTopCandidateRecordsWhenNothingW
 
 	graph := baseGraph()
 	graph.candidates = []Candidate{
-		{ID: 100, Type: "documentation", Name: "Big1", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-		{ID: 101, Type: "documentation", Name: "Big2", Similarity: 0.8, Content: strings.Repeat("y", AssemblyByteBudget+1)},
+		{ID: 100, Type: "documentation", Name: "Big1", Similarity: 0.9, Substance: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 101, Type: "documentation", Name: "Big2", Similarity: 0.8, Substance: strings.Repeat("y", AssemblyByteBudget+1)},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
@@ -1545,8 +1515,8 @@ func TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped
 
 	graph := baseGraph()
 	graph.candidates = []Candidate{
-		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-		{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
+		{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Substance: strings.Repeat("x", AssemblyByteBudget+1)},
+		{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Substance: "small body"},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
@@ -1556,7 +1526,7 @@ func TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped
 		t.Fatalf("Run: %v", err)
 	}
 
-	wantBlock, wantDispositions := Assemble(graph.node, graph.candidates, AssemblyByteBudget, SubstanceRatioThreshold)
+	wantBlock, wantDispositions := Assemble(graph.node, graph.candidates, AssemblyByteBudget)
 	if record.Block != wantBlock {
 		t.Fatalf("record.Block changed when the top candidate was dropped:\ngot  %q\nwant %q", record.Block, wantBlock)
 	}
@@ -1581,15 +1551,15 @@ func TestTheBlockTheModelIsSentIsTheBlockTheRecordCarries(t *testing.T) {
 		{
 			name: "partial admission",
 			candidates: []Candidate{
-				{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)},
-				{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"},
+				{ID: 100, Type: "documentation", Name: "BigDoc", Similarity: 0.9, Substance: strings.Repeat("x", AssemblyByteBudget+1)},
+				{ID: 101, Type: "task", Name: "Small", Similarity: 0.9, Substance: "small body"},
 			},
 		},
 		{
 			name: "shutout",
 			candidates: []Candidate{
-				{ID: 200, Type: "documentation", Name: "TooBig1", Similarity: 0.9, Content: strings.Repeat("z", AssemblyByteBudget+1)},
-				{ID: 201, Type: "documentation", Name: "TooBig2", Similarity: 0.8, Content: strings.Repeat("y", AssemblyByteBudget+1)},
+				{ID: 200, Type: "documentation", Name: "TooBig1", Similarity: 0.9, Substance: strings.Repeat("z", AssemblyByteBudget+1)},
+				{ID: 201, Type: "documentation", Name: "TooBig2", Similarity: 0.8, Substance: strings.Repeat("y", AssemblyByteBudget+1)},
 			},
 		},
 	}
@@ -1647,8 +1617,8 @@ func TestAShortApertureIsWarnedEvenWhenNothingWasCutBecauseNothingWasFetched(t *
 
 	graph := baseGraph()
 	graph.candidates = []Candidate{
-		{ID: 901, Type: "session-log", Name: "a record this run wrote", Similarity: 0.9, Content: "a record body", SelfProduced: true},
-		{ID: 902, Type: "session-log", Name: "another record this run wrote", Similarity: 0.8, Content: "another record body", SelfProduced: true},
+		{ID: 901, Type: "session-log", Name: "a record this run wrote", Similarity: 0.9, Substance: "a record body", SelfProduced: true},
+		{ID: 902, Type: "session-log", Name: "another record this run wrote", Similarity: 0.8, Substance: "another record body", SelfProduced: true},
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
@@ -1678,7 +1648,7 @@ func TestAFullApertureRaisesNoUnderDeliveryAlarm(t *testing.T) {
 	graph := baseGraph()
 	graph.candidates = make([]Candidate, 0, CandidateLimit)
 	for i := range CandidateLimit {
-		graph.candidates = append(graph.candidates, Candidate{ID: int64(700 + i), Type: "documentation", Name: "A real document", Similarity: 0.9, Content: "a small body"})
+		graph.candidates = append(graph.candidates, Candidate{ID: int64(700 + i), Type: "documentation", Name: "A real document", Similarity: 0.9, Substance: "a small body"})
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
@@ -1731,7 +1701,7 @@ func TestTurnRunLogsNoRunFinishedWhenTheRunNeverReachedAnAnswer(t *testing.T) {
 func TestTheSupplementaryRecallSendsTheModelsOwnQueryAsExactlyOneCall(t *testing.T) {
 	t.Parallel()
 
-	graph := &fakeGraph{nodeFound: true, node: Anchor{ID: 7, Type: "documentation", Name: "S", Content: "anchor"}}
+	graph := &fakeGraph{nodeFound: true, node: Anchor{ID: 7, Type: "documentation", Name: "S", Substance: "anchor"}}
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the query the model composed"},
 		{Answer: "done", Reason: Answered, RawReason: "stop"},
@@ -1758,7 +1728,7 @@ func TestTheSupplementaryRecallSendsTheModelsOwnQueryAsExactlyOneCall(t *testing
 func TestTheSupplementaryRecallCarriesTheRunsWindow(t *testing.T) {
 	t.Parallel()
 
-	graph := &fakeGraph{nodeFound: true, node: Anchor{ID: 7, Type: "documentation", Name: "S", Content: "anchor"}}
+	graph := &fakeGraph{nodeFound: true, node: Anchor{ID: 7, Type: "documentation", Name: "S", Substance: "anchor"}}
 	model := &fakeModel{
 		derivedText: "DATES: 2026-09-12..2026-09-12\nthe derived question?",
 		results: []JudgeResult{
@@ -1870,7 +1840,7 @@ func TestTheRecordSaysWhichRecallReturnedEachCandidateAndAtWhatRank(t *testing.T
 	t.Parallel()
 
 	graph := baseGraph()
-	graph.candidates = []Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "body"}}
+	graph.candidates = []Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Substance: "body"}}
 	turn := NewTurn(graph, &fakeModel{}, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
@@ -1892,8 +1862,8 @@ func TestTheAnchorIsNeverAdmittedAsACandidateAgainstTheBlockThatAlreadyRendersIt
 
 	graph := baseGraph()
 	graph.candidates = []Candidate{
-		{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
-		{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"},
+		{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
+		{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Substance: "candidate body"},
 	}
 	turn := NewTurn(graph, &fakeModel{}, nil, fixedSystem("system"), "test-model", testLogger())
 
@@ -1920,11 +1890,11 @@ func TestTheTopCutWarningReportsTheSizeTheBudgetRefusedNotTheContentsOwn(t *test
 
 	record := Record{
 		Subject: 42,
-		Anchor:  AnchorSummary{ID: 1, Size: 100},
+		Anchor:  AnchorSummary{ID: 1, Size: 100, RenderedSize: 100},
 		Limits:  Limits{AssemblyByteBudget: AssemblyByteBudget, CandidateLimit: 2},
 		Candidates: []Disposition{
 			{Rank: 1, ID: 100, Name: "BigDoc", Size: 40_000, RenderedSize: 9_000, Form: FormSubstance, CutReason: cutReasonByteBudget},
-			{Rank: 2, ID: 101, Name: "Small", Size: 10, RenderedSize: 10, Form: FormContent, Included: true},
+			{Rank: 2, ID: 101, Name: "Small", Size: 10, RenderedSize: 10, Form: FormSubstance, Included: true},
 		},
 	}
 
@@ -1951,8 +1921,8 @@ func TestTheSupplementaryRecallNeverReturnsTheSubject(t *testing.T) {
 		graph.recallQueue = []recallResponse{
 			{Candidates: nil},
 			{Candidates: []Candidate{
-				{ID: 42, Type: "documentation", Name: "Subject", Similarity: 0.95, Content: "anchor body"},
-				{ID: 99, Type: "task", Name: "Found", Similarity: 0.8, Content: "tool result body"},
+				{ID: 42, Type: "documentation", Name: "Subject", Similarity: 0.95, Substance: "anchor body"},
+				{ID: 99, Type: "task", Name: "Found", Similarity: 0.8, Substance: "tool result body"},
 			}},
 		}
 		model := &fakeModel{results: []JudgeResult{
@@ -1988,10 +1958,10 @@ func TestTheTurnHoldsTwoOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *tes
 	graph.honorsLimit = true
 	graph.neighbours = []int64{7}
 	for i := range 10 {
-		graph.candidates = append(graph.candidates, Candidate{ID: int64(1001 + i), Type: "documentation", Name: "whole graph", Similarity: 0.9 - 0.01*float64(i), Content: "body"})
+		graph.candidates = append(graph.candidates, Candidate{ID: int64(1001 + i), Type: "documentation", Name: "whole graph", Similarity: 0.9 - 0.01*float64(i), Substance: "body"})
 	}
 	for i := range 5 {
-		graph.scopedCandidates = append(graph.scopedCandidates, Candidate{ID: int64(2001 + i), Type: "documentation", Name: "neighbourhood", Similarity: 0.5 - 0.01*float64(i), Content: "body"})
+		graph.scopedCandidates = append(graph.scopedCandidates, Candidate{ID: int64(2001 + i), Type: "documentation", Name: "neighbourhood", Similarity: 0.5 - 0.01*float64(i), Substance: "body"})
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "done", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())

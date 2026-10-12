@@ -16,12 +16,10 @@ func summaryInstant() time.Time {
 }
 
 var fillRefusalReasons = []string{
-	"below size floor",
-	"no pressure",
 	"fill port absent",
-	"per-turn ceiling reached",
-	"oversized",
-	"fill bound expired",
+	"condensation empty",
+	"model call failed",
+	"fill wait expired",
 }
 
 func summaryRecord() Record {
@@ -34,6 +32,8 @@ func summaryRecord() Record {
 			Type: "project",
 			Name: "Processor — memory-substrate agent harness",
 			Size: 3408,
+
+			RenderedSize: 3408,
 		},
 		Candidates: []Disposition{
 			{Rank: 1, ID: 11, Type: "task", Name: "Pitch-Site hosting", Similarity: 0.689, Size: 1111, RenderedSize: 1111, Included: true},
@@ -56,9 +56,7 @@ func summaryRecord() Record {
 			MaxModelCalls:           6,
 			DerivationBudget:        160,
 			JudgementBudget:         192,
-			MaxFills:                MaxFills,
-			FillSizeFloor:           8000,
-			MaxFillContentBytes:     100000,
+			FillWait:                FillWait,
 		},
 		Fills: []FillOutcome{
 			{ID: 15, Filled: true, Model: "gemma-3-12b-it"},
@@ -752,6 +750,7 @@ func TestRenderSummaryDenominatorReflectsTrueHeadroomOnceTheAnchorTookItsShare(t
 	record := summaryRecord()
 	record.Limits.AssemblyByteBudget = 60000
 	record.Anchor.Size = 59500
+	record.Anchor.RenderedSize = 59500
 	record.Candidates = []Disposition{
 		{Rank: 1, ID: 11, Type: "task", Name: "small", Similarity: 0.9, Size: 494, RenderedSize: 494, Included: true},
 	}
@@ -770,6 +769,7 @@ func TestRenderSummaryFloorsTheRemainingAfterAnchorAtZeroWhenTheAnchorAloneExcee
 	record := summaryRecord()
 	record.Limits.AssemblyByteBudget = 1000
 	record.Anchor.Size = 2000
+	record.Anchor.RenderedSize = 2000
 	record.Candidates = []Disposition{
 		{Rank: 1, ID: 11, Type: "task", Name: "small", Similarity: 0.9, Size: 500, RenderedSize: 500, Included: true},
 	}
@@ -937,11 +937,8 @@ func summaryWorstCaseRecord() Record {
 
 	record.Fills = nil
 	for i := range record.Limits.CandidateLimit {
-		reason := fillRefusalReasons[i%len(fillRefusalReasons)]
-		if i < record.Limits.MaxFills {
-			reason = summaryCarriedCauseOfFourByteRunes(int64(100 + i))
-		}
-		record.Fills = append(record.Fills, FillOutcome{ID: int64(100 + i), Reason: reason})
+		reason := summaryCarriedCauseOfFourByteRunes(int64(100 + i))
+		record.Fills = append(record.Fills, FillOutcome{ID: int64(100 + i), Phase: phaseInitial, Reason: reason})
 	}
 
 	record.ToolCalls = nil
@@ -961,7 +958,7 @@ func summaryWorstCaseBound(limits Limits) int {
 	const everythingButTheCarriedCauses = 4096
 	const perCarriedCause = len("  ") + len(" (999):") + len("\n") + len("    ") + len("#9223372036854775807") + len("\n")
 
-	return everythingButTheCarriedCauses + limits.MaxFills*(summaryFillRunes*utf8.UTFMax+perCarriedCause)
+	return everythingButTheCarriedCauses + limits.CandidateLimit*(summaryFillRunes*utf8.UTFMax+perCarriedCause)
 }
 
 func TestRenderSummaryOfTheLargestRunTheseLimitsPermitStaysUnderTheBoundTheseLimitsImply(t *testing.T) {
@@ -974,7 +971,7 @@ func TestRenderSummaryOfTheLargestRunTheseLimitsPermitStaysUnderTheBoundTheseLim
 	bound := summaryWorstCaseBound(record.Limits)
 	if len(summary) > bound {
 		t.Fatalf("the summary of the largest run these limits permit is %d B, above the %d B bound its %d fills imply.\nsummary:\n%s",
-			len(summary), bound, record.Limits.MaxFills, summary)
+			len(summary), bound, record.Limits.CandidateLimit, summary)
 	}
 }
 
@@ -1104,27 +1101,29 @@ func TestTheSummarysQueryWidthStaysAtEightyEightRunes(t *testing.T) {
 	}
 }
 
-func TestRenderSummaryAccountsASubstanceRenderedCandidateByWhatTheBlockCarried(t *testing.T) {
+func TestRenderSummaryAccountsACandidateByWhatTheBlockCarried(t *testing.T) {
 	t.Parallel()
 
 	record := summaryRecord()
 	record.Candidates = []Disposition{
-		{Rank: 1, ID: 11, Type: "task", Name: "Pitch-Site hosting", Similarity: 0.689, Size: 1111, RenderedSize: 1111, Form: FormContent, Included: true},
+		{Rank: 1, ID: 11, Type: "task", Name: "Pitch-Site hosting", Similarity: 0.689, Size: 1111, RenderedSize: 1111, Form: FormSubstance, Included: true},
 		{Rank: 2, ID: 12, Type: "documentation", Name: "Profilgenerator wireframe", Similarity: 0.659, Size: 43300, RenderedSize: 12900, Form: FormSubstance, Included: true},
+		{Rank: 3, ID: 13, Type: "documentation", Name: "Not yet condensed", Similarity: 0.650, Size: 900, RenderedSize: 0, Form: FormUnavailable, Included: true},
 	}
 
 	summary := RenderSummary(record, summaryInstant())
 
 	for _, want := range []string{
-		"  admitted (2, 14.0 kB of 56592 B remaining):",
-		"12.9 kB substance of 43.3 kB  Profilgenerator wireframe",
+		"  admitted (3, 14.0 kB of 56592 B remaining):",
+		"12.9 kB  Profilgenerator wireframe",
 		"1111 B  Pitch-Site hosting",
+		"0 B unavailable  Not yet condensed",
 	} {
 		if !strings.Contains(summary, want) {
 			t.Fatalf("the summary does not carry %q; an admitted row must state the bytes the block actually took and name the form it took them in.\nsummary:\n%s", want, summary)
 		}
 	}
-	if strings.Contains(summary, "admitted (2, 44.4 kB") {
+	if strings.Contains(summary, "admitted (3, 44.4 kB") {
 		t.Fatalf("the admitted total is the sum of the content sizes; the budget was never spent on the 43.3 kB the substance replaced.\nsummary:\n%s", summary)
 	}
 }
@@ -1176,5 +1175,23 @@ func TestRenderSummaryStatesOnlyTheBytesARoundAddedAndHowManyRowsItAlreadyHeld(t
 	const want = "-> 2 results, 2 admitted (2000 B new, 1 already held)"
 	if !strings.Contains(summary, want) {
 		t.Fatalf("the round is not summarised as %q: a held row is charged nothing, so its 8000 bytes did not enter the memory.\nsummary:\n%s", want, summary)
+	}
+}
+
+func TestRenderSummaryChargesTheAnchorItsRenderedSizeNotItsContentSize(t *testing.T) {
+	t.Parallel()
+
+	record := summaryRecord()
+	record.Anchor.Size = 59500
+	record.Anchor.RenderedSize = 1000
+	record.Candidates = []Disposition{
+		{Rank: 1, ID: 11, Type: "task", Name: "small", Similarity: 0.9, Size: 494, RenderedSize: 494, Included: true},
+	}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	const want = "  admitted (1, 494 B of 59000 B remaining):"
+	if !strings.Contains(summary, want) {
+		t.Fatalf("the summary does not state %q: the anchor's 1000 rendered bytes are what the budget was charged.\nsummary:\n%s", want, summary)
 	}
 }
