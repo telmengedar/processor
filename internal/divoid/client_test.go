@@ -1036,7 +1036,7 @@ func TestEveryRecallAsksTheGraphToExcludeRunRecordsAndTheAnchor(t *testing.T) {
 	}
 }
 
-func TestARecallWithNoExcludedIdsSendsNoNotidKey(t *testing.T) {
+func TestARecallWithNoExcludedIdsSendsNoExcludeIdKey(t *testing.T) {
 	t.Parallel()
 
 	var gotQuery string
