@@ -13,7 +13,7 @@ type probeGraph struct{ recallN int }
 func (g *probeGraph) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) {
 	return loop.Anchor{ID: id, Type: "documentation", Name: "S", Content: "anchor"}, true, nil
 }
-func (g *probeGraph) Recall(ctx context.Context, q string, limit int, scope []int64, _ loop.UpdateWindow) ([]loop.Candidate, error) {
+func (g *probeGraph) Recall(ctx context.Context, _ []string, limit int, scope, _ []int64, _ loop.UpdateWindow) ([]loop.Candidate, error) {
 	if len(scope) > 0 {
 		return nil, nil
 	}
@@ -23,6 +23,7 @@ func (g *probeGraph) Recall(ctx context.Context, q string, limit int, scope []in
 	}
 	return nil, errors.New("literal: transport blew up")
 }
+
 func (g *probeGraph) Neighbours(context.Context, int64) ([]int64, error) { return nil, nil }
 
 func (g *probeGraph) WriteRun(ctx context.Context, r loop.Record) loop.WriteReceipt {

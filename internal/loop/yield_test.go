@@ -12,7 +12,7 @@ func shownRow(id int64, hash string) Disposition {
 }
 
 func cutRow(id int64, hash string) Disposition {
-	return Disposition{ID: id, ContentHash: hash, CutReason: cutReasonBelowFloor}
+	return Disposition{ID: id, ContentHash: hash, CutReason: "below relevance floor"}
 }
 
 func TestAYieldAccountCountsARowTheBlockAlreadyCarriesAsNothingTheRoundAdded(t *testing.T) {

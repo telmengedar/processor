@@ -66,9 +66,12 @@ func graphServing(t *testing.T, recorder *writeRecorder, bodies map[int64]string
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/links"):
 			fmt.Fprint(w, `{"result":[{"sourceId":101,"targetId":303}],"continue":null}`)
-		case query.Get("query") != "":
+		case query.Get("query") != "" || len(query["queries"]) > 0:
 			rows := make([]string, 0, len(ids))
 			for i, id := range ids {
+				if slices.Contains(query["notid"], strconv.FormatInt(id, 10)) {
+					continue
+				}
 				rows = append(rows, fmt.Sprintf(`{"id":%d,"type":"documentation","name":"candidate %d","similarity":%v,"content":%q}`, id, id, 0.95-0.01*float64(i), bodies[id]))
 			}
 			fmt.Fprintf(w, `{"result":[%s],"total":%d}`, strings.Join(rows, ","), len(rows))

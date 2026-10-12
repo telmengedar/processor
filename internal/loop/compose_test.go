@@ -19,7 +19,7 @@ func TestAdmitRefusesTheCeilingAgainstTheRenderedFormSoAContentSizedRefusalBecom
 		t.Fatalf("test setup error: content %d and substance %d against a ceiling of %d; the content must bust it and the substance must fit, or the two composition orders admit the same row and this test separates nothing", len(content), len(substance), ceiling)
 	}
 
-	_, dispositions := admit(candidates, composedTestBudget, 0, 0, testBlockOccupancy, formRuleTestThreshold)
+	_, dispositions := admit(candidates, composedTestBudget, 0, testBlockOccupancy, formRuleTestThreshold)
 
 	if !dispositions[0].Included {
 		t.Fatalf("the row was cut as %q; the form rule runs first and the ceiling is evaluated against the payload the block is about to render, so a row over the ceiling in content form and under it in substance form is admitted", dispositions[0].CutReason)
@@ -43,7 +43,7 @@ func TestAdmitNeverCutsARowAsOversizedWhileTheSizeItRecordsFitsTheCeilingItRecor
 		{ID: 40, Content: strings.Repeat("y", 500)},
 	}
 
-	_, dispositions := admit(candidates, composedTestBudget, 0, 0, testBlockOccupancy, formRuleTestThreshold)
+	_, dispositions := admit(candidates, composedTestBudget, 0, testBlockOccupancy, formRuleTestThreshold)
 
 	oversized := 0
 	for _, d := range dispositions {
@@ -76,7 +76,7 @@ func TestAdmitChargesTheBudgetAndTheCeilingTheSameRenderedPayload(t *testing.T) 
 		t.Fatalf("test setup error: substance %d busts the ceiling of %d", len(substance), ceiling)
 	}
 
-	admitted, dispositions := admit(candidates, budget, budget-len(substance), 0, testBlockOccupancy, formRuleTestThreshold)
+	admitted, dispositions := admit(candidates, budget, budget-len(substance), testBlockOccupancy, formRuleTestThreshold)
 
 	if len(admitted) != 1 {
 		t.Fatalf("the row was cut as %q with exactly its rendered form's worth of budget left; the budget is charged the same payload the ceiling refused against", dispositions[0].CutReason)
@@ -96,7 +96,7 @@ func TestAdmitCutsNoRowAsOversizedAtTheShippedBlockOccupancyWhateverTheDial(t *t
 	}
 
 	for _, threshold := range []SubstanceRatio{SubstanceRatioThreshold, formRuleTestThreshold, 1} {
-		_, dispositions := admit(candidates, composedTestBudget, 0, 0, BlockOccupancy, threshold)
+		_, dispositions := admit(candidates, composedTestBudget, 0, BlockOccupancy, threshold)
 
 		for _, d := range dispositions {
 			if d.CutReason == cutReasonOversized {
@@ -122,8 +122,8 @@ func TestAssembleRendersAByteIdenticalBlockAtBothShippedDialsWhateverASubstanceS
 	bare := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content}}
 	condensed := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content, Substance: "z"}}
 
-	blockBare, dispositionsBare := Assemble(anchor, bare, composedTestBudget, 0, SubstanceRatioThreshold)
-	blockCondensed, dispositionsCondensed := Assemble(anchor, condensed, composedTestBudget, 0, SubstanceRatioThreshold)
+	blockBare, dispositionsBare := Assemble(anchor, bare, composedTestBudget, SubstanceRatioThreshold)
+	blockCondensed, dispositionsCondensed := Assemble(anchor, condensed, composedTestBudget, SubstanceRatioThreshold)
 
 	if blockBare != blockCondensed {
 		t.Fatalf("at both shipped dials the block changed when the candidate carried a substance:\nbare=%q\ncondensed=%q", blockBare, blockCondensed)

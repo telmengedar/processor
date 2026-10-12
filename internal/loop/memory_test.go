@@ -8,7 +8,7 @@ import (
 func memoryHolding(t *testing.T, anchor Anchor, threshold SubstanceRatio, candidates []Candidate) *workingMemory {
 	t.Helper()
 
-	admitted, dispositions := admit(candidates, composedTestBudget, len(anchor.Content), 0, BlockOccupancy, threshold)
+	admitted, dispositions := admit(candidates, composedTestBudget, len(anchor.Content), BlockOccupancy, threshold)
 	return newWorkingMemory(anchor, len(candidates) > 0, threshold, admitted, dispositions)
 }
 
@@ -19,7 +19,7 @@ func TestTheMemoryAndTheAssembledBlockMarkASubstanceRenderedRowAlike(t *testing.
 	substance := strings.Repeat("z", 300)
 	candidates := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
 
-	block, dispositions := Assemble(Anchor{ID: 1}, candidates, composedTestBudget, 0, formRuleTestThreshold)
+	block, dispositions := Assemble(Anchor{ID: 1}, candidates, composedTestBudget, formRuleTestThreshold)
 	if dispositions[0].Form != FormSubstance {
 		t.Fatalf("test setup error: Form = %q, want %q", dispositions[0].Form, FormSubstance)
 	}
@@ -50,7 +50,7 @@ func TestTheMemoryCarriesExactlyTheBytesItsAdmissionChargedUnderBothMechanisms(t
 		{ID: 92, Type: "documentation", Name: "Charlie", Content: content},
 	}
 
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, 0, testBlockOccupancy, formRuleTestThreshold)
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, testBlockOccupancy, formRuleTestThreshold)
 	if len(admitted) != 1 || admitted[0].ID != 91 {
 		t.Fatalf("test setup error: admitted %d rows %v, want the condensed one alone", len(admitted), dispositionIDs(dispositions))
 	}
@@ -80,15 +80,15 @@ func TestTheMemoryRendersBothSidesOfTheFormBandAsTheirAdmissionChargedThem(t *te
 		{ID: 92, Type: "documentation", Name: "Charlie", Content: content, Substance: overCompressed},
 	}
 
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, 0, BlockOccupancy, formRuleTestThreshold)
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, BlockOccupancy, formRuleTestThreshold)
 	if dispositions[0].Form != FormSubstance || dispositions[1].Form != FormContent {
 		t.Fatalf("test setup error: admission charged %q then %q, want %q then %q", dispositions[0].Form, dispositions[1].Form, FormSubstance, FormContent)
 	}
 
 	got := newWorkingMemory(Anchor{ID: 1}, true, formRuleTestThreshold, admitted, dispositions).render(false)
 
-	want := "===== CANDIDATE =====\nid: 91\ntype: documentation\nname: Bravo\nform: substance\n\n" + banded + "\n" +
-		"\n===== CANDIDATE =====\nid: 92\ntype: documentation\nname: Charlie\n\n" + content + "\n"
+	want := "===== CANDIDATE =====\nid: 91\ntype: documentation\nname: Bravo\nsimilarity: 0.000\nform: substance\n\n" + banded + "\n" +
+		"\n===== CANDIDATE =====\nid: 92\ntype: documentation\nname: Charlie\nsimilarity: 0.000\n\n" + content + "\n"
 	if !strings.HasSuffix(got, want) {
 		t.Fatalf("the memory applies a different band from the one its admission charged at:\n%q\nwant it to end with:\n%q", got, want)
 	}
@@ -107,7 +107,7 @@ func TestAFullReadReplacesTheCondensedFormOfTheSameRow(t *testing.T) {
 	}
 
 	read := []Candidate{candidateFromAnchor(Anchor{ID: 91, Type: "documentation", Name: "Bravo", Content: content})}
-	admitted, dispositions := admit(read, SupplementaryByteBudget, 0, 0, BlockOccupancy, formRuleTestThreshold)
+	admitted, dispositions := admit(read, SupplementaryByteBudget, 0, BlockOccupancy, formRuleTestThreshold)
 	memory.absorb(admitted, dispositions)
 
 	rendered := memory.render(false)
@@ -131,7 +131,7 @@ func TestACondensedFormNeverReplacesTheFullFormOfTheSameRow(t *testing.T) {
 	memory := memoryHolding(t, Anchor{ID: 1}, formRuleTestThreshold, []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content}})
 
 	condensed := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
-	admitted, dispositions := admit(condensed, SupplementaryByteBudget, 0, 0, BlockOccupancy, formRuleTestThreshold)
+	admitted, dispositions := admit(condensed, SupplementaryByteBudget, 0, BlockOccupancy, formRuleTestThreshold)
 	if dispositions[0].Form != FormSubstance {
 		t.Fatalf("test setup error: Form = %q, want %q", dispositions[0].Form, FormSubstance)
 	}

@@ -83,11 +83,13 @@ func ComputeRequery(record loop.Record) Requery {
 	visible := make(map[int64]bool, len(record.Candidates))
 	requery := Requery{}
 
+	admittedSimilarities := make([]float64, 0, len(record.Candidates))
 	for _, d := range record.Candidates {
 		if !d.Included {
 			continue
 		}
 		requery.AdmittedRows++
+		admittedSimilarities = append(admittedSimilarities, d.Similarity)
 		visible[d.ID] = true
 	}
 
@@ -107,7 +109,7 @@ func ComputeRequery(record loop.Record) Requery {
 		requery.BarrenRounds++
 	}
 
-	requery.AcceptedInsufficiency = requery.AdmittedRows < loop.ThinKnowledgeThreshold &&
+	requery.AcceptedInsufficiency = loop.Thin(admittedSimilarities) &&
 		requery.DispatchedRounds == 0 && requery.RefusedRounds == 0
 	requery.UnproductiveRequery = requery.BarrenRounds >= unproductiveRoundsNeeded
 	requery.ProductiveRequery = requery.ProductiveRounds > 0

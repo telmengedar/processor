@@ -10,15 +10,15 @@ import (
 )
 
 const (
-	CandidateLimit     = 20
-	RecallScopeReserve = 3
+	// CandidateLimit is how many top-ranked rows one recall asks the graph for.
+	CandidateLimit = 6
+	// RecallScopeReserve is how many of those slots the subject's neighbourhood may take from rows the global ranking lacks.
+	RecallScopeReserve = 2
 	// AssemblyByteBudget bounds the block's content bytes: the anchor plus admitted candidates.
 	AssemblyByteBudget = 60_000
 	// MaxModelCalls caps a turn's model calls: 6 is the measured knee, 17 of 20 sampled tasks reaching their own terminal.
 	MaxModelCalls           = 6
 	SupplementaryByteBudget = 20_000
-	// RelevanceFloor is 0.63: the well-answered corpus keeps 13/25 required documents at this value.
-	RelevanceFloor = 0.63
 	// BlockOccupancy is how many rows the per-candidate payload ceiling reserves room for in the byte budget; zero leaves no ceiling in force.
 	BlockOccupancy = 0
 )
@@ -77,8 +77,8 @@ type GraphPort interface {
 	// Node fetches a node by id, with its content; found is false when the id resolves to nothing.
 	Node(ctx context.Context, id int64) (anchor Anchor, found bool, err error)
 
-	// Recall returns up to limit candidates in the graph's own rank order, never re-sorted; an empty scope ranks the whole graph. A non-zero window bounds the request to nodes last updated inside it; a zero window is unbounded.
-	Recall(ctx context.Context, query string, limit int, scope []int64, window UpdateWindow) ([]Candidate, error)
+	// Recall returns up to limit candidates in the graph's own rank order, never re-sorted, each carrying the mean similarity over queries; an empty scope ranks the whole graph, excluded ids and every run record are left out before the count, and a zero window is unbounded.
+	Recall(ctx context.Context, queries []string, limit int, scope, exclude []int64, window UpdateWindow) ([]Candidate, error)
 
 	// Neighbours returns the other endpoint of every edge incident to id, ascending and deduplicated.
 	Neighbours(ctx context.Context, id int64) ([]int64, error)
@@ -166,12 +166,12 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 
 	queries, window, derivationError := t.derive(ctx, input, subject, now)
 
-	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, CandidateLimit, RecallScopeReserve, window)
+	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, CandidateLimit, RecallScopeReserve, window, t.log())
 	if err != nil {
 		return t.failed(subject, started, fmt.Errorf("%w: %v", ErrGraphUnavailable, err))
 	}
 
-	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget, RelevanceFloor, SubstanceRatioThreshold)
+	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget, SubstanceRatioThreshold)
 
 	fills := t.fill(ctx, dispositions)
 
@@ -195,7 +195,8 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 			DerivationBudget:        DerivationBudget,
 			JudgementBudget:         JudgementBudget,
 			AnsweringBudget:         AnsweringBudget,
-			RelevanceFloor:          RelevanceFloor,
+			RecallScopeReserve:      RecallScopeReserve,
+			ThinKnowledgeSimilarity: ThinKnowledgeSimilarity,
 			MaxFills:                MaxFills,
 			FillSizeFloor:           FillSizeFloor,
 			MaxFillContentBytes:     MaxFillContentBytes,
@@ -572,7 +573,7 @@ func (t *Turn) dispatch(ctx context.Context, result JudgeResult, workspace *stri
 	case WantsRead:
 		return t.dispatchRead(ctx, result, subject, account, memory)
 	default:
-		return t.dispatchRecall(ctx, result, window, memory)
+		return t.dispatchRecall(ctx, result, window, subject, memory)
 	}
 }
 
@@ -619,18 +620,23 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 	return exchange
 }
 
-func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window UpdateWindow, memory *workingMemory) ToolExchange {
+func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window UpdateWindow, subject int64, memory *workingMemory) ToolExchange {
 	if result.ToolError != "" {
 		return ToolExchange{Tool: ToolRecall, Error: BoundCause(result.ToolError), Dispositions: []Disposition{}, Refused: true}
 	}
 
-	candidates, err := t.Graph.Recall(ctx, result.RecallQuery, CandidateLimit, nil, window)
+	candidates, err := t.Graph.Recall(ctx, []string{result.RecallQuery}, CandidateLimit, nil, []int64{subject}, window)
 	if err != nil {
 		t.log().Error("supplementary recall failed", "query", result.RecallQuery, "error", err)
 		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}
 	}
 
-	admitted, dispositions := admitUnheld(candidates, memory.room(SupplementaryByteBudget), 0, RelevanceFloor, BlockOccupancy, memory.threshold, memory.holds)
+	candidates, leaked := usableRows(candidates, subject)
+	if leaked > 0 {
+		t.log().Warn(logLeakedRows, "subject", subject, "rows", leaked)
+	}
+
+	admitted, dispositions := admitUnheld(candidates, memory.room(SupplementaryByteBudget), 0, BlockOccupancy, memory.threshold, memory.holds)
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions}
 }
 
@@ -661,7 +667,7 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 	}
 
 	room := memory.roomToReplace(result.ReadNodeID, SupplementaryByteBudget)
-	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, room, 0, 0, BlockOccupancy, memory.threshold)
+	admitted, dispositions := admit([]Candidate{candidateFromAnchor(anchor)}, room, 0, BlockOccupancy, memory.threshold)
 	if account.alreadyShown(dispositions[0]) {
 		exchange.Error = errAlreadyReadInFull
 		exchange.Refused = true
