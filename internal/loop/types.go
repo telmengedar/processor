@@ -269,6 +269,11 @@ type Limits struct {
 	SubstanceRatioFloor SubstanceRatio `json:"substanceRatioFloor"`
 	// SubstanceRatioThreshold is the form rule's dial as this run was configured.
 	SubstanceRatioThreshold SubstanceRatio `json:"substanceRatioThreshold"`
+
+	// HistoryExchangeLimit is how many of the newest earlier exchanges a turn is shown.
+	HistoryExchangeLimit int `json:"historyExchangeLimit"`
+	// HistorySafetyLimit is the byte size past which the oldest whole exchanges are dropped.
+	HistorySafetyLimit int `json:"historySafetyLimit"`
 }
 
 // Sampling records one run's model-call sampling parameters, nil where left to the endpoint's default.
@@ -296,6 +301,11 @@ type Record struct {
 	// Fills is one entry per candidate that lacked a substance at initial assembly, never the supplementary round: filled, or the reason it was not.
 	Fills []FillOutcome `json:"fills"`
 	Block string        `json:"block"`
+
+	// History is the earlier exchanges the turn was shown, oldest first, absent when none were used.
+	History []Exchange `json:"history,omitempty"`
+	// HistoryCut is how many supplied exchanges the turn was not shown, absent when none were cut.
+	HistoryCut int `json:"historyCut,omitempty"`
 
 	Answer string `json:"answer"`
 	Model  string `json:"model"`
@@ -349,6 +359,9 @@ type JudgeInput struct {
 	System string
 	Block  string
 	Input  string
+
+	// Conversation is the rendered earlier exchanges, identical on every call of a turn, empty when the turn has none.
+	Conversation string
 
 	// Now is the instant the prompt states, zero when the caller supplies none.
 	Now time.Time

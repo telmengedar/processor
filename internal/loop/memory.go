@@ -58,6 +58,10 @@ func (m *workingMemory) hold(c Candidate, form Form, size int) {
 	m.spent += size
 }
 
+func (m *workingMemory) charge(bytes int) {
+	m.spent += bytes
+}
+
 func (m *workingMemory) room(round int) int {
 	return max(0, min(round, JudgementPromptCeiling-m.spent))
 }

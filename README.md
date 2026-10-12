@@ -259,6 +259,21 @@ below. The ranked lists are fused by reciprocal rank; the last three of the twen
 held for the neighbourhood list, so a node ranked past the cap can still arrive while the nodes already
 at the top keep the ranks they had.
 
+**A conversation is carried by the caller.** The request may also carry `history`: the conversation's
+earlier exchanges, oldest first, each `{"input": "…", "reply": "…"}` with a non-blank `input` and an
+optional `reply` (an exchange without one stands for a line the bot did not answer). The service keeps no
+conversation state and has no conversation id. The turn is shown the newest **four** exchanges
+(`limits.historyExchangeLimit`) as one self-labelled section, `===== EARLIER IN THIS CONVERSATION =====`,
+of verbatim `user:` and `you:` lines, placed between the instant and the context block of the one user
+message of **every** judgement call of the turn. The section counts against the same prompt ceiling as the
+working memory, so it never grows a call past it. Only a safety limit of 8,000 bytes
+(`limits.historySafetyLimit`) can cut further: it drops the oldest whole exchanges, never truncates one,
+and logs a warning. The record keeps the exchanges the turn used (`history`) and how many it did not
+(`historyCut`); both are absent when there is nothing to report, and a request without `history` produces
+the same prompts as before. Query derivation does not yet see the section. A malformed `history` — not an
+array, an element that is not an object, a missing, blank or non-string `input`, a `reply` that is neither a string nor `null` —
+is a `400 invalid_request`. A `null` `reply` is read as absent, as a `null` `history` is.
+
 The turn: fetch the subject, derive the query set and window described above, recall candidates against
 them, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
@@ -343,7 +358,7 @@ all; absent, never zero-filled), the stop reason (both the loop's own neutral va
 string), why the turn stopped where the run's own remaining time could not afford another judgement call
 (`timeShortfall`, absent on every run that ended any other way), the constants that governed the run
 (`limits`: candidate limit, assembly byte budget, supplementary byte budget, max model calls, and one
-output budget per model call site — `derivationBudget`, `judgementBudget` and `answeringBudget`), and the sampling the run was made with
+output budget per model call site — `derivationBudget`, `judgementBudget` and `answeringBudget` — and the two history bounds, `historyExchangeLimit` and `historySafetyLimit`), and the sampling the run was made with
 (`sampling`: `temperature` and `topP`, each key absent when nothing was sent for it).
 
 **Read that as a description, not as the field list.** `Record` in `internal/loop/types.go` is the field
@@ -386,7 +401,7 @@ the operating system's — bounded to 512 runes. The operator's log carries the 
 
 | Code | Status | Meaning |
 |---|---|---|
-| `invalid_request` | 400 | Body unparseable, `input`/`subject` missing or empty, or `verbose` not a boolean |
+| `invalid_request` | 400 | Body unparseable, `input`/`subject` missing or empty, `history` malformed, or `verbose` not a boolean |
 | `subject_not_found` | 404 | The subject id resolves to nothing |
 | `graph_unavailable` | 502 | The graph could not be read, or a failure the service does not classify; `message` names the cause |
 | `model_unavailable` | 502 | The model call did not complete (transport failure, non-2xx status, or an undecodable response). `message` names the model, the endpoint, the assembled request's size in bytes, the elapsed time against the client bound that was in force, and then the cause |
@@ -400,6 +415,21 @@ curl -s -X POST http://127.0.0.1:8080/runs \
 curl -s -X POST 'http://127.0.0.1:8080/runs?verbose=true' \
   -H 'Content-Type: application/json' \
   -d '{"input":"what changed in the assembler","subject":10521}' | jq .
+```
+
+A two-turn chat from PowerShell: the second call sends the first exchange back as `history`.
+
+```powershell
+$uri = 'http://127.0.0.1:8080/runs'
+$first = 'rugenforth is attempting the ice wall in his climbing game again, third try tonight'
+$one = Invoke-RestMethod -Method Post -Uri $uri -ContentType 'application/json; charset=utf-8' `
+  -Body (@{ input = $first; subject = 901 } | ConvertTo-Json)
+$one.reply
+
+$history = @(@{ input = $first; reply = $one.reply })
+$two = Invoke-RestMethod -Method Post -Uri $uri -ContentType 'application/json; charset=utf-8' `
+  -Body (@{ input = 'So yeah ... obviously he drops instead of holding his grip'; subject = 901; history = $history } | ConvertTo-Json -Depth 4)
+$two.reply
 ```
 
 ## Container
