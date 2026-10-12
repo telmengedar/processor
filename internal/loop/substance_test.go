@@ -767,3 +767,38 @@ func TestAStepEnteredWithLessThanOneCallsCostGrantsNothing(t *testing.T) {
 		t.Fatalf("the model received %d calls, want none: a step that could not wait grants no call", len(model.calls))
 	}
 }
+
+func TestAGrantIsSpentByACallThatPassesOnTimeSoALaterShortCallIsRefused(t *testing.T) {
+	t.Parallel()
+
+	const slack = time.Second
+
+	graph := baseGraph()
+	graph.node = Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "body"}
+	graph.recallQueue = []recallResponse{
+		{Candidates: nil},
+		{Candidates: []Candidate{{ID: 92, Type: "documentation", Name: "Held", Similarity: 0.8, Substance: "already condensed"}}},
+	}
+	port := &fakeFill{}
+	model := &fakeModel{results: []JudgeResult{recallFor("more"), recallFor("again"), answeredFinal()}}
+	model.beforeReturn = func() { time.Sleep(slack + slack/3) }
+	turn := turnWithFill(graph, model, port)
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(JudgementCost(turn.Floors)+slack))
+	defer cancel()
+
+	record, _, err := turn.Run(ctx, "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if filled := outcomeFor(t, record.Fills, 42); !filled.Filled {
+		t.Fatalf("the outcome = %+v, want the creation to return in time so the step issues a grant", filled)
+	}
+	if record.ModelCalls != 1 || len(model.calls) != 1 {
+		t.Fatalf("modelCalls = %d and the model received %d calls, want 1 and 1: the first call spent the grant", record.ModelCalls, len(model.calls))
+	}
+	if record.TimeShortfall == "" {
+		t.Fatal("TimeShortfall is empty, want the short second call refused")
+	}
+}
