@@ -149,8 +149,13 @@ func (t *Turn) now() time.Time {
 	return t.clock()
 }
 
-// Run executes one turn for input against subject, returning the record and where it was filed.
+// Run executes one turn for input against subject with no earlier conversation.
 func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, WriteReceipt, error) {
+	return t.RunWithHistory(ctx, input, subject, nil)
+}
+
+// RunWithHistory executes one turn for input against subject after the supplied earlier exchanges, oldest first, returning the record and where it was filed.
+func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, history []Exchange) (Record, WriteReceipt, error) {
 	started := time.Now()
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
 
@@ -163,6 +168,12 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 	}
 
 	now := t.now()
+
+	used, conversation, safetyCut := selectExchanges(history)
+	if safetyCut > 0 {
+		t.log().Warn("the conversation exceeded its safety limit: the oldest whole exchanges were dropped",
+			"subject", subject, "supplied", len(history), "used", len(used), "bytes", len(conversation), "safetyLimit", HistorySafetyLimit)
+	}
 
 	queries, window, derivationError := t.derive(ctx, input, subject, now)
 
@@ -187,6 +198,8 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 		Candidates:      dispositions,
 		Fills:           fills,
 		Block:           block,
+		History:         used,
+		HistoryCut:      len(history) - len(used),
 		Limits: Limits{
 			CandidateLimit:          CandidateLimit,
 			AssemblyByteBudget:      AssemblyByteBudget,
@@ -202,10 +215,15 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 			MaxFillContentBytes:     MaxFillContentBytes,
 			SubstanceRatioFloor:     SubstanceRatioFloor,
 			SubstanceRatioThreshold: SubstanceRatioThreshold,
+			HistoryExchangeLimit:    HistoryExchangeLimit,
+			HistorySafetyLimit:      HistorySafetyLimit,
 		},
 	}
 
-	judged, err := t.judge(ctx, newWorkingMemory(anchor, len(candidates) > 0, SubstanceRatioThreshold, includedCandidates(candidates, dispositions), dispositions), input, subject, now, window, dispositions)
+	memory := newWorkingMemory(anchor, len(candidates) > 0, SubstanceRatioThreshold, includedCandidates(candidates, dispositions), dispositions)
+	memory.charge(len(conversation))
+
+	judged, err := t.judge(ctx, memory, input, conversation, subject, now, window, dispositions)
 	if err != nil {
 		return t.failed(subject, started, err)
 	}
@@ -370,7 +388,7 @@ func (t *Turn) judgementShortfall(ctx context.Context) string {
 		JudgementBudget, floors.TokensPerSecond, JudgementPromptCeiling, floors.PromptBytesPerSecond))
 }
 
-func (t *Turn) judge(ctx context.Context, memory *workingMemory, input string, subject int64, now time.Time, window UpdateWindow, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversation string, subject int64, now time.Time, window UpdateWindow, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -404,6 +422,7 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input string, s
 			System:          t.composeSystem(offered),
 			Block:           memory.render(offersRetrieval(offered)),
 			Input:           input,
+			Conversation:    conversation,
 			Now:             now,
 			Window:          window,
 			MaxOutputTokens: outputBudget(reserved),

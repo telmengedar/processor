@@ -52,6 +52,7 @@ func RenderSummary(record Record, at time.Time) string {
 	var b strings.Builder
 
 	renderSummaryHeader(&b, record, at)
+	renderSummaryHistory(&b, record)
 	renderSummaryAssembly(&b, record)
 	renderSummaryFills(&b, record)
 	renderSummaryTools(&b, record)
@@ -80,6 +81,14 @@ func renderSummaryHeader(b *strings.Builder, record Record, at time.Time) {
 	if record.Workspace != "" {
 		fmt.Fprintf(b, "workdir  %s\n", record.Workspace)
 	}
+}
+
+func renderSummaryHistory(b *strings.Builder, record Record) {
+	supplied := len(record.History) + record.HistoryCut
+	if supplied == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\nHISTORY  %d of %d exchanges, %d B\n", len(record.History), supplied, len(renderConversation(record.History)))
 }
 
 func summaryBudget(tokens int) string {

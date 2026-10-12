@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -31,8 +32,9 @@ func handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 // runRequest is the POST /runs request body.
 type runRequest struct {
-	Input   string `json:"input"`
-	Subject int64  `json:"subject"`
+	Input   string          `json:"input"`
+	Subject int64           `json:"subject"`
+	History []loop.Exchange `json:"history"`
 }
 
 const jsonContentType = "application/json; charset=utf-8"
@@ -44,6 +46,8 @@ const (
 	codeModelUnavailable    = "model_unavailable"
 	codeRunDeadlineExceeded = "run_deadline_exceeded"
 )
+
+const messageInvalidHistory = "history must be an array of exchanges, each with a non-blank string input and an optional string reply"
 
 const fallbackReply = "Sorry — I couldn't put an answer together for that just now. Could you say a bit more, or ask it another way?"
 
@@ -73,10 +77,7 @@ func verboseRequested(r *http.Request) (bool, error) {
 	return strconv.ParseBool(values[0])
 }
 
-// maxRequestBodyBytes bounds POST /runs' request body (W-6): generous for
-// the two-field {input, subject} shape, small enough that an unbounded
-// body can't be used to exhaust memory before decoding ever inspects it.
-const maxRequestBodyBytes = 1 << 20 // 1 MiB
+const maxRequestBodyBytes = 1 << 20
 
 func handleRuns(turn *loop.Turn) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +91,11 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 
 		var req runRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			var mistyped *json.UnmarshalTypeError
+			if errors.As(err, &mistyped) && strings.HasPrefix(mistyped.Field, "history") {
+				writeError(w, http.StatusBadRequest, codeInvalidRequest, messageInvalidHistory)
+				return
+			}
 			writeError(w, http.StatusBadRequest, codeInvalidRequest, "request body could not be parsed as JSON")
 			return
 		}
@@ -97,19 +103,20 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, codeInvalidRequest, "input must not be empty")
 			return
 		}
-		// design line 374: subject missing or malformed → 400. Absent JSON
-		// decodes a non-pointer int64 to 0, and node ids are never <= 0
-		// (W-9), so both "missing" and "malformed" (negative) collapse to
-		// the same check with no false positive.
 		if req.Subject <= 0 {
 			writeError(w, http.StatusBadRequest, codeInvalidRequest, "subject is required")
+			return
+		}
+
+		if slices.ContainsFunc(req.History, func(e loop.Exchange) bool { return strings.TrimSpace(e.Input) == "" }) {
+			writeError(w, http.StatusBadRequest, codeInvalidRequest, messageInvalidHistory)
 			return
 		}
 
 		runCtx, cancel := context.WithTimeout(r.Context(), RunBound)
 		defer cancel()
 
-		record, receipt, err := turn.Run(runCtx, req.Input, req.Subject)
+		record, receipt, err := turn.RunWithHistory(runCtx, req.Input, req.Subject, req.History)
 		if err != nil {
 			switch {
 			case errors.Is(runCtx.Err(), context.DeadlineExceeded):

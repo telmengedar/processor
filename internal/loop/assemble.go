@@ -147,8 +147,8 @@ func renderSection(b *strings.Builder, c Candidate, threshold SubstanceRatio) {
 	fmt.Fprintf(b, "\n%s\n", rendered)
 }
 
-// RenderUserContent composes the user message: the request, the instant it states and the window it was bounded to when one applied, the assembled block, then the same request again.
-func RenderUserContent(block, input string, now time.Time, window UpdateWindow) string {
+// RenderUserContent composes the user message: the request, the instant it states and the window it was bounded to when one applied, the earlier conversation when there is one, the assembled block, then the same request again.
+func RenderUserContent(block, input string, now time.Time, window UpdateWindow, conversation string) string {
 	request := "===== INPUT =====\n" + input
 
 	var b strings.Builder
@@ -161,6 +161,10 @@ func RenderUserContent(block, input string, now time.Time, window UpdateWindow) 
 			b.WriteString("\n")
 			b.WriteString(windowLine(window))
 		}
+	}
+	if conversation != "" {
+		b.WriteString("\n\n")
+		b.WriteString(conversation)
 	}
 	b.WriteString("\n\n\n")
 	b.WriteString(block)
