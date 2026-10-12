@@ -156,7 +156,7 @@ func TestRecallSendsTheQueryTextVerbatimWithCountAndFieldsAndNoOtherKey(t *testi
 		t.Fatalf("a single query sent the queries key %v, want query alone: the graph takes query for one and queries for two or more", q["queries"])
 	}
 
-	wantKeys := []string{"query", "count", "fields", "notname"}
+	wantKeys := []string{"query", "count", "fields", "excludeName"}
 	if len(q) != len(wantKeys) {
 		t.Fatalf("query has keys %v, want exactly %v", keysOf(q), wantKeys)
 	}
@@ -183,7 +183,7 @@ func TestAZeroWindowSendsTheSameQueryStringAsBeforeTheWindowExisted(t *testing.T
 		t.Fatalf("Recall: %v", err)
 	}
 
-	want := url.Values{"query": {"q"}, "count": {"6"}, "fields": {candidateFields}, "notname": {"processor-run%"}}.Encode()
+	want := url.Values{"query": {"q"}, "count": {"6"}, "fields": {candidateFields}, "excludeName": {"processor-run%"}}.Encode()
 	if gotQuery != want {
 		t.Fatalf("a zero window sent %q, want the encoded query string byte-identical to %q: a zero window must not acquire updatedFrom, updatedTo, an empty string, or any sentinel value", gotQuery, want)
 	}
@@ -650,7 +650,7 @@ func TestRecallSendsSeveralQueriesAsOneRequestWithARepeatedQueriesKeyAndNeverSpl
 		t.Fatalf("count = %q, want %q", q.Get("count"), "6")
 	}
 	if len(q) != 4 {
-		t.Fatalf("query has keys %v, want exactly queries, count, fields and notname", keysOf(q))
+		t.Fatalf("query has keys %v, want exactly queries, count, fields and excludeName", keysOf(q))
 	}
 }
 
@@ -706,7 +706,7 @@ func TestRecallSendsOneLinkedToParameterPerScopeIDBecauseAnUnknownScopeKeyIsSile
 		}
 	}
 
-	wantKeys := []string{"query", "count", "fields", "linkedto", "notname"}
+	wantKeys := []string{"query", "count", "fields", "linkedto", "excludeName"}
 	if len(q) != len(wantKeys) {
 		t.Fatalf("query has keys %v, want exactly %v", keysOf(q), wantKeys)
 	}
@@ -1026,11 +1026,11 @@ func TestEveryRecallAsksTheGraphToExcludeRunRecordsAndTheAnchor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
 			}
-			if got := q["notname"]; !slices.Equal(got, []string{"processor-run%"}) {
-				t.Fatalf("notname = %q, want the run-record name pattern alone: the graph leaves these rows out before the count, and a recall that does not ask spends its slots on them", got)
+			if got := q["excludeName"]; !slices.Equal(got, []string{"processor-run%"}) {
+				t.Fatalf("excludeName = %q, want the run-record name pattern alone: the graph leaves these rows out before the count, and a recall that does not ask spends its slots on them", got)
 			}
-			if got := q["notid"]; !slices.Equal(got, []string{"42"}) {
-				t.Fatalf("notid = %q, want the anchor id: the block renders the anchor whole, so a slot spent on it is a slot lost", got)
+			if got := q["excludeId"]; !slices.Equal(got, []string{"42"}) {
+				t.Fatalf("excludeId = %q, want the anchor id: the block renders the anchor whole, so a slot spent on it is a slot lost", got)
 			}
 		})
 	}
@@ -1053,7 +1053,29 @@ func TestARecallWithNoExcludedIdsSendsNoNotidKey(t *testing.T) {
 	}
 
 	q, _ := url.ParseQuery(gotQuery)
-	if _, present := q["notid"]; present {
-		t.Fatalf("notid = %v with nothing to exclude, want the key absent", q["notid"])
+	if _, present := q["excludeId"]; present {
+		t.Fatalf("excludeId = %v with nothing to exclude, want the key absent", q["excludeId"])
+	}
+}
+
+func TestSeveralExcludedIdsGoOutAsRepeatedKeysInTheOrderGiven(t *testing.T) {
+	t.Parallel()
+
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, []int64{42, 7}, loop.UpdateWindow{}); err != nil {
+		t.Fatalf("Recall: %v", err)
+	}
+
+	q, _ := url.ParseQuery(gotQuery)
+	if got := q["excludeId"]; !slices.Equal(got, []string{"42", "7"}) {
+		t.Fatalf("excludeId = %q, want one repeated key per id, 42 then 7: the graph reads a repeated key as a list", got)
 	}
 }

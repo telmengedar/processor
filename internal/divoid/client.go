@@ -38,8 +38,8 @@ const (
 	linksPath = "/api/nodes/links"
 
 	queriesParam     = "queries"
-	excludeIDParam   = "notid"
-	excludeNameParam = "notname"
+	excludeIDParam   = "excludeId"
+	excludeNameParam = "excludeName"
 )
 
 const linksPageSize = 500

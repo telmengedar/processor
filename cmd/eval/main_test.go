@@ -46,7 +46,7 @@ func recalled(r *http.Request) bool {
 }
 
 func excludedByTheRequest(r *http.Request, id int64) bool {
-	return slices.Contains(r.URL.Query()["notid"], strconv.FormatInt(id, 10))
+	return slices.Contains(r.URL.Query()["excludeId"], strconv.FormatInt(id, 10))
 }
 
 func graphServer(t *testing.T) *httptest.Server {
