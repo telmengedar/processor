@@ -3,6 +3,7 @@ package ledger
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -114,16 +115,19 @@ type span struct {
 	undated int
 }
 
-var dials = []dial{
-	{name: "CandidateLimit", field: "candidateLimit"},
-	{name: "AssemblyByteBudget", field: "assemblyByteBudget"},
-	{name: "SupplementaryByteBudget", field: "supplementaryByteBudget"},
-	{name: "MaxModelCalls", field: "maxModelCalls"},
-	{name: "DerivationBudget", field: "derivationBudget"},
-	{name: "JudgementBudget", field: "judgementBudget"},
-	{name: "RecallScopeReserve", field: "recallScopeReserve"},
-	{name: "ThinKnowledgeSimilarity", field: "thinKnowledgeSimilarity"},
-	{name: "FillWait", field: "fillWait"},
+var dials = dialsOf(reflect.TypeFor[loop.Limits]())
+
+func dialsOf(limits reflect.Type) []dial {
+	dials := make([]dial, 0, limits.NumField())
+	for i := range limits.NumField() {
+		member := limits.Field(i)
+		field, _, _ := strings.Cut(member.Tag.Get("json"), ",")
+		if !member.IsExported() || field == "" || field == "-" {
+			continue
+		}
+		dials = append(dials, dial{name: member.Name, field: field})
+	}
+	return dials
 }
 
 var mechanisms = []mechanism{
@@ -164,21 +168,19 @@ func DialExercise(archive runarchive.Archive) DialExerciseResult {
 	for _, d := range dials {
 		reading := DialReading{Dial: d.name, Field: d.field, Values: []DialValue{}, Succession: SuccessionSingleValue}
 
-		if d.field != "" {
-			spans := make(map[string]*span)
-			for i, recorded := range limits {
-				value, ok := recorded[d.field]
-				if !ok {
-					continue
-				}
-				reading.RecordedIn++
-				widen(spans, value, readable[i])
+		spans := make(map[string]*span)
+		for i, recorded := range limits {
+			value, ok := recorded[d.field]
+			if !ok {
+				continue
 			}
-			reading.Values = valuesOf(spans)
-			reading.Succession = successionOf(reading.Values)
+			reading.RecordedIn++
+			widen(spans, value, readable[i])
 		}
+		reading.Values = valuesOf(spans)
+		reading.Succession = successionOf(reading.Values)
 
-		reading.Verdict = verdictFor(d, reading)
+		reading.Verdict = verdictFor(reading)
 		result.Readings = append(result.Readings, reading)
 
 		if reading.Verdict == DialExercised {
@@ -341,9 +343,9 @@ func successionCaveat(r DialReading) string {
 	}
 }
 
-func verdictFor(d dial, reading DialReading) DialVerdict {
+func verdictFor(reading DialReading) DialVerdict {
 	switch {
-	case d.field == "" || reading.RecordedIn == 0:
+	case reading.RecordedIn == 0:
 		return DialUnrecorded
 	case len(reading.Values) < 2:
 		return DialUnexercised
@@ -353,9 +355,6 @@ func verdictFor(d dial, reading DialReading) DialVerdict {
 }
 
 func dialDetail(d dial, reading DialReading) string {
-	if d.field == "" {
-		return "no record field carries this dial, so no selection can ever show it exercised"
-	}
 	if reading.RecordedIn == 0 {
 		return fmt.Sprintf("no record carries %q, so any value read for it would be an absent field rather than a recorded one", d.field)
 	}

@@ -1,6 +1,8 @@
 package ledger
 
 import (
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -249,18 +251,63 @@ func TestAnExercisedDialWhoseValuesDoNotShareASpanIsRenderedWithACaveat(t *testi
 	}
 }
 
+func recordWithEveryLimitAt(t *testing.T, step int) string {
+	t.Helper()
+	var limits loop.Limits
+	members := reflect.ValueOf(&limits).Elem()
+	for i := range members.NumField() {
+		member := members.Field(i)
+		switch member.Kind() {
+		case reflect.Int, reflect.Int64:
+			member.SetInt(int64(100*step + i))
+		case reflect.Float64:
+			member.SetFloat(float64(step) + float64(i)/10)
+		default:
+			t.Fatalf("limits member %s is a %s, which the fixture does not know how to vary", members.Type().Field(i).Name, member.Kind())
+		}
+	}
+	encoded, err := json.Marshal(struct {
+		Limits loop.Limits `json:"limits"`
+	}{limits})
+	if err != nil {
+		t.Fatalf("limits did not encode: %v", err)
+	}
+	return string(encoded)
+}
+
 func TestDialExerciseClearsEveryDialTheRecordCarriesAtTwoValues(t *testing.T) {
 	t.Parallel()
 
-	archive := archiveOf(t, "every dial the record can carry, all at two values",
-		`{"limits":{"candidateLimit":20,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":3,"derivationBudget":160,"judgementBudget":192,"recallScopeReserve":2,"thinKnowledgeSimilarity":0,"fillWait":1}}`,
-		`{"limits":{"candidateLimit":21,"assemblyByteBudget":60001,"supplementaryByteBudget":20001,"maxModelCalls":6,"derivationBudget":161,"judgementBudget":193,"recallScopeReserve":3,"thinKnowledgeSimilarity":0.63,"fillWait":2}}`,
+	archive := archiveOf(t, "every limit the record can carry, all at two values",
+		recordWithEveryLimitAt(t, 1),
+		recordWithEveryLimitAt(t, 2),
 	)
 
 	result := DialExercise(archive)
 
 	if len(result.Failures) != 0 {
 		t.Fatalf("every dial moved, so none may fail, got %+v", result.Failures)
+	}
+}
+
+func TestEveryLimitsMemberIsADialReadInDeclarationOrder(t *testing.T) {
+	t.Parallel()
+
+	limits := reflect.TypeFor[loop.Limits]()
+	want := make([]string, 0, limits.NumField())
+	for i := range limits.NumField() {
+		if limits.Field(i).IsExported() {
+			want = append(want, limits.Field(i).Name)
+		}
+	}
+
+	got := make([]string, 0, len(want))
+	for _, reading := range DialExercise(archiveOf(t, "no record needed to list the dials")).Readings {
+		got = append(got, reading.Dial)
+	}
+
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("the dials are the Limits members in declaration order, got %v, want %v", got, want)
 	}
 }
 
