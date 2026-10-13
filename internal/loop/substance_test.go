@@ -216,7 +216,7 @@ func TestTheAnchorIsChargedItsRenderedBytesNotItsContentLength(t *testing.T) {
 		t.Fatalf("the candidate was cut as %q although the anchor's 10 rendered bytes and its own 80 fit a budget of 100: the anchor was charged its content length", dispositions[0].CutReason)
 	}
 
-	memory := newWorkingMemory(anchor, true, nil, nil)
+	memory := newWorkingMemory(JudgementPromptCeiling, anchor, true, nil, nil)
 	if memory.spent != 10 {
 		t.Fatalf("the memory starts charged %d bytes, want the anchor's 10 rendered bytes", memory.spent)
 	}
@@ -434,23 +434,23 @@ func TestTheWaitNeverSpendsTheTimeOneJudgementCallNeeds(t *testing.T) {
 
 	far, cancelFar := context.WithDeadline(context.Background(), now.Add(cost+10*FillWait))
 	defer cancelFar()
-	if got := turn.fillWait(far); got != FillWait {
+	if got := turn.fillWait(far, DefaultSettings()); got != FillWait {
 		t.Fatalf("fillWait with a distant deadline = %v, want %v", got, FillWait)
 	}
 
 	near, cancelNear := context.WithDeadline(context.Background(), now.Add(cost+3*time.Second))
 	defer cancelNear()
-	if got := turn.fillWait(near); got != 3*time.Second {
+	if got := turn.fillWait(near, DefaultSettings()); got != 3*time.Second {
 		t.Fatalf("fillWait with a deadline %v past one judgement call's cost = %v, want exactly that margin", 3*time.Second, got)
 	}
 
 	tight, cancelTight := context.WithDeadline(context.Background(), now.Add(cost/2))
 	defer cancelTight()
-	if got := turn.fillWait(tight); got != 0 {
+	if got := turn.fillWait(tight, DefaultSettings()); got != 0 {
 		t.Fatalf("fillWait with less time left than one judgement call needs = %v, want none", got)
 	}
 
-	if got := turn.fillWait(context.Background()); got != FillWait {
+	if got := turn.fillWait(context.Background(), DefaultSettings()); got != FillWait {
 		t.Fatalf("fillWait with no deadline = %v, want %v", got, FillWait)
 	}
 }
@@ -465,7 +465,7 @@ func TestAStepWithNoTimeToSpareStartsNoCreationAndDefersEveryRow(t *testing.T) {
 	ctx, cancel := context.WithDeadline(context.Background(), now.Add(JudgementCost(turn.Floors)/2))
 	defer cancel()
 
-	created, outcomes := turn.createSubstances(ctx, phaseRecall, []int64{1, 2})
+	created, outcomes := turn.createSubstances(ctx, DefaultSettings(), phaseRecall, []int64{1, 2})
 
 	if len(created) != 0 || len(port.called()) != 0 {
 		t.Fatalf("created %v after calls %v, want no creation started with no time to spare", created, port.called())

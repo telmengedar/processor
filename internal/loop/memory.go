@@ -13,10 +13,11 @@ type workingMemory struct {
 	considered bool
 	rows       map[int64]heldRow
 	spent      int
+	ceiling    int
 }
 
-func newWorkingMemory(anchor Anchor, considered bool, admitted []Candidate, dispositions []Disposition) *workingMemory {
-	memory := &workingMemory{anchor: anchor, considered: considered, rows: map[int64]heldRow{}, spent: len(anchor.Substance)}
+func newWorkingMemory(ceiling int, anchor Anchor, considered bool, admitted []Candidate, dispositions []Disposition) *workingMemory {
+	memory := &workingMemory{anchor: anchor, considered: considered, rows: map[int64]heldRow{}, spent: len(anchor.Substance), ceiling: ceiling}
 	memory.absorb(admitted, dispositions)
 	return memory
 }
@@ -62,11 +63,11 @@ func (m *workingMemory) charge(bytes int) {
 }
 
 func (m *workingMemory) room(round int) int {
-	return max(0, min(round, JudgementPromptCeiling-m.spent))
+	return max(0, min(round, m.ceiling-m.spent))
 }
 
 func (m *workingMemory) roomToReplace(id int64, round int) int {
-	return max(0, min(round, JudgementPromptCeiling-m.spent+m.rows[id].size))
+	return max(0, min(round, m.ceiling-m.spent+m.rows[id].size))
 }
 
 func (m *workingMemory) holds(c Candidate) bool {

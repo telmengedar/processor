@@ -100,15 +100,15 @@ func lacksSubstance(c Candidate) bool {
 	return c.Substance == ""
 }
 
-func (t *Turn) fillWait(ctx context.Context) time.Duration {
-	wait := FillWait
+func (t *Turn) fillWait(ctx context.Context, settings RunSettings) time.Duration {
+	wait := settings.FillWait
 	if deadline, ok := ctx.Deadline(); ok {
-		wait = min(wait, deadline.Sub(t.now())-JudgementCost(t.Floors))
+		wait = min(wait, deadline.Sub(t.now())-settings.JudgementCost(t.Floors))
 	}
 	return max(wait, 0)
 }
 
-func (t *Turn) createSubstances(ctx context.Context, phase string, ids []int64) (map[int64]string, []FillOutcome) {
+func (t *Turn) createSubstances(ctx context.Context, settings RunSettings, phase string, ids []int64) (map[int64]string, []FillOutcome) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -121,7 +121,7 @@ func (t *Turn) createSubstances(ctx context.Context, phase string, ids []int64) 
 		return nil, outcomes
 	}
 
-	wait := t.fillWait(ctx)
+	wait := t.fillWait(ctx, settings)
 	finished := make([]bool, len(ids))
 	created := make(map[int64]string, len(ids))
 

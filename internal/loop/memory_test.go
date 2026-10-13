@@ -9,7 +9,7 @@ func memoryHolding(t *testing.T, anchor Anchor, candidates []Candidate) *working
 	t.Helper()
 
 	admitted, dispositions := admit(candidates, composedTestBudget, len(anchor.Substance))
-	return newWorkingMemory(anchor, len(candidates) > 0, admitted, dispositions)
+	return newWorkingMemory(JudgementPromptCeiling, anchor, len(candidates) > 0, admitted, dispositions)
 }
 
 func TestTheMemoryAndTheAssembledBlockRenderASubstanceAlike(t *testing.T) {
@@ -50,7 +50,7 @@ func TestTheMemoryCarriesExactlyTheBytesItsAdmissionCharged(t *testing.T) {
 		t.Fatalf("test setup error: admitted %d rows %v, want the first alone", len(admitted), dispositionIDs(dispositions))
 	}
 
-	memory := newWorkingMemory(Anchor{ID: 1}, true, admitted, dispositions)
+	memory := newWorkingMemory(JudgementPromptCeiling, Anchor{ID: 1}, true, admitted, dispositions)
 	rendered := memory.render(false)
 
 	if strings.Count(rendered, substance) != 1 {
@@ -66,7 +66,7 @@ func TestTheMemoryChargesTheAnchorItsRenderedBytes(t *testing.T) {
 
 	anchor := Anchor{ID: 1, Content: strings.Repeat("x", 9_000), Substance: strings.Repeat("z", 400)}
 
-	memory := newWorkingMemory(anchor, false, nil, nil)
+	memory := newWorkingMemory(JudgementPromptCeiling, anchor, false, nil, nil)
 
 	if memory.spent != 400 {
 		t.Fatalf("memory.spent = %d, want 400: the anchor is charged the substance it renders", memory.spent)
@@ -83,7 +83,7 @@ func TestTheMemoryRendersAnUnavailableRowAsItsHeaderAndTheUnavailableLineAndChar
 		t.Fatalf("test setup error: Form = %q, want %q", dispositions[0].Form, FormUnavailable)
 	}
 
-	memory := newWorkingMemory(Anchor{ID: 1}, true, admitted, dispositions)
+	memory := newWorkingMemory(JudgementPromptCeiling, Anchor{ID: 1}, true, admitted, dispositions)
 
 	want := "===== CANDIDATE =====\nid: 91\ntype: documentation\nname: Bravo\nsimilarity: 0.000\nsubstance: unavailable\n"
 	if got := memory.render(false); !strings.HasSuffix(got, want) {
