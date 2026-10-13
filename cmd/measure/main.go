@@ -94,7 +94,7 @@ func build(logger *slog.Logger) (*measure.Runner, error) {
 
 	fillCfg, fillFromJudgement := ports.FillModel(condenseCfg, condenseConfigured, modelCfg)
 	if fillFromJudgement {
-		logger.Info("no PROCESSOR_CONDENSE_MODEL_* configuration was found: the fill runs on the judgement model's configuration")
+		logger.Info(ports.FillOnJudgementNotice)
 	}
 	if err := ports.StateThinkingSuppression(logger, "fill", fillCfg.Protocol); err != nil {
 		return nil, err

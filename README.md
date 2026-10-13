@@ -239,6 +239,16 @@ PROCESSOR_MODEL_ID=llama-3.1-8b-instruct \
 runtime with no credential, no spend, and no terms-of-service exposure. Set it when the endpoint requires
 one.
 
+**The condense model.** Condensing writes each node's substance, the only form of a node that a turn ever
+sees. It is configured by a second set of variables, `PROCESSOR_CONDENSE_MODEL_URL`, `_ID`, `_PROTOCOL`,
+`_KEY`, `_TEMPERATURE` and `_TOP_P`, which mean what their `PROCESSOR_MODEL_*` counterparts mean. Without
+`PROCESSOR_CONDENSE_MODEL_URL` the processor condenses with the judgement model's configuration, and says so
+once at startup. That keeps a small deployment to one model, but **a capable condense model is strongly
+recommended**: nothing checks a substance mechanically, and a written substance stays until the node's
+content changes, so a weak one stands in for its node for every later reader. In one audit, `gemma4:latest`
+without thinking condensed short nodes faithfully, but looped on a 271 KB node and silently dropped about
+40% of it.
+
 ### `POST /runs`
 
 Request:
