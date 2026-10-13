@@ -1121,7 +1121,7 @@ def print_records_written(receipts):
     print(f"GRAPH: this invocation wrote {len(stored)} run record(s): {ids}")
     print(
         "       Nothing was deleted. Each record embeds its task text verbatim, so a semantic query "
-        "that does not exclude run records ranks it among the top rows. Recall does exclude them: "
+        "for its text that does not exclude run records ranks it near the top. Recall does exclude them: "
         "it tells the graph to leave run records out by name before it counts, and the loop drops "
         "any that leak, so a record left in place takes no recall slot and does not move a corpus "
         "row's retrieval in the baseline sweep. This script's own prior-run check does not exclude "
