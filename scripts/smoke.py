@@ -5,7 +5,7 @@ what each turn sent and got back.
 Two turns, not one: turn 1 writes a run record, and turn 2 is the live end-to-end check that a turn
 does not read its predecessor's record back. The graph excludes run records from every recall and the
 loop drops any that leak; this script fails if turn 1's record, or any row named like one, turns up
-among either turn's candidates or supplementary rounds, and if the server log shows the graph
+among either turn's candidates or supplementary rounds, or if the server log shows the graph
 returned rows it was asked to exclude.
 
     python scripts/smoke.py
@@ -19,9 +19,10 @@ names on exit; it deletes nothing, and nothing needs deleting. Interrupting a ru
 the write-back rather than killing it — a second interrupt kills, and a kill landing between the
 record's node and its body leaves a bodyless node behind.
 
-Exit 0 both turns admitted context and no run record was read back; 1 a turn admitted zero
-candidates, a run record was read back, or the server log shows leaked rows; 2 the run could not be
-made, or turn 1 never stored its record and so there was nothing to prove excluded.
+Exit 0 both turns admitted context, no run record was read back and the server log shows no leaked
+rows; 1 a turn admitted zero candidates, a run record was read back, or the server log shows leaked
+rows; 2 the run could not be made, or turn 1 never stored its record and so there was nothing to
+prove excluded.
 """
 
 import argparse
@@ -248,9 +249,9 @@ def verdict(records, receipts, leaked):
 
     if leaked:
         lines.append(
-            f"FAIL: the graph returned {leaked} time(s) rows the recall asked it to exclude. The "
-            f"loop dropped them, but they were counted first, so a turn ran with fewer usable "
-            f"slots than it asked for. The graph has stopped honouring excludeName."
+            f"FAIL: the graph returned {leaked} time(s) rows the recall asked it to exclude, run "
+            f"records or the subject node. The loop dropped them, but they were counted first, so "
+            f"a turn ran with fewer usable slots than it asked for."
         )
         failed = True
 

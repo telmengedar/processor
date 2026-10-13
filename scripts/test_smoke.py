@@ -130,6 +130,11 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertTrue(any(line.startswith("FAIL: self-read") for line in lines))
 
+    def test_a_failure_outranks_a_void_premise(self):
+        records = [turn(), turn(rounds=[[row(77, RUN_NAME)]])]
+        code, _ = smoke.verdict(records, [{"state": "notStored"}, STORED], 0)
+        self.assertEqual(1, code)
+
     def test_zero_admitted_is_exit_one(self):
         code, _ = smoke.verdict([turn(rows=[row(1, included=False)]), turn()], [STORED, STORED], 0)
         self.assertEqual(1, code)
