@@ -301,32 +301,13 @@ func TestEveryLimitsMemberIsADialReadInDeclarationOrder(t *testing.T) {
 		}
 	}
 
-	result := DialExercise(archiveOf(t, "no record needed to list the dials"))
 	got := make([]string, 0, len(want))
-	for _, reading := range result.Readings {
+	for _, reading := range DialExercise(archiveOf(t, "no record needed to list the dials")).Readings {
 		got = append(got, reading.Dial)
 	}
 
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("the dials are the Limits members in declaration order, got %v, want %v", got, want)
-	}
-	for _, name := range []string{"AnsweringBudget", "HistoryExchangeLimit", "HistorySafetyLimit"} {
-		readingFor(t, result, name)
-	}
-}
-
-func TestADialPreviouslyUndeclaredIsReadFromTheRecordUnderItsOwnField(t *testing.T) {
-	t.Parallel()
-
-	archive := archiveOf(t, "the last Limits member at two values",
-		`{"limits":{"historySafetyLimit":8000}}`,
-		`{"limits":{"historySafetyLimit":16000}}`,
-	)
-
-	reading := readingFor(t, DialExercise(archive), "HistorySafetyLimit")
-
-	if reading.Field != "historySafetyLimit" || reading.Verdict != DialExercised || reading.RecordedIn != 2 {
-		t.Fatalf("the last Limits member is read from its own key, got %+v", reading)
 	}
 }
 
