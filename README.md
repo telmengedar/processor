@@ -315,7 +315,7 @@ turn's **last** call offers no tool: where the call budget is spent, where recal
 barren rounds, or where the loop has just **refused** a retrieval request (a part already shown, the
 request's own subject, an id the graph does not hold, a part too large for one read, or a malformed call),
 it reserves the next call for answering, declares no tool list and composes a system text that describes
-answering alone, so prose is the only terminal the call can reach. A graph failure, a barren served recall and
+answering alone (plus the conversation paragraph when the turn carries a conversation section), so prose is the only terminal the call can reach. A graph failure, a barren served recall and
 a file write do not reserve. Nothing about a refusal is shown to the model: the loop acts on it instead. No adapter may return a
 tool-wanting terminal from such a call, not from a native tool field and not by recovering one from the
 response text.
