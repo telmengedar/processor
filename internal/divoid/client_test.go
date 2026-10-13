@@ -858,8 +858,8 @@ func TestNeighboursAsksTheListingRouteForTheNodesLinkedToTheIDExcludingRunRecord
 		t.Fatalf("excludeName = %q, want %q: without it the graph lists every run record of the node and the scope grows by one id per run", q.Get("excludeName"), want)
 	}
 	fields := strings.Split(q.Get("fields"), ",")
-	if !slices.Contains(fields, "type") || !slices.Contains(fields, "name") {
-		t.Fatalf("fields = %q, want type and name: the client-side net cannot recognise a run record without both", q.Get("fields"))
+	if !slices.Contains(fields, "id") || !slices.Contains(fields, "type") || !slices.Contains(fields, "name") {
+		t.Fatalf("fields = %q, want id, type and name: without id the graph answers every row with id 0 and the scope collapses, and the client-side net cannot recognise a run record without type and name", q.Get("fields"))
 	}
 	if q.Get("count") != "500" {
 		t.Fatalf("count = %q, want an explicitly requested page size: relying on the route's own default makes the size of a neighbourhood a property of the server's configuration", q.Get("count"))
@@ -876,7 +876,7 @@ func TestNeighboursDropsARunRecordTheGraphReturnedAndWarnsWithTheCount(t *testin
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"result":[{"id":8,"type":"documentation","name":"design"},{"id":90,"type":"session-log","name":"processor-run 2026-10-13T10:00:00Z — hello"},{"id":64,"type":"task","name":"work"},{"id":91,"type":"session-log","name":"processor-run 2026-10-13T11:00:00Z — again"}],"total":4}`))
+		_, _ = w.Write([]byte(`{"result":[{"id":8,"type":"documentation","name":"design"},{"id":90,"type":"session-log","name":"processor-run 2026-10-13T10:00:00Z — hello"},{"id":64,"type":"task","name":"work"},{"id":70,"type":"task","name":"more work"}],"total":4}`))
 	}))
 	defer srv.Close()
 
@@ -887,11 +887,11 @@ func TestNeighboursDropsARunRecordTheGraphReturnedAndWarnsWithTheCount(t *testin
 		t.Fatalf("Neighbours: %v", err)
 	}
 
-	want := []int64{8, 64}
+	want := []int64{8, 64, 70}
 	if !slices.Equal(got, want) {
 		t.Fatalf("Neighbours = %v, want %v: a run record that leaks through the exclusion must never become a pivot of the scope", got, want)
 	}
-	for _, fragment := range []string{logLeakedRunRecords, "node=42", "dropped=2"} {
+	for _, fragment := range []string{logLeakedRunRecords, "node=42", "dropped=1"} {
 		if !strings.Contains(log.String(), fragment) {
 			t.Fatalf("the operator log was %q, want it to carry %q: a graph that stops honouring the exclusion is otherwise invisible", log.String(), fragment)
 		}

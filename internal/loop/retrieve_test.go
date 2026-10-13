@@ -168,7 +168,7 @@ func TestRecallScopeReportsTheNeighbourFailureRatherThanScopingToTheSubjectAlone
 type failingNeighbourGraph struct{ linkedGraph }
 
 func (g *failingNeighbourGraph) Neighbours(context.Context, int64) ([]int64, error) {
-	return nil, errors.New("literal: the links route refused")
+	return nil, errors.New("literal: the neighbour read failed")
 }
 
 type rankedGraph struct {
@@ -566,7 +566,7 @@ func TestRetrieveReportsTheNeighbourFailureRatherThanRankingTheWholeGraphTwice(t
 	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, RecallScopeReserve, UpdateWindow{}, quietLogger())
 
 	if err == nil {
-		t.Fatalf("Retrieve returned %v and a nil error, want the links failure", candidateIDs(got))
+		t.Fatalf("Retrieve returned %v and a nil error, want the neighbour read failure", candidateIDs(got))
 	}
 }
 
