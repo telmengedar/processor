@@ -406,15 +406,15 @@ func TestAHeldRowIsNeverRecordedAsCutWhileItIsInTheNextBlock(t *testing.T) {
 
 	body := func(n int) string { return strings.Repeat("#", n) }
 
-	belowFloor := rowOf(21, body(15_000))
-	belowFloor.Similarity = 0.3
+	lowSimilarity := rowOf(21, body(15_000))
+	lowSimilarity.Similarity = 0.3
 
 	for _, tc := range []struct {
 		name  string
 		again []Candidate
 	}{
 		{"for want of bytes", []Candidate{rowOf(21, body(15_000))}},
-		{"below the relevance floor", []Candidate{belowFloor}},
+		{"at a lower similarity", []Candidate{lowSimilarity}},
 	} {
 		graph := nearTheCeiling(tc.again)
 		model := &fakeModel{results: []JudgeResult{recallFor("one"), recallFor("two"), answered("done")}}
