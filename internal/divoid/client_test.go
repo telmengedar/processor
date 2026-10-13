@@ -15,6 +15,28 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
+type recordedRequests struct {
+	requests int
+	path     string
+	query    string
+}
+
+func recordingClient(t *testing.T) (*Client, *recordedRequests) {
+	t.Helper()
+
+	rec := &recordedRequests{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec.requests++
+		rec.path = r.URL.Path
+		rec.query = r.URL.RawQuery
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	return NewClient(srv.URL, "k", srv.Client(), testLogger()), rec
+}
+
 func TestNodeConstructsTheListingQueryWithIDAndFields(t *testing.T) {
 	t.Parallel()
 
@@ -131,23 +153,15 @@ func TestNodeOnNon200TreatsItAsAnErrorNeverAsNotFound(t *testing.T) {
 func TestRecallSendsTheQueryTextVerbatimWithCountAndFieldsAndNoOtherKey(t *testing.T) {
 	t.Parallel()
 
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	c, rec := recordingClient(t)
 	const wantQueryText = "  Why DOES   the Assembler ignore SCOPE?  "
 	if _, err := c.Recall(context.Background(), []string{wantQueryText}, 6, nil, nil, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
-	q, err := url.ParseQuery(gotQuery)
+	q, err := url.ParseQuery(rec.query)
 	if err != nil {
-		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 	}
 	if q.Get("query") != wantQueryText {
 		t.Fatalf("query = %q, want the input verbatim %q", q.Get("query"), wantQueryText)
@@ -173,49 +187,33 @@ func TestRecallSendsTheQueryTextVerbatimWithCountAndFieldsAndNoOtherKey(t *testi
 func TestAZeroWindowSendsTheSameQueryStringAsBeforeTheWindowExisted(t *testing.T) {
 	t.Parallel()
 
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	c, rec := recordingClient(t)
 	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
 	want := url.Values{"query": {"q"}, "count": {"6"}, "fields": {candidateFields}, "excludeName": {"processor-run%"}}.Encode()
-	if gotQuery != want {
-		t.Fatalf("a zero window sent %q, want the encoded query string byte-identical to %q: a zero window must not acquire updatedFrom, updatedTo, an empty string, or any sentinel value", gotQuery, want)
+	if rec.query != want {
+		t.Fatalf("a zero window sent %q, want the encoded query string byte-identical to %q: a zero window must not acquire updatedFrom, updatedTo, an empty string, or any sentinel value", rec.query, want)
 	}
 }
 
 func TestANonZeroWindowSendsBothUpdatedFromAndUpdatedTo(t *testing.T) {
 	t.Parallel()
 
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-	}))
-	defer srv.Close()
-
 	window := loop.UpdateWindow{
 		From: time.Date(2026, 9, 12, 0, 0, 0, 0, time.FixedZone("test+02", 2*60*60)),
 		To:   time.Date(2026, 9, 13, 0, 0, 0, 0, time.FixedZone("test+02", 2*60*60)),
 	}
 
-	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	c, rec := recordingClient(t)
 	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, window); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
-	q, err := url.ParseQuery(gotQuery)
+	q, err := url.ParseQuery(rec.query)
 	if err != nil {
-		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 	}
 
 	wantFrom := window.From.Format(time.RFC3339)
@@ -371,22 +369,14 @@ func TestRecallDecodesSimilarityAndContent(t *testing.T) {
 func TestRecallRequestsSubstanceInTheFieldsProjection(t *testing.T) {
 	t.Parallel()
 
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	c, rec := recordingClient(t)
 	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
-	q, err := url.ParseQuery(gotQuery)
+	q, err := url.ParseQuery(rec.query)
 	if err != nil {
-		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 	}
 	fields := strings.Split(q.Get("fields"), ",")
 	if !slices.Contains(fields, "substance") {
@@ -505,22 +495,14 @@ func TestNodeReportsNotFoundWhenNoRowMatchesTheRequestedID(t *testing.T) {
 func TestNodeRequestsEveryAnchorFieldInTheFieldsProjection(t *testing.T) {
 	t.Parallel()
 
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	c, rec := recordingClient(t)
 	if _, _, err := c.Node(context.Background(), 42); err != nil {
 		t.Fatalf("Node: %v", err)
 	}
 
-	q, err := url.ParseQuery(gotQuery)
+	q, err := url.ParseQuery(rec.query)
 	if err != nil {
-		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 	}
 	requested := []string{}
 	for _, field := range strings.Split(q.Get("fields"), ",") {
@@ -616,29 +598,19 @@ func TestDefaultTimeoutIsFifteenSecondsMeasuredAgainstALiteralNotAgainstItself(t
 func TestRecallSendsSeveralQueriesAsOneRequestWithARepeatedQueriesKeyAndNeverSplitsAValueOnItsCommas(t *testing.T) {
 	t.Parallel()
 
-	var requests int
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		gotQuery = r.URL.RawQuery
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	c, rec := recordingClient(t)
 	want := []string{"first phrasing", "second, with a comma, and a bracket [x]", "third phrasing"}
 	if _, err := c.Recall(context.Background(), want, 6, nil, nil, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
-	if requests != 1 {
-		t.Fatalf("Recall issued %d requests for %d queries, want 1: the graph averages the queries in one statement", requests, len(want))
+	if rec.requests != 1 {
+		t.Fatalf("Recall issued %d requests for %d queries, want 1: the graph averages the queries in one statement", rec.requests, len(want))
 	}
 
-	q, err := url.ParseQuery(gotQuery)
+	q, err := url.ParseQuery(rec.query)
 	if err != nil {
-		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 	}
 	if !slices.Equal(q["queries"], want) {
 		t.Fatalf("queries = %q, want %q in order, one key per value", q["queries"], want)
@@ -677,22 +649,14 @@ func TestRecallWithNoQueriesFailsWithoutAskingTheGraph(t *testing.T) {
 func TestRecallSendsOneLinkedToParameterPerScopeIDBecauseAnUnknownScopeKeyIsSilentlyIgnored(t *testing.T) {
 	t.Parallel()
 
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	c, rec := recordingClient(t)
 	if _, err := c.Recall(context.Background(), []string{"q"}, 6, []int64{7, 11, 13}, nil, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
-	q, err := url.ParseQuery(gotQuery)
+	q, err := url.ParseQuery(rec.query)
 	if err != nil {
-		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 	}
 
 	want := []string{"7", "11", "13"}
@@ -725,22 +689,14 @@ func TestRecallSendsNoScopeKeyAtAllForAnEmptyScopeSoTheRankingStaysWholeGraph(t 
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			var gotQuery string
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotQuery = r.URL.RawQuery
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-			}))
-			defer srv.Close()
-
-			c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+			c, rec := recordingClient(t)
 			if _, err := c.Recall(context.Background(), []string{"q"}, 6, tc.scope, nil, loop.UpdateWindow{}); err != nil {
 				t.Fatalf("Recall: %v", err)
 			}
 
-			q, err := url.ParseQuery(gotQuery)
+			q, err := url.ParseQuery(rec.query)
 			if err != nil {
-				t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+				t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 			}
 			if _, present := q["linkedto"]; present {
 				t.Fatalf("linkedto = %v for an empty scope, want the key absent: the graph reads an empty scope value as no filter and returns the whole-graph ranking, so emitting the key claims a restriction the answer does not have", q["linkedto"])
@@ -874,28 +830,19 @@ func TestNeighboursStopsWhenTheCursorRepeatsRatherThanRereadingOnePageForever(t 
 func TestNeighboursConstructsTheLinksQueryWithTheNodeIDAndAnExplicitPageSize(t *testing.T) {
 	t.Parallel()
 
-	var gotPath, gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotQuery = r.URL.RawQuery
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	c, rec := recordingClient(t)
 	if _, err := c.Neighbours(context.Background(), 42); err != nil {
 		t.Fatalf("Neighbours: %v", err)
 	}
 
 	const wantPath = "/api/nodes/links"
-	if gotPath != wantPath {
-		t.Fatalf("path = %q, want %q — the edges of a node are not on the node listing route", gotPath, wantPath)
+	if rec.path != wantPath {
+		t.Fatalf("path = %q, want %q — the edges of a node are not on the node listing route", rec.path, wantPath)
 	}
 
-	q, err := url.ParseQuery(gotQuery)
+	q, err := url.ParseQuery(rec.query)
 	if err != nil {
-		t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 	}
 	if q.Get("ids") != "42" {
 		t.Fatalf("ids = %q, want the requested node %q", q.Get("ids"), "42")
@@ -1009,22 +956,14 @@ func TestEveryRecallAsksTheGraphToExcludeRunRecordsAndTheAnchor(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			var gotQuery string
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotQuery = r.URL.RawQuery
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-			}))
-			defer srv.Close()
-
-			c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+			c, rec := recordingClient(t)
 			if _, err := c.Recall(context.Background(), queries, 6, nil, []int64{42}, loop.UpdateWindow{}); err != nil {
 				t.Fatalf("Recall: %v", err)
 			}
 
-			q, err := url.ParseQuery(gotQuery)
+			q, err := url.ParseQuery(rec.query)
 			if err != nil {
-				t.Fatalf("ParseQuery(%q): %v", gotQuery, err)
+				t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 			}
 			if got := q["excludeName"]; !slices.Equal(got, []string{"processor-run%"}) {
 				t.Fatalf("excludeName = %q, want the run-record name pattern alone: the graph leaves these rows out before the count, and a recall that does not ask spends its slots on them", got)
@@ -1039,20 +978,12 @@ func TestEveryRecallAsksTheGraphToExcludeRunRecordsAndTheAnchor(t *testing.T) {
 func TestARecallWithNoExcludedIdsSendsNoExcludeIdKey(t *testing.T) {
 	t.Parallel()
 
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	c, rec := recordingClient(t)
 	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
-	q, _ := url.ParseQuery(gotQuery)
+	q, _ := url.ParseQuery(rec.query)
 	if _, present := q["excludeId"]; present {
 		t.Fatalf("excludeId = %v with nothing to exclude, want the key absent", q["excludeId"])
 	}
@@ -1061,20 +992,12 @@ func TestARecallWithNoExcludedIdsSendsNoExcludeIdKey(t *testing.T) {
 func TestSeveralExcludedIdsGoOutAsRepeatedKeysInTheOrderGiven(t *testing.T) {
 	t.Parallel()
 
-	var gotQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotQuery = r.URL.RawQuery
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
-	}))
-	defer srv.Close()
-
-	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	c, rec := recordingClient(t)
 	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, []int64{42, 7}, loop.UpdateWindow{}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
-	q, _ := url.ParseQuery(gotQuery)
+	q, _ := url.ParseQuery(rec.query)
 	if got := q["excludeId"]; !slices.Equal(got, []string{"42", "7"}) {
 		t.Fatalf("excludeId = %q, want one repeated key per id, 42 then 7: the graph reads a repeated key as a list", got)
 	}

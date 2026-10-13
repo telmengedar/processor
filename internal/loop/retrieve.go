@@ -102,13 +102,6 @@ func choose(global, scoped []Candidate, limit, reserve int) []Candidate {
 		return true
 	}
 
-	for _, row := range global {
-		if len(out) == limit-reserve {
-			break
-		}
-		take(row)
-	}
-
 	reserved := 0
 	inGlobalTop := make(map[int64]bool, len(global))
 	for _, row := range global {
@@ -116,7 +109,7 @@ func choose(global, scoped []Candidate, limit, reserve int) []Candidate {
 	}
 
 	for _, row := range scoped {
-		if reserved == reserve || len(out) == limit {
+		if reserved == reserve {
 			break
 		}
 		if inGlobalTop[row.ID] {

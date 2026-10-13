@@ -65,7 +65,7 @@ func TestAnAdmittedRowFromADispatchedRoundGroundsARunWhoseBlockAdmittedNothing(t
 	t.Parallel()
 
 	record := outcomeRecord()
-	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: "below relevance floor"}}
+	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: cutReasonByteBudget}}
 	record.ToolCalls = []ToolCallRecord{{Tool: ToolRecall, Query: "the missing thing", Results: []Disposition{{Rank: 1, ID: 21, Included: true}}}}
 
 	outcome := ComputeOutcome(record)
@@ -84,7 +84,7 @@ func TestAnAdmittedRowInsideAnErroredRoundGroundsNothingBecauseItNeverReachedThe
 	t.Parallel()
 
 	record := outcomeRecord()
-	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: "below relevance floor"}}
+	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: cutReasonByteBudget}}
 	record.ToolCalls = []ToolCallRecord{{
 		Tool:    ToolRecall,
 		Query:   "the missing thing",
@@ -107,7 +107,7 @@ func TestARunWhoseEveryRowWasCutIsNotGrounded(t *testing.T) {
 
 	record := outcomeRecord()
 	record.Candidates = []Disposition{
-		{Rank: 1, ID: 11, CutReason: "below relevance floor"},
+		{Rank: 1, ID: 11, CutReason: cutReasonByteBudget},
 		{Rank: 2, ID: 12, CutReason: "self-produced"},
 	}
 	record.ToolCalls = []ToolCallRecord{{Tool: ToolRecall, Query: "more", Results: []Disposition{{Rank: 1, ID: 21, CutReason: "byte budget exceeded"}}}}
@@ -121,7 +121,7 @@ func TestATruncatedAnswerIsNotCurtailedSoARecordCanReadUngroundedAndTruncatedAtO
 	t.Parallel()
 
 	record := outcomeRecord()
-	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: "below relevance floor"}}
+	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: cutReasonByteBudget}}
 	record.StopReason = StopReason{Reason: Truncated, Raw: "length"}
 	record.Limits = Limits{JudgementBudget: JudgementBudget}
 
@@ -158,7 +158,7 @@ func TestARunStoppedAtTheCallCapWithoutGroundingReadsCurtailedRatherThanUnground
 	t.Parallel()
 
 	record := outcomeRecord()
-	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: "below relevance floor"}}
+	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: cutReasonByteBudget}}
 	record.CapReached = true
 
 	if outcome := ComputeOutcome(record); outcome.Verdict != VerdictCurtailed {
@@ -171,7 +171,7 @@ func TestARunThatProducedNothingUnderNoBoundReadsEmptyRatherThanUngrounded(t *te
 
 	record := outcomeRecord()
 	record.Answer = ""
-	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: "below relevance floor"}}
+	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: cutReasonByteBudget}}
 
 	if outcome := ComputeOutcome(record); outcome.Verdict != VerdictEmpty {
 		t.Fatalf("verdict = %q, want %q: nothing was produced, so nothing can be said about what fed it", outcome.Verdict, VerdictEmpty)
@@ -182,7 +182,7 @@ func TestAProducedAnswerNoAdmittedRowFedReadsUngrounded(t *testing.T) {
 	t.Parallel()
 
 	record := outcomeRecord()
-	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: "below relevance floor"}}
+	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: cutReasonByteBudget}}
 
 	if outcome := ComputeOutcome(record); outcome.Verdict != VerdictUngrounded {
 		t.Fatalf("verdict = %q, want %q: this system's memory contributed nothing to this answer", outcome.Verdict, VerdictUngrounded)
@@ -220,7 +220,7 @@ func TestTheVerdictReportsTheEarliestBindingCauseOverEveryCombinationOfTheThreeP
 		if c.produced {
 			record.Answer = "text"
 		}
-		record.Candidates = []Disposition{{Rank: 1, ID: 11, Included: c.grounded, CutReason: "below relevance floor"}}
+		record.Candidates = []Disposition{{Rank: 1, ID: 11, Included: c.grounded, CutReason: cutReasonByteBudget}}
 		record.CapReached = c.curtailed
 
 		outcome := ComputeOutcome(record)
@@ -310,7 +310,7 @@ func TestEveryVerdictIsRecomputableFromItsOwnRecordAfterARoundTripThroughJson(t 
 	empty.Answer = ""
 
 	ungrounded := outcomeRecord()
-	ungrounded.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: "below relevance floor"}}
+	ungrounded.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: cutReasonByteBudget}}
 
 	for _, record := range []Record{outcomeRecord(), curtailed, empty, ungrounded} {
 		record.Outcome = ComputeOutcome(record)
