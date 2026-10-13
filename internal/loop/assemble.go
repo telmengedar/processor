@@ -10,10 +10,7 @@ import (
 	"time"
 )
 
-const (
-	cutReasonByteBudget   = "byte budget exceeded"
-	cutReasonSelfProduced = "self-produced"
-)
+const cutReasonByteBudget = "byte budget exceeded"
 
 // ThinKnowledgeSimilarity is the best admitted similarity a block must reach to escape the thin-knowledge hint; it signals and never cuts.
 const ThinKnowledgeSimilarity = 0.63
@@ -77,8 +74,6 @@ func admitUnheld(candidates []Candidate, budget, spent int, held func(Candidate)
 			d.Included = true
 			d.Held = true
 			admitted = append(admitted, c)
-		case c.SelfProduced:
-			d.CutReason = cutReasonSelfProduced
 		case cumulative+payload <= remaining:
 			cumulative += payload
 			d.Included = true

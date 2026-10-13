@@ -1448,30 +1448,6 @@ func TestTurnRunDoesNotWarnWhenTheTopRankedCandidateWasAdmittedEvenThoughOthersW
 	}
 }
 
-func TestTheTopCutWarnIsSilentWhenTheTopCandidateWasCutAsSelfProduced(t *testing.T) {
-	t.Parallel()
-
-	var logBuf strings.Builder
-	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
-	turn := &Turn{logger: logger}
-
-	record := Record{
-		Subject: 42,
-		Anchor:  AnchorSummary{Size: 100, RenderedSize: 100},
-		Limits:  Limits{AssemblyByteBudget: AssemblyByteBudget},
-		Candidates: []Disposition{
-			{Rank: 1, ID: 900, Name: "SelfProducedRecord", CutReason: cutReasonSelfProduced, Included: false, Size: 70_000},
-			{Rank: 2, ID: 901, Name: "Doc", Included: true, Size: 200},
-		},
-	}
-
-	turn.logFinished(record, WriteReceipt{}, 0)
-
-	if warning := topCutLogLine(logBuf.String()); warning != "" {
-		t.Fatalf("a run whose rank-1 candidate was cut as self-produced raised the byte-budget top-cut alarm:\n%s", warning)
-	}
-}
-
 func TestTurnRunRaisesBothTheShutoutAndTheDroppedTopCandidateRecordsWhenNothingWasAdmitted(t *testing.T) {
 	t.Parallel()
 
@@ -1939,6 +1915,44 @@ func TestTheSupplementaryRecallNeverReturnsTheSubject(t *testing.T) {
 		}
 		if ids := candidateIDsIn(model.calls[1].Block); !slices.Equal(ids, []int64{99}) {
 			t.Fatalf("the second call's block carries candidates %v, want only [99]", ids)
+		}
+	}
+}
+
+func TestTheSupplementaryRecallReportsRowsItDroppedBecauseTheGraphLeakedThem(t *testing.T) {
+	t.Parallel()
+
+	for _, ignoresExclusion := range []bool{false, true} {
+		var logged strings.Builder
+		graph := baseGraph()
+		graph.ignoresExclusion = ignoresExclusion
+		graph.recallQueue = []recallResponse{
+			{Candidates: nil},
+			{Candidates: []Candidate{
+				{ID: 42, Type: "documentation", Name: "Subject", Similarity: 0.95, Substance: "anchor body"},
+				{ID: 901, Type: "session-log", Name: "a record this run wrote", Similarity: 0.9, Substance: "a record body", SelfProduced: true},
+				{ID: 99, Type: "task", Name: "Found", Similarity: 0.8, Substance: "tool result body"},
+			}},
+		}
+		model := &fakeModel{results: []JudgeResult{
+			{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+			{Answer: "final", Reason: Answered, RawReason: "stop"},
+		}}
+		turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", slog.New(slog.NewTextHandler(&logged, nil)))
+
+		if _, _, err := turn.Run(context.Background(), "hello", 42); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		leaked := strings.Contains(logged.String(), `msg="the graph returned rows the recall asked it to exclude"`)
+		if ignoresExclusion {
+			if !leaked || !strings.Contains(logged.String(), "rows=2") {
+				t.Fatalf("the operator log was %q, want the supplementary leak named with its count of 2: the net is the only detector of a graph that stopped excluding", logged.String())
+			}
+			continue
+		}
+		if leaked {
+			t.Fatalf("the operator log was %q for a graph that honoured every exclusion, want silence", logged.String())
 		}
 	}
 }

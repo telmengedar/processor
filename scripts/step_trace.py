@@ -541,8 +541,8 @@ def render_candidate_table(dispositions, budget, attributed=False, name_query=Fa
             )
         if not d.get("included") and d.get("cutReason") == CUT_SELF_PRODUCED:
             lines.append(
-                f"           self-produced: a run record this system wrote earlier -- cut before "
-                f"the byte budget is even consulted (internal/loop/assemble.go)"
+                f"           self-produced: a run record this system wrote earlier -- the assembly that "
+                f"wrote this archived record cut it before the byte budget was consulted"
             )
         if not d.get("included") and d.get("cutReason") == CUT_BYTE_BUDGET and budget is not None:
             if d.get("renderedSize", d.get("size", 0)) > budget:
