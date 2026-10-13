@@ -894,6 +894,35 @@ class PrintTaskOutputTests(unittest.TestCase):
             "fits the 60000-byte budget left for candidates alone but not after", out
         )
 
+    def test_new_shape_record_charges_rendered_bytes_for_anchor_and_row(self):
+        rec = record(
+            anchor_id=10850,
+            candidates=[
+                {
+                    "id": 6375, "size": 43273, "renderedSize": 30000,
+                    "cutReason": compare.CUT_BYTE_BUDGET, "rank": 1, "included": False,
+                },
+            ],
+            limits={"assemblyByteBudget": 60000},
+        )
+        rec["anchor"].update({"size": 18208, "renderedSize": 5000})
+        out = self._run(task([]), rec)
+        self.assertIn("anchor: #10850 documentation 5000 bytes", out)
+        self.assertIn(
+            "CUT #6375: 30000 bytes fits the 55000-byte budget left for candidates alone but not after",
+            out,
+        )
+
+    def test_unavailable_row_charged_zero_rendered_bytes_is_not_replaced_by_its_size(self):
+        row = {"id": 7, "size": 9000, "renderedSize": 0, "cutReason": compare.CUT_BYTE_BUDGET}
+        message = compare.describe_cut(row, 4000)
+        self.assertIn("0 bytes fits the 4000-byte budget", message)
+
+    def test_record_without_rendered_size_is_charged_its_size(self):
+        row = {"id": 8, "size": 9000, "cutReason": compare.CUT_BYTE_BUDGET}
+        message = compare.describe_cut(row, 4000)
+        self.assertIn("9000 bytes alone exceeds the 4000-byte budget", message)
+
 
 class PrintTableOutputTests(unittest.TestCase):
     """S3's columns and footnote were untested at the print layer: node_ratio returning None was
