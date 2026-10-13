@@ -2,23 +2,26 @@
 """Run two live turns of the real product against the real graph and the real model, and print
 what each turn sent and got back.
 
-Two turns, not one: the first turn is clean by construction, and the defect this exists to catch
-lives in what turn 1 writes to the graph and turn 2 then retrieves from it (DiVoid #11141, #11142).
+Two turns, not one: turn 1 writes a run record, and turn 2 is the live end-to-end check that a turn
+does not read its predecessor's record back. The graph excludes run records from every recall and the
+loop drops any that leak; this script fails if turn 1's record, or any row named like one, turns up
+among either turn's candidates or supplementary rounds, and if the server log shows the graph
+returned rows it was asked to exclude.
 
     python scripts/smoke.py
     python scripts/smoke.py --subject 10422 --input "the question you actually want to ask"
 
-The default input and subject match no row in internal/eval/corpus.json, deliberately: a run writes a
-record that outranks every real candidate for its own input, so a default matching a corpus row would
-poison the next sweep of that row.
+The default input and subject match no row in internal/eval/corpus.json, deliberately: the smoke
+input stays distinct from the corpus rows.
 
 Costs two model calls at minimum and twelve at most, and writes two run records to the graph which it
-names on exit; it deletes nothing. Interrupting a run in flight waits for the write-back rather than
-killing it — a second interrupt kills, and a kill landing between the record's node and its body
-leaves a bodyless node behind.
+names on exit; it deletes nothing, and nothing needs deleting. Interrupting a run in flight waits for
+the write-back rather than killing it — a second interrupt kills, and a kill landing between the
+record's node and its body leaves a bodyless node behind.
 
-Exit 0 both turns admitted context; 1 a turn admitted zero candidates; 2 the run could not be made,
-or turn 1 never stored its record and turn 2 therefore had nothing new to retrieve.
+Exit 0 both turns admitted context and no run record was read back; 1 a turn admitted zero
+candidates, a run record was read back, or the server log shows leaked rows; 2 the run could not be
+made, or turn 1 never stored its record and so there was nothing to prove excluded.
 """
 
 import argparse
@@ -45,6 +48,8 @@ DEFAULT_SUBJECT = 10192
 DEFAULT_MODEL_URL = "http://127.0.0.1:8099"
 DEFAULT_MODEL_ID = "qwen/qwen3-coder-480b-a35b-instruct-maas"
 RUN_NAME_PREFIX = "processor-run"
+# mirrors logLeakedRows in internal/loop/retrieve.go
+LEAK_MESSAGE = "the graph returned rows the recall asked it to exclude"
 
 HEALTH_TIMEOUT_S = 30
 RUN_TIMEOUT_S = 11 * 60 + 30
@@ -192,6 +197,84 @@ def block_bytes(record):
     return len(record.get("block", "").encode("utf-8"))
 
 
+def filled_in_turn(record):
+    return sum(1 for f in record.get("fills") or [] if f.get("filled"))
+
+
+def count_leaked_rows(log_text):
+    return sum(1 for line in log_text.splitlines() if LEAK_MESSAGE in line)
+
+
+def exclusion_breaches(records, run_node_id):
+    """Rows, in any turn and any round, that are turn 1's record or are named like a run record.
+
+    Returns (turn, round, id, name) with round 0 the initial candidates and round n the nth
+    supplementary round.
+    """
+    found = []
+    for turn, record in enumerate(records, 1):
+        rounds = [candidates(record)] + [c.get("results") or [] for c in record.get("toolCalls") or []]
+        for number, rows in enumerate(rounds):
+            for row in rows:
+                name = str(row.get("name", ""))
+                if (run_node_id and row.get("id") == run_node_id) or name.startswith(RUN_NAME_PREFIX):
+                    found.append((turn, number, row.get("id"), name))
+    return found
+
+
+def verdict(records, receipts, leaked):
+    """The exit code and the lines to print for two finished turns."""
+    lines = []
+    run_node_id = receipts[0].get("nodeId") if receipts else None
+    premise_void = not run_node_id or receipts[0].get("state") == "notStored"
+
+    lines.append(f"LEAK REPORT: {leaked} server log line(s) say the graph returned excluded rows.")
+
+    failed = False
+    breaches = exclusion_breaches(records, run_node_id)
+    for turn, number, row_id, name in breaches:
+        where = "initial candidates" if number == 0 else f"supplementary round {number}"
+        lines.append(f"FAIL: self-read: turn {turn} {where} carried #{row_id} {one_line(name, 50)}.")
+        failed = True
+
+    for number, record in enumerate(records, 1):
+        if not admitted(record):
+            lines.append(
+                f"FAIL: turn {number} admitted 0 of {len(candidates(record))} candidates — "
+                f"the model was sent the anchor and nothing else, and answered with no "
+                f"retrieved context at all."
+            )
+            failed = True
+
+    if leaked:
+        lines.append(
+            f"FAIL: the graph returned {leaked} time(s) rows the recall asked it to exclude. The "
+            f"loop dropped them, but they were counted first, so a turn ran with fewer usable "
+            f"slots than it asked for. The graph has stopped honouring excludeName."
+        )
+        failed = True
+
+    if failed:
+        return 1, lines
+
+    if premise_void:
+        lines.append(
+            "PREMISE NOT ESTABLISHED: turn 1 stored no run record, so there was nothing for turn 2 "
+            "to leave out of its recall and the exclusion was not exercised."
+        )
+        lines.append(
+            "FAIL: the exclusion check had no record to look for. That is the instrument failing, "
+            "not the product."
+        )
+        return 2, lines
+
+    lines.append(
+        "PASS: both turns admitted context and neither read a run record back. Read the two "
+        "answers above; no rate can judge them."
+    )
+    return 0, lines
+
+
 def one_line(value, width):
     text = " ".join(str(value).split())
     return text if len(text) <= width else text[: width - 1] + "…"
@@ -299,10 +382,15 @@ def print_diff(first, second):
             f"#{rows_second[0]['id']}" if rows_second else "(none)",
         ),
         ("block bytes", block_bytes(first), block_bytes(second)),
+        ("substances filled", filled_in_turn(first), filled_in_turn(second)),
     ]
     for label, before, after in comparison:
         changed = "   CHANGED" if before != after else ""
         print(f"  {label:<22} {str(before):>10}  ->  {str(after):<10}{changed}")
+    print(
+        "  substances filled counts those stored during the turn; fills deferred past the response "
+        "land later and are not counted."
+    )
 
 
 def print_records_written(receipts):
@@ -314,10 +402,9 @@ def print_records_written(receipts):
     ids = ", ".join(f"#{r['nodeId']} ({r['state']})" for r in stored)
     print(f"GRAPH: this run wrote {len(stored)} run record(s) to the graph: {ids}")
     print(
-        "       Nothing was deleted. Run records rank first on a repeat of the same input and are "
-        "larger than the assembly budget, so leaving them in place changes what the next run "
-        "retrieves and contaminates the baseline sweep (DiVoid #11133, #11141). Delete them by hand "
-        "if that matters."
+        "       Nothing was deleted and nothing needs to be: the graph excludes run records from "
+        "recall and they stay as the archive of runs. Substances a run stored on nodes it "
+        "retrieved are not undone by deleting its record."
     )
 
 
@@ -371,51 +458,11 @@ def main():
 
             print_diff(records[0], records[1])
 
-            prior = [
-                c for c in candidates(records[0])
-                if str(c.get("name", "")).startswith(RUN_NAME_PREFIX)
-            ]
-            if prior:
-                print()
-                print(
-                    f"TURN 1 WAS NOT CLEAN: {', '.join('#' + str(c['id']) for c in prior)} — run "
-                    f"record(s) this tool wrote on an earlier invocation — were already among turn "
-                    f"1's candidates. Turn 1 is a clean baseline only on a graph nothing has "
-                    f"answered this input on before, so the comparison above understates what one "
-                    f"run does to the next. Delete them, or pass a --input nothing has run yet."
-                )
-
-            premise_void = receipts[0].get("state") == "notStored"
-            if premise_void:
-                print()
-                print(
-                    "PREMISE NOT ESTABLISHED: turn 1's record was never stored, so turn 2 recalled "
-                    "from the same memory state turn 1 did. The two turns above are one turn run "
-                    "twice, and the comparison shows nothing about what a run leaves behind."
-                )
-
-            zero = [(n, r) for n, r in enumerate(records, 1) if not admitted(r)]
-            if zero:
-                print()
-                for number, record in zero:
-                    print(
-                        f"FAIL: turn {number} admitted 0 of {len(candidates(record))} candidates — "
-                        f"the model was sent the anchor and nothing else, and answered with no "
-                        f"retrieved context at all."
-                    )
-                return 1
-
-            if premise_void:
-                print()
-                print(
-                    "FAIL: the two-turn premise did not hold, so this run tested one turn twice. "
-                    "That is the instrument failing, not the product."
-                )
-                return 2
-
+            code, lines = verdict(records, receipts, count_leaked_rows(read_log(log_path)))
             print()
-            print("PASS: both turns admitted context. Read the two answers above; no rate can judge them.")
-            return 0
+            for line in lines:
+                print(line)
+            return code
 
         except SmokeFailure as err:
             print()
