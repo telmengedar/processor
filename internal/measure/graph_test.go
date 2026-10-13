@@ -40,18 +40,10 @@ type graphEvent struct {
 	subject int64
 }
 
-type recallCall struct {
-	queries []string
-	limit   int
-	scope   []int64
-	exclude []int64
-	window  loop.UpdateWindow
-}
-
 type recordingGraph struct {
 	mu      sync.Mutex
 	events  []graphEvent
-	recalls []recallCall
+	recalls []loop.RecallRequest
 
 	anchor     loop.Anchor
 	found      bool
@@ -82,10 +74,10 @@ func (g *recordingGraph) log() []graphEvent {
 	return append([]graphEvent(nil), g.events...)
 }
 
-func (g *recordingGraph) recallCalls() []recallCall {
+func (g *recordingGraph) recallCalls() []loop.RecallRequest {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return append([]recallCall(nil), g.recalls...)
+	return append([]loop.RecallRequest(nil), g.recalls...)
 }
 
 func (g *recordingGraph) Node(_ context.Context, id int64) (loop.Anchor, bool, error) {
@@ -93,11 +85,11 @@ func (g *recordingGraph) Node(_ context.Context, id int64) (loop.Anchor, bool, e
 	return g.anchor, g.found, nil
 }
 
-func (g *recordingGraph) Recall(_ context.Context, queries []string, limit int, scope, exclude []int64, window loop.UpdateWindow) ([]loop.Candidate, error) {
+func (g *recordingGraph) Recall(_ context.Context, request loop.RecallRequest) ([]loop.Candidate, error) {
 	g.mark(eventRecall, 0)
 
 	g.mu.Lock()
-	g.recalls = append(g.recalls, recallCall{queries: queries, limit: limit, scope: scope, exclude: exclude, window: window})
+	g.recalls = append(g.recalls, request)
 	g.mu.Unlock()
 
 	return g.candidates, nil

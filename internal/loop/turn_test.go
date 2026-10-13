@@ -45,7 +45,7 @@ type fakeGraph struct {
 
 	recallQueue []recallResponse
 
-	recallCalls []recallCall
+	recallCalls []RecallRequest
 
 	recallQueries []string
 	recallLimit   int
@@ -55,14 +55,6 @@ type fakeGraph struct {
 	writeRunRecord  Record
 	writeRunCtx     context.Context
 	writeRunReceipt WriteReceipt
-}
-
-type recallCall struct {
-	Queries []string
-	Limit   int
-	Scope   []int64
-	Exclude []int64
-	Window  UpdateWindow
 }
 
 func withoutExcluded(rows []Candidate, exclude []int64) []Candidate {
@@ -101,16 +93,16 @@ func (f *fakeGraph) Node(_ context.Context, id int64) (Anchor, bool, error) {
 	return f.node, f.nodeFound, f.nodeErr
 }
 
-func (f *fakeGraph) Recall(_ context.Context, queries []string, limit int, scope, exclude []int64, window UpdateWindow) ([]Candidate, error) {
-	f.recallQueries = queries
-	f.recallLimit = limit
-	f.recallWindow = window
-	f.recallCalls = append(f.recallCalls, recallCall{Queries: queries, Limit: limit, Scope: scope, Exclude: exclude, Window: window})
+func (f *fakeGraph) Recall(_ context.Context, request RecallRequest) ([]Candidate, error) {
+	f.recallQueries = request.Queries
+	f.recallLimit = request.Limit
+	f.recallWindow = request.Window
+	f.recallCalls = append(f.recallCalls, request)
 
 	var rows []Candidate
 	var err error
 	switch {
-	case len(scope) > 0:
+	case len(request.Scope) > 0:
 		rows, err = f.scopedCandidates, f.scopedErr
 	case len(f.recallQueue) > 0:
 		resp := f.recallQueue[0]
@@ -121,10 +113,10 @@ func (f *fakeGraph) Recall(_ context.Context, queries []string, limit int, scope
 	}
 
 	if !f.ignoresExclusion {
-		rows = withoutExcluded(rows, exclude)
+		rows = withoutExcluded(rows, request.Exclude)
 	}
 	if f.honorsLimit {
-		rows = rows[:min(limit, len(rows))]
+		rows = rows[:min(request.Limit, len(rows))]
 	}
 	return rows, err
 }

@@ -24,9 +24,9 @@ func (g *linkedGraph) Neighbours(_ context.Context, id int64) ([]int64, error) {
 	return slices.Sorted(slices.Values(g.edges[id])), nil
 }
 
-func (g *linkedGraph) Recall(_ context.Context, _ []string, limit int, scope, _ []int64, _ UpdateWindow) ([]Candidate, error) {
+func (g *linkedGraph) Recall(_ context.Context, request RecallRequest) ([]Candidate, error) {
 	var reachable []int64
-	for _, id := range scope {
+	for _, id := range request.Scope {
 		reachable = append(reachable, g.edges[id]...)
 	}
 
@@ -35,7 +35,7 @@ func (g *linkedGraph) Recall(_ context.Context, _ []string, limit int, scope, _ 
 
 	candidates := make([]Candidate, 0, len(reachable))
 	for _, id := range reachable {
-		if len(candidates) == limit {
+		if len(candidates) == request.Limit {
 			break
 		}
 		candidates = append(candidates, Candidate{ID: id})
@@ -106,7 +106,7 @@ func TestARecallScopedToTheSubjectReachesANodeTwoHopsOutAndNotOnlyDirectNeighbou
 	if err != nil {
 		t.Fatalf("RecallScope: %v", err)
 	}
-	got, err := graph.Recall(context.Background(), []string{"q"}, 100, scope, nil, UpdateWindow{})
+	got, err := graph.Recall(context.Background(), RecallRequest{Queries: []string{"q"}, Limit: 100, Scope: scope})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestARecallScopedToTheSubjectStillReachesTheSubjectsOwnDirectNeighbours(t *
 	if err != nil {
 		t.Fatalf("RecallScope: %v", err)
 	}
-	got, err := graph.Recall(context.Background(), []string{"q"}, 100, scope, nil, UpdateWindow{})
+	got, err := graph.Recall(context.Background(), RecallRequest{Queries: []string{"q"}, Limit: 100, Scope: scope})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestARecallScopedToTheSubjectLeavesOutANodeThreeHopsAway(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RecallScope: %v", err)
 	}
-	got, err := graph.Recall(context.Background(), []string{"q"}, 100, scope, nil, UpdateWindow{})
+	got, err := graph.Recall(context.Background(), RecallRequest{Queries: []string{"q"}, Limit: 100, Scope: scope})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -179,7 +179,7 @@ type rankedGraph struct {
 	ignoresExclusion bool
 	err              error
 
-	calls []recallCall
+	calls []RecallRequest
 }
 
 func (g *rankedGraph) Node(_ context.Context, id int64) (Anchor, bool, error) {
@@ -190,20 +190,20 @@ func (g *rankedGraph) Neighbours(context.Context, int64) ([]int64, error) {
 	return g.neighbours, nil
 }
 
-func (g *rankedGraph) Recall(_ context.Context, queries []string, limit int, scope, exclude []int64, window UpdateWindow) ([]Candidate, error) {
-	g.calls = append(g.calls, recallCall{Queries: queries, Limit: limit, Scope: scope, Exclude: exclude, Window: window})
+func (g *rankedGraph) Recall(_ context.Context, request RecallRequest) ([]Candidate, error) {
+	g.calls = append(g.calls, request)
 	if g.err != nil {
 		return nil, g.err
 	}
 
 	rows := g.global
-	if len(scope) > 0 {
+	if len(request.Scope) > 0 {
 		rows = g.scoped
 	}
 	if !g.ignoresExclusion {
-		rows = withoutExcluded(rows, exclude)
+		rows = withoutExcluded(rows, request.Exclude)
 	}
-	return slices.Clone(rows[:min(limit, len(rows))]), nil
+	return slices.Clone(rows[:min(request.Limit, len(rows))]), nil
 }
 
 func (g *rankedGraph) WriteRun(context.Context, Record) WriteReceipt {
@@ -260,7 +260,7 @@ func TestRetrieveAsksTheGraphOnceGloballyForEveryQueryTogetherAtExactlyTheLimitI
 
 	got := mustRetrieve(t, graph, queries, 6)
 
-	var global []recallCall
+	var global []RecallRequest
 	for _, call := range graph.calls {
 		if len(call.Scope) == 0 {
 			global = append(global, call)

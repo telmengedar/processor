@@ -48,6 +48,8 @@ const logPartialNeighbourhood = "neighbourhood read stopped before the graph's l
 
 var errNoQuery = errors.New("divoid: recall needs at least one query")
 
+var errNoLimit = errors.New("divoid: recall needs a positive limit")
+
 const errorBodyBytes = 4096
 
 // Client is a client for one specific external system, not a generic
@@ -166,10 +168,14 @@ func (c *Client) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) 
 	return loop.Anchor{}, false, nil
 }
 
-// Recall returns the graph's top limit candidates for queries in its own rank order, never re-sorted; several queries are one request ranked by their mean similarity. An empty scope ranks the whole graph, excluded ids and every run record are left out before the count, and a zero window sets neither updatedFrom nor updatedTo.
-func (c *Client) Recall(ctx context.Context, queries []string, limit int, scope, exclude []int64, window loop.UpdateWindow) ([]loop.Candidate, error) {
+// Recall returns the graph's top candidates for the request in its own rank order, never re-sorted; several queries are one request ranked by their mean similarity, and a request without a query or a positive limit fails before any request is sent.
+func (c *Client) Recall(ctx context.Context, request loop.RecallRequest) ([]loop.Candidate, error) {
+	queries, window := request.Queries, request.Window
 	if len(queries) == 0 {
 		return nil, errNoQuery
+	}
+	if request.Limit <= 0 {
+		return nil, errNoLimit
 	}
 
 	q := url.Values{}
@@ -178,12 +184,12 @@ func (c *Client) Recall(ctx context.Context, queries []string, limit int, scope,
 	} else {
 		q[queriesParam] = queries
 	}
-	q.Set("count", strconv.Itoa(limit))
+	q.Set("count", strconv.Itoa(request.Limit))
 	q.Set("fields", candidateFields)
-	for _, id := range scope {
+	for _, id := range request.Scope {
 		q.Add("linkedto", strconv.FormatInt(id, 10))
 	}
-	for _, id := range exclude {
+	for _, id := range request.Exclude {
 		q.Add(excludeIDParam, strconv.FormatInt(id, 10))
 	}
 	q.Set(excludeNameParam, RunNamePrefix+"%")

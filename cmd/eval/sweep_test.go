@@ -20,14 +20,6 @@ const requiredNodeBodyHash = "6e353b77ce66521a105fcb7649b7fc9b32716025fa338b48a3
 
 const emptyBodyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
-type recallCall struct {
-	Queries []string
-	Limit   int
-	Scope   []int64
-	Exclude []int64
-	Window  loop.UpdateWindow
-}
-
 type fakeGraph struct {
 	t *testing.T
 
@@ -40,7 +32,7 @@ type fakeGraph struct {
 	nodeErr   error
 	recallErr error
 
-	recallCalls []recallCall
+	recallCalls []loop.RecallRequest
 	nodeCalls   []int64
 }
 
@@ -62,23 +54,23 @@ func (f *fakeGraph) Node(_ context.Context, id int64) (loop.Anchor, bool, error)
 	return anchor, found, nil
 }
 
-func (f *fakeGraph) Recall(_ context.Context, queries []string, limit int, scope, exclude []int64, window loop.UpdateWindow) ([]loop.Candidate, error) {
-	f.recallCalls = append(f.recallCalls, recallCall{Queries: queries, Limit: limit, Scope: scope, Exclude: exclude, Window: window})
+func (f *fakeGraph) Recall(_ context.Context, request loop.RecallRequest) ([]loop.Candidate, error) {
+	f.recallCalls = append(f.recallCalls, request)
 	if f.recallErr != nil {
 		return nil, f.recallErr
 	}
 
 	rows := f.candidates
-	if len(scope) > 0 {
+	if len(request.Scope) > 0 {
 		rows = f.scopedCandidates
 	}
 	kept := make([]loop.Candidate, 0, len(rows))
 	for _, row := range rows {
-		if !row.SelfProduced && !slices.Contains(exclude, row.ID) {
+		if !row.SelfProduced && !slices.Contains(request.Exclude, row.ID) {
 			kept = append(kept, row)
 		}
 	}
-	return kept[:min(limit, len(kept))], nil
+	return kept[:min(request.Limit, len(kept))], nil
 }
 
 func (f *fakeGraph) Neighbours(context.Context, int64) ([]int64, error) { return nil, nil }
