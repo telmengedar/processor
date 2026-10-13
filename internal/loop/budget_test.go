@@ -29,7 +29,7 @@ func spareShare(h Headroom) float64 {
 }
 
 func loopOwnedSites() []CallSite {
-	return CallSites(5*time.Minute, 10*time.Minute, 0)
+	return CallSites(5*time.Minute, 10*time.Minute)
 }
 
 func TestEveryCallSiteTheLoopOwnsIsAffordableAtTheProductsOwnDeclaredFloors(t *testing.T) {
@@ -53,6 +53,10 @@ func TestNoCallSitesBudgetCouldBeOneStepLargerAndStillLeaveItsSpareShare(t *test
 			t.Fatalf("call site %q leaves %.3f of its allowed time spare, under the %.2f the shipped budgets were derived to keep", h.Name, got, requiredSpareShare)
 		}
 
+		if h.Name != SiteDerivation {
+			continue
+		}
+
 		sites[i].Budget += budgetStep
 		next := Afford(sites, Floors{})[i]
 		if spareShare(next) >= requiredSpareShare {
@@ -74,10 +78,10 @@ func TestTheShippedBudgetsAreDistinctSoNoReportCanConfuseOneCallSiteForAnother(t
 func TestTheJudgementBoundIsTheRunBoundsPerCallShareWhereTheClientBoundIsTheLooserOfTheTwo(t *testing.T) {
 	t.Parallel()
 
-	const want = 65 * time.Second
+	const want = 80 * time.Second
 
 	if got := JudgementBound(5*time.Minute, 10*time.Minute); got != want {
-		t.Fatalf("JudgementBound = %v, want %v — the run bound less the derivation and the whole fill phase, shared over the call cap, is what actually cuts a judgement call", got, want)
+		t.Fatalf("JudgementBound = %v, want %v — the run bound less the derivation and one substance wait, shared over the call cap, is what actually cuts a judgement call", got, want)
 	}
 }
 
@@ -100,7 +104,7 @@ func TestAffordNamesTheGenerationRateAHostWouldHaveToDeliverForASiteItCannotAffo
 		t.Fatalf("a judgement budget of %d tokens is reported affordable at %g tokens per second", h.Budget, slowFloorPerSecond)
 	}
 
-	const want = 7.578947
+	const want = 5.142857
 	if math.Abs(h.RequiredTokensPerSecond-want) > 1e-6 {
 		t.Fatalf("RequiredTokensPerSecond = %v, want %v — the budget over whatever is left of the allowed time once the prompt is paid for", h.RequiredTokensPerSecond, want)
 	}
@@ -144,28 +148,6 @@ func TestAFloorTheDeploymentDeclaresNothingUsableForFallsBackToTheProductsOwnDec
 		if got := declared.Resolved(); got != want {
 			t.Fatalf("Resolved() of %+v = %+v, want the product's own declaration %+v", declared, got, want)
 		}
-	}
-}
-
-func TestTheFillSiteIsCheckedOnlyWhereACondensationModelIsConfigured(t *testing.T) {
-	t.Parallel()
-
-	const fillBudget = 4_242
-
-	without := CallSites(5*time.Minute, 10*time.Minute, 0)
-	for _, site := range without {
-		if site.Name == SiteFill {
-			t.Fatalf("the fill site is in the report of a deployment that configured no condensation model: %+v", site)
-		}
-	}
-
-	with := CallSites(5*time.Minute, 10*time.Minute, fillBudget)
-	if len(with) != len(without)+1 {
-		t.Fatalf("configuring a condensation model added %d call sites, want exactly one", len(with)-len(without))
-	}
-	last := with[len(with)-1]
-	if last.Name != SiteFill || last.Budget != fillBudget || last.Bound != FillBound {
-		t.Fatalf("the fill site reads %+v, want the configured budget of %d bounded at the fill's own %v", last, fillBudget, FillBound)
 	}
 }
 

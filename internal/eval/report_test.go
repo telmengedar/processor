@@ -30,10 +30,9 @@ func resultWith(rows ...RowResult) Result {
 		Arm:        ArmRawInput,
 		SweptAt:    time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC),
 		Limits: Limits{
-			CandidateLimit:          loop.CandidateLimit,
-			AssemblyByteBudget:      loop.AssemblyByteBudget,
-			RecallScopeReserve:      loop.RecallScopeReserve,
-			SubstanceRatioThreshold: formRuleTestThreshold,
+			CandidateLimit:     loop.CandidateLimit,
+			AssemblyByteBudget: loop.AssemblyByteBudget,
+			RecallScopeReserve: loop.RecallScopeReserve,
 		},
 		RowCount: len(rows),
 		Rows:     rows,
@@ -572,7 +571,7 @@ func TestTheMachineResultCarriesTheRetainedCandidateSetUnderItsOwnWireKey(t *tes
 func TestTheMachineResultKeepsARowThatSweptNothingDistinctFromARowThatNeverSwept(t *testing.T) {
 	t.Parallel()
 
-	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget, loop.SubstanceRatioThreshold)
+	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget)
 	swept := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 	neverSwept := RowResult{Row: "r99", Stratum: StratumLabelled, Subject: 999, Error: "subject not found"}
 
@@ -692,5 +691,5 @@ func TestTheSummaryCarriesTheCandidateLimitAndTheScopeReserveBesideTheOtherLimit
 
 	_, human := render(t, resultWith(intactControlRow()))
 
-	mustContainLine(t, human, fmt.Sprintf("limits candidateLimit=%d assemblyByteBudget=60000 recallScopeReserve=%d substanceRatioThreshold=0.592", loop.CandidateLimit, loop.RecallScopeReserve))
+	mustContainLine(t, human, fmt.Sprintf("limits candidateLimit=%d assemblyByteBudget=60000 recallScopeReserve=%d", loop.CandidateLimit, loop.RecallScopeReserve))
 }

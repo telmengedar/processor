@@ -35,9 +35,9 @@ func answeringWith(answer string) func(int) (loop.JudgeResult, error) {
 
 func replyGraph() stubGraph {
 	return stubGraph{
-		anchor:       loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		anchor:       loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		found:        true,
-		candidates:   []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}},
+		candidates:   []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Substance: "candidate body"}},
 		writeReceipt: loop.WriteReceipt{State: loop.Stored, NodeID: 10525},
 	}
 }

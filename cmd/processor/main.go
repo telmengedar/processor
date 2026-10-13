@@ -62,7 +62,7 @@ func run(human io.Writer) int {
 		return 1
 	}
 
-	floors, sites, err := ports.Affordability(modelCfg.Protocol, declaredFloors, server.RunBound, condenseConfigured)
+	floors, sites, err := ports.Affordability(modelCfg.Protocol, declaredFloors, server.RunBound)
 	if err != nil {
 		logger.Error("boot configuration", "error", err)
 		return 1
@@ -74,11 +74,13 @@ func run(human io.Writer) int {
 		return 1
 	}
 
-	if condenseConfigured {
-		if err := ports.StateThinkingSuppression(logger, "fill", condenseCfg.Protocol); err != nil {
-			logger.Error("boot configuration", "error", err)
-			return 1
-		}
+	fillCfg, fillFromJudgement := ports.FillModel(condenseCfg, condenseConfigured, modelCfg)
+	if fillFromJudgement {
+		logger.Info("no PROCESSOR_CONDENSE_MODEL_* configuration was found: the fill runs on the judgement model's configuration")
+	}
+	if err := ports.StateThinkingSuppression(logger, "fill", fillCfg.Protocol); err != nil {
+		logger.Error("boot configuration", "error", err)
+		return 1
 	}
 
 	ln, err := net.Listen("tcp", addr)
@@ -104,18 +106,17 @@ func run(human io.Writer) int {
 	turn := loop.NewTurn(graph, model, files, systemtext.Compose, modelCfg.ID, logger)
 	turn.Floors = floors
 
-	fillPort, err := ports.Fill(condenseCfg, condenseConfigured, ports.FillGraph(graph))
+	fillPort, err := ports.Fill(fillCfg, ports.FillGraph(graph), logger)
 	if err != nil {
 		logger.Error("boot configuration", "error", err)
 		return 1
 	}
 	turn.Fill = fillPort
-	if fillPort == nil {
-		logger.Info("the fill is off: no PROCESSOR_CONDENSE_MODEL_* configuration was found")
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	fillPort.Start(ctx)
 
 	if err := server.Serve(ctx, ln, server.NewHandler(turn), logger); err != nil {
 		logger.Error("serve", "error", err)

@@ -16,7 +16,7 @@ func repeatedRows() []Candidate {
 	rows := make([]Candidate, 0, repeatedRowCount)
 	for i := range repeatedRowCount {
 		id := int64(100 + i)
-		rows = append(rows, Candidate{ID: id, Type: "documentation", Name: fmt.Sprintf("Repeated %d", id), Similarity: 0.9, Content: fmt.Sprintf("body of %d", id)})
+		rows = append(rows, Candidate{ID: id, Type: "documentation", Name: fmt.Sprintf("Repeated %d", id), Similarity: 0.9, Substance: fmt.Sprintf("body of %d", id)})
 	}
 	return rows
 }
@@ -25,7 +25,7 @@ func freshRows(round int) []Candidate {
 	rows := make([]Candidate, 0, repeatedRowCount)
 	for i := range repeatedRowCount {
 		id := int64(1000*round + i)
-		rows = append(rows, Candidate{ID: id, Type: "documentation", Name: fmt.Sprintf("Fresh %d", id), Similarity: 0.9, Content: fmt.Sprintf("body of %d", id)})
+		rows = append(rows, Candidate{ID: id, Type: "documentation", Name: fmt.Sprintf("Fresh %d", id), Similarity: 0.9, Substance: fmt.Sprintf("body of %d", id)})
 	}
 	return rows
 }

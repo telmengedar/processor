@@ -118,7 +118,7 @@ func renderSummaryAssembly(b *strings.Builder, record Record) {
 	}
 
 	fmt.Fprintf(b, "  admitted (%d, %s of %d B remaining):\n",
-		len(admitted), summaryBytes(sumRenderedSizes(admitted)), summaryRemainingAfterAnchor(record.Limits, record.Anchor.Size))
+		len(admitted), summaryBytes(sumRenderedSizes(admitted)), summaryRemainingAfterAnchor(record.Limits, record.Anchor.RenderedSize))
 	for _, d := range admitted {
 		fmt.Fprintf(b, "    #%-6d %.3f %-13s %8s%s  %s\n",
 			d.ID, d.Similarity, summaryTrunc(d.Type, summaryTypeRunes), summaryBytes(d.RenderedSize), summaryForm(d), summaryTrunc(d.Name, summaryNameRunes))
@@ -162,9 +162,18 @@ func renderIDGroup(b *strings.Builder, head string, ids []string, indent string)
 func renderSummaryFills(b *strings.Builder, record Record) {
 	filled, refused := splitFills(record.Fills)
 
-	limits := record.Limits
-	fmt.Fprintf(b, "\nFILLS  %d filled / %d refused  (ceiling %d, floor %s, max %s)\n",
-		len(filled), len(record.Fills)-len(filled), limits.MaxFills, summaryBytes(limits.FillSizeFloor), summaryBytes(limits.MaxFillContentBytes))
+	fmt.Fprintf(b, "\nFILLS  %s\n", fillCounts(record.Fills))
+	for _, phase := range []string{phaseInitial, phaseRecall, phaseRead} {
+		var inPhase []FillOutcome
+		for _, f := range record.Fills {
+			if f.Phase == phase {
+				inPhase = append(inPhase, f)
+			}
+		}
+		if len(inPhase) > 0 {
+			fmt.Fprintf(b, "  %s: %s\n", phase, fillCounts(inPhase))
+		}
+	}
 
 	for _, f := range filled {
 		model := f.Model
@@ -178,6 +187,19 @@ func renderSummaryFills(b *strings.Builder, record Record) {
 		head := fmt.Sprintf("  %s (%d):", summaryTrunc(group.reason, summaryFillRunes), len(group.ids))
 		renderIDGroup(b, head, group.ids, "  ")
 	}
+}
+
+func fillCounts(fills []FillOutcome) string {
+	filled, deferred := 0, 0
+	for _, f := range fills {
+		switch {
+		case f.Filled:
+			filled++
+		case f.Deferred:
+			deferred++
+		}
+	}
+	return fmt.Sprintf("%d filled / %d failed / %d deferred", filled, len(fills)-filled-deferred, deferred)
 }
 
 func splitFills(fills []FillOutcome) (filled []FillOutcome, refused []fillGroup) {
@@ -447,14 +469,14 @@ func sumRenderedSizes(dispositions []Disposition) int {
 }
 
 func summaryForm(d Disposition) string {
-	if d.Form != FormSubstance {
+	if d.Form != FormUnavailable {
 		return ""
 	}
-	return fmt.Sprintf(" %s of %s", FormSubstance, summaryBytes(d.Size))
+	return " " + string(FormUnavailable)
 }
 
-func summaryRemainingAfterAnchor(limits Limits, anchorSize int) int {
-	remaining := limits.AssemblyByteBudget - anchorSize
+func summaryRemainingAfterAnchor(limits Limits, anchorRendered int) int {
+	remaining := limits.AssemblyByteBudget - anchorRendered
 	if remaining < 0 {
 		return 0
 	}

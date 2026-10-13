@@ -29,7 +29,7 @@ const DefaultTimeout = 15 * time.Second
 var _ loop.GraphPort = (*Client)(nil)
 
 const (
-	nodeFields      = "id,type,name,content"
+	nodeFields      = "id,type,name,content,substance"
 	candidateFields = "id,type,name,similarity,content,substance"
 )
 
@@ -156,10 +156,11 @@ func (c *Client) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) 
 			continue
 		}
 		return loop.Anchor{
-			ID:      r.ID,
-			Type:    r.Type,
-			Name:    r.Name,
-			Content: r.Content,
+			ID:        r.ID,
+			Type:      r.Type,
+			Name:      r.Name,
+			Content:   r.Content,
+			Substance: r.Substance,
 		}, true, nil
 	}
 	return loop.Anchor{}, false, nil

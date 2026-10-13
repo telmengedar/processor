@@ -2,103 +2,229 @@ package loop
 
 import (
 	"context"
-	"errors"
+	"sync"
 	"time"
 )
 
-// FillPort is the seam between the loop and substance generation; declared here because internal/loop cannot import internal/condense, and nil refuses every call with a recorded reason.
+// FillPort is the seam between the loop and substance creation; declared here because internal/loop cannot import internal/condense, and nil refuses every call with a recorded reason.
 type FillPort interface {
+	// Fill attempts one creation for id and returns the text a row can render.
 	Fill(ctx context.Context, id int64) (FillResult, error)
+
+	// Defer queues id for creation after the turn; it never blocks and reports nothing.
+	Defer(id int64)
 }
 
-// FillResult is one condensation attempt's outcome.
+// FillResult is one creation attempt's outcome.
 type FillResult struct {
+	// Written is true when this attempt stored a substance.
 	Written bool
-	Model   string
-	Reason  string
+
+	// Substance is the text a row can render: the one this attempt produced, or the one already present.
+	Substance string
+
+	Model  string
+	Reason string
 }
 
-// FillOutcome is one candidate's fill decision for a run: filled, or the reason it was not.
+// FillOutcome is one creation attempt's record: filled, deferred, or the reason it was not.
 type FillOutcome struct {
-	ID     int64  `json:"id"`
-	Filled bool   `json:"filled"`
-	Model  string `json:"model,omitempty"`
-	Reason string `json:"reason,omitempty"`
+	ID       int64         `json:"id"`
+	Phase    string        `json:"phase,omitempty"`
+	Filled   bool          `json:"filled"`
+	Deferred bool          `json:"deferred,omitempty"`
+	Model    string        `json:"model,omitempty"`
+	Reason   string        `json:"reason,omitempty"`
+	Elapsed  time.Duration `json:"elapsed,omitempty"`
 }
 
-const (
-	// FillSizeFloor is the size below which a candidate is not worth a fill attempt.
-	FillSizeFloor = 8_000
-
-	// MaxFills is the transition-only ceiling on fills attempted in one turn; design §7.4.3.1 states what retires it.
-	MaxFills = 2
-
-	// MaxFillContentBytes refuses a fill attempt before it ever calls the model.
-	MaxFillContentBytes = 100_000
-)
-
-// FillBound is one fill attempt's own deadline; MaxFills of them must still leave a judgement call reachable inside the run bound.
-const FillBound = 90 * time.Second
-
-var errFillBound = errors.New("fill bound")
+// FillWait is how long one substance step waits for its creations before it cancels and defers those still running.
+const FillWait = 90 * time.Second
 
 const (
-	fillReasonBelowSizeGate  = "below size floor"
-	fillReasonNoPressure     = "no pressure"
-	fillReasonPortAbsent     = "fill port absent"
-	fillReasonCeilingReached = "per-turn ceiling reached"
-	fillReasonOversized      = "oversized"
-	fillReasonBoundExpired   = "fill bound expired"
+	phaseInitial = "initial"
+	phaseRecall  = "recall"
+	phaseRead    = "read"
 )
 
-func (t *Turn) fill(ctx context.Context, dispositions []Disposition) []FillOutcome {
-	outcomes := make([]FillOutcome, 0, len(dispositions))
-	fired := 0
+const (
+	fillReasonPortAbsent  = "fill port absent"
+	fillReasonWaitExpired = "fill wait expired"
+)
 
-	for _, d := range dispositions {
-		if d.SubstanceAvailable {
+type fillAttempt struct {
+	index   int
+	result  FillResult
+	err     error
+	elapsed time.Duration
+}
+
+type prepaidKey struct{}
+
+type prepaid struct {
+	mu    sync.Mutex
+	phase string
+}
+
+func withPrepaid(ctx context.Context) context.Context {
+	return context.WithValue(ctx, prepaidKey{}, &prepaid{})
+}
+
+func prepaidFrom(ctx context.Context) *prepaid {
+	grant, _ := ctx.Value(prepaidKey{}).(*prepaid)
+	return grant
+}
+
+func (p *prepaid) set(phase string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.phase = phase
+	p.mu.Unlock()
+}
+
+func (p *prepaid) spend() (string, bool) {
+	if p == nil {
+		return "", false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	phase := p.phase
+	p.phase = ""
+	return phase, phase != ""
+}
+
+func lacksSubstance(c Candidate) bool {
+	return c.Substance == "" && !c.SelfProduced
+}
+
+func (t *Turn) fillWait(ctx context.Context) time.Duration {
+	wait := FillWait
+	if deadline, ok := ctx.Deadline(); ok {
+		wait = min(wait, deadline.Sub(t.now())-JudgementCost(t.Floors))
+	}
+	return max(wait, 0)
+}
+
+func (t *Turn) createSubstances(ctx context.Context, phase string, ids []int64) (map[int64]string, []FillOutcome) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	outcomes := make([]FillOutcome, len(ids))
+	if t.Fill == nil {
+		for i, id := range ids {
+			outcomes[i] = FillOutcome{ID: id, Phase: phase, Reason: fillReasonPortAbsent}
+		}
+		return nil, outcomes
+	}
+
+	wait := t.fillWait(ctx)
+	finished := make([]bool, len(ids))
+	created := make(map[int64]string, len(ids))
+
+	if wait > 0 {
+		t.awaitFills(ctx, phase, ids, wait, outcomes, finished, created)
+	}
+
+	if wait > 0 && ctx.Err() == nil {
+		prepaidFrom(ctx).set(phase)
+	}
+
+	reason := fillReasonWaitExpired
+	if ctx.Err() != nil {
+		reason = BoundCause(context.Cause(ctx).Error())
+	}
+	for i, id := range ids {
+		if finished[i] {
 			continue
 		}
-
-		switch {
-		case d.Size < FillSizeFloor:
-			outcomes = append(outcomes, FillOutcome{ID: d.ID, Reason: fillReasonBelowSizeGate})
-		case !cutForWantOfRoom(d.CutReason):
-			outcomes = append(outcomes, FillOutcome{ID: d.ID, Reason: fillReasonNoPressure})
-		case t.Fill == nil:
-			outcomes = append(outcomes, FillOutcome{ID: d.ID, Reason: fillReasonPortAbsent})
-		case fired >= MaxFills:
-			outcomes = append(outcomes, FillOutcome{ID: d.ID, Reason: fillReasonCeilingReached})
-		case d.Size > MaxFillContentBytes:
-			outcomes = append(outcomes, FillOutcome{ID: d.ID, Reason: fillReasonOversized})
-		default:
-			fired++
-			outcomes = append(outcomes, t.attemptFill(ctx, d.ID, FillBound))
-		}
+		t.log().Warn("fill still running at the wait: cancelled and deferred", "id", id, "phase", phase, "wait", wait)
+		outcomes[i] = FillOutcome{ID: id, Phase: phase, Deferred: true, Reason: reason}
 	}
 
-	return outcomes
+	return created, outcomes
 }
 
-func (t *Turn) attemptFill(ctx context.Context, id int64, bound time.Duration) FillOutcome {
-	bounded, cancel := context.WithTimeoutCause(ctx, bound, errFillBound)
+func (t *Turn) awaitFills(ctx context.Context, phase string, ids []int64, wait time.Duration, outcomes []FillOutcome, finished []bool, created map[int64]string) {
+	stepCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	started := time.Now()
-	result, err := t.Fill.Fill(bounded, id)
-	elapsed := time.Since(started).Round(time.Millisecond)
+	done := make(chan fillAttempt, len(ids))
+	for i, id := range ids {
+		go func() {
+			started := time.Now()
+			result, err := t.Fill.Fill(stepCtx, id)
+			done <- fillAttempt{index: i, result: result, err: err, elapsed: time.Since(started).Round(time.Millisecond)}
+		}()
+	}
 
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+
+	for pending := len(ids); pending > 0; pending-- {
+		select {
+		case attempt := <-done:
+			finished[attempt.index] = true
+			outcomes[attempt.index] = t.fillOutcome(ids[attempt.index], phase, attempt)
+			if text := attempt.result.Substance; text != "" {
+				created[ids[attempt.index]] = text
+			}
+		case <-timer.C:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (t *Turn) fillOutcome(id int64, phase string, attempt fillAttempt) FillOutcome {
+	result := attempt.result
 	if result.Written {
-		t.log().Info("fill wrote a substance", "id", id, "model", result.Model, "elapsed", elapsed)
-		return FillOutcome{ID: id, Filled: true, Model: result.Model}
+		t.log().Info("fill wrote a substance", "id", id, "phase", phase, "model", result.Model, "elapsed", attempt.elapsed)
+		return FillOutcome{ID: id, Phase: phase, Filled: true, Model: result.Model, Elapsed: attempt.elapsed}
 	}
-	if errors.Is(context.Cause(bounded), errFillBound) {
-		t.log().Warn("fill exceeded its own bound", "id", id, "bound", bound, "elapsed", elapsed)
-		return FillOutcome{ID: id, Reason: fillReasonBoundExpired}
+	if attempt.err != nil {
+		t.log().Error("fill failed", "id", id, "phase", phase, "elapsed", attempt.elapsed, "error", attempt.err)
+		return FillOutcome{ID: id, Phase: phase, Reason: BoundCause(attempt.err.Error()), Elapsed: attempt.elapsed}
 	}
-	if err != nil {
-		t.log().Error("fill failed", "id", id, "elapsed", elapsed, "error", err)
-		return FillOutcome{ID: id, Reason: BoundCause(err.Error())}
+	return FillOutcome{ID: id, Phase: phase, Reason: BoundCause(result.Reason), Elapsed: attempt.elapsed}
+}
+
+func (t *Turn) deferFills(fills []FillOutcome) {
+	if t.Fill == nil {
+		return
 	}
-	return FillOutcome{ID: id, Reason: BoundCause(result.Reason)}
+	for _, f := range fills {
+		if f.Deferred {
+			t.Fill.Defer(f.ID)
+		}
+	}
+}
+
+func missingSubstances(candidates []Candidate, skip func(Candidate) bool) []int64 {
+	var ids []int64
+	for _, c := range candidates {
+		if lacksSubstance(c) && (skip == nil || !skip(c)) {
+			ids = append(ids, c.ID)
+		}
+	}
+	return ids
+}
+
+func withCreated(candidates []Candidate, created map[int64]string) []Candidate {
+	if len(created) == 0 {
+		return candidates
+	}
+	filled := make([]Candidate, len(candidates))
+	for i, c := range candidates {
+		filled[i] = c
+		if text, ok := created[c.ID]; ok && c.Substance == "" {
+			filled[i].Substance = text
+			filled[i].Created = true
+		}
+	}
+	return filled
 }

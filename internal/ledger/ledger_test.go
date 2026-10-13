@@ -59,7 +59,7 @@ func TestAcceptedInsufficiencyFiresExactlyWhenTheBlockCarriedTheThinHint(t *test
 			candidates[i] = loop.Candidate{ID: int64(10 + i), Similarity: similarity, Content: "body"}
 		}
 
-		block, dispositions := loop.Assemble(anchor, candidates, 60_000, loop.SubstanceRatioThreshold)
+		block, dispositions := loop.Assemble(anchor, candidates, 60_000)
 		hinted := strings.Contains(block, "still thin on the topic") || strings.Contains(block, "you know nothing about this topic")
 
 		got := ComputeRequery(loop.Record{Candidates: dispositions})

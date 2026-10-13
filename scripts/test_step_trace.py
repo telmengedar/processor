@@ -286,7 +286,7 @@ class LoopRefusalTests(unittest.TestCase):
 
     def test_the_too_large_refusal_is_recognised_at_any_byte_count(self):
         for size in (1, 20_001, 987_654):
-            sentence = f"that part is {size} bytes and one read carries at most 20000, so it cannot be shown in full"
+            sentence = f"that part's substance is {size} bytes and one read carries at most 20000, so it cannot be shown"
             self.assertEqual(step_trace.loop_refusal({"error": sentence}), sentence)
 
     def test_an_adapter_tool_error_is_not_a_loop_refusal(self):
@@ -357,7 +357,7 @@ class UnrecognisedToolRoundTests(unittest.TestCase):
         out = render(rec)
         self.assertIn("THIS SCRIPT CANNOT NARRATE THIS ROUND", out)
         self.assertIn("the cause is not one this file knows", out)
-        self.assertIn("wants to read part #71 in full", out)
+        self.assertIn("wants to read part #71", out)
         self.assertNotIn("STEP 5  tool call", out)
 
 
@@ -433,7 +433,7 @@ class ReservedCallRoundTests(unittest.TestCase):
         out = render(rec)
         self.assertIn("the LOOP refused the round in its own words", out)
         self.assertIn(step_trace.REFUSAL_RESERVED_CALL, out)
-        self.assertIn("wants to read part #105 in full", out)
+        self.assertIn("wants to read part #105", out)
         self.assertNotIn("malformed", out)
         self.assertNotIn("NEVER reached the graph", out)
 
@@ -482,7 +482,7 @@ class ReadRoundRenderingTests(unittest.TestCase):
         )
         out = render(rec)
         self.assertIn("read_node(id=71)", out)
-        self.assertIn("wants to read part #71 in full", out)
+        self.assertIn("wants to read part #71", out)
         self.assertNotIn("wants recall", out.split("STEP 4")[1])
         self.assertNotIn("scope=nil", out)
         self.assertNotIn("query=None", out)
@@ -506,7 +506,7 @@ class ReadRoundRenderingTests(unittest.TestCase):
             step_trace.REFUSAL_NO_SUCH_NODE,
             step_trace.REFUSAL_READ_OF_SUBJECT,
             step_trace.REFUSAL_ALREADY_READ_IN_FULL,
-            "that part is 20001 bytes and one read carries at most 20000, so it cannot be shown in full",
+            "that part's substance is 20001 bytes and one read carries at most 20000, so it cannot be shown",
         ):
             rec = record(
                 model_calls=2,

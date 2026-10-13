@@ -49,7 +49,7 @@ func newFakeGraph(t *testing.T) *fakeGraph {
 
 	return &fakeGraph{
 		t:     t,
-		nodes: map[int64]loop.Anchor{100: {ID: 100, Type: "documentation", Name: "Subject", Content: "the subject body"}},
+		nodes: map[int64]loop.Anchor{100: {ID: 100, Type: "documentation", Name: "Subject", Content: "the subject body", Substance: "the subject body"}},
 	}
 }
 
@@ -113,7 +113,7 @@ func sweptAt() time.Time {
 func mustSweep(t *testing.T, graph loop.GraphPort, corpus eval.Corpus) eval.Result {
 	t.Helper()
 
-	result, err := sweep(context.Background(), graph, corpus, eval.Derivations{}, sweptAt(), loop.SubstanceRatioThreshold)
+	result, err := sweep(context.Background(), graph, corpus, eval.Derivations{}, sweptAt())
 	if err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
@@ -136,9 +136,9 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 	graph := newFakeGraph(t)
 	graph.writeAllowed = true
 	graph.candidates = []loop.Candidate{
-		{ID: 200, Type: "documentation", Name: "Alpha", Similarity: 0.81, Content: strings.Repeat("a", loop.AssemblyByteBudget/2)},
-		{ID: 201, Type: "documentation", Name: "Bravo", Similarity: 0.79, Content: strings.Repeat("b", loop.AssemblyByteBudget/2)},
-		{ID: 202, Type: "documentation", Name: "Charlie", Similarity: 0.77, Content: strings.Repeat("c", loop.AssemblyByteBudget/2)},
+		{ID: 200, Type: "documentation", Name: "Alpha", Similarity: 0.81, Content: strings.Repeat("a", loop.AssemblyByteBudget/2), Substance: strings.Repeat("a", loop.AssemblyByteBudget/2)},
+		{ID: 201, Type: "documentation", Name: "Bravo", Similarity: 0.79, Content: strings.Repeat("b", loop.AssemblyByteBudget/2), Substance: strings.Repeat("b", loop.AssemblyByteBudget/2)},
+		{ID: 202, Type: "documentation", Name: "Charlie", Similarity: 0.77, Content: strings.Repeat("c", loop.AssemblyByteBudget/2), Substance: strings.Repeat("c", loop.AssemblyByteBudget/2)},
 	}
 
 	row := labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})
@@ -149,7 +149,7 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 		t.Fatalf("Turn.Run: %v", err)
 	}
 
-	queries, dispositions, found, err := rowDispositions(context.Background(), graph, row, eval.Derivations{}, loop.SubstanceRatioThreshold)
+	queries, dispositions, found, err := rowDispositions(context.Background(), graph, row, eval.Derivations{})
 	if err != nil {
 		t.Fatalf("rowDispositions: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestSweepRecallsWithTheRawInputVerbatimAtTheCountRetrievalIssuesRatherThanO
 	t.Parallel()
 
 	graph := newFakeGraph(t)
-	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody, Substance: requiredNodeBody}}
 
 	row := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"})
 	mustSweep(t, graph, corpusOf(row))
@@ -198,7 +198,7 @@ func TestEvalSweepRunsWithNoWindow(t *testing.T) {
 	t.Parallel()
 
 	graph := newFakeGraph(t)
-	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody, Substance: requiredNodeBody}}
 
 	row := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"})
 	mustSweep(t, graph, corpusOf(row))
@@ -230,14 +230,14 @@ func TestSweepIssuesOneGlobalRecallAndOneScopedRecallPerRowEachCarryingTheRawInp
 	t.Parallel()
 
 	graph := newFakeGraph(t)
-	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody, Substance: requiredNodeBody}}
 
 	row := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"})
 	derivations := eval.Derivations{Path: "pinned.json", Hash: "a-derivation-hash", Queries: map[string][]string{
 		"r01": {"why would a mutation leave the suite green", "what does a non-zero exit code mean"},
 	}}
 
-	if _, err := sweep(context.Background(), graph, corpusOf(row), derivations, sweptAt(), loop.SubstanceRatioThreshold); err != nil {
+	if _, err := sweep(context.Background(), graph, corpusOf(row), derivations, sweptAt()); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
 
@@ -257,7 +257,7 @@ func TestSweepFlagsAStaleRequiredNodeAndStillScoresItsRow(t *testing.T) {
 	t.Parallel()
 
 	graph := newFakeGraph(t)
-	graph.candidates = []loop.Candidate{{ID: 200, Similarity: 0.9, Content: requiredNodeBody}}
+	graph.candidates = []loop.Candidate{{ID: 200, Similarity: 0.9, Content: requiredNodeBody, Substance: requiredNodeBody}}
 
 	row := labelledRow("r01", eval.Required{Node: 200, Hash: "the-hash-it-carried-when-it-was-labelled", Why: "w"})
 	result := mustSweep(t, graph, corpusOf(row))
@@ -279,7 +279,7 @@ func TestSweepDoesNotFlagARequiredNodeWhoseLiveHashStillMatchesItsLabel(t *testi
 	t.Parallel()
 
 	graph := newFakeGraph(t)
-	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody, Substance: requiredNodeBody}}
 
 	row := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"})
 	result := mustSweep(t, graph, corpusOf(row))
@@ -293,7 +293,7 @@ func TestSweepExcludesFromBothRatesARowWhoseRequiredNodeNoLongerResolves(t *test
 	t.Parallel()
 
 	graph := newFakeGraph(t)
-	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody, Substance: requiredNodeBody}}
 
 	scored := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"})
 	gone := labelledRow("r02", eval.Required{Node: 999, Hash: "h", Why: "w"})
@@ -319,8 +319,8 @@ func TestSweepReportsAMissForARequiredNodeTheQueryCannotSurface(t *testing.T) {
 	t.Parallel()
 
 	graph := newFakeGraph(t)
-	graph.nodes[300] = loop.Anchor{ID: 300, Type: "documentation", Name: "Unreachable", Content: "a body recall never returns"}
-	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+	graph.nodes[300] = loop.Anchor{ID: 300, Type: "documentation", Name: "Unreachable", Content: "a body recall never returns", Substance: "a body recall never returns"}
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody, Substance: requiredNodeBody}}
 
 	row := labelledRow("r01", eval.Required{Node: 300, Hash: "h", Why: "an answer without it is wrong"})
 	result := mustSweep(t, graph, corpusOf(row))
@@ -340,7 +340,7 @@ func TestSweepReportsARowWhoseSubjectDoesNotResolveWithoutScoringIt(t *testing.T
 	t.Parallel()
 
 	graph := newFakeGraph(t)
-	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody, Substance: requiredNodeBody}}
 
 	row := eval.Row{ID: "r09", Input: "an input", Subject: 777, Stratum: eval.StratumLabelled,
 		Required: []eval.Required{{Node: 200, Hash: requiredNodeBodyHash, Why: "w"}}}
@@ -365,7 +365,7 @@ func TestSweepAbortsRatherThanReportingAnEmptyMeasurementWhenTheGraphReadFails(t
 	graph := newFakeGraph(t)
 	graph.nodeErr = errors.New("graph unavailable")
 
-	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt(), loop.SubstanceRatioThreshold)
+	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt())
 	if err == nil {
 		t.Fatal("sweep returned a nil error while the graph was unreachable, want an error rather than a plausible zero score")
 	}
@@ -380,7 +380,7 @@ func TestSweepAbortsWhenRecallItselfFails(t *testing.T) {
 	graph := newFakeGraph(t)
 	graph.recallErr = errors.New("graph unavailable")
 
-	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt(), loop.SubstanceRatioThreshold)
+	_, err := sweep(context.Background(), graph, corpusOf(labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})), eval.Derivations{}, sweptAt())
 	if err == nil {
 		t.Fatal("sweep returned a nil error while recall was failing, want an error")
 	}
@@ -390,7 +390,7 @@ func TestSweepReadsTheGraphAndNeverWritesToIt(t *testing.T) {
 	t.Parallel()
 
 	graph := newFakeGraph(t)
-	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody, Substance: requiredNodeBody}}
 
 	rows := []eval.Row{
 		labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"}),
@@ -411,7 +411,7 @@ func TestSweepCarriesTheCorpusHashAndRowCountIntoItsResult(t *testing.T) {
 	t.Parallel()
 
 	graph := newFakeGraph(t)
-	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody}}
+	graph.candidates = []loop.Candidate{{ID: 200, Content: requiredNodeBody, Substance: requiredNodeBody}}
 
 	rows := []eval.Row{
 		labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "w"}),
@@ -577,43 +577,5 @@ func TestTheSweepHoldsTwoOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *te
 
 	if want := []int64{2001, 2002}; !slices.Equal(neighbourhood, want) {
 		t.Fatalf("the sweep scored neighbourhood candidates %v of the five on offer, want %v: the instrument and the product share one retrieval, so a reserve the sweep does not honour is a rate measured on a pipeline the product does not run", neighbourhood, want)
-	}
-}
-
-func TestSweepAssemblesAtTheDialItWasGivenRatherThanTheOneTheLoopShips(t *testing.T) {
-	t.Parallel()
-
-	const threshold loop.SubstanceRatio = 0.592
-	const substance = "condensed!"
-
-	if threshold == loop.SubstanceRatioThreshold {
-		t.Fatalf("test setup error: the dial swept (%v) is the one the loop ships, so this test cannot tell a sweep that honours its flag from one that ignores it", threshold)
-	}
-	if ratio := loop.SubstanceRatio(float64(len(substance)) / float64(len(requiredNodeBody))); ratio >= threshold {
-		t.Fatalf("test setup error: the fixture's ratio is %v against a dial of %v; it must fall below it or the form rule selects the content at either dial and the comparison separates nothing", ratio, threshold)
-	}
-
-	graph := newFakeGraph(t)
-	graph.candidates = []loop.Candidate{
-		{ID: 200, Type: "documentation", Name: "Alpha", Similarity: 0.81, Content: requiredNodeBody, Substance: substance},
-	}
-	row := labelledRow("r01", eval.Required{Node: 200, Hash: requiredNodeBodyHash, Why: "an answer that omits it is wrong"})
-
-	result, err := sweep(context.Background(), graph, corpusOf(row), eval.Derivations{}, sweptAt(), threshold)
-	if err != nil {
-		t.Fatalf("sweep: %v", err)
-	}
-
-	if result.Limits.SubstanceRatioThreshold != threshold {
-		t.Fatalf("the result states a dial of %v, want %v: a reading that misnames its own arm cannot be compared against the one taken beside it", result.Limits.SubstanceRatioThreshold, threshold)
-	}
-
-	candidates := result.Rows[0].Candidates
-	if len(candidates) != 1 {
-		t.Fatalf("the row carries %d candidate dispositions, want 1", len(candidates))
-	}
-	if candidates[0].Form != loop.FormSubstance || candidates[0].RenderedSize != len(substance) {
-		t.Fatalf("the sweep assembled Form %q at RenderedSize %d, want %q at %d: a sweep that drops the dial on its way to the assembler reads the same curve at every arm, and that curve is what selects the dial",
-			candidates[0].Form, candidates[0].RenderedSize, loop.FormSubstance, len(substance))
 	}
 }

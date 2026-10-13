@@ -3,7 +3,6 @@ package loop
 import (
 	"context"
 	"errors"
-	"go/ast"
 	"strings"
 	"testing"
 )
@@ -12,7 +11,7 @@ const readSubject = 42
 
 func graphHoldingNodes(nodes ...Anchor) *fakeGraph {
 	held := map[int64]nodeResponse{
-		readSubject: {Anchor: Anchor{ID: readSubject, Type: "documentation", Name: "Subject", Content: "anchor body"}, Found: true},
+		readSubject: {Anchor: Anchor{ID: readSubject, Type: "documentation", Name: "Subject", Substance: "anchor body"}, Found: true},
 	}
 	for _, node := range nodes {
 		held[node.ID] = nodeResponse{Anchor: node, Found: true}
@@ -21,7 +20,7 @@ func graphHoldingNodes(nodes ...Anchor) *fakeGraph {
 }
 
 func readableNode(id int64, content string) Anchor {
-	return Anchor{ID: id, Type: "documentation", Name: "Read me", Content: content}
+	return Anchor{ID: id, Type: "documentation", Name: "Read me", Content: content, Substance: content}
 }
 
 func wantsRead(id int64) JudgeResult {
@@ -72,34 +71,6 @@ func refusedRound(t *testing.T, record Record, want string) ToolCallRecord {
 	return round
 }
 
-func TestAnAddressedReadsRowRendersItsContentAtEveryThresholdTheFormRuleCanTake(t *testing.T) {
-	t.Parallel()
-
-	content := strings.Repeat("x", 1000)
-	candidate := candidateFromAnchor(readableNode(71, content))
-
-	if candidate.Substance != "" {
-		t.Fatalf("a candidate built from an addressed read carries %d bytes of substance, want none: a read that can return a condensed form is the whole defect this tool exists to close", len(candidate.Substance))
-	}
-
-	for _, threshold := range []SubstanceRatio{0, SubstanceRatioFloor / 2, SubstanceRatioFloor, SubstanceRatioFloor * 2, 0.5, 1, 2} {
-		admitted, dispositions := admit([]Candidate{candidate}, SupplementaryByteBudget, 0, BlockOccupancy, threshold)
-
-		if len(admitted) != 1 || len(dispositions) != 1 {
-			t.Fatalf("at threshold %v the read admitted %d rows and recorded %d, want one of each", threshold, len(admitted), len(dispositions))
-		}
-		if dispositions[0].Form != FormContent {
-			t.Fatalf("at threshold %v the read's row has Form %q, want %q at every value either bound can take", threshold, dispositions[0].Form, FormContent)
-		}
-		if dispositions[0].RenderedSize != 1000 {
-			t.Fatalf("at threshold %v the read's row has RenderedSize %d, want 1000", threshold, dispositions[0].RenderedSize)
-		}
-		if got := newWorkingMemory(Anchor{ID: 1}, false, threshold, admitted, dispositions).render(false); !strings.Contains(got, content) {
-			t.Fatalf("at threshold %v the memory renders %d bytes that do not carry the node's content", threshold, len(got))
-		}
-	}
-}
-
 func TestTurnRunRefusesAnAddressedReadOfAnIdTheGraphDoesNotHold(t *testing.T) {
 	t.Parallel()
 
@@ -128,7 +99,7 @@ func TestTurnRunRefusesASecondAddressedReadOfANodeAlreadyShownInFull(t *testing.
 
 	shown := readableNode(71, "the body the block already carries")
 	graph := graphHoldingNodes(shown)
-	graph.candidates = []Candidate{{ID: shown.ID, Type: shown.Type, Name: shown.Name, Similarity: 0.9, Content: shown.Content}}
+	graph.candidates = []Candidate{{ID: shown.ID, Type: shown.Type, Name: shown.Name, Similarity: 0.9, Content: shown.Content, Substance: shown.Substance}}
 
 	record := runWithResults(t, graph, wantsRead(shown.ID), answeredFinal())
 
@@ -148,7 +119,7 @@ func TestTurnRunRefusesASecondAddressedReadOfANodeAlreadyShownInFull(t *testing.
 func TestTurnRunRefusesAnAddressedReadLargerThanOneSupplementaryRoundAndNamesBothByteCountsInThatOrder(t *testing.T) {
 	t.Parallel()
 
-	const wantRefusal = "that part is 20001 bytes and one read carries at most 20000, so it cannot be shown in full"
+	const wantRefusal = "that part's substance is 20001 bytes and one read carries at most 20000, so it cannot be shown"
 
 	if SupplementaryByteBudget != 20_000 {
 		t.Fatalf("test setup error: one round carries %d bytes, and the sentence this guard expects spells the pair as literals on purpose, because an expectation built from the same constant the sentence is built from reads the same whichever order the two numbers are formatted in", SupplementaryByteBudget)
@@ -174,32 +145,6 @@ func TestTurnRunRefusesAnAddressedReadTheGraphCouldNotServeRatherThanFailingTheR
 	}
 	if record.Answer != "final" {
 		t.Fatalf("record.Answer = %q, want the answer the turn went on to produce: a graph that cannot serve one read degrades to a refusal, never to a failed run", record.Answer)
-	}
-}
-
-func TestTurnRunRecordsAnAddressedReadsRowAsContentFormCarryingNoSubstance(t *testing.T) {
-	t.Parallel()
-
-	served := readableNode(71, strings.Repeat("x", 1200))
-	record := runWithResults(t, graphHoldingNodes(served), wantsRead(served.ID), answeredFinal())
-
-	round := onlyRound(t, record)
-	if len(round.Results) != 1 {
-		t.Fatalf("the served round records %d rows, want one; error %q", len(round.Results), round.Error)
-	}
-
-	row := round.Results[0]
-	if !row.Included {
-		t.Fatalf("the read's row was cut for %q, want it admitted", row.CutReason)
-	}
-	if row.Form != FormContent {
-		t.Fatalf("the read's row has Form %q, want %q", row.Form, FormContent)
-	}
-	if row.SubstanceAvailable || row.SubstanceSize != 0 {
-		t.Fatalf("the read's row reports a substance of %d bytes available %v, want neither: an addressed read fetches a body the graph never condensed", row.SubstanceSize, row.SubstanceAvailable)
-	}
-	if row.Size != 1200 || row.RenderedSize != 1200 {
-		t.Fatalf("the read's row records Size %d at RenderedSize %d, want 1200 for both", row.Size, row.RenderedSize)
 	}
 }
 
@@ -264,19 +209,19 @@ func TestAServedAddressedReadPutsItsRowInFrontOfTheModelForTheFirstTimeInTheTurn
 	t.Parallel()
 
 	content := "the whole body"
-	condensed := Disposition{ID: 71, ContentHash: contentHash(content), Form: FormSubstance, Included: true}
-	inFull := Disposition{ID: 71, ContentHash: contentHash(content), Form: FormContent, Included: true}
+	unavailable := Disposition{ID: 71, ContentHash: contentHash(content), Form: FormUnavailable, Included: true}
+	created := Disposition{ID: 71, ContentHash: contentHash(content), Form: FormSubstance, Included: true}
 
-	account := newYieldAccount([]Disposition{condensed})
+	account := newYieldAccount([]Disposition{unavailable})
 
-	if account.alreadyShown(inFull) {
-		t.Fatal("a row the block showed only as a condensed form counts as already shown in full, so the one round that genuinely adds bytes would be refused")
+	if account.alreadyShown(created) {
+		t.Fatal("a row the block showed only as unavailable counts as already shown with its substance, so the one round that genuinely adds bytes would be refused")
 	}
-	if yield := account.round([]Disposition{inFull}); yield != 1 {
-		t.Fatalf("reading in full a row the block showed condensed yielded %d, want 1: the account keys on the form as well as the body, or the round that adds the missing bytes scores as barren", yield)
+	if yield := account.round([]Disposition{created}); yield != 1 {
+		t.Fatalf("reading a row the block showed unavailable yielded %d, want 1: the account keys on the form as well as the body, or the round that adds the missing bytes scores as barren", yield)
 	}
-	if !account.alreadyShown(inFull) {
-		t.Fatal("a row just shown in full is not recorded as shown in full, so a second read of it would be served rather than refused")
+	if !account.alreadyShown(created) {
+		t.Fatal("a row just shown with its substance is not recorded as shown, so a second read of it would be served rather than refused")
 	}
 }
 
@@ -317,7 +262,7 @@ func TestAnAddressedReadOfARecordThisSystemWroteIsServedBecauseItsIdWasNamedRath
 
 	own := readableNode(71, "a record this system wrote")
 	graph := graphHoldingNodes(own)
-	graph.candidates = []Candidate{{ID: own.ID, Type: own.Type, Name: own.Name, Similarity: 0.9, Content: own.Content, SelfProduced: true}}
+	graph.candidates = []Candidate{{ID: own.ID, Type: own.Type, Name: own.Name, Similarity: 0.9, Content: own.Content, Substance: own.Substance, SelfProduced: true}}
 
 	record := runWithResults(t, graph, wantsRead(own.ID), answeredFinal())
 
@@ -443,7 +388,7 @@ func TestTurnRunRefusesAReadOfAPartAlreadyShownInFullEvenWhereItIsAlsoTooLargeFo
 
 	big := readableNode(71, strings.Repeat("x", bothApply))
 	graph := graphHoldingNodes(big)
-	graph.candidates = []Candidate{{ID: big.ID, Type: big.Type, Name: big.Name, Similarity: 0.9, Content: big.Content}}
+	graph.candidates = []Candidate{{ID: big.ID, Type: big.Type, Name: big.Name, Similarity: 0.9, Content: big.Content, Substance: big.Substance}}
 
 	record := runWithResults(t, graph, wantsRead(big.ID), answeredFinal())
 
@@ -488,37 +433,6 @@ func TestOnlyTheRetrievalToolsAreAccountedSoAFileWriteCannotCloseRecall(t *testi
 	}
 }
 
-func readsTheMemorysDial(fn *ast.FuncDecl) bool {
-	reads := false
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		if selector, ok := n.(*ast.SelectorExpr); ok && selector.Sel.Name == "threshold" {
-			reads = true
-		}
-		return true
-	})
-	return reads
-}
-
-func TestEveryDispatchThatAdmitsRowsChargesAtTheDialTheMemoryRendersAt(t *testing.T) {
-	t.Parallel()
-
-	if SubstanceRatioThreshold != 0 {
-		t.Fatalf("the shipped dial is %v rather than zero, so this obligation is now observable by value and belongs in a test that reads the rendered bytes rather than the source", SubstanceRatioThreshold)
-	}
-
-	functions := parseTheLoopSources(t)
-
-	for _, name := range []string{"dispatchRecall", "dispatchRead"} {
-		fn, ok := functions[name]
-		if !ok {
-			t.Fatalf("%s is not in the loop package at all, so this guard would pass vacuously", name)
-		}
-		if !readsTheMemorysDial(fn) {
-			t.Errorf("%s admits rows without taking the dial from the memory that will render them. At the shipped dial the value is zero, so no assertion over the rendered bytes can tell a shared dial from two copies of it, and the day the dial moves is the day a row renders at one dial having been charged at another", name)
-		}
-	}
-}
-
 func TestAFileWriteWantedOnTheReservedCallIsStillNamedAsTheFileWrite(t *testing.T) {
 	t.Parallel()
 
@@ -551,45 +465,13 @@ func TestAFileWriteWantedOnTheReservedCallIsStillNamedAsTheFileWrite(t *testing.
 	}
 }
 
-func TestAServedAddressedReadReachesTheNextCallsBlockWholeWithItsIdTypeAndNameAndNoFormMarking(t *testing.T) {
-	t.Parallel()
-
-	body := "the part's whole body, which is what a read is for"
-	served := readableNode(71, body)
-	graph := graphHoldingNodes(served)
-	model := &fakeModel{results: []JudgeResult{wantsRead(served.ID), answeredFinal()}}
-	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
-
-	record, _, err := turn.Run(context.Background(), "hello", readSubject)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if round := onlyRound(t, record); round.Error != "" || len(round.Results) != 1 {
-		t.Fatalf("test setup error: the round carries error %q over %d rows, want one served row", round.Error, len(round.Results))
-	}
-	if len(model.calls) < 2 {
-		t.Fatalf("test setup error: the model was called %d times, want 2", len(model.calls))
-	}
-
-	rendered := model.calls[1].Block
-
-	for _, want := range []string{"id: 71", "type: documentation", "name: Read me", body} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("the next call's block does not carry %q. A round the record says admitted a row, rendered as anything but that row, is the charge-versus-render divergence in its purest form: the budget was spent and the model got nothing.\nrendered:\n%s", want, rendered)
-		}
-	}
-	if strings.Contains(rendered, formHeaderKey+":") {
-		t.Fatalf("the read's section carries a %q line; an addressed read returns the part whole, so there is no form to declare.\nrendered:\n%s", formHeaderKey, rendered)
-	}
-}
-
 func TestTheRefusalsAnAddressedReadCanReturnAreTheSentencesTheRecordCarries(t *testing.T) {
 	t.Parallel()
 
 	shown := readableNode(71, "the body the block already carries")
 	withBlockRow := func() *fakeGraph {
 		graph := graphHoldingNodes(shown)
-		graph.candidates = []Candidate{{ID: shown.ID, Type: shown.Type, Name: shown.Name, Similarity: 0.9, Content: shown.Content}}
+		graph.candidates = []Candidate{{ID: shown.ID, Type: shown.Type, Name: shown.Name, Similarity: 0.9, Content: shown.Content, Substance: shown.Substance}}
 		return graph
 	}
 
@@ -600,8 +482,8 @@ func TestTheRefusalsAnAddressedReadCanReturnAreTheSentencesTheRecordCarries(t *t
 		asked int64
 	}{
 		{"an id the graph does not hold", graphHoldingNodes(), "no part of memory has that id", 72},
-		{"the request's own subject", graphHoldingNodes(), "that id is this request's own subject, and the context block already carries it in full", readSubject},
-		{"a part already shown in full", withBlockRow(), "that part has already been shown to you in full in this turn", shown.ID},
+		{"the request's own subject", graphHoldingNodes(), "that id is this request's own subject, and the context block already carries it", readSubject},
+		{"a part already shown in full", withBlockRow(), "that part has already been shown to you in this turn", shown.ID},
 	}
 
 	for _, c := range cases {

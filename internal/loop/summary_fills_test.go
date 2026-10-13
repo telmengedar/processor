@@ -5,14 +5,28 @@ import (
 	"testing"
 )
 
-func TestRenderSummaryStatesTheThreeFillLimitsTheRunWasBoundBy(t *testing.T) {
+func TestRenderSummaryCountsFillsPerPhase(t *testing.T) {
 	t.Parallel()
 
-	summary := RenderSummary(summaryRecord(), summaryInstant())
+	record := summaryRecord()
+	record.Fills = []FillOutcome{
+		{ID: 11, Phase: phaseInitial, Filled: true, Model: "gemma-3-12b-it"},
+		{ID: 12, Phase: phaseInitial, Deferred: true, Reason: fillReasonWaitExpired},
+		{ID: 13, Phase: phaseRecall, Reason: "condensation empty"},
+		{ID: 14, Phase: phaseRead, Filled: true, Model: "gemma-3-12b-it"},
+	}
 
-	const want = "(ceiling 2, floor 8000 B, max 100.0 kB)"
-	if !strings.Contains(summary, want) {
-		t.Fatalf("the summary does not state %q: three of the record's eight limits are in the struct and absent from the account it renders.\nsummary:\n%s", want, summary)
+	summary := RenderSummary(record, summaryInstant())
+
+	for _, want := range []string{
+		"FILLS  2 filled / 1 failed / 1 deferred\n",
+		"  initial: 1 filled / 0 failed / 1 deferred\n",
+		"  recall: 0 filled / 1 failed / 0 deferred\n",
+		"  read: 1 filled / 0 failed / 0 deferred\n",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("the summary does not state %q.\nsummary:\n%s", want, summary)
+		}
 	}
 }
 
@@ -39,21 +53,21 @@ func TestRenderSummarySaysModelNotRecordedRatherThanNamingAnEmptyOne(t *testing.
 	}
 }
 
-func TestRenderSummaryCountsFilledAgainstRefusedByReadingTheOutcomesItWasGiven(t *testing.T) {
+func TestRenderSummaryCountsFilledFailedAndDeferredByReadingTheOutcomesItWasGiven(t *testing.T) {
 	t.Parallel()
 
 	record := summaryRecord()
 	record.Fills = []FillOutcome{
 		{ID: 11, Filled: true, Model: "gemma-3-12b-it"},
-		{ID: 12, Reason: "below size floor"},
-		{ID: 13, Reason: "below size floor"},
-		{ID: 14, Reason: "per-turn ceiling reached"},
+		{ID: 12, Reason: "condensation empty"},
+		{ID: 13, Reason: "condensation empty"},
+		{ID: 14, Deferred: true, Reason: fillReasonWaitExpired},
 	}
 
 	summary := RenderSummary(record, summaryInstant())
 
-	if !strings.Contains(summary, "FILLS  1 filled / 3 refused") {
-		t.Fatalf("the fills line does not count one filled against three refused.\nsummary:\n%s", summary)
+	if !strings.Contains(summary, "FILLS  1 filled / 2 failed / 1 deferred") {
+		t.Fatalf("the fills line does not count one filled against two failed and one deferred.\nsummary:\n%s", summary)
 	}
 }
 
@@ -62,18 +76,18 @@ func TestRenderSummaryGroupsEachRefusedFillUnderTheReasonThatOutcomeRecords(t *t
 
 	record := summaryRecord()
 	record.Fills = []FillOutcome{
-		{ID: 12, Reason: "below size floor"},
-		{ID: 14, Reason: "per-turn ceiling reached"},
-		{ID: 13, Reason: "below size floor"},
+		{ID: 12, Reason: "condensation empty"},
+		{ID: 14, Reason: fillReasonWaitExpired, Deferred: true},
+		{ID: 13, Reason: "condensation empty"},
 	}
 
 	summary := RenderSummary(record, summaryInstant())
 
-	if !strings.Contains(summary, "  below size floor (2): #12 #13\n") {
+	if !strings.Contains(summary, "  condensation empty (2): #12 #13\n") {
 		t.Fatalf("the two rows refused for the same reason are not grouped under it.\nsummary:\n%s", summary)
 	}
-	if !strings.Contains(summary, "  per-turn ceiling reached (1): #14\n") {
-		t.Fatalf("the ceiling refusal is not reported under its own reason.\nsummary:\n%s", summary)
+	if !strings.Contains(summary, "  fill wait expired (1): #14\n") {
+		t.Fatalf("the deferral is not reported under its own reason.\nsummary:\n%s", summary)
 	}
 }
 
@@ -85,7 +99,7 @@ func TestRenderSummaryReportsAFillSectionEvenWhenNoCandidateLackedASubstance(t *
 
 	summary := RenderSummary(record, summaryInstant())
 
-	if !strings.Contains(summary, "FILLS  0 filled / 0 refused") {
+	if !strings.Contains(summary, "FILLS  0 filled / 0 failed / 0 deferred") {
 		t.Fatalf("a run that fired no fill renders no fills line at all, so a reader cannot tell it from a run whose fills were never recorded.\nsummary:\n%s", summary)
 	}
 }
@@ -112,7 +126,7 @@ func TestRenderSummaryWrapsALongRefusedFillGroupsIdsAcrossLinesNoneOverNinetySix
 	record := summaryRecord()
 	record.Fills = nil
 	for i := range record.Limits.CandidateLimit {
-		record.Fills = append(record.Fills, FillOutcome{ID: int64(100000 + i), Reason: "below size floor"})
+		record.Fills = append(record.Fills, FillOutcome{ID: int64(100000 + i), Reason: "condensation empty"})
 	}
 
 	summary := RenderSummary(record, summaryInstant())

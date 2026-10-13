@@ -24,7 +24,7 @@ see) -> assemble a byte-budgeted block -> call the model, looping while it asks 
 by MaxModelCalls=6 -> write a run record. The model has THREE tools: the supplementary "recall";
 "write_file", which writes one file into a working directory the run is given (internal/workspace);
 and "read_node", which fetches ONE part of memory by the id the model names and puts it in front of
-the model in full. There is still no shell, no network and no repo tool, and no notion of a task
+the model as its substance. There is still no shell, no network and no repo tool, and no notion of a task
 spanning more than one HTTP call. So a task like "generate a webpage and a repo" can now get the
 webpage written and cannot get the repo -- and whether the model reaches for a tool at all,
 unprompted, is the thing this trace exists to show. What it also shows is HOW it fails when it does:
@@ -150,9 +150,9 @@ more than one query -- it is simply inert inside a turn, which never does. The t
 half of the mechanism (`RecallScope` = subject + its linked neighbours) is accurate as stated.
 
 BUDGET ARITHMETIC, corrected after review (C2/C3): the anchor is not exempt from the assembly
-budget. `internal/loop/assemble.go`: `remaining := budget - len(anchor.Content)`, floored at zero --
-the anchor's bytes are charged against the budget, in full, before any candidate is even considered.
-What the anchor IS exempt from is being CUT: its full content always reaches the model regardless of
+budget. `internal/loop/assemble.go`: `remaining := budget - len(anchor.Substance)`, floored at zero --
+the anchor's rendered bytes are charged against the budget before any candidate is even considered.
+What the anchor IS exempt from is being CUT: its substance always reaches the model regardless of
 size -- the M1 design puts it as "the anchor is exempt from being cut, not from being charged". This script computes and prints the actual per-run candidate
 budget (`assemblyByteBudget - anchor.size`, floored at zero) and tests admissibility against THAT
 number, not the raw constant -- a candidate that fits the constant but not the anchor-adjusted
@@ -264,8 +264,8 @@ ERR_NO_WORKING_DIRECTORY = "no working directory is configured"
 REFUSAL_RESERVED_CALL = "the turn's last call was reserved for answering, so it offered no tool and dispatched none"
 REFUSAL_RECALL_CLOSED = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
 REFUSAL_NO_SUCH_NODE = "no part of memory has that id"
-REFUSAL_READ_OF_SUBJECT = "that id is this request's own subject, and the context block already carries it in full"
-REFUSAL_ALREADY_READ_IN_FULL = "that part has already been shown to you in full in this turn"
+REFUSAL_READ_OF_SUBJECT = "that id is this request's own subject, and the context block already carries it"
+REFUSAL_ALREADY_READ_IN_FULL = "that part has already been shown to you in this turn"
 REFUSAL_NODE_TOO_LARGE_MIDDLE = " bytes and one read carries at most "
 
 LOOP_REFUSALS = (
@@ -420,7 +420,7 @@ def round_wanted(tool_call):
         node_id = tool_call.get("nodeId")
         if node_id is None:
             return "wants to read a part, and the record carries no id for the round"
-        return f"wants to read part #{node_id} in full"
+        return f"wants to read part #{node_id}"
     if tool == TOOL_WRITE_FILE:
         path = tool_call.get("path")
         if not path:
@@ -544,9 +544,9 @@ def render_candidate_table(dispositions, budget, attributed=False, name_query=Fa
                 f"the byte budget is even consulted (internal/loop/assemble.go)"
             )
         if not d.get("included") and d.get("cutReason") == CUT_BYTE_BUDGET and budget is not None:
-            if d.get("size", 0) > budget:
+            if d.get("renderedSize", d.get("size", 0)) > budget:
                 lines.append(
-                    f"           UNADMITTABLE: {d.get('size')} bytes alone exceeds the "
+                    f"           UNADMITTABLE: {d.get('renderedSize', d.get('size'))} bytes alone exceeds the "
                     f"{budget}-byte budget this round was measured against; no run can ever admit "
                     f"this row regardless of rank"
                 )
@@ -622,7 +622,7 @@ def added_phrase(dispositions):
 
 
 def admitted_bytes(dispositions):
-    return sum(d.get("size", 0) for d in dispositions if d.get("included"))
+    return sum(d.get("renderedSize", d.get("size", 0)) for d in dispositions if d.get("included"))
 
 
 def anchor_charge_phrase(anchor_size, assembly_budget, remaining_budget):
@@ -797,7 +797,7 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
 
     # ---- STEP: anchor ----------------------------------------------------------------------
     anchor = record.get("anchor") or {}
-    anchor_size = anchor.get("size", 0)
+    anchor_size = anchor.get("renderedSize", anchor.get("size", 0))
     limits = record.get("limits") or {}
     assembly_budget = limits.get("assemblyByteBudget")
     remaining_budget = None if assembly_budget is None else max(assembly_budget - anchor_size, 0)
@@ -809,10 +809,10 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
         f"hash {one_line(anchor.get('contentHash'), 16)}"
     )
     out.append(
-        f"{'':<24} note: the anchor is never CUT -- its full content always reaches the model "
-        f"(internal/loop/assemble.go's renderBlock writes it first, unconditionally, regardless of "
-        f"size) -- but it IS CHARGED against the assembly budget before any candidate is considered "
-        f"(remaining := budget - len(anchor.Content), floored at zero). "
+        f"{'':<24} note: the anchor is never CUT -- its substance (or the unavailable line when it has "
+        f"none) always reaches the model (internal/loop/assemble.go's renderBlock writes it first, "
+        f"unconditionally) -- but it IS CHARGED against the assembly budget before any candidate is "
+        f"considered (remaining := budget - len(anchor.Substance), floored at zero). "
         f"{anchor_charge_phrase(anchor_size, assembly_budget, remaining_budget)}. Its raw text is "
         f"not itself in the record -- only this summary and, indirectly, whatever of it survives "
         f"inside the block below."
@@ -894,7 +894,7 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
             reason = c.get("cutReason") or "(no reason given)"
             cut_tally[reason] = cut_tally.get(reason, 0) + 1
     out.append(
-        f"{head('assemble')} input: anchor ({fmt_bytes(anchor_size)}, charged in full) + "
+        f"{head('assemble')} input: anchor ({fmt_bytes(anchor_size)}, charged at its rendered size) + "
         f"{len(candidates)} candidate(s); "
         f"{anchor_charge_phrase(anchor_size, assembly_budget, remaining_budget)}"
     )

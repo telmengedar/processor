@@ -11,7 +11,7 @@ import (
 type probeGraph struct{ recallN int }
 
 func (g *probeGraph) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) {
-	return loop.Anchor{ID: id, Type: "documentation", Name: "S", Content: "anchor"}, true, nil
+	return loop.Anchor{ID: id, Type: "documentation", Name: "S", Substance: "anchor"}, true, nil
 }
 func (g *probeGraph) Recall(ctx context.Context, _ []string, limit int, scope, _ []int64, _ loop.UpdateWindow) ([]loop.Candidate, error) {
 	if len(scope) > 0 {
@@ -19,7 +19,7 @@ func (g *probeGraph) Recall(ctx context.Context, _ []string, limit int, scope, _
 	}
 	g.recallN++
 	if g.recallN == 1 {
-		return []loop.Candidate{{ID: 1, Type: "task", Name: "c", Similarity: 0.9, Content: "body"}}, nil
+		return []loop.Candidate{{ID: 1, Type: "task", Name: "c", Similarity: 0.9, Substance: "body"}}, nil
 	}
 	return nil, errors.New("literal: transport blew up")
 }

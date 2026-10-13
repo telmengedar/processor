@@ -17,11 +17,11 @@ func turnComposing(graph GraphPort, model ModelPort, files FilePort) *Turn {
 }
 
 func weakRowOf(id int64, body string) Candidate {
-	return Candidate{ID: id, Type: "documentation", Name: "Row", Similarity: 0.3, Content: body}
+	return Candidate{ID: id, Type: "documentation", Name: "Row", Similarity: 0.3, Substance: body}
 }
 
 func rowOf(id int64, body string) Candidate {
-	return Candidate{ID: id, Type: "documentation", Name: "Row", Similarity: 0.9, Content: body}
+	return Candidate{ID: id, Type: "documentation", Name: "Row", Similarity: 0.9, Content: body, Substance: body}
 }
 
 func TestTheAnsweringCallOffersNoToolAndItsSystemTextNamesNone(t *testing.T) {
@@ -229,7 +229,7 @@ func TestTheSearchNudgeAppearsOnlyOnCallsThatOfferRetrieval(t *testing.T) {
 func TestTheFirstCallCarriesTheBlockTheRecordKeeps(t *testing.T) {
 	t.Parallel()
 
-	belowFloor := Candidate{ID: 5, Type: "documentation", Name: "Row", Similarity: 0, Content: "below the floor"}
+	belowFloor := Candidate{ID: 5, Type: "documentation", Name: "Row", Similarity: 0, Substance: "below the floor"}
 
 	for _, tc := range []struct {
 		name string
@@ -273,7 +273,7 @@ func TestAnAddressedReadIsBoundedByTheWorkingMemoryCeilingToo(t *testing.T) {
 	}
 
 	read := record.ToolCalls[1]
-	if want := "that part is 15000 bytes and one read carries at most 8989, so it cannot be shown in full"; read.Error != want {
+	if want := "that part's substance is 15000 bytes and one read carries at most 8989, so it cannot be shown"; read.Error != want {
 		t.Fatalf("the read of a 15000-byte part with 8989 bytes of memory left was recorded with error %q, want %q", read.Error, want)
 	}
 	if held := strings.Count(model.calls[2].Block, "#"); held != 71_000 {
