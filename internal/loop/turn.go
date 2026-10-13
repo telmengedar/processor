@@ -69,14 +69,23 @@ var ErrRunTimeExhausted = errors.New("run time exhausted")
 // ErrWriteRejected marks a write the working directory refused; its message is shown to the model.
 var ErrWriteRejected = errors.New("write rejected")
 
+// RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, an empty Scope meaning the whole graph, Exclude ids and every run record left out, and a zero Window unbounded.
+type RecallRequest struct {
+	Queries []string
+	Limit   int
+	Scope   []int64
+	Exclude []int64
+	Window  UpdateWindow
+}
+
 // GraphPort is the seam between the loop and the graph. Declared here,
 // implemented by internal/divoid, constructed in main (design §5.2, §8.3).
 type GraphPort interface {
 	// Node fetches a node by id, with its content; found is false when the id resolves to nothing.
 	Node(ctx context.Context, id int64) (anchor Anchor, found bool, err error)
 
-	// Recall returns up to limit candidates in the graph's own rank order, never re-sorted, each carrying the mean similarity over queries; an empty scope ranks the whole graph, excluded ids and every run record are left out before the count, and a zero window is unbounded.
-	Recall(ctx context.Context, queries []string, limit int, scope, exclude []int64, window UpdateWindow) ([]Candidate, error)
+	// Recall returns the request's candidates in the graph's own rank order, never re-sorted, each carrying the mean similarity over its queries.
+	Recall(ctx context.Context, request RecallRequest) ([]Candidate, error)
 
 	// Neighbours returns the other endpoint of every edge incident to id, ascending and deduplicated.
 	Neighbours(ctx context.Context, id int64) ([]int64, error)
@@ -665,7 +674,7 @@ func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window Up
 		return ToolExchange{Tool: ToolRecall, Error: BoundCause(result.ToolError), Dispositions: []Disposition{}, Refused: true}
 	}
 
-	candidates, err := t.Graph.Recall(ctx, []string{result.RecallQuery}, CandidateLimit, nil, []int64{subject}, window)
+	candidates, err := t.Graph.Recall(ctx, RecallRequest{Queries: []string{result.RecallQuery}, Limit: CandidateLimit, Exclude: []int64{subject}, Window: window})
 	if err != nil {
 		t.log().Error("supplementary recall failed", "query", result.RecallQuery, "error", err)
 		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}

@@ -24,10 +24,10 @@ func (g *poisoningGraph) Node(context.Context, int64) (loop.Anchor, bool, error)
 	return g.anchor, true, nil
 }
 
-func (g *poisoningGraph) Recall(_ context.Context, _ []string, limit int, _, _ []int64, _ loop.UpdateWindow) ([]loop.Candidate, error) {
+func (g *poisoningGraph) Recall(_ context.Context, request loop.RecallRequest) ([]loop.Candidate, error) {
 	rows := append(append([]loop.Candidate{}, g.written...), g.base...)
-	if len(rows) > limit {
-		rows = rows[:limit]
+	if len(rows) > request.Limit {
+		rows = rows[:request.Limit]
 	}
 	for i, row := range rows {
 		rows[i].SelfProduced = divoid.IsRunRecord(row.Type, row.Name)

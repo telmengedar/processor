@@ -155,7 +155,7 @@ func TestRecallSendsTheQueryTextVerbatimWithCountAndFieldsAndNoOtherKey(t *testi
 
 	c, rec := recordingClient(t)
 	const wantQueryText = "  Why DOES   the Assembler ignore SCOPE?  "
-	if _, err := c.Recall(context.Background(), []string{wantQueryText}, 6, nil, nil, loop.UpdateWindow{}); err != nil {
+	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{wantQueryText}, Limit: 6}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
@@ -188,7 +188,7 @@ func TestAZeroWindowSendsTheSameQueryStringAsBeforeTheWindowExisted(t *testing.T
 	t.Parallel()
 
 	c, rec := recordingClient(t)
-	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{}); err != nil {
+	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
@@ -207,7 +207,7 @@ func TestANonZeroWindowSendsBothUpdatedFromAndUpdatedTo(t *testing.T) {
 	}
 
 	c, rec := recordingClient(t)
-	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, window); err != nil {
+	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6, Window: window}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
@@ -253,7 +253,7 @@ func TestRecallReturnsEveryCandidateTheServerSentUnfiltered(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{})
+	got, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestRecallMarksOnlyTheRunRecordsThisClientWrote(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{})
+	got, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestRecallPreservesReturnedOrderWithoutResorting(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{})
+	got, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -350,7 +350,7 @@ func TestRecallDecodesSimilarityAndContent(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{})
+	got, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestRecallRequestsSubstanceInTheFieldsProjection(t *testing.T) {
 	t.Parallel()
 
 	c, rec := recordingClient(t)
-	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{}); err != nil {
+	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
@@ -400,7 +400,7 @@ func TestRecallDecodesSubstanceWhenPresentAndLeavesItEmptyWhenAbsent(t *testing.
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	got, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{})
+	got, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6})
 	if err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
@@ -425,7 +425,7 @@ func TestRecallOnNon200ReturnsAnError(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{}); err == nil {
+	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6}); err == nil {
 		t.Fatal("Recall returned nil error for a 500 response, want an error")
 	}
 }
@@ -600,7 +600,7 @@ func TestRecallSendsSeveralQueriesAsOneRequestWithARepeatedQueriesKeyAndNeverSpl
 
 	c, rec := recordingClient(t)
 	want := []string{"first phrasing", "second, with a comma, and a bracket [x]", "third phrasing"}
-	if _, err := c.Recall(context.Background(), want, 6, nil, nil, loop.UpdateWindow{}); err != nil {
+	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: want, Limit: 6}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
@@ -638,7 +638,7 @@ func TestRecallWithNoQueriesFailsWithoutAskingTheGraph(t *testing.T) {
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
-	if _, err := c.Recall(context.Background(), nil, 6, nil, nil, loop.UpdateWindow{}); err == nil {
+	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: nil, Limit: 6}); err == nil {
 		t.Fatal("Recall with no query returned no error: the graph would answer a request carrying neither key with an unranked listing that reads as a ranking")
 	}
 	if requests != 0 {
@@ -646,11 +646,33 @@ func TestRecallWithNoQueriesFailsWithoutAskingTheGraph(t *testing.T) {
 	}
 }
 
+func TestRecallWithNoPositiveLimitFailsWithoutAskingTheGraph(t *testing.T) {
+	t.Parallel()
+
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"result":[],"total":0}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+	for _, limit := range []int{0, -1} {
+		if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: limit}); err == nil {
+			t.Fatalf("Recall with limit %d returned no error: a request that forgot its limit would ask the graph for no rows or an unbounded listing", limit)
+		}
+	}
+	if requests != 0 {
+		t.Fatalf("Recall with no positive limit issued %d requests, want none", requests)
+	}
+}
+
 func TestRecallSendsOneLinkedToParameterPerScopeIDBecauseAnUnknownScopeKeyIsSilentlyIgnored(t *testing.T) {
 	t.Parallel()
 
 	c, rec := recordingClient(t)
-	if _, err := c.Recall(context.Background(), []string{"q"}, 6, []int64{7, 11, 13}, nil, loop.UpdateWindow{}); err != nil {
+	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6, Scope: []int64{7, 11, 13}}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
@@ -690,7 +712,7 @@ func TestRecallSendsNoScopeKeyAtAllForAnEmptyScopeSoTheRankingStaysWholeGraph(t 
 			t.Parallel()
 
 			c, rec := recordingClient(t)
-			if _, err := c.Recall(context.Background(), []string{"q"}, 6, tc.scope, nil, loop.UpdateWindow{}); err != nil {
+			if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6, Scope: tc.scope}); err != nil {
 				t.Fatalf("Recall: %v", err)
 			}
 
@@ -957,7 +979,7 @@ func TestEveryRecallAsksTheGraphToExcludeRunRecordsAndTheAnchor(t *testing.T) {
 			t.Parallel()
 
 			c, rec := recordingClient(t)
-			if _, err := c.Recall(context.Background(), queries, 6, nil, []int64{42}, loop.UpdateWindow{}); err != nil {
+			if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: queries, Limit: 6, Exclude: []int64{42}}); err != nil {
 				t.Fatalf("Recall: %v", err)
 			}
 
@@ -979,7 +1001,7 @@ func TestARecallWithNoExcludedIdsSendsNoExcludeIdKey(t *testing.T) {
 	t.Parallel()
 
 	c, rec := recordingClient(t)
-	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, nil, loop.UpdateWindow{}); err != nil {
+	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
@@ -993,7 +1015,7 @@ func TestSeveralExcludedIdsGoOutAsRepeatedKeysInTheOrderGiven(t *testing.T) {
 	t.Parallel()
 
 	c, rec := recordingClient(t)
-	if _, err := c.Recall(context.Background(), []string{"q"}, 6, nil, []int64{42, 7}, loop.UpdateWindow{}); err != nil {
+	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6, Exclude: []int64{42, 7}}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 

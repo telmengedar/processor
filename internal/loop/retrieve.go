@@ -20,7 +20,7 @@ func Retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []str
 
 	exclude := []int64{anchor.ID}
 
-	global, err := graph.Recall(ctx, queries, limit, nil, exclude, window)
+	global, err := graph.Recall(ctx, RecallRequest{Queries: queries, Limit: limit, Exclude: exclude, Window: window})
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +30,7 @@ func Retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []str
 		return nil, err
 	}
 
-	scoped, err := graph.Recall(ctx, queries, limit, scope, exclude, UpdateWindow{})
+	scoped, err := graph.Recall(ctx, RecallRequest{Queries: queries, Limit: limit, Scope: scope, Exclude: exclude})
 	if err != nil {
 		return nil, err
 	}
