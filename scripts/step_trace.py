@@ -218,13 +218,13 @@ the thing not to do silently. Extracting scripts/_processor_harness.py so compar
 EACH OTHER is out of scope here (a judgement call the task explicitly leaves open) and is not done
 by this script.
 
-Every run writes one run record to the graph and this script never deletes it: a
-repeated identical task text reads back the first run's own record rather than measuring anything
-new, so this script checks for a prior run of the exact input via the same semantic-recall probe
-compare.py uses (find_prior_run) and says so loudly rather than silently reusing or refusing it --
-visibility, not gatekeeping, is this tool's job. Whatever node id a run writes is printed immediately
-after the run completes, before the trace is rendered, so a crash in rendering can never hide what
-was written (the script's whole contract is "name it, never delete it").
+Every run writes one run record to the graph and this script never deletes it. The graph leaves
+run records out of every later recall by name and the loop drops any that leak, so a repeated task
+text is a fresh run. What a prior run can leave that a repeat sees is the substances it stored on
+nodes it retrieved, and the trace's `fills` show what this run stored. Whatever node id a run
+writes is printed immediately after the run completes, before the trace is rendered, so a crash in
+rendering can never hide what was written (the script's whole contract is "name it, never delete
+it").
 
 Exit 0 the run produced a record (whatever it says); 1 the run could not be made at all.
 """
@@ -766,12 +766,11 @@ def source_lines(tool_call):
     ]
 
 
-def render_trace(record, model_url, model_id, temperature_requested, prior_note):
+def render_trace(record, model_url, model_id, temperature_requested):
     """Pure function: every value comes from `record` (W4 -- the record is the source of truth,
     not the argv that produced the request that produced it) plus display-only context the record
     itself has no way to carry (the endpoint address, the --temperature this script was asked for --
-    reported only so a disagreement with the record is visible, never as a substitute for it -- and
-    the duplicate-run warning computed against the graph before the run started).
+    reported only so a disagreement with the record is visible, never as a substitute for it).
     """
     task_text = record.get("input", "")
     subject = record.get("subject")
@@ -792,8 +791,6 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     out.append(task_text)
     out.append(THIN)
     out.extend(sampling_lines(record, temperature_requested))
-    if prior_note:
-        out.append(prior_note)
     out.append("")
 
     # ---- STEP: anchor ----------------------------------------------------------------------
@@ -1280,22 +1277,6 @@ def apply_temperature(env, temperature):
     return env
 
 
-def check_prior_run(divoid_url, divoid_key, task_text):
-    try:
-        prior = harness.find_prior_run(divoid_url, divoid_key, task_text)
-    except harness.CompareFailure as err:
-        return f"NOTE: could not check for a prior run of this exact text ({err}); proceeding anyway."
-    if prior is None:
-        return None
-    node_id, name = prior
-    return (
-        f"NOTE: this exact task text was already run -- graph node #{node_id} ({name!r}) carries a "
-        f"run record whose input matches verbatim. This run's retrieval will read that record back "
-        f"-- a repeated input is not a second measurement of anything. Running anyway, "
-        f"per instructions -- this note exists so the reader knows before reading the trace."
-    )
-
-
 def announce_written(record):
     """Print what this run wrote to the graph immediately -- before rendering the trace, and
     unconditionally -- so that a crash in render_trace (a bug, a record shape this script does not
@@ -1318,8 +1299,6 @@ def run_one(model_url, model_id, model_key, divoid_url, divoid_key, task_text, s
     env[ENV_WORKSPACE_DIR] = workspace
     print(f"workspace {workspace} (created here, never deleted -- look in it for what the run wrote)")
 
-    prior_note = check_prior_run(divoid_url, divoid_key, task_text)
-
     with tempfile.TemporaryDirectory(prefix="processor-trace-", ignore_cleanup_errors=True) as tmp:
         binary = Path(tmp) / ("processor.exe" if os.name == "nt" else "processor")
         log_path = Path(tmp) / "server.log"
@@ -1341,7 +1320,7 @@ def run_one(model_url, model_id, model_key, divoid_url, divoid_key, task_text, s
             in_flight = False
 
             announce_written(record)
-            return render_trace(record, model_url, model_id, temperature, prior_note)
+            return render_trace(record, model_url, model_id, temperature)
         finally:
             if proc is not None:
                 harness.stop_server(proc, log_path, in_flight)

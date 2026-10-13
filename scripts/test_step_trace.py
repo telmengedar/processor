@@ -146,7 +146,7 @@ def record(
 
 
 def render(rec, temperature=None):
-    return step_trace.render_trace(rec, "http://model.example/v1", "test-model", temperature, None)
+    return step_trace.render_trace(rec, "http://model.example/v1", "test-model", temperature)
 
 
 def capture(fn, *args, **kwargs):
