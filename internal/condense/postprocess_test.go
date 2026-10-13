@@ -91,3 +91,121 @@ func TestACleanCondensationPassesEveryStorageRule(t *testing.T) {
 		t.Fatalf("want no defect, got %q", got)
 	}
 }
+
+func rulingSections() []string {
+	var lines []string
+	for _, title := range []string{"a pull request body answers why", "end of arc starts at drafts", "review ledger query", "dispatch is a queue"} {
+		lines = append(lines, "## RULING "+title, "The statement of "+title+".", "The reason given for "+title+".")
+	}
+	return lines
+}
+
+func loopedSubstance(rounds int, marker string) string {
+	lines := []string{"# Operating contract", "A summary of the contract."}
+	for i := 0; i < rounds; i++ {
+		block := rulingSections()
+		block[1] += " " + marker
+		lines = append(lines, block...)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func contractBody() string {
+	lines := []string{"# Operating contract", "The full contract.", "## Intro", "How to read it.", "Read it once."}
+	lines = append(lines, rulingSections()...)
+	lines = append(lines, "## Later rulings", "Something the loop never reaches.", "Neither does this.")
+	return strings.Join(lines, "\n")
+}
+
+func TestDefectRejectsABlockTheCondensationStatesThreeTimes(t *testing.T) {
+	substance := "intro\nthe first line\nthe second line\nthe third line\nmiddle\nthe first line\nthe second line\nthe third line\nbetween\nthe first line\nthe second line\nthe third line"
+
+	if got := Defect(substance); got != skipRepeatedPassage {
+		t.Fatalf("want %q for a block stated three times, got %q", skipRepeatedPassage, got)
+	}
+}
+
+func TestDefectRejectsFourRulingsRepeatedEightTimes(t *testing.T) {
+	if got := Defect(loopedSubstance(8, "")); got != skipRepeatedPassage {
+		t.Fatalf("want %q for four rulings repeated eight times, got %q", skipRepeatedPassage, got)
+	}
+}
+
+func TestDefectAcceptsTheSameDocumentCondensedWithoutALoop(t *testing.T) {
+	if got := Defect(loopedSubstance(1, "")); got != "" {
+		t.Fatalf("want no defect for the rulings stated once, got %q", got)
+	}
+}
+
+func TestDefectRejectsATwoLinePassageStatedTwice(t *testing.T) {
+	if got := Defect("x\nA\nB\ny\nA\nB\nz"); got != skipRepeatedPassage {
+		t.Fatalf("want %q for a pair stated twice apart, got %q", skipRepeatedPassage, got)
+	}
+}
+
+func TestDefectAcceptsASingleLineThatRecursUnderDifferentHeadings(t *testing.T) {
+	substance := "### 7.1 First\n- Verdict: reaffirm rejection.\n### 7.2 Second\n- Verdict: reaffirm rejection."
+
+	if got := Defect(substance); got != "" {
+		t.Fatalf("want no defect for one line recurring under different headings, got %q", got)
+	}
+}
+
+func TestDefectRejectsOneLineRepeatedFourTimesInARow(t *testing.T) {
+	substance := "before\nthe same line\nthe same line\nthe same line\nthe same line\nafter"
+
+	if got := Defect(substance); got != skipRepeatedPassage {
+		t.Fatalf("want %q for a line repeated four times in a row, got %q", skipRepeatedPassage, got)
+	}
+}
+
+func TestDefectIgnoresTableSeparatorsAndCodeFences(t *testing.T) {
+	cases := []struct {
+		name      string
+		substance string
+	}{
+		{"tables", "| Name | Value |\n| ---- | ---- |\n| alpha | 1 |\nThe second table follows.\n| Name | Value |\n| ---- | ---- |\n| beta | 2 |"},
+		{"fences", "## Example\n```go\nfirst()\n```\nSome prose.\n## Example\n```go\nsecond()\n```"},
+	}
+
+	for _, c := range cases {
+		if got := Defect(c.substance); got != "" {
+			t.Fatalf("%s: want no defect when only markup lines recur, got %q", c.name, got)
+		}
+	}
+}
+
+func TestDefectFindsARepeatThroughBlankLinesIndentationAndCarriageReturns(t *testing.T) {
+	cases := []struct {
+		name   string
+		first  string
+		second string
+	}{
+		{"carriage returns", "alphaline\nbeta line", "alpha\rline\r\nbeta line"},
+		{"indentation and spacing", "alpha line\nbeta line", "    alpha   line\n\tbeta  line  "},
+		{"blank lines", "alpha line\nbeta line", "alpha line\n\n\nbeta line"},
+	}
+
+	for _, c := range cases {
+		substance := "x\n" + c.first + "\ny\n" + c.second
+		if got := Defect(substance); got != skipRepeatedPassage {
+			t.Fatalf("%s: want %q for the same pair written differently, got %q", c.name, skipRepeatedPassage, got)
+		}
+	}
+}
+
+func TestDefectCountsLinesOfDigitsAndOfNonLatinLettersAsContent(t *testing.T) {
+	cases := []struct {
+		name      string
+		substance string
+	}{
+		{"digits", "x\n1 2 3\n4 5 6\ny\n1 2 3\n4 5 6"},
+		{"non-latin letters", "x\nпервая строка\nвторая строка\ny\nпервая строка\nвторая строка"},
+	}
+
+	for _, c := range cases {
+		if got := Defect(c.substance); got != skipRepeatedPassage {
+			t.Fatalf("%s: want %q for a pair of content lines stated twice, got %q", c.name, skipRepeatedPassage, got)
+		}
+	}
+}
