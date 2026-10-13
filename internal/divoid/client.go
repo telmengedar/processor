@@ -31,20 +31,22 @@ var _ loop.GraphPort = (*Client)(nil)
 const (
 	nodeFields      = "id,type,name,content,substance"
 	candidateFields = "id,type,name,similarity,content,substance"
+	neighbourFields = "id,type,name"
 )
 
 const (
 	nodesPath = "/api/nodes"
-	linksPath = "/api/nodes/links"
 
 	queriesParam     = "queries"
 	excludeIDParam   = "excludeId"
 	excludeNameParam = "excludeName"
 )
 
-const linksPageSize = 500
+const neighbourPageSize = 500
 
 const logPartialNeighbourhood = "neighbourhood read stopped before the graph's last page"
+
+const logLeakedRunRecords = "the graph returned run records as neighbours it was asked to exclude"
 
 var errNoQuery = errors.New("divoid: recall needs at least one query")
 
@@ -118,18 +120,9 @@ type row struct {
 
 // listingResponse is the shape of GET /api/nodes, regardless of query.
 type listingResponse struct {
-	Result []row `json:"result"`
-	Total  int   `json:"total"`
-}
-
-type linkRow struct {
-	SourceID int64 `json:"sourceId"`
-	TargetID int64 `json:"targetId"`
-}
-
-type linksResponse struct {
-	Result   []linkRow `json:"result"`
-	Continue *int      `json:"continue"`
+	Result   []row `json:"result"`
+	Total    int   `json:"total"`
+	Continue *int  `json:"continue"`
 }
 
 // Node fetches the subject node by id, with its content, over the listing
@@ -218,29 +211,32 @@ func (c *Client) Recall(ctx context.Context, request loop.RecallRequest) ([]loop
 	return candidates, nil
 }
 
-// Neighbours returns the other endpoint of every edge incident to id, ascending and deduplicated.
+// Neighbours returns the ids linked to id, ascending and deduplicated, never a run record.
 func (c *Client) Neighbours(ctx context.Context, id int64) ([]int64, error) {
 	seen := make(map[int64]struct{})
+	leaked := 0
 
 	for cursor := 0; ; {
 		q := url.Values{}
-		q.Set("ids", strconv.FormatInt(id, 10))
-		q.Set("count", strconv.Itoa(linksPageSize))
+		q.Set("linkedto", strconv.FormatInt(id, 10))
+		q.Set(excludeNameParam, RunNamePrefix+"%")
+		q.Set("fields", neighbourFields)
+		q.Set("count", strconv.Itoa(neighbourPageSize))
 		if cursor > 0 {
 			q.Set("continue", strconv.Itoa(cursor))
 		}
 
-		var resp linksResponse
-		if err := c.get(ctx, linksPath, q, &resp); err != nil {
+		var resp listingResponse
+		if err := c.get(ctx, nodesPath, q, &resp); err != nil {
 			return nil, err
 		}
 
-		for _, edge := range resp.Result {
-			other := edge.SourceID
-			if other == id {
-				other = edge.TargetID
+		for _, r := range resp.Result {
+			if IsRunRecord(r.Type, r.Name) {
+				leaked++
+				continue
 			}
-			seen[other] = struct{}{}
+			seen[r.ID] = struct{}{}
 		}
 
 		if resp.Continue == nil {
@@ -251,6 +247,10 @@ func (c *Client) Neighbours(ctx context.Context, id int64) ([]int64, error) {
 			break
 		}
 		cursor = *resp.Continue
+	}
+
+	if leaked > 0 {
+		c.log().Warn(logLeakedRunRecords, "node", id, "dropped", leaked)
 	}
 
 	neighbours := make([]int64, 0, len(seen))
