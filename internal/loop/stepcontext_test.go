@@ -8,8 +8,12 @@ import (
 	"testing"
 )
 
-func offeringSystem(offered []string) string {
-	return "offers:" + strings.Join(offered, ",")
+func offeringSystem(offered []string, conversation bool) string {
+	text := "offers:" + strings.Join(offered, ",")
+	if conversation {
+		text += ";conversation"
+	}
+	return text
 }
 
 func turnComposing(graph GraphPort, model ModelPort, files FilePort) *Turn {

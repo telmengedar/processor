@@ -4,3 +4,4 @@
 *.py text eol=lf
 Dockerfile text eol=lf
 .dockerignore text eol=lf
+internal/systemtext/testdata/*.txt text eol=lf

@@ -66,7 +66,7 @@ func TestARunWithoutHistoryRendersTheSameUserContentAsBefore(t *testing.T) {
 	}
 }
 
-func TestTheConversationSectionSitsBetweenNowAndTheBlockOldestFirst(t *testing.T) {
+func TestTheConversationSectionSitsBetweenTheBlockAndTheClosingInputOldestFirst(t *testing.T) {
 	t.Parallel()
 
 	section := renderConversation([]Exchange{
@@ -86,12 +86,53 @@ func TestTheConversationSectionSitsBetweenNowAndTheBlockOldestFirst(t *testing.T
 		window  UpdateWindow
 		content string
 	}{
-		{"with an instant", historyTestInstant, UpdateWindow{}, "===== INPUT =====\nwhat about him\n\n===== NOW =====\n2026-10-12T18:00:00Z\n\n" + wantSection + "\n\n\nBLOCK\n\n===== INPUT =====\nwhat about him"},
-		{"with a window", historyTestInstant, window, "===== INPUT =====\nwhat about him\n\n===== NOW =====\n2026-10-12T18:00:00Z\nretrieval is limited to nodes updated 2026-10-01 … 2026-10-07\n\n" + wantSection + "\n\n\nBLOCK\n\n===== INPUT =====\nwhat about him"},
-		{"with no instant", time.Time{}, UpdateWindow{}, "===== INPUT =====\nwhat about him\n\n" + wantSection + "\n\n\nBLOCK\n\n===== INPUT =====\nwhat about him"},
+		{"with an instant", historyTestInstant, UpdateWindow{}, "===== INPUT =====\nwhat about him\n\n===== NOW =====\n2026-10-12T18:00:00Z\n\n\nBLOCK\n\n\n" + wantSection + "\n\n===== INPUT =====\nwhat about him"},
+		{"with a window", historyTestInstant, window, "===== INPUT =====\nwhat about him\n\n===== NOW =====\n2026-10-12T18:00:00Z\nretrieval is limited to nodes updated 2026-10-01 … 2026-10-07\n\n\nBLOCK\n\n\n" + wantSection + "\n\n===== INPUT =====\nwhat about him"},
+		{"with no instant", time.Time{}, UpdateWindow{}, "===== INPUT =====\nwhat about him\n\n\nBLOCK\n\n\n" + wantSection + "\n\n===== INPUT =====\nwhat about him"},
 	} {
 		if got := RenderUserContent("BLOCK\n", "what about him", tc.now, tc.window, section); got != tc.content {
 			t.Errorf("%s: user content =\n%q\nwant\n%q", tc.name, got, tc.content)
+		}
+	}
+}
+
+func TestEveryJudgementCallOfAConversationTurnIsComposedWithTheConversationPresent(t *testing.T) {
+	t.Parallel()
+
+	oversize := []Exchange{{Input: strings.Repeat("a long remark ", HistorySafetyLimit), Reply: "noted"}}
+
+	for _, tc := range []struct {
+		name    string
+		history []Exchange
+		want    string
+	}{
+		{"history present", exchangesNumbered(1, 2), ";conversation"},
+		{"history absent", nil, ""},
+		{"history empty", []Exchange{}, ""},
+		{"history cut away by the safety limit", oversize, ""},
+	} {
+		model := &fakeModel{results: researchToTheCap()}
+		turn := turnComposing(graphYieldingNewRowsToEveryRecall(), model, nil)
+
+		record, _, err := turn.RunWithHistory(context.Background(), "what about him", 42, tc.history)
+		if err != nil {
+			t.Fatalf("%s: RunWithHistory: %v", tc.name, err)
+		}
+		if len(model.calls) != MaxModelCalls {
+			t.Fatalf("%s: the model was called %d times, want %d: the cases need tool rounds and the reserved answering call", tc.name, len(model.calls), MaxModelCalls)
+		}
+		if tc.want == "" && len(record.History) != 0 {
+			t.Fatalf("%s: the record holds %d exchanges, but the case must reach the model with no section", tc.name, len(record.History))
+		}
+
+		for i, call := range model.calls {
+			offered := "offers:recall,readNode"
+			if i == MaxModelCalls-1 {
+				offered = "offers:"
+			}
+			if want := offered + tc.want; call.System != want {
+				t.Errorf("%s: call %d has system text %q, want %q", tc.name, i+1, call.System, want)
+			}
 		}
 	}
 }

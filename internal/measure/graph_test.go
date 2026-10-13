@@ -27,7 +27,7 @@ const (
 	eventTurnCompleted = "turnCompleted"
 )
 
-func testSystem([]string) string { return "the system text" }
+func testSystem([]string, bool) string { return "the system text" }
 
 const (
 	testModelID = "test-model-id"

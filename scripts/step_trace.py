@@ -32,8 +32,8 @@ refuses, answers about the task, asks for recall, claims completion without writ
 produces something confidently wrong.
 
 The file tool is offered but not urged, and only where a working directory exists:
-internal/systemtext composes each call's system text from the tools that call offers, naming each in
-one neutral sentence, and still tells the model to write its answer as prose for a person. A run in which the model describes the work instead of doing it is
+internal/systemtext composes each call's system text from the tools that call offers and from whether the
+turn carries a conversation section, naming each tool in one neutral sentence, and still tells the model to write its answer as prose for a person. A run in which the model describes the work instead of doing it is
 therefore a result, not a misconfiguration -- and stopReason "answered" on a run that wrote nothing
 stays exactly as wrong as it was before, deliberately: nothing here was changed to make it right.
 
@@ -181,7 +181,8 @@ file changes):
     admitted) and the final Answer. A cut candidate's content is gone from the record forever, which
     means a reader can never audit what was cut, only that it was and why.
   - No system prompt text and no per-call block. The record has no System field, and the system text
-    is composed per call from the tools that call offers; Record.Block is the FIRST call's block only,
+    is composed per call from the tools that call offers and from whether the turn carries a
+    conversation section; Record.Block is the FIRST call's block only,
     while each later call carries that block plus the rows earlier rounds found (the working memory).
     No call replays tool rounds as messages: every call is one system message and one user message.
     The exact bytes of a later call are not reconstructable from the record alone -- only the token

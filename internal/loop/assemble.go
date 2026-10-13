@@ -126,7 +126,7 @@ func writePayload(b *strings.Builder, form Form, rendered string) {
 	b.WriteString(unavailableLine)
 }
 
-// RenderUserContent composes the user message: the request, the instant it states and the window it was bounded to when one applied, the earlier conversation when there is one, the assembled block, then the same request again.
+// RenderUserContent composes the user message: the request, the instant it states and the window it was bounded to when one applied, the assembled block, the earlier conversation when there is one, then the same request again.
 func RenderUserContent(block, input string, now time.Time, window UpdateWindow, conversation string) string {
 	request := "===== INPUT =====\n" + input
 
@@ -141,12 +141,13 @@ func RenderUserContent(block, input string, now time.Time, window UpdateWindow, 
 			b.WriteString(windowLine(window))
 		}
 	}
+	b.WriteString("\n\n\n")
+	b.WriteString(block)
 	if conversation != "" {
 		b.WriteString("\n\n")
 		b.WriteString(conversation)
+		b.WriteString("\n")
 	}
-	b.WriteString("\n\n\n")
-	b.WriteString(block)
 	b.WriteString("\n")
 	b.WriteString(request)
 

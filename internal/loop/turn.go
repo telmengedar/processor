@@ -123,8 +123,8 @@ type Turn struct {
 	// Fill is the condensation behaviour that creates a missing substance; nil refuses every creation with a recorded reason.
 	Fill FillPort
 
-	// System composes the system text of one judgement call from the tools that call offers.
-	System func(offered []string) string
+	// System composes the system text of one judgement call from the tools that call offers and whether the turn carries a conversation section.
+	System func(offered []string, conversation bool) string
 
 	// ModelID is the model id sent with every judgement step, echoed into Record.Model.
 	ModelID string
@@ -138,7 +138,7 @@ type Turn struct {
 }
 
 // NewTurn builds a Turn over graph, model and files, judging with system and modelID.
-func NewTurn(graph GraphPort, model ModelPort, files FilePort, system func(offered []string) string, modelID string, logger *slog.Logger) *Turn {
+func NewTurn(graph GraphPort, model ModelPort, files FilePort, system func(offered []string, conversation bool) string, modelID string, logger *slog.Logger) *Turn {
 	return &Turn{Graph: graph, Model: model, Files: files, System: system, ModelID: modelID, clock: time.Now, logger: logger}
 }
 
@@ -448,7 +448,7 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversa
 		offered := t.offeredTools(reserved != "")
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
-			System:          t.composeSystem(offered),
+			System:          t.composeSystem(offered, conversation != ""),
 			Block:           memory.render(offersRetrieval(offered)),
 			Input:           input,
 			Conversation:    conversation,
@@ -553,11 +553,11 @@ func (t *Turn) offeredTools(reserved bool) []string {
 	return offered
 }
 
-func (t *Turn) composeSystem(offered []string) string {
+func (t *Turn) composeSystem(offered []string, conversation bool) string {
 	if t.System == nil {
 		return ""
 	}
-	return t.System(offered)
+	return t.System(offered, conversation)
 }
 
 func offersRetrieval(offered []string) bool {
