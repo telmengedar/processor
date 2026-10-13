@@ -36,9 +36,7 @@ func runDerivedTurn(t *testing.T, model *fakeModel) (*fakeGraph, Record) {
 func recalledQueries(graph *fakeGraph) []string {
 	var queries []string
 	for _, call := range graph.recallCalls {
-		if len(call.Scope) == 0 {
-			queries = append(queries, call.Queries...)
-		}
+		queries = append(queries, call.Queries...)
 	}
 	return queries
 }

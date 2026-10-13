@@ -35,8 +35,6 @@ func (g *poisoningGraph) Recall(_ context.Context, request loop.RecallRequest) (
 	return rows, nil
 }
 
-func (g *poisoningGraph) Neighbours(context.Context, int64) ([]int64, error) { return nil, nil }
-
 func (g *poisoningGraph) WriteRun(_ context.Context, record loop.Record) loop.WriteReceipt {
 	body, err := json.Marshal(record)
 	if err != nil {

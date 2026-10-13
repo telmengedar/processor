@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,21 @@ const (
 type writeRecorder struct {
 	mu       sync.Mutex
 	attempts []string
+
+	collectUnserved bool
+	unserved        []string
+}
+
+func (w *writeRecorder) unserve(t *testing.T, request string) {
+	t.Helper()
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.collectUnserved {
+		w.unserved = append(w.unserved, request)
+		return
+	}
+	t.Errorf("the graph server was sent a request it does not serve: %s", request)
 }
 
 func (w *writeRecorder) record(method, path string) {
@@ -71,8 +87,9 @@ func graphServing(t *testing.T, recorder *writeRecorder, bodies map[int64]string
 		w.Header().Set("Content-Type", "application/json")
 		query := r.URL.Query()
 		switch {
-		case len(query["linkedto"]) > 0 && query.Get("query") == "" && len(query["queries"]) == 0:
-			fmt.Fprint(w, `{"result":[{"id":303,"type":"documentation","name":"a neighbour"}],"total":1}`)
+		case len(query["linkedto"]) > 0 || len(query["path"]) > 0:
+			recorder.unserve(t, r.URL.String())
+			http.Error(w, "unserved route", http.StatusInternalServerError)
 		case query.Get("query") != "" || len(query["queries"]) > 0:
 			rows := make([]string, 0, len(ids))
 			for i, id := range ids {
@@ -88,7 +105,7 @@ func graphServing(t *testing.T, recorder *writeRecorder, bodies map[int64]string
 		case query.Get("id") == "101":
 			fmt.Fprintf(w, `{"result":[{"id":101,"type":"documentation","name":"the anchor","contentType":"text/markdown","content":%q,"substance":%q}],"total":1}`, anchorBody, substanceOf(anchorBody))
 		default:
-			t.Errorf("the graph server was sent a request it does not serve: %s %s", r.Method, r.URL.String())
+			recorder.unserve(t, r.Method+" "+r.URL.String())
 			http.Error(w, "unserved route", http.StatusInternalServerError)
 		}
 	}))
@@ -319,5 +336,45 @@ func TestBootStatesAControlForEveryProtocolAMeasuredRunSendsOnNotOnlyTheJudgemen
 	}
 	if !strings.Contains(human, "path=judgement") || !strings.Contains(human, "path=fill") {
 		t.Fatalf("the two stated controls cannot be told apart by the path they govern; log=%s", human)
+	}
+}
+
+func TestTheGraphDoubleServesOnlyAnUnconstrainedRecallAndRefusesAConstrainedOne(t *testing.T) {
+	recorder := &writeRecorder{collectUnserved: true}
+	srv := testGraph(t, recorder)
+
+	status := func(request string) (int, string) {
+		response, err := http.Get(srv.URL + request)
+		if err != nil {
+			t.Fatalf("GET %s: %v", request, err)
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatalf("reading %s: %v", request, err)
+		}
+		return response.StatusCode, string(body)
+	}
+
+	code, body := status("/api/nodes?query=q&count=6")
+	if code != http.StatusOK || !strings.Contains(body, `"id":202`) {
+		t.Fatalf("the double answered the unconstrained recall with %d %s, want 200 and the candidate rows", code, body)
+	}
+	if len(recorder.unserved) != 0 {
+		t.Fatalf("the double refused the unconstrained recall: %v", recorder.unserved)
+	}
+
+	for _, request := range []string{
+		"/api/nodes?query=q&count=6&linkedto=101",
+		"/api/nodes?query=q&count=6&path=x",
+		"/api/nodes?linkedto=101&count=500",
+	} {
+		if code, _ := status(request); code != http.StatusInternalServerError {
+			t.Fatalf("the double answered %s with %d, want it refused with %d", request, code, http.StatusInternalServerError)
+		}
+	}
+
+	if len(recorder.unserved) != 3 {
+		t.Fatalf("the double recorded %d refusals, want the 3 constrained requests: %v", len(recorder.unserved), recorder.unserved)
 	}
 }

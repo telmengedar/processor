@@ -49,14 +49,13 @@ type Candidate struct {
 	// Read marks a row fetched by id, which no ranking scored.
 	Read bool
 
-	// Sources is every recall that returned this row, the global one first.
+	// Sources is the recall that returned this row.
 	Sources []Source
 }
 
-// Source is one recall that returned a candidate: its position in that recall's list and whether the recall was scoped.
+// Source is the recall that returned a candidate: its position in that recall's list.
 type Source struct {
-	Rank   int  `json:"rank"`
-	Scoped bool `json:"scoped,omitempty"`
+	Rank int `json:"rank"`
 }
 
 // AnchorSummary is the anchor's entry in a run record: enough to identify and size it.
@@ -275,7 +274,6 @@ type Limits struct {
 	AssemblyByteBudget      int     `json:"assemblyByteBudget"`
 	SupplementaryByteBudget int     `json:"supplementaryByteBudget"`
 	MaxModelCalls           int     `json:"maxModelCalls"`
-	RecallScopeReserve      int     `json:"recallScopeReserve"`
 	ThinKnowledgeSimilarity float64 `json:"thinKnowledgeSimilarity"`
 
 	// DerivationBudget is the output budget the query-derivation call was issued with.

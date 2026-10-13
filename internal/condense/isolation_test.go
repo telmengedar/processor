@@ -47,7 +47,7 @@ func TestTheModelSeamTheTurnHoldsOffersJudgementAndQueryDerivationAndNoOtherWayT
 	}
 }
 
-func TestTheGraphSeamTheTurnHoldsOffersTheseFourOperationsAndNoOtherTheTurnCouldAim(t *testing.T) {
+func TestTheGraphSeamTheTurnHoldsOffersTheseThreeOperationsAndNoOtherTheTurnCouldAim(t *testing.T) {
 	port := reflect.TypeOf((*loop.GraphPort)(nil)).Elem()
 
 	got := make([]string, port.NumMethod())
@@ -55,8 +55,8 @@ func TestTheGraphSeamTheTurnHoldsOffersTheseFourOperationsAndNoOtherTheTurnCould
 		got[i] = port.Method(i).Name
 	}
 
-	want := []string{"Neighbours", "Node", "Recall", "WriteRun"}
+	want := []string{"Node", "Recall", "WriteRun"}
 	if !slices.Equal(got, want) {
-		t.Fatalf("the turn's graph seam offers %v, want exactly %v; each of the four is scoped to the run in hand, and a fifth would be an operation the turn could aim at a node of its own choosing", got, want)
+		t.Fatalf("the turn's graph seam offers %v, want exactly %v; each of the three is scoped to the run in hand, and a fourth would be an operation the turn could aim at a node of its own choosing", got, want)
 	}
 }

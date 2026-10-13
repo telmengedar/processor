@@ -64,8 +64,6 @@ func (s stubGraph) Recall(context.Context, loop.RecallRequest) ([]loop.Candidate
 	return s.candidates, s.recallErr
 }
 
-func (s stubGraph) Neighbours(context.Context, int64) ([]int64, error) { return nil, nil }
-
 func (s stubGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt {
 	return s.writeReceipt
 }
@@ -205,8 +203,6 @@ func (g *deadlineGraph) Recall(context.Context, loop.RecallRequest) ([]loop.Cand
 	return nil, nil
 }
 
-func (g *deadlineGraph) Neighbours(context.Context, int64) ([]int64, error) { return nil, nil }
-
 func (g *deadlineGraph) WriteRun(ctx context.Context, _ loop.Record) loop.WriteReceipt {
 	_, g.writeBounded = ctx.Deadline()
 	return loop.WriteReceipt{State: loop.Stored, NodeID: 999}
@@ -227,8 +223,6 @@ func (g *blockingGraph) Node(ctx context.Context, _ int64) (loop.Anchor, bool, e
 func (g *blockingGraph) Recall(context.Context, loop.RecallRequest) ([]loop.Candidate, error) {
 	return nil, nil
 }
-
-func (g *blockingGraph) Neighbours(context.Context, int64) ([]int64, error) { return nil, nil }
 
 func (g *blockingGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt {
 	return loop.WriteReceipt{State: loop.NotStored}
@@ -486,7 +480,6 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 		found:  true,
 		recallSeq: []stubRecallResponse{
 			{candidates: []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Substance: "candidate body"}}},
-			{candidates: []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Substance: "candidate body"}}},
 			{err: errors.New("literal: 500 from graph")},
 		},
 		recallIdx:    new(int),
@@ -555,7 +548,7 @@ func TestRunsRecordWireCarriesCapReachedTrueOnATurnThatRunsToTheCap(t *testing.T
 		anchor:     loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		found:      true,
 		candidates: []loop.Candidate{row},
-		recallSeq:  []stubRecallResponse{{candidates: []loop.Candidate{row}}, {candidates: []loop.Candidate{row}}},
+		recallSeq:  []stubRecallResponse{{candidates: []loop.Candidate{row}}},
 		recallIdx:  &failing,
 		recallErr:  errors.New("literal: graph unreachable"),
 	}
@@ -599,7 +592,7 @@ func TestRunsToolCallsResultsCutReasonIsPopulatedAtTheWireLevel(t *testing.T) {
 	graph := stubGraph{
 		anchor:    loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		found:     true,
-		recallSeq: []stubRecallResponse{{candidates: []loop.Candidate{smallHit}}, {}, {candidates: []loop.Candidate{smallHit, largeHit}}},
+		recallSeq: []stubRecallResponse{{candidates: []loop.Candidate{smallHit}}, {candidates: []loop.Candidate{smallHit, largeHit}}},
 		recallIdx: &next,
 	}
 	model := &stubModel{results: []loop.JudgeResult{

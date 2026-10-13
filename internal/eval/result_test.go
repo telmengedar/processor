@@ -1,6 +1,7 @@
 package eval
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -184,8 +185,8 @@ func TestResultHeaderCarriesTheCorpusHashAndTheLoopLimits(t *testing.T) {
 	if got.Limits.AssemblyByteBudget != loop.AssemblyByteBudget {
 		t.Fatalf("Limits.AssemblyByteBudget = %d, want the byte budget the loop ships %d", got.Limits.AssemblyByteBudget, loop.AssemblyByteBudget)
 	}
-	if got.Limits.RecallScopeReserve != loop.RecallScopeReserve {
-		t.Fatalf("Limits.RecallScopeReserve = %d, want the scope reserve the loop ships %d: two sweeps taken under different reserves are two arms, and a result that does not carry the reserve cannot say which one it is", got.Limits.RecallScopeReserve, loop.RecallScopeReserve)
+	if encoded, err := json.Marshal(got.Limits); err != nil || strings.Contains(string(encoded), "recallScopeReserve") {
+		t.Fatalf("Limits encode as %s (error %v), want no recallScopeReserve key: the sweep has one recall and no reserve to state", encoded, err)
 	}
 	if len(got.Rows) != 0 {
 		t.Fatalf("len(Rows) = %d, want an empty slice a sweep appends to in corpus order", len(got.Rows))

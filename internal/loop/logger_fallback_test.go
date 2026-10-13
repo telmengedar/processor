@@ -14,17 +14,12 @@ func (g *probeGraph) Node(ctx context.Context, id int64) (loop.Anchor, bool, err
 	return loop.Anchor{ID: id, Type: "documentation", Name: "S", Substance: "anchor"}, true, nil
 }
 func (g *probeGraph) Recall(ctx context.Context, request loop.RecallRequest) ([]loop.Candidate, error) {
-	if len(request.Scope) > 0 {
-		return nil, nil
-	}
 	g.recallN++
 	if g.recallN == 1 {
 		return []loop.Candidate{{ID: 1, Type: "task", Name: "c", Similarity: 0.9, Substance: "body"}}, nil
 	}
 	return nil, errors.New("literal: transport blew up")
 }
-
-func (g *probeGraph) Neighbours(context.Context, int64) ([]int64, error) { return nil, nil }
 
 func (g *probeGraph) WriteRun(ctx context.Context, r loop.Record) loop.WriteReceipt {
 	return loop.WriteReceipt{State: loop.Stored, NodeID: 1}

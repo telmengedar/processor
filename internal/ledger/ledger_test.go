@@ -319,3 +319,16 @@ func TestAnUndatedEntrySerialisesWithNoInstantRatherThanAnEarlyOne(t *testing.T)
 		t.Fatalf("a dated entry carries its instant and says so, got %s", encoded)
 	}
 }
+
+func TestTheLedgerAcceptsARecordFiledWhileAScopedRecallExisted(t *testing.T) {
+	t.Parallel()
+
+	body := `{"input":"archived","subject":10422,"candidates":[{"rank":1,"id":7,"included":true,"sources":[{"rank":1},{"rank":2,"scoped":true}]}],"limits":{"candidateLimit":6,"recallScopeReserve":2}}`
+	archive := runarchive.Read("one archived record", []runarchive.Node{{ID: 1, Name: "processor-run 2026-09-17T18:34:11Z — archived", Content: body}})
+
+	entries := Over(archive)
+
+	if len(archive.Skipped) != 0 || len(entries) != 1 {
+		t.Fatalf("want one ledger entry and no skip, got %d entries and %+v", len(entries), archive.Skipped)
+	}
+}

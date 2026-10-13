@@ -5,7 +5,6 @@ import "time"
 // RunSettings is the tuning one run is held to; start from DefaultSettings, because the zero value budgets nothing.
 type RunSettings struct {
 	CandidateLimit          int
-	RecallScopeReserve      int
 	AssemblyByteBudget      int
 	SupplementaryByteBudget int
 	MaxModelCalls           int
@@ -20,7 +19,6 @@ type RunSettings struct {
 func DefaultSettings() RunSettings {
 	return RunSettings{
 		CandidateLimit:          CandidateLimit,
-		RecallScopeReserve:      RecallScopeReserve,
 		AssemblyByteBudget:      AssemblyByteBudget,
 		SupplementaryByteBudget: SupplementaryByteBudget,
 		MaxModelCalls:           MaxModelCalls,
@@ -53,7 +51,6 @@ func (s RunSettings) Limits() Limits {
 		DerivationBudget:        DerivationBudget,
 		JudgementBudget:         s.JudgementBudget,
 		AnsweringBudget:         s.AnsweringBudget,
-		RecallScopeReserve:      s.RecallScopeReserve,
 		ThinKnowledgeSimilarity: ThinKnowledgeSimilarity,
 		FillWait:                s.FillWait,
 		HistoryExchangeLimit:    s.HistoryExchangeLimit,

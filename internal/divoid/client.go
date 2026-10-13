@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +30,6 @@ var _ loop.GraphPort = (*Client)(nil)
 const (
 	nodeFields      = "id,type,name,content,substance"
 	candidateFields = "id,type,name,similarity,content,substance"
-	neighbourFields = "id,type,name"
 )
 
 const (
@@ -41,12 +39,6 @@ const (
 	excludeIDParam   = "excludeId"
 	excludeNameParam = "excludeName"
 )
-
-const neighbourPageSize = 500
-
-const logPartialNeighbourhood = "neighbourhood read stopped before the graph's last page"
-
-const logLeakedRunRecords = "the graph returned run records as neighbours it was asked to exclude"
 
 var errNoQuery = errors.New("divoid: recall needs at least one query")
 
@@ -179,9 +171,6 @@ func (c *Client) Recall(ctx context.Context, request loop.RecallRequest) ([]loop
 	}
 	q.Set("count", strconv.Itoa(request.Limit))
 	q.Set("fields", candidateFields)
-	for _, id := range request.Scope {
-		q.Add("linkedto", strconv.FormatInt(id, 10))
-	}
 	for _, id := range request.Exclude {
 		q.Add(excludeIDParam, strconv.FormatInt(id, 10))
 	}
@@ -209,57 +198,6 @@ func (c *Client) Recall(ctx context.Context, request loop.RecallRequest) ([]loop
 		}
 	}
 	return candidates, nil
-}
-
-// Neighbours returns the ids linked to id, ascending and deduplicated, never a run record.
-func (c *Client) Neighbours(ctx context.Context, id int64) ([]int64, error) {
-	seen := make(map[int64]struct{})
-	leaked := 0
-
-	for cursor := 0; ; {
-		q := url.Values{}
-		q.Set("linkedto", strconv.FormatInt(id, 10))
-		q.Set(excludeNameParam, RunNamePrefix+"%")
-		q.Set("fields", neighbourFields)
-		q.Set("count", strconv.Itoa(neighbourPageSize))
-		if cursor > 0 {
-			q.Set("continue", strconv.Itoa(cursor))
-		}
-
-		var resp listingResponse
-		if err := c.get(ctx, nodesPath, q, &resp); err != nil {
-			return nil, err
-		}
-
-		for _, r := range resp.Result {
-			if IsRunRecord(r.Type, r.Name) {
-				leaked++
-				continue
-			}
-			seen[r.ID] = struct{}{}
-		}
-
-		if resp.Continue == nil {
-			break
-		}
-		if len(resp.Result) == 0 || *resp.Continue <= cursor {
-			c.log().Warn(logPartialNeighbourhood, "node", id, "cursor", cursor, "next", *resp.Continue, "neighbours", len(seen))
-			break
-		}
-		cursor = *resp.Continue
-	}
-
-	if leaked > 0 {
-		c.log().Warn(logLeakedRunRecords, "node", id, "dropped", leaked)
-	}
-
-	neighbours := make([]int64, 0, len(seen))
-	for n := range seen {
-		neighbours = append(neighbours, n)
-	}
-	slices.Sort(neighbours)
-
-	return neighbours, nil
 }
 
 func (c *Client) get(ctx context.Context, path string, query url.Values, out any) error {

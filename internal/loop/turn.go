@@ -12,8 +12,6 @@ import (
 const (
 	// CandidateLimit is how many top-ranked rows one recall asks the graph for.
 	CandidateLimit = 6
-	// RecallScopeReserve is how many of those slots the subject's neighbourhood may take from rows the global ranking lacks.
-	RecallScopeReserve = 2
 	// AssemblyByteBudget bounds the block's content bytes: the anchor plus admitted candidates.
 	AssemblyByteBudget = 60_000
 	// MaxModelCalls caps a turn's model calls: 6 is the measured knee, 17 of 20 sampled tasks reaching their own terminal.
@@ -69,11 +67,10 @@ var ErrRunTimeExhausted = errors.New("run time exhausted")
 // ErrWriteRejected marks a write the working directory refused; its message is shown to the model.
 var ErrWriteRejected = errors.New("write rejected")
 
-// RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, an empty Scope meaning the whole graph, Exclude ids and every run record left out, and a zero Window unbounded.
+// RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, Exclude ids and every run record left out, and a zero Window unbounded.
 type RecallRequest struct {
 	Queries []string
 	Limit   int
-	Scope   []int64
 	Exclude []int64
 	Window  UpdateWindow
 }
@@ -86,9 +83,6 @@ type GraphPort interface {
 
 	// Recall returns the request's candidates in the graph's own rank order, never re-sorted, each carrying the mean similarity over its queries.
 	Recall(ctx context.Context, request RecallRequest) ([]Candidate, error)
-
-	// Neighbours returns the ids linked to id, ascending and deduplicated, never a run record.
-	Neighbours(ctx context.Context, id int64) ([]int64, error)
 
 	// WriteRun files the record and reports where it landed; the adapter alone chooses type, name and edge.
 	WriteRun(ctx context.Context, record Record) WriteReceipt
@@ -191,7 +185,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 
 	queries, window, derivationError := t.derive(ctx, input, subject, now)
 
-	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, settings.RecallScopeReserve, window, t.log())
+	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, window, t.log())
 	if err != nil {
 		return t.failed(subject, started, fmt.Errorf("%w: %v", ErrGraphUnavailable, err))
 	}
