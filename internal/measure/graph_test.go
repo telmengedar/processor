@@ -22,7 +22,6 @@ import (
 const (
 	eventNode          = "node"
 	eventRecall        = "recall"
-	eventNeighbours    = "neighbours"
 	eventWrite         = "write"
 	eventTurnCompleted = "turnCompleted"
 )
@@ -93,11 +92,6 @@ func (g *recordingGraph) Recall(_ context.Context, request loop.RecallRequest) (
 	g.mu.Unlock()
 
 	return g.candidates, nil
-}
-
-func (g *recordingGraph) Neighbours(_ context.Context, id int64) ([]int64, error) {
-	g.mark(eventNeighbours, id)
-	return []int64{303}, nil
 }
 
 func (g *recordingGraph) WriteRun(_ context.Context, record loop.Record) loop.WriteReceipt {
@@ -262,7 +256,7 @@ func TestAMeasuredRunsReadsStillReachTheGraphAndItsBlockCarriesWhatTheyReturned(
 	}
 
 	events := live.log()
-	for _, kind := range []string{eventNode, eventRecall, eventNeighbours} {
+	for _, kind := range []string{eventNode, eventRecall} {
 		if countEvents(events, kind) == 0 {
 			t.Fatalf("the graph saw no %s read, and a measured run reads the graph exactly as a filed run does", kind)
 		}

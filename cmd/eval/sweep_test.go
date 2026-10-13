@@ -25,9 +25,8 @@ type fakeGraph struct {
 
 	writeAllowed bool
 
-	nodes            map[int64]loop.Anchor
-	candidates       []loop.Candidate
-	scopedCandidates []loop.Candidate
+	nodes      map[int64]loop.Anchor
+	candidates []loop.Candidate
 
 	nodeErr   error
 	recallErr error
@@ -61,9 +60,6 @@ func (f *fakeGraph) Recall(_ context.Context, request loop.RecallRequest) ([]loo
 	}
 
 	rows := f.candidates
-	if len(request.Scope) > 0 {
-		rows = f.scopedCandidates
-	}
 	kept := make([]loop.Candidate, 0, len(rows))
 	for _, row := range rows {
 		if !row.SelfProduced && !slices.Contains(request.Exclude, row.ID) {
@@ -72,8 +68,6 @@ func (f *fakeGraph) Recall(_ context.Context, request loop.RecallRequest) ([]loo
 	}
 	return kept[:min(request.Limit, len(kept))], nil
 }
-
-func (f *fakeGraph) Neighbours(context.Context, int64) ([]int64, error) { return nil, nil }
 
 func (f *fakeGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt {
 	if !f.writeAllowed {
@@ -209,7 +203,7 @@ func fetchCountRetrievalIssues(t *testing.T) int {
 	t.Helper()
 
 	graph := newFakeGraph(t)
-	if _, err := loop.Retrieve(context.Background(), graph, loop.Anchor{ID: 100}, []string{"a probe query"}, loop.CandidateLimit, loop.RecallScopeReserve, loop.UpdateWindow{}, nil); err != nil {
+	if _, err := loop.Retrieve(context.Background(), graph, loop.Anchor{ID: 100}, []string{"a probe query"}, loop.CandidateLimit, loop.UpdateWindow{}, nil); err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
 	if len(graph.recallCalls) == 0 {
@@ -218,7 +212,7 @@ func fetchCountRetrievalIssues(t *testing.T) int {
 	return graph.recallCalls[0].Limit
 }
 
-func TestSweepIssuesOneGlobalRecallAndOneScopedRecallPerRowEachCarryingTheRawInputAndEveryPinnedDerivation(t *testing.T) {
+func TestSweepIssuesOneRecallPerRowCarryingTheRawInputAndEveryPinnedDerivation(t *testing.T) {
 	t.Parallel()
 
 	graph := newFakeGraph(t)
@@ -233,15 +227,12 @@ func TestSweepIssuesOneGlobalRecallAndOneScopedRecallPerRowEachCarryingTheRawInp
 		t.Fatalf("sweep: %v", err)
 	}
 
-	if len(graph.recallCalls) != 2 {
-		t.Fatalf("the sweep issued %d recalls for one row, want exactly 2: the product asks the graph once for all of a row's queries and once more inside the subject's scope, and a sweep that asks per query measures a pipeline the product does not run", len(graph.recallCalls))
+	if len(graph.recallCalls) != 1 {
+		t.Fatalf("the sweep issued %d recalls for one row, want exactly 1: the product asks the graph once for all of a row's queries, and a sweep that asks per query measures a pipeline the product does not run", len(graph.recallCalls))
 	}
 	want := []string{row.Input, "why would a mutation leave the suite green", "what does a non-zero exit code mean"}
 	if !slices.Equal(graph.recallCalls[0].Queries, want) {
 		t.Fatalf("the sweep recalled %q, want %q: a pinned derivation that never reaches the graph leaves the derived arm ranking exactly what the raw arm ranked while reporting a derivation hash beside it", graph.recallCalls[0].Queries, want)
-	}
-	if !slices.Equal(graph.recallCalls[1].Queries, want) {
-		t.Fatalf("the scoped recall carried %q, want %q", graph.recallCalls[1].Queries, want)
 	}
 }
 
@@ -394,8 +385,8 @@ func TestSweepReadsTheGraphAndNeverWritesToIt(t *testing.T) {
 	if !reflect.DeepEqual(graph.nodeCalls, wantNodeCalls) {
 		t.Fatalf("node calls = %v, want %v: one per subject, plus one per required node that was not retrieved", graph.nodeCalls, wantNodeCalls)
 	}
-	if len(graph.recallCalls) != 4 {
-		t.Fatalf("recall calls = %d, want two per row", len(graph.recallCalls))
+	if len(graph.recallCalls) != 2 {
+		t.Fatalf("recall calls = %d, want one per row", len(graph.recallCalls))
 	}
 }
 
@@ -546,28 +537,23 @@ func TestTheSweepScoresTheGraphsTopCandidateLimitRowsAndNothingBeyond(t *testing
 	}
 }
 
-func TestTheSweepHoldsTwoOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *testing.T) {
+func TestTheSweepGivesEveryCandidateSlotToTheOneRecall(t *testing.T) {
 	t.Parallel()
 
 	graph := newFakeGraph(t)
 	for i := range 10 {
 		graph.candidates = append(graph.candidates, loop.Candidate{ID: int64(1001 + i), Type: "documentation", Name: "whole graph", Similarity: 0.9 - 0.01*float64(i)})
 	}
-	for i := range 5 {
-		graph.scopedCandidates = append(graph.scopedCandidates, loop.Candidate{ID: int64(2001 + i), Type: "documentation", Name: "neighbourhood", Similarity: 0.5 - 0.01*float64(i)})
-	}
 
 	row := labelledRow("r01", eval.Required{Node: 1001, Hash: emptyBodyHash, Why: "w"})
 	result := mustSweep(t, graph, corpusOf(row))
 
-	var neighbourhood []int64
+	var scored []int64
 	for _, d := range result.Rows[0].Candidates {
-		if d.ID >= 2001 {
-			neighbourhood = append(neighbourhood, d.ID)
-		}
+		scored = append(scored, d.ID)
 	}
 
-	if want := []int64{2001, 2002}; !slices.Equal(neighbourhood, want) {
-		t.Fatalf("the sweep scored neighbourhood candidates %v of the five on offer, want %v: the instrument and the product share one retrieval, so a reserve the sweep does not honour is a rate measured on a pipeline the product does not run", neighbourhood, want)
+	if want := []int64{1001, 1002, 1003, 1004, 1005, 1006}; !slices.Equal(scored, want) {
+		t.Fatalf("the sweep scored candidates %v, want the top six of the one ranking %v: the instrument and the product share one retrieval, and no slot is held for another list", scored, want)
 	}
 }

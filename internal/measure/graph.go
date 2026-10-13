@@ -53,11 +53,6 @@ func (g *Graph) Recall(ctx context.Context, request loop.RecallRequest) ([]loop.
 	return g.reads.Recall(ctx, request)
 }
 
-// Neighbours returns the decorated port's neighbourhood of id, unchanged.
-func (g *Graph) Neighbours(ctx context.Context, id int64) ([]int64, error) {
-	return g.reads.Neighbours(ctx, id)
-}
-
 // WriteRun files nothing: it records that the record was produced and how large it would have been, and reports that no node holds it.
 func (g *Graph) WriteRun(_ context.Context, record loop.Record) loop.WriteReceipt {
 	size, err := FiledSize(record, g.now())

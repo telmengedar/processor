@@ -162,3 +162,22 @@ func TestAnEntryDecodedFromANamedNodeIsDated(t *testing.T) {
 		t.Fatalf("run instant is %s, want %s", entry.At, want)
 	}
 }
+
+func TestARecordFiledWhileAScopedRecallExistedStillDecodes(t *testing.T) {
+	t.Parallel()
+
+	body := `{"input":"archived","subject":10422,"candidates":[{"rank":1,"id":7,"sources":[{"rank":1},{"rank":2,"scoped":true}]}],"limits":{"candidateLimit":6,"recallScopeReserve":2,"maxModelCalls":6}}`
+
+	archive := Read("one archived record", []Node{{ID: 1, Name: runName, Content: body}})
+
+	if len(archive.Entries) != 1 || len(archive.Skipped) != 0 {
+		t.Fatalf("want one entry and no skip, got %d entries and %+v", len(archive.Entries), archive.Skipped)
+	}
+	record := archive.Entries[0].Record
+	if record.Limits.CandidateLimit != 6 || record.Limits.MaxModelCalls != 6 {
+		t.Errorf("limits decoded as %+v, want the surviving fields kept beside the removed reserve", record.Limits)
+	}
+	if got := record.Candidates[0].Sources; len(got) != 2 || got[1].Rank != 2 {
+		t.Errorf("sources decoded as %+v, want both recalls' ranks kept", got)
+	}
+}

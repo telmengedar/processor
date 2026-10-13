@@ -32,7 +32,6 @@ func resultWith(rows ...RowResult) Result {
 		Limits: Limits{
 			CandidateLimit:     loop.CandidateLimit,
 			AssemblyByteBudget: loop.AssemblyByteBudget,
-			RecallScopeReserve: loop.RecallScopeReserve,
 		},
 		RowCount: len(rows),
 		Rows:     rows,
@@ -686,10 +685,13 @@ func TestTheSummaryNamesProvenanceUnrecordedRatherThanAMeasuredZeroWhenNoRowName
 	}
 }
 
-func TestTheSummaryCarriesTheCandidateLimitAndTheScopeReserveBesideTheOtherLimits(t *testing.T) {
+func TestTheSummaryCarriesTheCandidateLimitBesideTheOtherLimitsAndNoReserve(t *testing.T) {
 	t.Parallel()
 
 	_, human := render(t, resultWith(intactControlRow()))
 
-	mustContainLine(t, human, fmt.Sprintf("limits candidateLimit=%d assemblyByteBudget=60000 recallScopeReserve=%d", loop.CandidateLimit, loop.RecallScopeReserve))
+	mustContainLine(t, human, fmt.Sprintf("limits candidateLimit=%d assemblyByteBudget=60000", loop.CandidateLimit))
+	if strings.Contains(human, "recallScopeReserve") {
+		t.Fatalf("the summary named a scope reserve: %s", human)
+	}
 }

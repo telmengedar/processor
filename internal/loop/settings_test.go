@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"slices"
@@ -13,7 +14,6 @@ import (
 func distinctSettings() RunSettings {
 	return RunSettings{
 		CandidateLimit:          3,
-		RecallScopeReserve:      1,
 		AssemblyByteBudget:      4_000,
 		SupplementaryByteBudget: 900,
 		MaxModelCalls:           2,
@@ -46,7 +46,6 @@ func TestDefaultSettingsNameEveryDialAtTheValueTheLoopShipped(t *testing.T) {
 
 	want := RunSettings{
 		CandidateLimit:          6,
-		RecallScopeReserve:      2,
 		AssemblyByteBudget:      60_000,
 		SupplementaryByteBudget: 20_000,
 		MaxModelCalls:           6,
@@ -60,8 +59,8 @@ func TestDefaultSettingsNameEveryDialAtTheValueTheLoopShipped(t *testing.T) {
 	if got := DefaultSettings(); got != want {
 		t.Fatalf("DefaultSettings() = %+v, want %+v", got, want)
 	}
-	if got := reflect.TypeOf(RunSettings{}).NumField(); got != 10 {
-		t.Fatalf("RunSettings has %d fields, want the 10 this test names: a new dial needs a default pinned here", got)
+	if got := reflect.TypeOf(RunSettings{}).NumField(); got != 9 {
+		t.Fatalf("RunSettings has %d fields, want the 9 this test names: a new dial needs a default pinned here", got)
 	}
 	if got := DefaultSettings().PromptCeiling(); got != JudgementPromptCeiling {
 		t.Fatalf("default PromptCeiling = %d, want the deployment-wide JudgementPromptCeiling %d", got, JudgementPromptCeiling)
@@ -76,7 +75,6 @@ func TestSettingsLimitsCarriesEveryDialToItsOwnRecordedField(t *testing.T) {
 		AssemblyByteBudget:      4_000,
 		SupplementaryByteBudget: 900,
 		MaxModelCalls:           2,
-		RecallScopeReserve:      1,
 		ThinKnowledgeSimilarity: ThinKnowledgeSimilarity,
 		DerivationBudget:        DerivationBudget,
 		JudgementBudget:         301,
@@ -125,45 +123,13 @@ func TestTheCandidateLimitOfTheSettingsReachesEveryRecallOfTheRun(t *testing.T) 
 	settings.CandidateLimit = 3
 	runWithSettings(t, graph, model, settings, nil)
 
-	if len(graph.recallCalls) != 3 {
-		t.Fatalf("test setup error: %d recalls, want the global and scoped initial ones and one supplementary", len(graph.recallCalls))
+	if len(graph.recallCalls) != 2 {
+		t.Fatalf("test setup error: %d recalls, want the initial one and one supplementary", len(graph.recallCalls))
 	}
 	for i, call := range graph.recallCalls {
 		if call.Limit != 3 {
 			t.Errorf("recall %d asked the graph for %d rows, want the settings' 3", i+1, call.Limit)
 		}
-	}
-}
-
-func TestTheScopeReserveOfTheSettingsDecidesHowManyNeighbourhoodRowsAreTaken(t *testing.T) {
-	t.Parallel()
-
-	newGraph := func() *fakeGraph {
-		graph := baseGraph()
-		graph.candidates = []Candidate{{ID: 1, Similarity: 0.9}, {ID: 2, Similarity: 0.8}}
-		graph.scopedCandidates = []Candidate{{ID: 3, Similarity: 0.7}, {ID: 4, Similarity: 0.6}}
-		return graph
-	}
-	idsOf := func(record Record) []int64 {
-		ids := make([]int64, 0, len(record.Candidates))
-		for _, d := range record.Candidates {
-			ids = append(ids, d.ID)
-		}
-		slices.Sort(ids)
-		return ids
-	}
-
-	settings := DefaultSettings()
-	settings.CandidateLimit = 2
-
-	settings.RecallScopeReserve = 0
-	if got := idsOf(runWithSettings(t, newGraph(), &fakeModel{}, settings, nil)); !slices.Equal(got, []int64{1, 2}) {
-		t.Errorf("with no reserve the run chose %v, want the global top [1 2]", got)
-	}
-
-	settings.RecallScopeReserve = 2
-	if got := idsOf(runWithSettings(t, newGraph(), &fakeModel{}, settings, nil)); !slices.Equal(got, []int64{3, 4}) {
-		t.Errorf("with a reserve of 2 the run chose %v, want the neighbourhood rows [3 4]", got)
 	}
 }
 
@@ -451,5 +417,18 @@ func TestTheRefusalNamesThePromptCeilingOfTheSettingsTheRunWasGiven(t *testing.T
 	}
 	if !strings.Contains(err.Error(), "40000 prompt bytes") {
 		t.Fatalf("the refusal does not state the run's own 40000 byte ceiling: %v", err)
+	}
+}
+
+func TestTheLimitsAreRecordedWithoutAReserveBecauseNoRecallHoldsOne(t *testing.T) {
+	t.Parallel()
+
+	encoded, err := json.Marshal(DefaultSettings().Limits())
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	if strings.Contains(string(encoded), "recallScopeReserve") {
+		t.Fatalf("the recorded limits are %s, want no reserve key: a record that states a reserve of zero describes a mechanism the turn no longer has", encoded)
 	}
 }

@@ -1394,6 +1394,58 @@ class OneRequestRecallTests(unittest.TestCase):
         self.assertIn("src unscoped r1, scoped r2", row_for(out, 101))
 
 
+class SingleRecallTests(unittest.TestCase):
+    """Records filed by a turn that asks the graph once: sources carry only `rank`, and the limits
+    carry no `recallScopeReserve`. The earlier two-recall narration must not print for them, and a
+    scoped source or a reserve dial must still select the earlier narration."""
+
+    def rows(self):
+        return [
+            candidate(1, 101, [globally(1)], name="first"),
+            candidate(2, 102, [globally(2)], name="second"),
+            candidate(19, 119, [globally(19)], name="a row at the earlier reserve rank"),
+        ]
+
+    def render_single(self, **kwargs):
+        return render(record(candidates=self.rows(), block="x" * 900, **kwargs))
+
+    def test_a_record_with_rank_only_sources_and_no_reserve_is_narrated_as_one_recall(self):
+        out = self.render_single()
+        self.assertIn("one recall, one request over every query", out)
+        self.assertIn("every slot of the candidate limit goes to it", out)
+
+    def test_the_two_recall_mechanism_is_not_narrated_for_it(self):
+        out = self.render_single()
+        for retired in ("two recalls", "two-hop", "scoped", "RESERVED", "neighbourhood", "Up to"):
+            self.assertNotIn(retired, out)
+
+    def test_each_row_shows_its_position_in_the_one_list(self):
+        out = self.render_single()
+        self.assertIn("src global r1", row_for(out, 101))
+        self.assertIn("src global r19", row_for(out, 119))
+
+    def test_the_source_note_names_the_one_recall_and_no_second(self):
+        out = self.render_single()
+        self.assertIn("its position in the one recall's list", out)
+        self.assertNotIn("the global recall, the scoped recall or both", out)
+
+    def test_a_reserve_dial_in_the_limits_selects_the_two_recall_narration(self):
+        out = self.render_single(limits=dict(LIMITS, recallScopeReserve=2))
+        self.assertIn("two recalls, each one request over every query", out)
+        self.assertNotIn("one recall, one request", out)
+
+    def test_a_scoped_source_selects_the_two_recall_narration(self):
+        rows = [candidate(1, 101, [globally(1), within_scope(2)])]
+        out = render(record(candidates=rows, block="x" * 900))
+        self.assertIn("two recalls, each one request over every query", out)
+        self.assertNotIn("one recall, one request", out)
+
+    def test_a_record_with_no_candidates_claims_neither_shape(self):
+        out = render(record())
+        self.assertNotIn("one recall, one request", out)
+        self.assertNotIn("two recalls", out)
+
+
 class MirroredConstantTests(unittest.TestCase):
     """The mirrors this script keeps of internal/loop's own vocabulary, pinned against the Go source
     in this tree rather than against the memory of whoever last edited them.

@@ -11,7 +11,6 @@ import (
 type Limits struct {
 	CandidateLimit     int `json:"candidateLimit"`
 	AssemblyByteBudget int `json:"assemblyByteBudget"`
-	RecallScopeReserve int `json:"recallScopeReserve"`
 }
 
 // RowResult is one row's outcome, the diagnostics that make its number actionable,
@@ -69,7 +68,6 @@ func NewResult(corpus Corpus, derivations Derivations, sweptAt time.Time) Result
 		Limits: Limits{
 			CandidateLimit:     loop.CandidateLimit,
 			AssemblyByteBudget: loop.AssemblyByteBudget,
-			RecallScopeReserve: loop.RecallScopeReserve,
 		},
 		RowCount: len(corpus.Rows),
 		Rows:     make([]RowResult, 0, len(corpus.Rows)),

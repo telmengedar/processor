@@ -16,11 +16,9 @@ never watched the loop attempt a task end to end. THE DELIVERABLE IS VISIBILITY,
 If a run does something useless, this script's job is to show that clearly, not to soften it.
 
 What "one turn" actually is (internal/loop/turn.go), verified against this tree rather than assumed:
-fetch the anchor by id -> retrieve candidates (Retrieve -- one unscoped recall plus one recall scoped
-to the anchor's two-hop neighbourhood, combined by reciprocal-rank fusion IN PRINCIPLE, but turn.go
-always calls Retrieve with exactly one query (`[]string{input}`), and RRF over a single list is
-order-preserving -- see the RECALL RANKING note below for what that actually means for the order you
-see) -> assemble a byte-budgeted block -> call the model, looping while it asks for a tool, bounded
+fetch the anchor by id -> retrieve candidates (Retrieve -- one request over every query against the
+whole graph, or against the derived window; records filed before that change carry two recalls, see
+the RECALL RANKING notes below) -> assemble a byte-budgeted block -> call the model, looping while it asks for a tool, bounded
 by MaxModelCalls=6 -> write a run record. The model has THREE tools: the supplementary "recall";
 "write_file", which writes one file into a working directory the run is given (internal/workspace);
 and "read_node", which fetches ONE part of memory by the id the model names and puts it in front of
@@ -90,7 +88,16 @@ arm for "this script does not know", because both axes have grown under it befor
   renders archived records and the archive still carries all three, and every line they print says
   ARCHIVE SHAPE so nobody reads them as live.
 
-RECALL RANKING, one request per recall. A turn asks the graph twice, both times with every query it
+RECALL RANKING, one recall. A turn asks the graph once, with every query it holds, over the whole
+graph (or the derived update window). The graph ranks the nodes by the mean of the queries'
+similarities, leaves out the anchor and every run record BEFORE it counts, and returns at most the
+candidate limit; every slot of the limit goes to that list and the rows are ordered by similarity.
+`Disposition.Sources` carries `{rank}` for each row: its 1-based position in that list. A record
+written that way is recognised by its sources lacking the `query` key, no source carrying
+`scoped`, and its limits lacking `recallScopeReserve`. The earlier two-recall shape follows.
+
+RECALL RANKING (two-recall shape, records filed before the subject's neighbourhood recall was
+removed). A turn asked the graph twice, both times with every query it
 holds: once over the whole graph (the global recall) and once inside the subject's two-hop
 neighbourhood (the scoped recall). The graph ranks each by the mean of the queries' similarities,
 leaves out the anchor and every run record BEFORE it counts, and returns at most the candidate
@@ -295,8 +302,7 @@ WRITE_REJECTED_PREFIX = "write rejected: "
 CUT_SELF_PRODUCED = "self-produced"
 CUT_BYTE_BUDGET = "byte budget exceeded"
 
-# The scope reserve of the earlier retrieval shape (3 of 20), kept to narrate archived records. The
-# loop's current reserve is carried in each new record's `limits` object and read from there.
+# The scope reserve of the earliest retrieval shape (3 of 20), kept to narrate archived records.
 RECALL_SCOPE_RESERVE = 3
 
 # internal/boot's own variable name. The binary has no flag surface at all -- boot/config.go reads
@@ -454,6 +460,17 @@ def classify_write_round(tool_call):
     return WRITE_UNRECOGNISED
 
 
+def recall_is_single(candidates, limits):
+    """True when a record was filed by a turn that asked the graph once: the sources lack the `query`
+    key, none is scoped, and the limits carry no scope reserve. Any scoped source or any reserve
+    dial is the two-recall shape, whichever of the two the record shows first."""
+    if not recall_is_one_request(candidates):
+        return False
+    if "recallScopeReserve" in (limits or {}):
+        return False
+    return not any(source.get("scoped") for d in candidates for source in (d.get("sources") or []))
+
+
 def recall_is_one_request(candidates):
     """True when a record's candidates came from the one-request recall: some source lacks the
     `query` key, which every earlier source carried. A record whose candidates carry no sources at
@@ -554,7 +571,7 @@ def render_candidate_table(dispositions, budget, attributed=False, name_query=Fa
     return lines
 
 
-def attribution_note(dispositions):
+def attribution_note(dispositions, single=False):
     """How STEP 2 introduces the `src` column, decided by what this particular record carries.
 
     Three shapes, kept apart on purpose, for the same reason `sampling_lines` keeps its three apart:
@@ -572,6 +589,13 @@ def attribution_note(dispositions):
 
     attributed = sum(1 for d in dispositions if d.get("sources"))
 
+    if single and attributed == len(dispositions):
+        return (
+            "Which recall returned each row IS recorded: the src column below is that row's "
+            "Disposition.sources -- its position in the one recall's list. There is no per-query "
+            "rank to print: the recall is one request over every query and the graph reports only "
+            "the mean."
+        )
     if attributed == len(dispositions) and recall_is_one_request(dispositions):
         return (
             "Which recall returned each row IS recorded: the src column below is that row's "
@@ -826,12 +850,22 @@ def render_trace(record, model_url, model_id, temperature_requested):
     # source separates rows and is printed. On a one-query record it is a constant and is not.
     name_query = len(record.get("queries") or []) > 1
     out.append(f"{head('recall')} input: query={record.get('query')!r} (the task input, verbatim -- no rewrite, no model in the path)")
-    sources_note = attribution_note(candidates)
+    single = recall_is_single(candidates, limits)
+    sources_note = attribution_note(candidates, single)
     if not candidates:
         reserve_from = None
         rank_note = (
             "no candidate came back, so there is no ranking to describe and this record does not say "
             "which retrieval shape asked for one."
+        )
+    elif single:
+        reserve_from = None
+        rank_note = (
+            f"one recall, one request over every query against the whole graph or the derived "
+            f"window, and every slot of the candidate limit goes to it. The graph ranked the "
+            f"nodes by mean similarity and left out the anchor and the run records before counting. "
+            f"The rows below are ordered by similarity, and sim is the mean over the queries."
+            + (f" {sources_note}" if sources_note else "")
         )
     elif recall_is_one_request(candidates):
         reserve_from = None

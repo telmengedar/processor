@@ -36,13 +36,6 @@ type fakeGraph struct {
 	honorsLimit      bool
 	ignoresExclusion bool
 
-	scopedCandidates []Candidate
-	scopedErr        error
-
-	neighbours      []int64
-	neighboursErr   error
-	neighboursCalls []int64
-
 	recallQueue []recallResponse
 
 	recallCalls []RecallRequest
@@ -68,7 +61,7 @@ func withoutExcluded(rows []Candidate, exclude []int64) []Candidate {
 	return kept
 }
 
-const primaryRecallCalls = 2
+const primaryRecallCalls = 1
 
 type recallResponse struct {
 	Candidates []Candidate
@@ -102,8 +95,6 @@ func (f *fakeGraph) Recall(_ context.Context, request RecallRequest) ([]Candidat
 	var rows []Candidate
 	var err error
 	switch {
-	case len(request.Scope) > 0:
-		rows, err = f.scopedCandidates, f.scopedErr
 	case len(f.recallQueue) > 0:
 		resp := f.recallQueue[0]
 		f.recallQueue = f.recallQueue[1:]
@@ -119,11 +110,6 @@ func (f *fakeGraph) Recall(_ context.Context, request RecallRequest) ([]Candidat
 		rows = rows[:min(request.Limit, len(rows))]
 	}
 	return rows, err
-}
-
-func (f *fakeGraph) Neighbours(_ context.Context, id int64) ([]int64, error) {
-	f.neighboursCalls = append(f.neighboursCalls, id)
-	return f.neighbours, f.neighboursErr
 }
 
 func (f *fakeGraph) WriteRun(ctx context.Context, record Record) WriteReceipt {
@@ -420,7 +406,7 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	if record.CapReached {
 		t.Fatal("record.CapReached = true, want false — the model answered on the first call, the cap never fired")
 	}
-	wantLimits := Limits{CandidateLimit: 6, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, AnsweringBudget: 192, RecallScopeReserve: RecallScopeReserve, ThinKnowledgeSimilarity: 0.63, FillWait: FillWait, HistoryExchangeLimit: 4, HistorySafetyLimit: 8_000}
+	wantLimits := Limits{CandidateLimit: 6, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, AnsweringBudget: 192, ThinKnowledgeSimilarity: 0.63, FillWait: FillWait, HistoryExchangeLimit: 4, HistorySafetyLimit: 8_000}
 	if record.Limits != wantLimits {
 		t.Fatalf("record.Limits = %+v, want %+v", record.Limits, wantLimits)
 	}
@@ -499,7 +485,7 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 		t.Fatalf("record.Answer = %q, want %q", record.Answer, "final answer")
 	}
 	if len(graph.recallCalls) != primaryRecallCalls+1 {
-		t.Fatalf("Recall was called %d times, want %d (the primary pair + one supplementary)", len(graph.recallCalls), primaryRecallCalls+1)
+		t.Fatalf("Recall was called %d times, want %d (the initial recall + one supplementary)", len(graph.recallCalls), primaryRecallCalls+1)
 	}
 	if !slices.Equal(graph.recallCalls[primaryRecallCalls].Queries, []string{"the missing thing"}) {
 		t.Fatalf("supplementary recall queries = %q, want %q", graph.recallCalls[primaryRecallCalls].Queries, []string{"the missing thing"})
@@ -545,7 +531,7 @@ func TestTurnRunRecordsAMalformedToolRequestAsAnErrorFlaggedRoundAndContinues(t 
 		t.Fatalf("record.Answer = %q, want the turn to reach the second call's answer", record.Answer)
 	}
 	if len(graph.recallCalls) != primaryRecallCalls {
-		t.Fatalf("Recall was called %d times, want %d (only the primary pair — the malformed round must not reach Recall)", len(graph.recallCalls), primaryRecallCalls)
+		t.Fatalf("Recall was called %d times, want %d (only the initial recall — the malformed round must not reach Recall)", len(graph.recallCalls), primaryRecallCalls)
 	}
 	if len(record.ToolCalls) != 1 {
 		t.Fatalf("record.ToolCalls has %d entries, want 1 (counted, not dropped)", len(record.ToolCalls))
@@ -1681,7 +1667,7 @@ func TestTheSupplementaryRecallSendsTheModelsOwnQueryAsExactlyOneCall(t *testing
 	}
 
 	if len(graph.recallCalls) != primaryRecallCalls+1 {
-		t.Fatalf("Recall was called %d times, want %d (the primary pair and one supplementary): the model asked for one lookup, so a supplementary path that fans one ask into several is spending reads the model did not request", len(graph.recallCalls), primaryRecallCalls+1)
+		t.Fatalf("Recall was called %d times, want %d (the initial recall and one supplementary): the model asked for one lookup, so a supplementary path that fans one ask into several is spending reads the model did not request", len(graph.recallCalls), primaryRecallCalls+1)
 	}
 
 	supplementary := graph.recallCalls[primaryRecallCalls]
@@ -1743,11 +1729,11 @@ func TestTheTurnAsksTheGraphForAllItsQueriesTogetherAndAdmitsTheTopCandidateLimi
 	}
 
 	if len(graph.recallCalls) != primaryRecallCalls {
-		t.Fatalf("the turn issued %d recalls, want %d: one for all the queries and one inside the subject's scope, and never one per query", len(graph.recallCalls), primaryRecallCalls)
+		t.Fatalf("the turn issued %d recalls, want %d: one for all the queries, and never one per query", len(graph.recallCalls), primaryRecallCalls)
 	}
 	global := graph.recallCalls[0]
 	if want := []string{"hello", "a second phrasing?", "a third phrasing?"}; !slices.Equal(global.Queries, want) {
-		t.Fatalf("the global recall carried queries %q, want %q", global.Queries, want)
+		t.Fatalf("the recall carried queries %q, want %q", global.Queries, want)
 	}
 	if global.Limit != CandidateLimit {
 		t.Fatalf("the recall asked for %d rows, want CandidateLimit %d: a fetch beyond the count is rows fetched to be cut", global.Limit, CandidateLimit)
@@ -1764,7 +1750,7 @@ func TestTheTurnAsksTheGraphForAllItsQueriesTogetherAndAdmitsTheTopCandidateLimi
 	}
 }
 
-func TestTheRecordCarriesTheScopeReserveAndTheThinKnowledgeSimilarityThatGovernedTheRun(t *testing.T) {
+func TestTheRecordCarriesTheThinKnowledgeSimilarityThatGovernedTheRun(t *testing.T) {
 	t.Parallel()
 
 	graph := baseGraph()
@@ -1776,9 +1762,6 @@ func TestTheRecordCarriesTheScopeReserveAndTheThinKnowledgeSimilarityThatGoverne
 		t.Fatalf("Run: %v", err)
 	}
 
-	if record.Limits.RecallScopeReserve != RecallScopeReserve {
-		t.Fatalf("record.Limits.RecallScopeReserve = %v, want %v", record.Limits.RecallScopeReserve, RecallScopeReserve)
-	}
 	if record.Limits.ThinKnowledgeSimilarity != 0.63 {
 		t.Fatalf("record.Limits.ThinKnowledgeSimilarity = %v, want 0.63", record.Limits.ThinKnowledgeSimilarity)
 	}
@@ -1957,17 +1940,13 @@ func TestTheSupplementaryRecallReportsRowsItDroppedBecauseTheGraphLeakedThem(t *
 	}
 }
 
-func TestTheTurnHoldsTwoOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *testing.T) {
+func TestTheTurnGivesEveryCandidateSlotToTheOneRecall(t *testing.T) {
 	t.Parallel()
 
 	graph := baseGraph()
 	graph.honorsLimit = true
-	graph.neighbours = []int64{7}
 	for i := range 10 {
 		graph.candidates = append(graph.candidates, Candidate{ID: int64(1001 + i), Type: "documentation", Name: "whole graph", Similarity: 0.9 - 0.01*float64(i), Substance: "body"})
-	}
-	for i := range 5 {
-		graph.scopedCandidates = append(graph.scopedCandidates, Candidate{ID: int64(2001 + i), Type: "documentation", Name: "neighbourhood", Similarity: 0.5 - 0.01*float64(i), Substance: "body"})
 	}
 	model := &fakeModel{results: []JudgeResult{{Answer: "done", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
@@ -1977,17 +1956,14 @@ func TestTheTurnHoldsTwoOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *tes
 		t.Fatalf("Run: %v", err)
 	}
 
-	var neighbourhood []int64
+	var ids []int64
 	for _, d := range record.Candidates {
-		if d.ID >= 2001 {
-			neighbourhood = append(neighbourhood, d.ID)
-		}
+		ids = append(ids, d.ID)
 	}
-	if want := []int64{2001, 2002}; !slices.Equal(neighbourhood, want) {
-		t.Fatalf("the run admitted neighbourhood candidates %v of the five on offer, want %v: the global ranking already fills the cap on its own, so the neighbourhood rows that reach the block are the slots held for them and nothing else", neighbourhood, want)
+	if want := []int64{1001, 1002, 1003, 1004, 1005, 1006}; !slices.Equal(ids, want) {
+		t.Fatalf("the run offered candidates %v, want the top %d of the one ranking %v: no slot is held for any other list", ids, CandidateLimit, want)
 	}
-	scoped := graph.recallCalls[1]
-	if !slices.Equal(scoped.Scope, []int64{7, 42}) {
-		t.Fatalf("the scoped recall carried scope %v, want the subject and its neighbours [7 42]", scoped.Scope)
+	if len(graph.recallCalls) != 1 {
+		t.Fatalf("the turn issued %d recalls, want 1", len(graph.recallCalls))
 	}
 }
