@@ -89,11 +89,70 @@ func TestRunsDefaultResponseCarriesOnlyTheReplyAndTheReceipt(t *testing.T) {
 	rec := postTo(t, context.Background(), turn, "/runs")
 
 	members, keys := topLevelKeys(t, rec)
-	if want := []string{"reply", "written"}; !slices.Equal(keys, want) {
+	if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
 		t.Fatalf("default body keys = %q, want %q", keys, want)
 	}
 	if got, want := string(members["written"]), `{"state":"stored","nodeId":10525}`; got != want {
 		t.Fatalf("written = %s, want %s", got, want)
+	}
+}
+
+func boolMember(t *testing.T, members map[string]json.RawMessage, key string) bool {
+	t.Helper()
+	raw, present := members[key]
+	if !present {
+		t.Fatalf("the body has no %q member", key)
+	}
+	var value bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatalf("member %q is not a boolean: %v; raw=%s", key, err, raw)
+	}
+	return value
+}
+
+func TestRunsProducedIsTrueWhenTheRunProducedAnAnswer(t *testing.T) {
+	t.Parallel()
+
+	turn := replyTurn(&scriptedModel{step: answeringWith("The grip drops because the hold is not set.")})
+
+	members, _ := topLevelKeys(t, postTo(t, context.Background(), turn, "/runs"))
+
+	if !boolMember(t, members, "produced") {
+		t.Fatalf("produced = false on a run that answered, so a caller would drop a real reply")
+	}
+}
+
+func TestRunsProducedFollowsTheRunAndNotTheReplyText(t *testing.T) {
+	t.Parallel()
+
+	const fallbackText = "Sorry — I couldn't put an answer together for that just now. Could you say a bit more, or ask it another way?"
+	turn := replyTurn(&scriptedModel{step: answeringWith(fallbackText)})
+
+	members, _ := topLevelKeys(t, postTo(t, context.Background(), turn, "/runs"))
+
+	if !boolMember(t, members, "produced") {
+		t.Fatalf("produced = false for a model answer that happens to equal the fallback sentence: the flag must come from the run, not from comparing text")
+	}
+}
+
+func TestRunsVerboseBodyKeepsProducedInsideTheOutcomeOnly(t *testing.T) {
+	t.Parallel()
+
+	turn := replyTurn(&scriptedModel{step: answeringWith("an answer")})
+
+	members, _ := topLevelKeys(t, postTo(t, context.Background(), turn, "/runs?verbose=true"))
+
+	if _, present := members["produced"]; present {
+		t.Fatalf("the verbose body gained a top-level produced member; it already carries outcome.produced")
+	}
+	var outcome struct {
+		Produced bool `json:"produced"`
+	}
+	if err := json.Unmarshal(members["outcome"], &outcome); err != nil {
+		t.Fatalf("decode outcome: %v", err)
+	}
+	if !outcome.Produced {
+		t.Fatalf("outcome.produced = false on a run that answered")
 	}
 }
 
@@ -240,11 +299,14 @@ func TestRunsReplyIsTheFallbackWhenTheRunProducedNothing(t *testing.T) {
 			ctx, cancel = newCtx()
 			defer cancel()
 			members, keys := topLevelKeys(t, postTo(t, ctx, replyTurn(c.model()), "/runs"))
-			if want := []string{"reply", "written"}; !slices.Equal(keys, want) {
+			if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
 				t.Fatalf("default body keys = %q, want %q", keys, want)
 			}
 			if got := stringMember(t, members, "reply"); got != fallback {
 				t.Fatalf("reply = %q, want the fallback sentence %q", got, fallback)
+			}
+			if got := boolMember(t, members, "produced"); got {
+				t.Fatalf("produced = true on a run that produced no answer, so a caller cannot tell the fallback from an answer")
 			}
 		})
 	}
@@ -277,7 +339,7 @@ func TestRunsVerboseFalseKeepsTheDefaultBody(t *testing.T) {
 			turn := replyTurn(&scriptedModel{step: answeringWith("an answer")})
 
 			_, keys := topLevelKeys(t, postTo(t, context.Background(), turn, target))
-			if want := []string{"reply", "written"}; !slices.Equal(keys, want) {
+			if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
 				t.Fatalf("%s body keys = %q, want %q", target, keys, want)
 			}
 		})
