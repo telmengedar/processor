@@ -290,6 +290,14 @@ func TestBootStatesTheSuppressionControlInForceForTheProtocolTheRunWillUse(t *te
 	if !strings.Contains(human, "path=fill") || !strings.Contains(human, "the fill runs on the judgement model's configuration") {
 		t.Fatalf("a measured run with no condense model states no fill control on the judgement model's configuration, so its fill calls carry a reasoning setting nobody read; log=%s", human)
 	}
+	if got := strings.Count(human, "the fill runs on the judgement model's configuration"); got != 1 {
+		t.Fatalf("the fallback notice appears %d times, want exactly once: a boot that repeats it buries the one line an operator is meant to read; log=%s", got, human)
+	}
+	for _, phrase := range []string{"a capable condense model is strongly recommended", "nothing checks a substance", "a written substance stays until the node's content changes"} {
+		if !strings.Contains(human, phrase) {
+			t.Fatalf("the boot line that says the fill runs on the judgement model does not carry %q, so an operator who skipped the condense model is never told that nothing checks a substance and a weak one stands; log=%s", phrase, human)
+		}
+	}
 }
 
 func TestBootStatesAControlForEveryProtocolAMeasuredRunSendsOnNotOnlyTheJudgementOne(t *testing.T) {

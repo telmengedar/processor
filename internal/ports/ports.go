@@ -118,6 +118,9 @@ func FillModel(condensing boot.ModelConfig, configured bool, judgement boot.Mode
 	return judgement, true
 }
 
+// FillOnJudgementNotice is the one boot line stating that the fill runs on the judgement model's configuration, with the standing recommendation for a capable condense model.
+const FillOnJudgementNotice = "no PROCESSOR_CONDENSE_MODEL_* configuration was found: the fill runs on the judgement model's configuration; a capable condense model is strongly recommended, because nothing checks a substance and a written substance stays until the node's content changes"
+
 // Fill builds the loop's fill port over graph, running on cfg.
 func Fill(cfg boot.ModelConfig, graph condense.GraphPort, logger *slog.Logger) (*fill.Port, error) {
 	sampling := loop.Sampling{Temperature: cfg.Temperature, TopP: cfg.TopP}

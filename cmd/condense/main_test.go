@@ -455,3 +455,102 @@ func TestBootStatesTheNativeSuppressionControlWhenTheNativeProtocolIsConfigured(
 		t.Fatalf("the pass states the wrong protocol's suppression control at boot; log=%s", human)
 	}
 }
+
+func TestAConfiguredCondenseModelIsTheOneThePassCondensesOnNotTheJudgementModel(t *testing.T) {
+	judgement, judgementCalls := recordingModel(t, openAICompatCondensation)
+	condenser, condenserCalls := recordingModel(t, openAICompatCondensation)
+	bootEnv(t, testGraph(t, &graphRecorder{}).URL, judgement.URL)
+	t.Setenv("PROCESSOR_CONDENSE_MODEL_URL", condenser.URL)
+	t.Setenv("PROCESSOR_CONDENSE_MODEL_ID", "ai/test-condenser")
+	t.Setenv("PROCESSOR_CONDENSE_MODEL_TEMPERATURE", "0.73")
+	t.Setenv("PROCESSOR_MODEL_TEMPERATURE", "0.11")
+	corpus := writeCorpus(t, oneRowCorpus)
+
+	code, _, human := runCondense(t, "-corpus", corpus, "-dry-run")
+
+	if code != 0 {
+		t.Fatalf("want exit 0, got %d\n%s", code, human)
+	}
+	path, condenserBody := condenserCalls.read()
+	if path == "" {
+		t.Fatalf("the configured condense model received no call, so the pass ignored PROCESSOR_CONDENSE_MODEL_*; log=%s", human)
+	}
+	if !strings.Contains(condenserBody, `"temperature":0.73`) {
+		t.Fatalf("the condense request does not carry the condense model's temperature 0.73, so its sampling was taken from another configuration; body=%s", condenserBody)
+	}
+	if path, _ := judgementCalls.read(); path != "" {
+		t.Fatalf("the judgement model received a call to %q although a condense model is configured; log=%s", path, human)
+	}
+	if strings.Contains(human, "the fill runs on the judgement model's configuration") {
+		t.Fatalf("the pass announces the judgement fallback although a condense model is configured; log=%s", human)
+	}
+}
+
+func TestWithNoCondenseModelThePassCondensesOnTheJudgementModelAndSaysSoExactlyOnce(t *testing.T) {
+	judgement, judgementCalls := recordingModel(t, openAICompatCondensation)
+	bootEnv(t, testGraph(t, &graphRecorder{}).URL, judgement.URL)
+	corpus := writeCorpus(t, oneRowCorpus)
+
+	code, _, human := runCondense(t, "-corpus", corpus, "-dry-run")
+
+	if code != 0 {
+		t.Fatalf("want exit 0, got %d\n%s", code, human)
+	}
+	if path, _ := judgementCalls.read(); path == "" {
+		t.Fatalf("the judgement model received no call, so the pass did not fall back to it; log=%s", human)
+	}
+	if got := strings.Count(human, "the fill runs on the judgement model's configuration"); got != 1 {
+		t.Fatalf("the fallback notice appears %d times, want exactly once; log=%s", got, human)
+	}
+	for _, phrase := range []string{"a capable condense model is strongly recommended", "nothing checks a substance", "a written substance stays until the node's content changes"} {
+		if !strings.Contains(human, phrase) {
+			t.Fatalf("the pass's fallback notice does not carry %q; log=%s", phrase, human)
+		}
+	}
+}
+
+func condensationLine(t *testing.T, human string) string {
+	t.Helper()
+
+	for _, line := range strings.Split(human, "\n") {
+		if strings.Contains(line, "path=condensation") {
+			return line
+		}
+	}
+	t.Fatalf("the pass states no suppression control for the condensation path; log=%s", human)
+	return ""
+}
+
+func TestBootStatesTheCondenseModelsControlWhenItsProtocolDiffersFromTheJudgementModels(t *testing.T) {
+	cases := []struct {
+		name                 string
+		judgement, condenser string
+		condenserResponse    string
+		want, notWant        string
+	}{
+		{"native condenser, compatible judgement model", "openai-compat", "ollama", ollamaCondensation, "think=false", "reasoning_effort=none"},
+		{"compatible condenser, native judgement model", "ollama", "openai-compat", openAICompatCondensation, "reasoning_effort=none", "think=false"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			judgement, _ := recordingModel(t, openAICompatCondensation)
+			condenser, _ := recordingModel(t, tc.condenserResponse)
+			bootEnv(t, testGraph(t, &graphRecorder{}).URL, judgement.URL)
+			t.Setenv("PROCESSOR_MODEL_PROTOCOL", tc.judgement)
+			t.Setenv("PROCESSOR_CONDENSE_MODEL_URL", condenser.URL)
+			t.Setenv("PROCESSOR_CONDENSE_MODEL_ID", "ai/test-condenser")
+			t.Setenv("PROCESSOR_CONDENSE_MODEL_PROTOCOL", tc.condenser)
+			corpus := writeCorpus(t, oneRowCorpus)
+
+			code, _, human := runCondense(t, "-corpus", corpus, "-dry-run")
+
+			if code != 0 {
+				t.Fatalf("want exit 0, got %d\n%s", code, human)
+			}
+			line := condensationLine(t, human)
+			if !strings.Contains(line, tc.want) || strings.Contains(line, tc.notWant) {
+				t.Fatalf("the condensation path states %q, want the condense model's %q and not %q; line=%s", line, tc.want, tc.notWant, line)
+			}
+		})
+	}
+}
