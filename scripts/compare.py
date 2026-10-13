@@ -132,8 +132,8 @@ def load_tasks(path, only):
     if seen_tasks:
         raise CompareFailure(
             f"{path} carries the same task text more than once. Refused rather than run: the substrate "
-            f"arm files a run record embedding its input verbatim, and the graph check refuses the "
-            f"second run of a text once the first record exists. "
+            f"arm files a run record embedding its input verbatim, and the graph check runs once "
+            f"before any task does, so it cannot see a repeat inside one file. "
             f"The repeated text begins {sorted(seen_tasks)[0][:80]!r}"
         )
 
@@ -1120,13 +1120,13 @@ def print_records_written(receipts):
     ids = ", ".join(f"#{r['nodeId']} ({r['state']})" for r in stored)
     print(f"GRAPH: this invocation wrote {len(stored)} run record(s): {ids}")
     print(
-        "       Nothing was deleted. Each record embeds its task text verbatim, so a later query -- "
-        "a repeat of this text, or an unrelated task whose vocabulary overlaps -- can rank it among "
-        "the top rows recall returns. Recall now tells the graph to exclude run records by name "
-        "before it counts, and the loop drops any that leak, so a record left in place takes no "
-        "recall slot and does not move a corpus row's retrieval in the baseline sweep. This "
-        "script's own prior-run check does not exclude them, though, and refuses a task whose "
-        "text a record already carries. Delete the record by hand to run that task again."
+        "       Nothing was deleted. Each record embeds its task text verbatim, so a semantic query "
+        "that does not exclude run records ranks it among the top rows. Recall does exclude them: "
+        "it tells the graph to leave run records out by name before it counts, and the loop drops "
+        "any that leak, so a record left in place takes no recall slot and does not move a corpus "
+        "row's retrieval in the baseline sweep. This script's own prior-run check does not exclude "
+        "them, and refuses a task whose text a record already carries. Delete the record by hand "
+        "to run that task again."
     )
 
 
