@@ -78,6 +78,11 @@ words; that document carries the argument.
   would poison the next sweep of that row. Exits non-zero when a turn admits zero candidates, and also
   when turn 1 never stored its record, which voids the two-turn premise. Python 3, standard library
   only.
+- `scripts/chat.py` — an interactive chat with a running service: `python scripts/chat.py --subject 901`
+  (`--url` defaults to `http://127.0.0.1:8080`) reads a line, posts it to `/runs` with the exchanges it
+  holds as `history`, prints the reply and keeps the exchange. The conversation lives in the script and
+  ends with it; how many exchanges a turn uses is the service's decision. A refused turn is kept as an
+  input without a reply. Ctrl-D (Ctrl-Z then Enter on Windows) or Ctrl-C ends the chat. Python 3, standard library only.
 - `internal/boot` — the boot configuration: the module's one environment read site, split into the
   listen address, a graph half and a model half, so a caller that needs only graph configuration is
   never asked for model configuration.
