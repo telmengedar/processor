@@ -646,19 +646,6 @@ func TestADeferralIsHandedOverEvenWhenTheJudgementFails(t *testing.T) {
 	}
 }
 
-func TestMissingSubstancesNamesNoRecordThisSystemWrote(t *testing.T) {
-	t.Parallel()
-
-	own := bareRow(1)
-	own.SelfProduced = true
-
-	got := missingSubstances([]Candidate{own, bareRow(2), {ID: 3, Substance: "has one"}}, nil)
-
-	if len(got) != 1 || got[0] != 2 {
-		t.Fatalf("missingSubstances = %v, want only the row that lacks a substance and is not a record this system wrote", got)
-	}
-}
-
 const realClockSlack = 300 * time.Millisecond
 
 func realClockDeadline(turn *Turn) (context.Context, context.CancelFunc) {

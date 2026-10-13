@@ -35,7 +35,7 @@ own text, so it is a real check and not a guarantee.
 Neither check buys a clean invocation, and the first full run of the shipped set measured why: task 3
 retrieved the records tasks 1 and 2 had just written, minutes earlier, on unrelated text. #11141
 documents the mechanism for a repeated input; it also fires across different inputs, so a task late in
-a set is read against a graph the earlier ones moved. The per-task RETRIEVAL-SLOT DISPLACEMENT line
+a set is read against a graph the earlier ones moved. For an archived record the per-task RETRIEVAL-SLOT DISPLACEMENT line
 reports it whenever it happens. Nothing here prevents that, and the fix is #11092 section 4.2's
 decorating port, which is Go and has no caller yet.
 
@@ -576,15 +576,15 @@ NOT_RETRIEVED = Stage(
 RETRIEVED_CUT = Stage(
     "retrieved, cut",
     "the initial recall query found the answer and assembly cut it there before the block was "
-    "sent -- the byte budget or the self-produced check; the per-node detail below names which "
-    "-- and no supplementary round on this task recovered it afterward",
+    "sent -- the byte budget, or in an archived record the self-produced check; the per-node detail "
+    "below names which -- and no supplementary round on this task recovered it afterward",
 )
 
 RETRIEVED_CUT_SUPPLEMENTARY = Stage(
     "retrieved, cut (supplementary)",
     "the initial recall query never returned the answer at all; a supplementary round did, and "
-    "assembly cut it there too -- the byte budget or the self-produced check; the per-node "
-    "detail below names which. This is not the same cut as RETRIEVED_CUT: the room in play "
+    "assembly cut it there too -- the byte budget, or in an archived record the self-produced "
+    "check; the per-node detail below names which. This is not the same cut as RETRIEVED_CUT: the room in play "
     "here is the supplementary round's own -- at most SupplementaryByteBudget, and less once the "
     "turn's working memory holds rows -- a different number from the "
     "initial round's anchor-charged remaining budget that describe_cut reports against, and the "
@@ -614,8 +614,8 @@ ADMITTED_SUPPLEMENTARY_RECOVERED = Stage(
     "admitted, supplementary (recovered after cut)",
     "the initial recall query DID return the answer -- it is in the initial candidate list, at "
     "the rank printed on the answer-node line below -- and assembly cut it there before the "
-    "block was sent (the byte budget or the self-produced check; the per-node detail below "
-    "names which -- never the candidate limit, which is already reflected in that list by the "
+    "block was sent (the byte budget, or in an archived record the self-produced check; the "
+    "per-node detail below names which -- never the candidate limit, which is already reflected in that list by the "
     "time assembly sees it, so a node present in it was not truncated). The model then asked "
     "for supplementary recall and a second, unscoped query re-admitted it. This indicts "
     "assembly's admission at the initial round, not the recall query: the recall query worked",
@@ -709,7 +709,7 @@ def answer_node_report(task, record):
     recall query never returned it in a form assembly ever saw -- that indicts the query or the
     candidate limit, never the byte budget. A node present in the initial candidate list but not
     included (`primary is not None`) means the initial query found it and assembly cut it -- that
-    indicts assembly's admission (byte budget or self-produced), never the candidate limit, since
+    indicts assembly's admission (byte budget, or self-produced in an archived record), never the candidate limit, since
     survival into candidates(record) already proves the candidate limit did not cut it (N1, DiVoid
     #11141 follow-up; the limit-vs-budget attribution corrected here is F2).
 
@@ -886,15 +886,15 @@ def remaining_after_anchor(budget, anchor_size):
 
 def describe_cut(row, remaining_budget):
     """One line describing why a non-admitted candidate was cut, from its own cutReason -- never an
-    inferred mechanism. internal/loop/assemble.go defines exactly two: self-produced and byte budget
-    exceeded, and the latter covers both an individually oversized row and a cumulative overflow."""
+    inferred mechanism. Assembly now cuts for byte budget exceeded alone, covering both an individually
+    oversized row and a cumulative overflow; self-produced is the reason an archived record may carry."""
     reason = row.get("cutReason") or "no reason given"
     size = charged_size(row)
 
     if reason == CUT_SELF_PRODUCED:
         return (
             f"CUT #{row.get('id')}: self-produced -- a run record this system wrote earlier; "
-            f"assembly refuses it before the byte budget is even consulted"
+            f"the assembly that wrote this archived record refused it before the byte budget was consulted"
         )
     if reason == CUT_BYTE_BUDGET:
         if remaining_budget is None:
@@ -926,13 +926,13 @@ def print_displacement(rows, label, limit):
     ids = ", ".join(f"#{c['id']}" for c in mine)
     limit_note = f"the top {limit}" if limit else "the fixed number of"
     noun = "is a run record" if len(mine) == 1 else "are run records"
-    cuts = "cuts it" if len(mine) == 1 else "cuts them"
+    cuts = "cut it" if len(mine) == 1 else "cut them"
     slot = "a slot" if len(mine) == 1 else "slots"
     print(
         f"           RETRIEVAL-SLOT DISPLACEMENT ({label}): {ids} {noun} this system wrote "
-        f"earlier that recall ranked into {limit_note} candidates it returns. Assembly always "
-        f"{cuts} as self-produced -- that check runs before the byte budget, so the product "
-        f"never reads its own history back -- but occupying {slot} in a fixed-size recall list "
+        f"earlier that recall ranked into {limit_note} candidates it returns. In this archived "
+        f"record assembly {cuts} as self-produced, ahead of the byte budget, so the product "
+        f"never read its own history back -- but occupying {slot} in a fixed-size recall list "
         f"means a real candidate that would otherwise have been retrieved fell off the tail "
         f"instead. That is the defect, not a self-read. The initial aperture no longer spends "
         f"slots this way; a round reported here is one that does not pass through it."
@@ -1127,9 +1127,8 @@ def print_records_written(receipts):
         "a repeat of this text, or an unrelated task whose vocabulary overlaps -- can rank it among "
         "the top rows recall returns. The initial aperture now skips such a row before it becomes a "
         "candidate and fetches deeper to replace it, so it no longer displaces a real row there. A "
-        "supplementary recall round does not pass through that aperture: it still returns a fixed "
-        "number of rows and assembly still cuts the row (cutReason 'self-produced', checked before "
-        "the byte budget), so a row occupying one of those slots still displaces a real one. "
+        "supplementary recall round does not pass through that aperture: the graph is told to "
+        "exclude run records by name before it counts, and the loop drops any that leak. "
         "Leaving them in place also changes which rows the deeper fetch reaches and can move a "
         "corpus row's retrieval in the baseline sweep. Delete them by hand."
     )

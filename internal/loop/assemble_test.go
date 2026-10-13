@@ -167,57 +167,6 @@ func TestAssembleAdmitsCandidatesBehindOneThatDoesNotFit(t *testing.T) {
 	}
 }
 
-func TestAssembleCutsSelfProducedCandidatesWithoutChargingTheBudget(t *testing.T) {
-	t.Parallel()
-
-	anchor := Anchor{ID: 1}
-	candidates := []Candidate{
-		{ID: 10, Substance: strings.Repeat("x", 40), SelfProduced: true},
-		{ID: 20, Substance: strings.Repeat("y", 40)},
-		{ID: 30, Substance: strings.Repeat("z", 40)},
-	}
-	const budget = 100
-
-	if len(candidates[0].Substance) > budget {
-		t.Fatalf("test setup error: the self-produced row is %d bytes against a budget of %d, so the byte rule would cut it anyway", len(candidates[0].Substance), budget)
-	}
-
-	_, dispositions := Assemble(anchor, candidates, budget)
-
-	if dispositions[0].Included {
-		t.Fatal("dispositions[0] (id 10) is self-produced and was admitted, want it cut")
-	}
-	for _, i := range []int{1, 2} {
-		if !dispositions[i].Included {
-			t.Fatalf("dispositions[%d] (id %d) was cut; two 40-byte rows fit a 100-byte budget only if the self-produced row's 40 bytes were never charged", i, dispositions[i].ID)
-		}
-	}
-}
-
-func TestAssembleReportsSelfProducedRatherThanBudgetForAFittingRunRecord(t *testing.T) {
-	t.Parallel()
-
-	anchor := Anchor{ID: 1}
-	candidates := []Candidate{{ID: 10, Substance: "a body that fits easily", SelfProduced: true}}
-	const budget = 1_000
-
-	if len(candidates[0].Substance) > budget {
-		t.Fatalf("test setup error: the row is %d bytes against a budget of %d; both rule orders cut it and the test cannot discriminate", len(candidates[0].Substance), budget)
-	}
-
-	_, dispositions := Assemble(anchor, candidates, budget)
-
-	if dispositions[0].Included {
-		t.Fatal("a self-produced candidate that fits the budget was admitted; the byte rule ran first and admitted it, so the self-produced rule must be applied before the byte rule")
-	}
-	if dispositions[0].CutReason == cutReasonByteBudget {
-		t.Fatalf("CutReason = %q, want the self-produced reason rather than the budget reason", dispositions[0].CutReason)
-	}
-	if dispositions[0].CutReason != cutReasonSelfProduced {
-		t.Fatalf("CutReason = %q, want the self-produced reason", dispositions[0].CutReason)
-	}
-}
-
 // TestAssembleRecordsSizeAndHashForCutCandidatesToo pins design §9.4
 // obligation 1: the record carries the whole candidate set, not the
 // surviving subset. A cut candidate must still be sized and hashed.
@@ -475,20 +424,6 @@ func TestAssembleCutReasonHasTheExactWording(t *testing.T) {
 	}
 }
 
-func TestAssembleSelfProducedCutReasonHasTheExactWording(t *testing.T) {
-	t.Parallel()
-
-	anchor := Anchor{ID: 1}
-	candidates := []Candidate{{ID: 10, Substance: "small", SelfProduced: true}}
-
-	_, dispositions := Assemble(anchor, candidates, 60_000)
-
-	const want = "self-produced"
-	if dispositions[0].CutReason != want {
-		t.Fatalf("CutReason = %q, want %q", dispositions[0].CutReason, want)
-	}
-}
-
 func TestAssembleRecordsSubstanceAvailableAndSizeWhenPresent(t *testing.T) {
 	t.Parallel()
 
@@ -639,7 +574,7 @@ func TestTheAssembledBlockDisclosesOnlyTheAdmittedRowsAndWhetherAnythingWasWithh
 		candidates := []Candidate{
 			{ID: 10, Substance: strings.Repeat("x", 40)},
 			{ID: 20, Substance: strings.Repeat("y", 40)},
-			{ID: 900, SelfProduced: true, Substance: "self produced body"},
+			{ID: 900, Substance: strings.Repeat("s", 60)},
 			{ID: 30, Substance: strings.Repeat("z", 40)},
 		}
 		const budget = 90
@@ -647,19 +582,13 @@ func TestTheAssembledBlockDisclosesOnlyTheAdmittedRowsAndWhetherAnythingWasWithh
 		fullBlock, dispositions := Assemble(anchor, candidates, budget)
 
 		admittedIDs := make(map[int64]bool, len(dispositions))
-		reasons := make(map[string]bool)
 		for _, d := range dispositions {
 			if d.Included {
 				admittedIDs[d.ID] = true
-			} else {
-				reasons[d.CutReason] = true
 			}
 		}
 		if len(admittedIDs) == 0 || len(admittedIDs) == len(candidates) {
 			t.Fatalf("test setup error: %d of %d candidates admitted, want a real cut so the two calls below have something to disagree about", len(admittedIDs), len(candidates))
-		}
-		if !reasons[cutReasonSelfProduced] || !reasons[cutReasonByteBudget] {
-			t.Fatalf("test setup error: cut reasons were %v, want both self-produced and byte-budget represented", reasons)
 		}
 
 		admittedOnly := make([]Candidate, 0, len(admittedIDs))
@@ -680,11 +609,11 @@ func TestTheAssembledBlockDisclosesOnlyTheAdmittedRowsAndWhetherAnythingWasWithh
 
 		anchor := Anchor{ID: 2, Type: "t", Name: "anchor", Substance: "anchor body"}
 		shutoutA := []Candidate{
-			{ID: 40, SelfProduced: true, Substance: "self produced body"},
+			{ID: 40, Substance: "a body longer than the budget"},
 			{ID: 50, Substance: strings.Repeat("w", 200)},
 		}
 		shutoutB := []Candidate{
-			{ID: 900, SelfProduced: true, Substance: "a different self produced body"},
+			{ID: 900, Substance: "a different body longer than the budget"},
 			{ID: 901, Similarity: 0.9, Substance: strings.Repeat("v", 500)},
 		}
 		const budget = 20
@@ -692,30 +621,19 @@ func TestTheAssembledBlockDisclosesOnlyTheAdmittedRowsAndWhetherAnythingWasWithh
 		blockA, dispositionsA := Assemble(anchor, shutoutA, budget)
 		blockB, dispositionsB := Assemble(anchor, shutoutB, budget)
 
-		reasonsA := make(map[string]bool)
 		for _, d := range dispositionsA {
 			if d.Included {
 				t.Fatalf("test setup error: shutout A admitted id %d, want a genuine shutout — every candidate cut", d.ID)
 			}
-			reasonsA[d.CutReason] = true
 		}
-		if !reasonsA[cutReasonSelfProduced] || !reasonsA[cutReasonByteBudget] {
-			t.Fatalf("test setup error: shutout A's cut reasons were %v, want both self-produced and byte-budget represented", reasonsA)
-		}
-
-		reasonsB := make(map[string]bool)
 		for _, d := range dispositionsB {
 			if d.Included {
 				t.Fatalf("test setup error: shutout B admitted id %d, want a genuine shutout — every candidate cut", d.ID)
 			}
-			reasonsB[d.CutReason] = true
-		}
-		if !reasonsB[cutReasonSelfProduced] || !reasonsB[cutReasonByteBudget] {
-			t.Fatalf("test setup error: shutout B's cut reasons were %v, want self-produced and byte-budget both represented", reasonsB)
 		}
 
 		if blockA != blockB {
-			t.Fatalf("two shutouts with a different candidate count, different ids and different cut reasons produced different blocks: A=\n%q\nB=\n%q\nthe block must disclose nothing about a withheld row — its reason, its id, its size, or how many there were — only that something was", blockA, blockB)
+			t.Fatalf("two shutouts with a different candidate count, different ids and different sizes produced different blocks: A=\n%q\nB=\n%q\nthe block must disclose nothing about a withheld row — its reason, its id, its size, or how many there were — only that something was", blockA, blockB)
 		}
 	})
 }

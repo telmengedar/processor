@@ -1281,11 +1281,11 @@ class MixedRoundTests(unittest.TestCase):
 def go_string_constants(*relative_paths):
     """Every `Ident = "literal"` declaration in the named Go files, as a name -> value map.
 
-    A deliberately narrow parser: it reads declarations only, so a literal that appears as a log
+    A deliberately narrow parser: it reads declarations only, grouped or a lone const, so a literal that appears as a log
     argument or inside a call is not collected. That is what lets the archive-only assertions below
     mean "no longer a constant" rather than "no longer anywhere in the file".
     """
-    pattern = re.compile(r'^\s*(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"', re.MULTILINE)
+    pattern = re.compile(r'^\s*(?:const\s+)?(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"', re.MULTILINE)
     found = {}
     for relative in relative_paths:
         path = pathlib.Path(step_trace.REPO) / relative
@@ -1477,10 +1477,12 @@ class MirroredConstantTests(unittest.TestCase):
         ):
             self.assertNotIn(archived, declared)
 
-    def test_both_cut_reasons_are_assembles_own(self):
+    def test_the_byte_budget_cut_reason_is_assembles_own(self):
         go = go_string_constants(self.ASSEMBLE)
-        self.assertEqual(step_trace.CUT_SELF_PRODUCED, go["cutReasonSelfProduced"])
         self.assertEqual(step_trace.CUT_BYTE_BUDGET, go["cutReasonByteBudget"])
+
+    def test_the_self_produced_cut_reason_is_archive_only(self):
+        self.assertNotIn(step_trace.CUT_SELF_PRODUCED, go_string_constants(self.ASSEMBLE).values())
 
     def test_the_write_rejection_prefix_is_built_from_the_loops_own_sentinel(self):
         """The mirror this file's map calls the worst-behaved of them: a drifted prefix used to make

@@ -97,7 +97,7 @@ func (p *prepaid) spend() (string, bool) {
 }
 
 func lacksSubstance(c Candidate) bool {
-	return c.Substance == "" && !c.SelfProduced
+	return c.Substance == ""
 }
 
 func (t *Turn) fillWait(ctx context.Context) time.Duration {

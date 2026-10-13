@@ -192,10 +192,10 @@ class AnswerNodeReportTests(unittest.TestCase):
     def test_primary_cut_then_supplementary_recovered(self):
         """F2/W2: the node WAS in the initial candidate list (primary is not None), so the initial
         recall query worked and the candidate limit provably did not cut it -- only assembly's
-        admission (byte budget or self-produced) could have. The indictment must name the budget,
+        admission (byte budget, or self-produced in an archived record) could have. The indictment must name the budget,
         not the candidate limit, and the per-row detail must carry the real cutReason rather than
         a hardcoded guess (this record's cutReason is byte budget exceeded; a self-produced cut
-        would show up here identically, which is why the top-line text hedges between the two)."""
+        in an archived record would show up here identically, which is why the top-line text hedges between the two)."""
         rec = record(
             candidates=[{"id": 300, "rank": 5, "included": False, "cutReason": "byte budget exceeded"}],
             tool_calls=[{"query": "q", "results": [{"id": 300, "rank": 1, "included": True}]}],
@@ -555,7 +555,7 @@ class DescribeCutTests(unittest.TestCase):
         row = {"id": 903, "size": 10, "cutReason": compare.CUT_SELF_PRODUCED}
         message = compare.describe_cut(row, 4000)
         self.assertIn("self-produced", message)
-        self.assertIn("before the byte budget is even consulted", message)
+        self.assertIn("refused it before the byte budget was consulted", message)
 
     def test_unavailable_row_charged_zero_rendered_bytes_is_not_replaced_by_its_size(self):
         row = {"id": 7, "size": 9000, "renderedSize": 0, "cutReason": compare.CUT_BYTE_BUDGET}

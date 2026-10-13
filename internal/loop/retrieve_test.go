@@ -590,38 +590,6 @@ func TestACandidateCarriesItsSubstanceThroughRetrieveUnchanged(t *testing.T) {
 	}
 }
 
-func TestRetrievalExcludesExactlyWhatAdmitWouldCutAsSelfProduced(t *testing.T) {
-	t.Parallel()
-
-	rows := []Candidate{scored(810, 0.9), runRecord(901), scored(220, 0.8), runRecord(902), scored(640, 0.7)}
-
-	kept := mustRetrieve(t, &rankedGraph{ignoresExclusion: true, global: rows}, []string{"input"}, len(rows))
-	excluded := make([]int64, 0, len(rows))
-	for _, c := range rows {
-		if !slices.Contains(kept, c.ID) {
-			excluded = append(excluded, c.ID)
-		}
-	}
-
-	_, dispositions := admit(rows, AssemblyByteBudget, 0)
-	refused := make([]int64, 0, len(dispositions))
-	for _, d := range dispositions {
-		if d.CutReason == cutReasonSelfProduced {
-			refused = append(refused, d.ID)
-		}
-	}
-
-	if len(refused) == 0 {
-		t.Fatal("test setup error: admission refused none of the fixture, so the comparison below holds between two empty sets")
-	}
-
-	slices.Sort(excluded)
-	slices.Sort(refused)
-	if !slices.Equal(excluded, refused) {
-		t.Fatalf("retrieval excluded %v and admission refuses %v: the two sites read one rule at two places and nothing else couples them", excluded, refused)
-	}
-}
-
 func TestASourceIsWrittenWithTheKeysTheStepTraceReadsAndOmitsScopedWhenFalse(t *testing.T) {
 	t.Parallel()
 

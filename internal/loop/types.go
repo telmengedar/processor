@@ -43,7 +43,7 @@ type Candidate struct {
 	// Created is true when the turn itself produced Substance.
 	Created bool
 
-	// SelfProduced is true when this row is a record this system wrote; the graph adapter sets it.
+	// SelfProduced is true when this row is a record this system wrote; the graph adapter sets it and only the retrieval net reads it.
 	SelfProduced bool
 
 	// Read marks a row fetched by id, which no ranking scored.
