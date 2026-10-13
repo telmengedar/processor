@@ -505,7 +505,7 @@ class ReadRoundRenderingTests(unittest.TestCase):
         for sentence in (
             step_trace.REFUSAL_NO_SUCH_NODE,
             step_trace.REFUSAL_READ_OF_SUBJECT,
-            step_trace.REFUSAL_ALREADY_READ_IN_FULL,
+            step_trace.REFUSAL_ALREADY_SHOWN_THIS_TURN,
             "that part's substance is 20001 bytes and one read carries at most 20000, so it cannot be shown",
         ):
             rec = record(
@@ -1457,7 +1457,7 @@ class MirroredConstantTests(unittest.TestCase):
             (step_trace.REFUSAL_RECALL_CLOSED, "errRecallClosedToModel"),
             (step_trace.REFUSAL_NO_SUCH_NODE, "errNoSuchNode"),
             (step_trace.REFUSAL_READ_OF_SUBJECT, "errReadOfSubject"),
-            (step_trace.REFUSAL_ALREADY_READ_IN_FULL, "errAlreadyShownThisTurn"),
+            (step_trace.REFUSAL_ALREADY_SHOWN_THIS_TURN, "errAlreadyShownThisTurn"),
             (step_trace.ERR_NO_WORKING_DIRECTORY, "errNoWorkingDirectory"),
         ):
             self.assertEqual(mirrored, go[name], f"{name} has drifted from this script's mirror")
