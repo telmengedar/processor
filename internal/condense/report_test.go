@@ -181,7 +181,7 @@ func TestEverySkipIsListedUnderTheHeadingThatMatchesHowTheResultCountsIt(t *test
 	reasons := []string{
 		skipNodeAbsent, skipContentAbsent, skipSubstancePresent, skipSelfProduced,
 		skipNonProseContent, skipEmptyCondensation,
-		skipPreamble, skipContentMoved, skipTruncated, skipReadFailed,
+		skipPreamble, skipRepeatedPassage, skipContentMoved, skipTruncated, skipReadFailed,
 		skipModelFailed, skipWriteFailed,
 	}
 

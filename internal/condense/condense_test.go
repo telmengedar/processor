@@ -504,6 +504,7 @@ func TestNoRuleThePassAppliesIsCountedAsAnOperationalFailure(t *testing.T) {
 		{skipContentMoved, runPass(t, moved, &fakeModel{text: strings.Repeat("b", 200)}, Options{}, Target{Node: 6})},
 		{skipEmptyCondensation, runPass(t, newFakeGraph(proseNode(7, content)), &fakeModel{text: ""}, Options{}, Target{Node: 7})},
 		{skipPreamble, runPass(t, newFakeGraph(proseNode(10, content)), &fakeModel{text: "Here is the condensation you asked for, set out below."}, Options{}, Target{Node: 10})},
+		{skipRepeatedPassage, runPass(t, newFakeGraph(proseNode(11, contractBody())), &fakeModel{text: loopedSubstance(8, "")}, Options{}, Target{Node: 11})},
 	}
 
 	for _, c := range cases {
@@ -568,5 +569,59 @@ func TestTheCeilingHandedToTheModelIsTheOneTheNodesOwnSizeProduces(t *testing.T)
 
 	if len(model.maxTokens) != 1 || model.maxTokens[0] != 23810 {
 		t.Fatalf("want one call carrying a ceiling of 23810, got %v", model.maxTokens)
+	}
+}
+
+func TestCondenseRefusesARepeatingCondensationAndWritesNoSubstance(t *testing.T) {
+	graph := newFakeGraph(proseNode(1, contractBody()))
+	model := &fakeModel{text: loopedSubstance(8, "")}
+
+	result := runPass(t, graph, model, Options{}, Target{Node: 1})
+
+	if skip := onlySkip(t, result); skip.Reason != skipRepeatedPassage {
+		t.Fatalf("want skip reason %q, got %q", skipRepeatedPassage, skip.Reason)
+	}
+	if len(result.Provenance) != 0 {
+		t.Fatalf("a refused condensation must leave no provenance, got %+v", result.Provenance)
+	}
+	if _, wrote := graph.written(1); wrote {
+		t.Fatalf("a repeating condensation must never be written")
+	}
+}
+
+func TestARepeatingCondensationIsCountedAsARuleNotAnOperationalFailure(t *testing.T) {
+	result := Result{TargetCount: 1, Skipped: []Skip{{Node: 1, Reason: skipRepeatedPassage}}}
+
+	if got := result.OperationalFailures(); got != 0 {
+		t.Fatalf("a repeating condensation is a completed output judged defective, yet it counted %d failures", got)
+	}
+}
+
+func TestARepeatingCondensationsDetailNamesCountsAndCarriesNoPassageText(t *testing.T) {
+	marker := "UNIQUE-MARKER-4417"
+	result := runPass(t, newFakeGraph(proseNode(1, contractBody())), &fakeModel{text: loopedSubstance(8, marker)}, Options{}, Target{Node: 1})
+
+	skip := onlySkip(t, result)
+
+	if strings.Contains(skip.Detail, marker) {
+		t.Fatalf("the detail must carry no text of the passage, got %q", skip.Detail)
+	}
+	if skip.Detail != "12 passages, first at line 3" {
+		t.Fatalf("want the passage count and first line in the detail, got %q", skip.Detail)
+	}
+}
+
+func TestCondenseWritesACondensationThatRepeatsOnlyWhatItsBodyRepeats(t *testing.T) {
+	block := "| ---- | ---- |\n| row | row |\n| end | end |"
+	body := "first table\n" + block + "\nsecond table\n" + block
+	graph := newFakeGraph(proseNode(1, body))
+
+	result := runPass(t, graph, &fakeModel{text: body}, Options{}, Target{Node: 1})
+
+	if len(result.Provenance) != 1 {
+		t.Fatalf("want a condensation repeating what its body repeats written, got skips %+v", result.Skipped)
+	}
+	if _, wrote := graph.written(1); !wrote {
+		t.Fatalf("a condensation repeating only what its body repeats must be written")
 	}
 }

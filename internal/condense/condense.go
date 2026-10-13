@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -19,6 +20,7 @@ const (
 	skipNonProseContent   = "non-prose content type"
 	skipEmptyCondensation = "condensation empty"
 	skipPreamble          = "condensation opens with a preamble"
+	skipRepeatedPassage   = "condensation repeats a passage"
 	skipTruncated         = "condensation truncated"
 	skipContentMoved      = "content moved during condensation"
 	skipReadFailed        = "graph read failed"
@@ -160,10 +162,18 @@ func (r Result) OperationalFailures() int {
 	return failures
 }
 
+func defectDetail(reason, content, substance string) string {
+	if reason != skipRepeatedPassage {
+		return ""
+	}
+	count, first := repeatedPassages(content, substance)
+	return fmt.Sprintf("%d passages, first at line %d", count, first)
+}
+
 func isOperationalFailure(reason string) bool {
 	switch reason {
 	case skipNodeAbsent, skipContentAbsent, skipSubstancePresent, skipSelfProduced,
-		skipNonProseContent, skipEmptyCondensation, skipPreamble, skipContentMoved:
+		skipNonProseContent, skipEmptyCondensation, skipPreamble, skipRepeatedPassage, skipContentMoved:
 		return false
 	}
 	return true
@@ -250,8 +260,8 @@ func Condense(ctx context.Context, graph GraphPort, model ModelPort, target Targ
 	}
 
 	substance := Postprocess(completion.Text)
-	if reason := Defect(substance); reason != "" {
-		return Condensation{Skip: &Skip{Node: target.Node, Reason: reason}, Audit: audit}
+	if reason := Defect(node.Content, substance); reason != "" {
+		return Condensation{Skip: &Skip{Node: target.Node, Reason: reason, Detail: defectDetail(reason, node.Content, substance)}, Audit: audit}
 	}
 
 	audit.Substance = substance
