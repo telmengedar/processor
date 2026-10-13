@@ -48,9 +48,9 @@ func (g *Graph) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) {
 	return g.reads.Node(ctx, id)
 }
 
-// Recall returns the decorated port's candidates for query, unchanged.
-func (g *Graph) Recall(ctx context.Context, query string, limit int, scope []int64, window loop.UpdateWindow) ([]loop.Candidate, error) {
-	return g.reads.Recall(ctx, query, limit, scope, window)
+// Recall returns the decorated port's candidates for queries, unchanged.
+func (g *Graph) Recall(ctx context.Context, queries []string, limit int, scope, exclude []int64, window loop.UpdateWindow) ([]loop.Candidate, error) {
+	return g.reads.Recall(ctx, queries, limit, scope, exclude, window)
 }
 
 // Neighbours returns the decorated port's neighbourhood of id, unchanged.

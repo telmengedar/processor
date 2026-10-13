@@ -572,7 +572,7 @@ func TestTheMachineResultCarriesTheRetainedCandidateSetUnderItsOwnWireKey(t *tes
 func TestTheMachineResultKeepsARowThatSweptNothingDistinctFromARowThatNeverSwept(t *testing.T) {
 	t.Parallel()
 
-	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget, 0, loop.SubstanceRatioThreshold)
+	_, dispositions := loop.Assemble(anchorNode(), nil, loop.AssemblyByteBudget, loop.SubstanceRatioThreshold)
 	swept := BuildRow(labelledRow(Required{Node: 201, Hash: "h", Why: "w"}), nil, dispositions)
 	neverSwept := RowResult{Row: "r99", Stratum: StratumLabelled, Subject: 999, Error: "subject not found"}
 
@@ -687,10 +687,10 @@ func TestTheSummaryNamesProvenanceUnrecordedRatherThanAMeasuredZeroWhenNoRowName
 	}
 }
 
-func TestTheSummaryCarriesTheScopeReserveBesideTheOtherLimits(t *testing.T) {
+func TestTheSummaryCarriesTheCandidateLimitAndTheScopeReserveBesideTheOtherLimits(t *testing.T) {
 	t.Parallel()
 
 	_, human := render(t, resultWith(intactControlRow()))
 
-	mustContainLine(t, human, "limits candidateLimit=20 assemblyByteBudget=60000 recallScopeReserve=3 substanceRatioThreshold=0.592")
+	mustContainLine(t, human, fmt.Sprintf("limits candidateLimit=%d assemblyByteBudget=60000 recallScopeReserve=%d substanceRatioThreshold=0.592", loop.CandidateLimit, loop.RecallScopeReserve))
 }

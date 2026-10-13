@@ -40,15 +40,17 @@ type Candidate struct {
 	// SelfProduced is true when this row is a record this system wrote; the graph adapter sets it.
 	SelfProduced bool
 
-	// Sources is every recall that returned this row, in the order the recalls were issued.
+	// Read marks a row fetched by id, which no ranking scored.
+	Read bool
+
+	// Sources is every recall that returned this row, the global one first.
 	Sources []Source
 }
 
-// Source is one recall that returned a candidate: which of the queries Retrieve was given carried it, whether that recall was scoped, and at what rank it came back.
+// Source is one recall that returned a candidate: its position in that recall's list and whether the recall was scoped.
 type Source struct {
-	Query  int  `json:"query"`
-	Scoped bool `json:"scoped,omitempty"`
 	Rank   int  `json:"rank"`
+	Scoped bool `json:"scoped,omitempty"`
 }
 
 // AnchorSummary is the anchor's entry in a run record: enough to identify
@@ -249,7 +251,8 @@ type Limits struct {
 	AssemblyByteBudget      int     `json:"assemblyByteBudget"`
 	SupplementaryByteBudget int     `json:"supplementaryByteBudget"`
 	MaxModelCalls           int     `json:"maxModelCalls"`
-	RelevanceFloor          float64 `json:"relevanceFloor"`
+	RecallScopeReserve      int     `json:"recallScopeReserve"`
+	ThinKnowledgeSimilarity float64 `json:"thinKnowledgeSimilarity"`
 
 	// DerivationBudget is the output budget the query-derivation call was issued with.
 	DerivationBudget int `json:"derivationBudget"`

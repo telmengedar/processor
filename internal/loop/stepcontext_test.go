@@ -16,6 +16,10 @@ func turnComposing(graph GraphPort, model ModelPort, files FilePort) *Turn {
 	return NewTurn(graph, model, files, offeringSystem, "test-model", testLogger())
 }
 
+func weakRowOf(id int64, body string) Candidate {
+	return Candidate{ID: id, Type: "documentation", Name: "Row", Similarity: 0.3, Content: body}
+}
+
 func rowOf(id int64, body string) Candidate {
 	return Candidate{ID: id, Type: "documentation", Name: "Row", Similarity: 0.9, Content: body}
 }
@@ -196,7 +200,7 @@ func TestTheSearchNudgeAppearsOnlyOnCallsThatOfferRetrieval(t *testing.T) {
 		nudged string
 	}{
 		{"an empty memory", nil, "asking the wrong question"},
-		{"a thin memory", []Candidate{rowOf(7, "a")}, "knowledge is still thin"},
+		{"a thin memory", []Candidate{weakRowOf(7, "a")}, "knowledge is still thin"},
 	} {
 		graph := baseGraph()
 		graph.recallQueue = []recallResponse{{Candidates: tc.rows}}

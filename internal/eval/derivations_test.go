@@ -117,7 +117,7 @@ func TestQueriesForDropsAPinnedQueryThatOnlyRepeatsTheRowsOwnInput(t *testing.T)
 
 	want := []string{"the first input", "a genuinely different question"}
 	if !slices.Equal(got, want) {
-		t.Fatalf("QueriesFor = %q, want %q: issuing one query twice returns one list twice, and summing its reciprocal ranks twice doubles that list's weight against every other", got, want)
+		t.Fatalf("QueriesFor = %q, want %q: a query issued twice is averaged twice, which doubles its weight in the mean against every other", got, want)
 	}
 }
 

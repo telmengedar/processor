@@ -90,7 +90,22 @@ arm for "this script does not know", because both axes have grown under it befor
   renders archived records and the archive still carries all three, and every line they print says
   ARCHIVE SHAPE so nobody reads them as live.
 
-RECALL RANKING, corrected twice -- once after review found it asserting the opposite of what
+RECALL RANKING, one request per recall. A turn asks the graph twice, both times with every query it
+holds: once over the whole graph (the global recall) and once inside the subject's two-hop
+neighbourhood (the scoped recall). The graph ranks each by the mean of the queries' similarities,
+leaves out the anchor and every run record BEFORE it counts, and returns at most the candidate
+limit. `Disposition.Sources` then carries, per row, one entry per recall that returned it, as
+`{rank}` for the global recall and `{rank, scoped: true}` for the scoped one, where rank is the
+row's 1-based position in that recall's own list. Up to the scope reserve of the limit's slots go to
+rows only the scoped list holds; the rest is the global top; the rows are then ordered by
+similarity, so a row's position says nothing about which recall placed it and this trace draws no
+reserved tail. A record written that way is recognised by its sources LACKING the `query` key,
+which every earlier record wrote on every source; absence of sources proves nothing about age.
+`similarity` is the mean over the queries and the graph reports no per-query value. Everything
+below this paragraph in this section describes the EARLIER shape and is printed only for records
+whose sources carry `query`, because the archive still holds them.
+
+RECALL RANKING (earlier shape), corrected twice -- once after review found it asserting the opposite of what
 retrieve.go does (a prose defect, not a logic one, but it printed on every trace), and once after
 `Disposition.Sources` landed and turned that correction's own closing claim false. `retrieve.go`'s
 `fuse` does NOT fuse the scoped list in. `fuseByReciprocalRank(lists)` runs over the UNSCOPED lists
@@ -279,10 +294,8 @@ WRITE_REJECTED_PREFIX = "write rejected: "
 CUT_SELF_PRODUCED = "self-produced"
 CUT_BYTE_BUDGET = "byte budget exceeded"
 
-# internal/loop/turn.go's RecallScopeReserve -- not carried in the record's `limits` object (Limits
-# only has the five members turn.go stamps into it), so it is mirrored here the same way the two
-# error-string literals above are: to narrate STEP 2's actual rank order and to locate the
-# reserved tail, which is where a row's recorded sources become worth reading against its rank.
+# The scope reserve of the earlier retrieval shape (3 of 20), kept to narrate archived records. The
+# loop's current reserve is carried in each new record's `limits` object and read from there.
 RECALL_SCOPE_RESERVE = 3
 
 # internal/boot's own variable name. The binary has no flag surface at all -- boot/config.go reads
@@ -440,6 +453,13 @@ def classify_write_round(tool_call):
     return WRITE_UNRECOGNISED
 
 
+def recall_is_one_request(candidates):
+    """True when a record's candidates came from the one-request recall: some source lacks the
+    `query` key, which every earlier source carried. A record whose candidates carry no sources at
+    all is read as the earlier shape, and a record with no candidates is not described as either."""
+    return any("query" not in source for d in candidates for source in (d.get("sources") or []))
+
+
 def format_sources(sources, name_query):
     """One row's `Disposition.sources` spelled as "which recall returned this, and at what rank".
 
@@ -457,7 +477,9 @@ def format_sources(sources, name_query):
     parts = []
     for source in sources:
         rank = source.get("rank")
-        if source.get("scoped"):
+        if "query" not in source:
+            parts.append(f"{'scoped' if source.get('scoped') else 'global'} r{rank}")
+        elif source.get("scoped"):
             parts.append(f"scoped r{rank}")
         elif name_query:
             parts.append(f"unscoped q{source.get('query')} r{rank}")
@@ -549,6 +571,13 @@ def attribution_note(dispositions):
 
     attributed = sum(1 for d in dispositions if d.get("sources"))
 
+    if attributed == len(dispositions) and recall_is_one_request(dispositions):
+        return (
+            "Which recall returned each row IS recorded: the src column below is that row's "
+            "Disposition.sources -- the global recall, the scoped recall or both, each with the "
+            "row's position in its own list. There is no per-query rank to print: each recall is "
+            "one request over every query and the graph reports only the mean."
+        )
     if attributed == len(dispositions):
         return (
             "Which recall returned each row IS recorded: the src column below is that row's "
@@ -800,7 +829,25 @@ def render_trace(record, model_url, model_id, temperature_requested, prior_note)
     name_query = len(record.get("queries") or []) > 1
     out.append(f"{head('recall')} input: query={record.get('query')!r} (the task input, verbatim -- no rewrite, no model in the path)")
     sources_note = attribution_note(candidates)
-    if candidate_limit is not None:
+    if not candidates:
+        reserve_from = None
+        rank_note = (
+            "no candidate came back, so there is no ranking to describe and this record does not say "
+            "which retrieval shape asked for one."
+        )
+    elif recall_is_one_request(candidates):
+        reserve_from = None
+        reserve = limits.get("recallScopeReserve")
+        reserve_note = f" Up to {reserve} slots go to rows only the scoped list holds." if reserve is not None else ""
+        rank_note = (
+            f"two recalls, each one request over every query: the global one over the whole graph and "
+            f"the scoped one inside the subject's two-hop neighbourhood. The graph ranked each by mean "
+            f"similarity and left out the anchor and the run records before counting.{reserve_note} The rows "
+            f"below are then ordered by similarity, so a row's position does not say which recall placed "
+            f"it -- the src column does, and sim is the mean over the queries."
+            + (f" {sources_note}" if sources_note else "")
+        )
+    elif candidate_limit is not None:
         fused_slots = max(candidate_limit - RECALL_SCOPE_RESERVE, 0)
         reserve_from = fused_slots + 1
         rank_note = (
@@ -1049,7 +1096,7 @@ def read_round_lines(head, tool_call, out_tok, supplementary_budget):
     if results:
         lines.append(
             f"{'':<24} note: an addressed read is ONE Graph.Node handed straight to admit (turn.go's "
-            f"dispatchRead) -- no query, no ranking, no fusion, and a relevance floor of zero, so "
+            f"dispatchRead) -- no query, no ranking and no fusion, so "
             f"the row is here because the model named its id, not because it scored. It carries no "
             f"recall sources and none is shown for it."
         )

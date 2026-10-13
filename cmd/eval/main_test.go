@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -40,12 +41,20 @@ func (failingWriter) Write([]byte) (int, error) {
 	return 0, errors.New("the destination rejected the write")
 }
 
+func recalled(r *http.Request) bool {
+	return r.URL.Query().Get("query") != "" || len(r.URL.Query()["queries"]) > 0
+}
+
+func excludedByTheRequest(r *http.Request, id int64) bool {
+	return slices.Contains(r.URL.Query()["excludeId"], strconv.FormatInt(id, 10))
+}
+
 func graphServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Query().Get("query") != "" {
+		if recalled(r) && !excludedByTheRequest(r, 200) {
 			fmt.Fprintf(w, `{"result":[{"id":200,"type":"documentation","name":"Alpha","similarity":0.81,"content":%q}],"total":1}`, requiredNodeBody)
 			return
 		}
@@ -64,7 +73,7 @@ func graphServerWhoseControlNodeExceedsTheBudget(t *testing.T) *httptest.Server 
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Query().Get("query") != "" {
+		if recalled(r) && !excludedByTheRequest(r, 200) {
 			fmt.Fprintf(w, `{"result":[{"id":199,"type":"documentation","name":"Small","similarity":0.9,"content":"a body that fits"},{"id":200,"type":"documentation","name":"Alpha","similarity":0.81,"content":%q}],"total":2}`,
 				oversizedRequiredNodeBody)
 			return
@@ -240,9 +249,10 @@ func recordingGraphServer(t *testing.T, queries *[]string) *httptest.Server {
 	var mu sync.Mutex
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if query := r.URL.Query().Get("query"); query != "" {
+		if recalled(r) && !excludedByTheRequest(r, 200) {
 			mu.Lock()
-			*queries = append(*queries, query)
+			*queries = append(*queries, r.URL.Query()["query"]...)
+			*queries = append(*queries, r.URL.Query()["queries"]...)
 			mu.Unlock()
 			fmt.Fprintf(w, `{"result":[{"id":200,"type":"documentation","name":"Alpha","similarity":0.81,"content":%q}],"total":1}`, requiredNodeBody)
 			return

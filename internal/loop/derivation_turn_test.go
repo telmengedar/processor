@@ -33,11 +33,11 @@ func runDerivedTurn(t *testing.T, model *fakeModel) (*fakeGraph, Record) {
 	return graph, record
 }
 
-func unscopedQueries(graph *fakeGraph) []string {
+func recalledQueries(graph *fakeGraph) []string {
 	var queries []string
 	for _, call := range graph.recallCalls {
 		if len(call.Scope) == 0 {
-			queries = append(queries, call.Query)
+			queries = append(queries, call.Queries...)
 		}
 	}
 	return queries
@@ -58,8 +58,8 @@ func TestTheDerivedQueriesAreIssuedToTheGraphAndNotMerelyComputed(t *testing.T) 
 	model := &fakeModel{derivedText: distinctiveDerived + "\nsecond derived?"}
 	graph, record := runDerivedTurn(t, model)
 
-	if !slices.Contains(unscopedQueries(graph), distinctiveDerived) {
-		t.Fatalf("the graph was asked %q, and none of them is the derived query %q: a derivation that is computed and never issued produces the raw arm's ranking under the derived arm's name", unscopedQueries(graph), distinctiveDerived)
+	if !slices.Contains(recalledQueries(graph), distinctiveDerived) {
+		t.Fatalf("the graph was asked %q, and none of them is the derived query %q: a derivation that is computed and never issued produces the raw arm's ranking under the derived arm's name", recalledQueries(graph), distinctiveDerived)
 	}
 	if want := []string{derivedInput, distinctiveDerived, "second derived?"}; !slices.Equal(record.Queries, want) {
 		t.Fatalf("the record carries queries %q, want %q", record.Queries, want)
@@ -75,12 +75,11 @@ func TestTheRawInputIsStillQueryZeroAfterADerivationSucceeds(t *testing.T) {
 	graph, record := runDerivedTurn(t, &fakeModel{derivedText: distinctiveDerived})
 
 	if record.Queries[0] != derivedInput {
-		t.Fatalf("query zero is %q, want the raw input %q: the scoped recall carries query zero, so a derived question at that index ranks the neighbourhood against something the caller never asked", record.Queries[0], derivedInput)
+		t.Fatalf("query zero is %q, want the raw input %q: the raw input leads every recall and the record, so a derived question at that index names something the caller never asked", record.Queries[0], derivedInput)
 	}
 
-	scoped := graph.recallCalls[len(graph.recallCalls)-1]
-	if len(scoped.Scope) == 0 || scoped.Query != derivedInput {
-		t.Fatalf("the scoped recall queried %q over scope %v, want the raw input", scoped.Query, scoped.Scope)
+	if got := graph.recallCalls[len(graph.recallCalls)-1].Queries; got[0] != derivedInput {
+		t.Fatalf("the recall's first query is %q, want the raw input %q", got[0], derivedInput)
 	}
 }
 
@@ -111,8 +110,8 @@ func TestEveryDerivationFailureLeavesTheTurnWithTheCandidateSetARawOnlyRunProduc
 			if got := []string{derivedInput}; !slices.Equal(record.Queries, got) {
 				t.Fatalf("the record carries queries %q, want the raw input alone: a degraded derivation must fall back to today's shipped query set byte for byte", record.Queries)
 			}
-			if got := unscopedQueries(graph); !slices.Equal(got, []string{derivedInput}) {
-				t.Fatalf("the graph was asked %q unscoped, want the raw input alone", got)
+			if got := recalledQueries(graph); !slices.Equal(got, []string{derivedInput}) {
+				t.Fatalf("the graph was asked %q, want the raw input alone", got)
 			}
 			if got := candidateIDsOf(record); !slices.Equal(got, want) {
 				t.Fatalf("the candidate set is %v, want %v: a fallback that merely returns non-nil can still deliver a different set than the raw arm", got, want)
