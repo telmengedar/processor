@@ -79,7 +79,7 @@ func TestFillRecordsNoPressureForACandidateCutForAReasonRoomWouldNotHaveChanged(
 
 	rows := []Disposition{
 		{ID: 1, Included: false, CutReason: cutReasonSelfProduced, Size: FillSizeFloor},
-		{ID: 2, Included: false, CutReason: cutReasonBelowFloor, Size: FillSizeFloor},
+		{ID: 2, Included: false, CutReason: "below relevance floor", Size: FillSizeFloor},
 	}
 	outcomes := turn.fill(context.Background(), rows)
 

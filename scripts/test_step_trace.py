@@ -188,6 +188,24 @@ def scoped(rank):
     return {"query": 0, "scoped": True, "rank": rank}
 
 
+def globally(rank):
+    """One entry of Disposition.sources as the one-request recall writes it for the global list:
+    only the position. The absence of a `query` key is what separates this shape from every earlier
+    one."""
+    return {"rank": rank}
+
+
+def within_scope(rank):
+    """The same for the scoped list."""
+    return {"rank": rank, "scoped": True}
+
+
+def earlier_shape_record(**kwargs):
+    """A record written when a scoped recall ran beside the unscoped one: its one candidate carries
+    a scoped source, which is how the renderer knows to describe the earlier mechanism."""
+    return record(candidates=[candidate(1, 101, [unscoped(1), scoped(2)])], **kwargs)
+
+
 def row_for(out, node_id):
     """The one rendered table line for a node id, so a per-row assertion cannot be satisfied by some
     other row's text elsewhere in the trace."""
@@ -657,7 +675,7 @@ class ScopeReserveLineTests(unittest.TestCase):
     below pin what replaced it; the surviving test here pins that the decline itself is gone."""
 
     def test_reserved_slots_are_not_claimed_to_come_from_the_scoped_recall(self):
-        out = render(record())
+        out = render(earlier_shape_record())
         self.assertIn("RESERVED FOR a second recall scoped to the anchor's two-hop neighbourhood", out)
         self.assertIn("which is not the same as filled from it", out)
         self.assertIn("from the unscoped list AGAIN", out)
@@ -666,7 +684,7 @@ class ScopeReserveLineTests(unittest.TestCase):
     def test_the_decline_the_record_no_longer_justifies_is_gone(self):
         """Every phrase asserted absent here was printed on every trace this script produced, and
         every one of them is now contradicted by Disposition.Sources."""
-        out = render(record())
+        out = render(earlier_shape_record())
         self.assertNotIn("no candidate records which recall returned it", out)
         self.assertNotIn("may be a neighbourhood hit or a similarity continuation", out)
         self.assertNotIn("this trace will not guess which", out)
@@ -675,7 +693,7 @@ class ScopeReserveLineTests(unittest.TestCase):
         """The other thing that changed under this file: fuse seeds its seen-set with the anchor id,
         so the head rows are the unscoped recall's order with the subject removed. "verbatim" was
         accurate before the anchor was excluded from its own candidate set and overclaims after."""
-        out = render(record())
+        out = render(earlier_shape_record())
         self.assertIn("minus the anchor, which fuse excludes from its own candidate set", out)
         self.assertNotIn("plain-similarity order, verbatim", out)
 
@@ -683,14 +701,14 @@ class ScopeReserveLineTests(unittest.TestCase):
         """The reserve is 3 whatever the limit is, so the boundary moves with limits.candidateLimit.
         A trace that printed 1-17 / 18-20 against a record whose limit was 10 would be describing a
         different run than the table underneath it."""
-        out = render(record(limits=dict(LIMITS, candidateLimit=10)))
+        out = render(earlier_shape_record(limits=dict(LIMITS, candidateLimit=10)))
         self.assertIn("rows 1-7 below", out)
         self.assertIn("The last 3 slots (8-10)", out)
 
     def test_absent_candidate_limit_computes_nothing_and_claims_nothing(self):
         """With no limits.candidateLimit there is no boundary to name. The fallback must not fall
         back to the old claim about where the tail rows came from either."""
-        out = render(record(limits={}))
+        out = render(earlier_shape_record(limits={}))
         self.assertIn("the fused/scoped split point cannot be computed", out)
         self.assertNotIn("RESERVED FOR", out)
         self.assertNotIn("neighbourhood", out)
@@ -1324,6 +1342,63 @@ def go_prefixed_constants(prefix, package_dir):
     return found, unreadable
 
 
+class OneRequestRecallTests(unittest.TestCase):
+    """Records written since a turn asks the graph once globally and once inside the subject's
+    neighbourhood. They are told from the earlier shape by their sources LACKING `query`, and what
+    they must never print is the earlier shape's mechanism: a positional reserved tail or a fusion
+    step. Fixtures put a row at rank 19, where the earlier reserve began, so a renderer that still
+    keyed the callout on rank alone is caught here."""
+
+    def rows(self):
+        return [
+            candidate(1, 101, [globally(1)], name="first"),
+            candidate(2, 102, [globally(3), within_scope(2)], name="returned by both recalls"),
+            candidate(19, 119, [within_scope(1)], name="a neighbourhood row at the earlier reserve rank"),
+            candidate(20, 120, [globally(6)], name="a global-only row past the earlier reserve rank"),
+        ]
+
+    def render_rows(self, **kwargs):
+        return render(record(candidates=self.rows(), block="x" * 900, **kwargs))
+
+    def test_a_record_whose_sources_lack_query_is_read_as_one_request(self):
+        out = self.render_rows()
+        self.assertIn("two recalls, each one request over every query", out)
+        self.assertNotIn("RESERVED FOR", out)
+        self.assertNotIn("src unscoped", out)
+
+    def test_a_row_names_every_recall_that_returned_it_with_its_own_rank(self):
+        out = self.render_rows()
+        self.assertIn("src global r1", row_for(out, 101))
+        self.assertIn("src global r3, scoped r2", row_for(out, 102))
+        self.assertIn("src scoped r1", row_for(out, 119))
+
+    def test_no_row_is_called_out_as_sitting_in_a_reserved_slot(self):
+        out = self.render_rows()
+        self.assertNotIn("RESERVED SLOT", out)
+
+    def test_the_reserve_is_stated_when_the_record_carries_it(self):
+        out = self.render_rows(limits=dict(LIMITS, recallScopeReserve=2))
+        self.assertIn("Up to 2 slots go to rows only the scoped list holds", out)
+
+    def test_the_reserve_is_not_stated_when_the_record_does_not_carry_it(self):
+        out = self.render_rows()
+        self.assertNotIn("slots go to rows only the scoped list holds", out)
+
+    def test_the_source_note_says_there_is_no_per_query_rank(self):
+        out = self.render_rows()
+        self.assertIn("There is no per-query rank to print", out)
+
+    def test_a_record_with_no_candidates_claims_no_retrieval_shape(self):
+        out = render(record())
+        self.assertIn("this record does not say which retrieval shape asked for one", out)
+        self.assertNotIn("RESERVED FOR", out)
+
+    def test_a_source_carrying_query_is_still_read_as_the_earlier_shape(self):
+        out = render(record(candidates=[candidate(1, 101, [unscoped(1), scoped(2)])], block="x" * 900))
+        self.assertIn("RESERVED FOR a second recall scoped to the anchor's two-hop neighbourhood", out)
+        self.assertIn("src unscoped r1, scoped r2", row_for(out, 101))
+
+
 class MirroredConstantTests(unittest.TestCase):
     """The mirrors this script keeps of internal/loop's own vocabulary, pinned against the Go source
     in this tree rather than against the memory of whoever last edited them.
@@ -1406,9 +1481,6 @@ class MirroredConstantTests(unittest.TestCase):
             step_trace.ERR_FILE_WRITE_FAILED,
         ):
             self.assertNotIn(archived, declared)
-
-    def test_the_scope_reserve_is_the_loops_own_number(self):
-        self.assertEqual(step_trace.RECALL_SCOPE_RESERVE, go_int_constants(self.TURN)["RecallScopeReserve"])
 
     def test_both_cut_reasons_are_assembles_own(self):
         go = go_string_constants(self.ASSEMBLE)

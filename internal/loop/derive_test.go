@@ -231,7 +231,7 @@ func TestParseDerivationDropsALineThatOnlyEchoesTheInputInAnotherCase(t *testing
 
 	want := []string{"a genuinely different angle?"}
 	if !slices.Equal(got, want) {
-		t.Fatalf("ParseDerivation = %q, want %q: the input is already query zero, so keeping its echo issues one recall twice and doubles that list's weight in the reciprocal-rank sum", got, want)
+		t.Fatalf("ParseDerivation = %q, want %q: the input is already query zero, so keeping its echo sends one query twice and doubles its weight in the mean", got, want)
 	}
 }
 
@@ -265,7 +265,7 @@ func TestMergeQueriesPutsTheRawInputFirstAndKeepsTheDerivedOrderBehindIt(t *test
 
 	want := []string{input, "first derived?", "second derived?"}
 	if !slices.Equal(got, want) {
-		t.Fatalf("MergeQueries = %q, want %q: the scoped recall carries query zero, so a derived query at index zero ranks the neighbourhood against a question the caller never asked", got, want)
+		t.Fatalf("MergeQueries = %q, want %q: the raw input leads every query set, so a derived query at index zero names a question the caller never asked", got, want)
 	}
 }
 

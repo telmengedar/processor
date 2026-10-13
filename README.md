@@ -28,10 +28,11 @@ meaningful**. Writing that answer key is the work currently in front of the proj
 **What to expect if you come back later.**
 
 - **Better context assembly**, which is the next real capability and the one the project is actually
-  about. What is here now is deliberately the simplest thing that is honestly mechanical: a fan-out of
-  recalls fused by reciprocal rank — across the whole graph, or across a span of time when the request
-  asked about one — three of the twenty candidate slots reserved for the subject's own two-hop
-  neighbourhood, a byte budget, and no memory of previous turns.
+  about. What is here now is deliberately the simplest thing that is honestly mechanical: one request
+  for the top six rows of all the run's queries together, ranked by the graph by their mean
+  similarity — across the whole graph, or across a span of time when the request asked about one —
+  two of those six slots reserved for rows the subject's own two-hop neighbourhood ranks and the
+  global list lacks, a byte budget, and no memory of previous turns.
 - **Gates a model cannot talk its way past** — work described in the graph as obligations to meet, and
   checked mechanically rather than asserted in prose.
 - **A background pass that keeps the memory from silting up** — grouping, re-homing and marking what has
@@ -250,14 +251,17 @@ That call is not charged to the run's six-call judgement budget, and any outcome
 query set leaves the run asking `input` alone and records why on the record's `derivationError`. A
 `DATES` line that is absent, unrecognised or malformed yields **no window** rather than a guessed one,
 and retrieval is then unbounded, exactly as it was before the line existed.
-`input` is always the first query. Each query is ranked against the whole graph — or, when the run
-derived a window, against the nodes whose last update falls inside it — and `input` is ranked once more
-inside the subject's own two-hop neighbourhood, which costs one extra read of the subject's edges. **That
+`input` is always the first query. All the queries go to the graph in one request, which ranks every
+node by the mean of its similarities to them — against the whole graph or, when the run derived a window,
+against the nodes whose last update falls inside it — and returns the top six, with the subject and every
+run record this system wrote left out before the count. A second request carries the same queries inside
+the subject's own two-hop neighbourhood, which costs one extra read of the subject's edges. **That
 neighbourhood recall is never bounded by the window**, deliberately: it answers what is structurally
 adjacent to the subject, which has no time dimension, and bounding it would silently empty the reserve
-below. The ranked lists are fused by reciprocal rank; the last three of the twenty candidate slots are
-held for the neighbourhood list, so a node ranked past the cap can still arrive while the nodes already
-at the top keep the ranks they had.
+below. Two of the six slots are held for neighbourhood rows the global list does not have, so a node
+ranked past the cap can still arrive while the top four of the global list always stay. The six rows are
+ordered by similarity, each is shown to the model with its similarity, and none is cut for being weak:
+when the best of them scores under 0.63 the block says the knowledge is still thin instead.
 
 **A conversation is carried by the caller.** The request may also carry `history`: the conversation's
 earlier exchanges, oldest first, each `{"input": "…", "reply": "…"}` with a non-blank `input` and an
@@ -736,9 +740,9 @@ flags it.
   — including that *cut* and *not retrieved* are distinguished on otherwise identical rows, and that a
   moved content hash raises a stale flag rather than a verdict — and the reporter is pinned over
   hand-built results. The sweep is pinned at the port level against a graph double: that it recalls with
-  the raw input verbatim at the loop's own candidate limit and unscoped, that it ranks that same input a
-  second time inside the subject's own scope, that it issues one whole-graph recall per pinned
-  derivation, that it holds exactly three of its candidate slots for the neighbourhood — the same
+  the raw input verbatim, together with every pinned derivation, in one whole-graph request at the loop's own
+  candidate limit, that it asks again inside the subject's own scope with the same queries, that it
+  holds exactly two of its candidate slots for the neighbourhood — the same
   assertion the turn carries, so reverting either caller to its own retrieval reddens both packages —
   that its dispositions equal the ones a real run produces for the same anchor and candidates, that it reads the graph and never writes to it, that a
   row whose required node no longer resolves leaves both denominators instead of scoring as a miss, and

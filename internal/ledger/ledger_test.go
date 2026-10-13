@@ -18,6 +18,14 @@ func admitted(ids ...int64) []loop.Disposition {
 	return rows
 }
 
+func strongly(ids ...int64) []loop.Disposition {
+	rows := admitted(ids...)
+	for i := range rows {
+		rows[i].Similarity = 0.9
+	}
+	return rows
+}
+
 func recall(query string, results []loop.Disposition) loop.ToolCallRecord {
 	return loop.ToolCallRecord{Tool: loop.ToolRecall, Query: query, Results: results}
 }
@@ -32,20 +40,32 @@ func TestAcceptedInsufficiencyFiresOnAThinBlockTheRunAskedNothingMoreAbout(t *te
 	}
 }
 
-func TestAcceptedInsufficiencyUsesTheBlockThinnessTheLoopItselfApplies(t *testing.T) {
+func TestAcceptedInsufficiencyFiresExactlyWhenTheBlockCarriedTheThinHint(t *testing.T) {
 	t.Parallel()
 
-	thin := make([]int64, loop.ThinKnowledgeThreshold-1)
-	for i := range thin {
-		thin[i] = int64(i + 1)
-	}
-	if got := ComputeRequery(loop.Record{Candidates: admitted(thin...)}); !got.AcceptedInsufficiency {
-		t.Errorf("a block one row below the loop's own thinness must be accepted insufficiency, got %+v", got)
+	anchor := loop.Anchor{ID: 1, Type: "t", Name: "anchor", Content: "anchor body"}
+	cases := map[string][]float64{
+		"no row admitted":                     nil,
+		"one weak row":                        {0.40},
+		"several weak rows":                   {0.50, 0.55, 0.60, 0.62},
+		"one strong row among weak ones":      {0.50, 0.70},
+		"a single strong row":                 {0.90},
+		"a row exactly at the thin threshold": {loop.ThinKnowledgeSimilarity},
 	}
 
-	atThreshold := append(thin, int64(loop.ThinKnowledgeThreshold))
-	if got := ComputeRequery(loop.Record{Candidates: admitted(atThreshold...)}); got.AcceptedInsufficiency {
-		t.Errorf("a block at the loop's own thinness is not thin and must not be accepted insufficiency, got %+v", got)
+	for name, similarities := range cases {
+		candidates := make([]loop.Candidate, len(similarities))
+		for i, similarity := range similarities {
+			candidates[i] = loop.Candidate{ID: int64(10 + i), Similarity: similarity, Content: "body"}
+		}
+
+		block, dispositions := loop.Assemble(anchor, candidates, 60_000, loop.SubstanceRatioThreshold)
+		hinted := strings.Contains(block, "still thin on the topic") || strings.Contains(block, "you know nothing about this topic")
+
+		got := ComputeRequery(loop.Record{Candidates: dispositions})
+		if got.AcceptedInsufficiency != hinted {
+			t.Errorf("%s: the block carried the hint = %v but AcceptedInsufficiency = %v: the instrument must read the same rule the model was shown", name, hinted, got.AcceptedInsufficiency)
+		}
 	}
 }
 

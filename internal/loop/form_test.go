@@ -20,7 +20,7 @@ func TestAssembleRendersTheSubstanceWhenItIsMateriallySmallerThanTheContent(t *t
 	substance := strings.Repeat("z", 300)
 	candidates := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
 
-	block, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	block, dispositions := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	if dispositions[0].Form != FormSubstance {
 		t.Fatalf("Form = %q for a 300-byte substance against 1000 bytes of content, want %q", dispositions[0].Form, FormSubstance)
@@ -44,7 +44,7 @@ func TestAssembleRendersTheContentWhenTheSubstanceIsNotMateriallySmaller(t *test
 	substance := strings.Repeat("z", 900)
 	candidates := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
 
-	block, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	block, dispositions := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	if dispositions[0].Form != FormContent {
 		t.Fatalf("Form = %q for a 900-byte substance against 1000 bytes of content, want %q - a tenth off is not materially smaller", dispositions[0].Form, FormContent)
@@ -66,7 +66,7 @@ func TestAssembleRendersTheContentWhenTheRatioSitsExactlyOnTheThreshold(t *testi
 	anchor := Anchor{ID: 1}
 	candidates := []Candidate{{ID: 10, Content: strings.Repeat("x", 1000), Substance: strings.Repeat("z", 592)}}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	_, dispositions := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	if dispositions[0].Form != FormContent {
 		t.Fatalf("Form = %q at a ratio of exactly the threshold, want %q - materially smaller is strictly below the threshold, not at it", dispositions[0].Form, FormContent)
@@ -79,7 +79,7 @@ func TestAssembleRendersTheContentWhenNoSubstanceWasGenerated(t *testing.T) {
 	anchor := Anchor{ID: 1}
 	candidates := []Candidate{{ID: 10, Content: strings.Repeat("x", 1000)}}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	_, dispositions := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	if dispositions[0].Form != FormContent {
 		t.Fatalf("Form = %q for a candidate carrying no substance, want %q", dispositions[0].Form, FormContent)
@@ -95,7 +95,7 @@ func TestAssembleRendersTheContentWhenTheContentIsEmptyAndASubstanceIsPresent(t 
 	anchor := Anchor{ID: 1}
 	candidates := []Candidate{{ID: 10, Content: "", Substance: strings.Repeat("z", 300)}}
 
-	block, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	block, dispositions := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	if dispositions[0].Form != FormContent {
 		t.Fatalf("Form = %q for a candidate with empty content, want %q - nothing is materially smaller than nothing", dispositions[0].Form, FormContent)
@@ -117,7 +117,7 @@ func TestAssembleMarksASubstanceRenderedCandidateAndLeavesAContentOneUnmarked(t 
 		{ID: 20, Type: "task", Name: "Charlie", Content: "charlie body"},
 	}
 
-	block, _ := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	block, _ := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	const wantBlock = "===== ANCHOR =====\n" +
 		"id: 1\n" +
@@ -130,6 +130,7 @@ func TestAssembleMarksASubstanceRenderedCandidateAndLeavesAContentOneUnmarked(t 
 		"id: 10\n" +
 		"type: documentation\n" +
 		"name: Bravo\n" +
+		"similarity: 0.000\n" +
 		"form: substance\n" +
 		"\n" +
 		"the condensed form of the node\n" +
@@ -138,6 +139,7 @@ func TestAssembleMarksASubstanceRenderedCandidateAndLeavesAContentOneUnmarked(t 
 		"id: 20\n" +
 		"type: task\n" +
 		"name: Charlie\n" +
+		"similarity: 0.000\n" +
 		"\n" +
 		"charlie body\n" +
 		"\n" +
@@ -159,7 +161,7 @@ func TestAssembleChargesTheRenderedSubstanceSoARowTooLargeInContentFormStillFits
 		t.Fatalf("test setup error: content is %d bytes against budget %d; it must exceed it or the test cannot tell which form was charged", len(candidates[0].Content), budget)
 	}
 
-	_, dispositions := Assemble(anchor, candidates, budget, 0, formRuleTestThreshold)
+	_, dispositions := Assemble(anchor, candidates, budget, formRuleTestThreshold)
 
 	if !dispositions[0].Included {
 		t.Fatal("a candidate whose 300-byte substance fits a 400-byte budget was cut; admission charges the form that renders, not the content")
@@ -182,7 +184,7 @@ func TestAssembleFormRuleReadsNeitherTheCandidatesTypeNorItsProvenance(t *testin
 		{ID: 40, Type: "task", Content: content, Substance: substance},
 	}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	_, dispositions := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	for i, d := range dispositions {
 		if d.Form != FormSubstance {
@@ -203,7 +205,7 @@ func TestAssembleThresholdZeroRendersContentForEveryCandidate(t *testing.T) {
 		{ID: 20, Content: strings.Repeat("x", 1000), Substance: "z"},
 	}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000, 0, 0)
+	_, dispositions := Assemble(anchor, candidates, 60_000, 0)
 
 	for i, d := range dispositions {
 		if d.Form != FormContent {
@@ -221,8 +223,8 @@ func TestAssembleThresholdRaisedRendersSubstanceForARowALowerThresholdLeavesAsCo
 	anchor := Anchor{ID: 1}
 	candidates := []Candidate{{ID: 10, Content: strings.Repeat("x", 1000), Substance: strings.Repeat("z", 900)}}
 
-	_, atLower := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
-	_, atRaised := Assemble(anchor, candidates, 60_000, 0, 0.95)
+	_, atLower := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
+	_, atRaised := Assemble(anchor, candidates, 60_000, 0.95)
 
 	if atLower[0].Form != FormContent {
 		t.Fatalf("Form = %q at a threshold of %v, want %q", atLower[0].Form, formRuleTestThreshold, FormContent)
@@ -239,7 +241,7 @@ func TestAssembleKeepsSizeAndContentHashOnTheContentWhenItRendersTheSubstance(t 
 	content := strings.Repeat("x", 1000)
 	candidates := []Candidate{{ID: 10, Content: content, Substance: strings.Repeat("z", 300)}}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	_, dispositions := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	if dispositions[0].Form != FormSubstance {
 		t.Fatalf("test setup error: Form = %q, want %q or this test cannot observe what the hash was taken over", dispositions[0].Form, FormSubstance)
@@ -264,7 +266,7 @@ func TestDispositionFormAndRenderedSizeSerializeForEveryCandidate(t *testing.T) 
 		{ID: 20, Content: "a body"},
 	}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	_, dispositions := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	for i, want := range []string{`"form":"substance","renderedSize":300`, `"form":"content","renderedSize":6`} {
 		encoded, err := json.Marshal(dispositions[i])
@@ -327,7 +329,7 @@ func TestAssembleRendersTheContentWhenTheRatioFallsBelowTheFloor(t *testing.T) {
 		t.Fatalf("test setup error: a ratio of 0.05 must sit below the floor %v and below the test threshold %v, or this test cannot tell the floor's refusal from the threshold's", SubstanceRatioFloor, formRuleTestThreshold)
 	}
 
-	block, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	block, dispositions := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	if dispositions[0].Form != FormContent {
 		t.Fatalf("Form = %q for a 50-byte substance against 1000 bytes of content, want %q - a ratio of 0.05 is more compressed than the floor admits, at a threshold that would otherwise take it", dispositions[0].Form, FormContent)
@@ -355,7 +357,7 @@ func TestAssembleRendersTheSubstanceWhenTheRatioSitsExactlyOnTheFloor(t *testing
 		t.Fatalf("test setup error: %d substance bytes against %d of content put the ratio off the floor %v, so this test observes neither side of its inclusivity", len(substance), len(content), SubstanceRatioFloor)
 	}
 
-	block, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	block, dispositions := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	if dispositions[0].Form != FormSubstance {
 		t.Fatalf("Form = %q at a ratio of exactly the floor, want %q - the floor is inclusive, against the threshold above it which is not", dispositions[0].Form, FormSubstance)
@@ -379,7 +381,7 @@ func TestAssembleRendersTheSubstanceOnlyWhenTheRatioSitsInsideBothBounds(t *test
 		{ID: 30, Content: content, Substance: strings.Repeat("z", 592)},
 	}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000, 0, formRuleTestThreshold)
+	_, dispositions := Assemble(anchor, candidates, 60_000, formRuleTestThreshold)
 
 	wantForms := []Form{FormContent, FormSubstance, FormContent}
 	wantSizes := []int{1000, 300, 1000}
@@ -407,7 +409,7 @@ func TestAssembleRendersContentForEveryCandidateAtTheShippedBoundsWhateverTheRat
 		{ID: 60, Content: content, Substance: strings.Repeat("z", 1000)},
 	}
 
-	block, dispositions := Assemble(anchor, candidates, 60_000, 0, SubstanceRatioThreshold)
+	block, dispositions := Assemble(anchor, candidates, 60_000, SubstanceRatioThreshold)
 
 	for i, d := range dispositions {
 		if !d.Included {
@@ -443,8 +445,8 @@ func TestAssembleRendersAByteIdenticalBlockAtTheShippedBoundsWhetherOrNotACandid
 				withoutSubstance := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content}}
 				withSubstance := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
 
-				blockWithout, dispositionsWithout := Assemble(anchor, withoutSubstance, budget, 0, SubstanceRatioThreshold)
-				blockWith, dispositionsWith := Assemble(anchor, withSubstance, budget, 0, SubstanceRatioThreshold)
+				blockWithout, dispositionsWithout := Assemble(anchor, withoutSubstance, budget, SubstanceRatioThreshold)
+				blockWith, dispositionsWith := Assemble(anchor, withSubstance, budget, SubstanceRatioThreshold)
 
 				if !dispositionsWithout[0].Included || !dispositionsWith[0].Included {
 					t.Fatalf("test setup error: the candidate was cut (without a substance %v, with one %v); a cut row renders in neither arm and the comparison separates nothing", dispositionsWithout[0].Included, dispositionsWith[0].Included)
@@ -471,7 +473,7 @@ func TestAssembleRendersContentForAZeroLengthSubstanceSoTheOffPositionNeverRende
 
 			candidates := []Candidate{{ID: 10, Content: body, Substance: ""}}
 
-			block, dispositions := Assemble(Anchor{ID: 1}, candidates, 60_000, 0, threshold)
+			block, dispositions := Assemble(Anchor{ID: 1}, candidates, 60_000, threshold)
 
 			if dispositions[0].Form != FormContent {
 				t.Fatalf("Form = %q for a zero-length substance at a threshold of %v, want %q - presence is a string test taken before the ratio, and a ratio of zero would otherwise select an empty payload", dispositions[0].Form, threshold, FormContent)
@@ -508,7 +510,7 @@ func TestTurnRunRendersTheBlockAtTheDialItsOwnRecordDeclares(t *testing.T) {
 		t.Fatal("test setup error: the candidate reached admission carrying no substance, so this turn never read a dial and pins nothing")
 	}
 
-	wantBlock, _ := Assemble(graph.node, graph.candidates, AssemblyByteBudget, RelevanceFloor, record.Limits.SubstanceRatioThreshold)
+	wantBlock, _ := Assemble(graph.node, graph.candidates, AssemblyByteBudget, record.Limits.SubstanceRatioThreshold)
 	if record.Block != wantBlock {
 		t.Fatalf("the run rendered a block its own record cannot account for at the dial the record states (%v):\ngot  %q\nwant %q", record.Limits.SubstanceRatioThreshold, record.Block, wantBlock)
 	}

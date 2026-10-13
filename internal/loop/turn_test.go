@@ -33,20 +33,23 @@ type fakeGraph struct {
 	candidates []Candidate
 	recallErr  error
 
+	honorsLimit      bool
+	ignoresExclusion bool
+
 	scopedCandidates []Candidate
 	scopedErr        error
+
+	neighbours      []int64
+	neighboursErr   error
+	neighboursCalls []int64
 
 	recallQueue []recallResponse
 
 	recallCalls []recallCall
 
-	recallQuery  string
-	recallLimit  int
-	recallWindow UpdateWindow
-
-	neighbours      []int64
-	neighboursErr   error
-	neighboursCalls []int64
+	recallQueries []string
+	recallLimit   int
+	recallWindow  UpdateWindow
 
 	writeRunCalled  bool
 	writeRunRecord  Record
@@ -55,10 +58,22 @@ type fakeGraph struct {
 }
 
 type recallCall struct {
-	Query  string
-	Limit  int
-	Scope  []int64
-	Window UpdateWindow
+	Queries []string
+	Limit   int
+	Scope   []int64
+	Exclude []int64
+	Window  UpdateWindow
+}
+
+func withoutExcluded(rows []Candidate, exclude []int64) []Candidate {
+	kept := make([]Candidate, 0, len(rows))
+	for _, row := range rows {
+		if row.SelfProduced || slices.Contains(exclude, row.ID) {
+			continue
+		}
+		kept = append(kept, row)
+	}
+	return kept
 }
 
 const primaryRecallCalls = 2
@@ -86,22 +101,32 @@ func (f *fakeGraph) Node(_ context.Context, id int64) (Anchor, bool, error) {
 	return f.node, f.nodeFound, f.nodeErr
 }
 
-func (f *fakeGraph) Recall(_ context.Context, query string, limit int, scope []int64, window UpdateWindow) ([]Candidate, error) {
-	f.recallQuery = query
+func (f *fakeGraph) Recall(_ context.Context, queries []string, limit int, scope, exclude []int64, window UpdateWindow) ([]Candidate, error) {
+	f.recallQueries = queries
 	f.recallLimit = limit
 	f.recallWindow = window
-	f.recallCalls = append(f.recallCalls, recallCall{Query: query, Limit: limit, Scope: scope, Window: window})
+	f.recallCalls = append(f.recallCalls, recallCall{Queries: queries, Limit: limit, Scope: scope, Exclude: exclude, Window: window})
 
-	if len(scope) > 0 {
-		return f.scopedCandidates, f.scopedErr
-	}
-
-	if len(f.recallQueue) > 0 {
+	var rows []Candidate
+	var err error
+	switch {
+	case len(scope) > 0:
+		rows, err = f.scopedCandidates, f.scopedErr
+	case len(f.recallQueue) > 0:
 		resp := f.recallQueue[0]
 		f.recallQueue = f.recallQueue[1:]
-		return resp.Candidates, resp.Err
+		rows, err = resp.Candidates, resp.Err
+	default:
+		rows, err = f.candidates, f.recallErr
 	}
-	return f.candidates, f.recallErr
+
+	if !f.ignoresExclusion {
+		rows = withoutExcluded(rows, exclude)
+	}
+	if f.honorsLimit {
+		rows = rows[:min(limit, len(rows))]
+	}
+	return rows, err
 }
 
 func (f *fakeGraph) Neighbours(_ context.Context, id int64) ([]int64, error) {
@@ -240,8 +265,8 @@ func TestTurnRunDoesNotRecallWhenTheAnchorIsNotFound(t *testing.T) {
 	if _, _, err := turn.Run(context.Background(), "hello", 42); err == nil {
 		t.Fatal("Run() returned nil error for a missing subject, want ErrSubjectNotFound")
 	}
-	if graph.recallQuery != "" || graph.recallLimit != 0 {
-		t.Fatalf("Recall was called (query=%q limit=%d) after the anchor was not found, want no call", graph.recallQuery, graph.recallLimit)
+	if graph.recallQueries != nil || graph.recallLimit != 0 {
+		t.Fatalf("Recall was called (queries=%q limit=%d) after the anchor was not found, want no call", graph.recallQueries, graph.recallLimit)
 	}
 }
 
@@ -299,8 +324,8 @@ func TestTurnRunPassesInputVerbatimAsTheRecallQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if graph.recallQuery != input {
-		t.Fatalf("recall query = %q, want the input verbatim %q", graph.recallQuery, input)
+	if !slices.Equal(graph.recallQueries, []string{input}) {
+		t.Fatalf("recall queries = %q, want the input verbatim %q", graph.recallQueries, []string{input})
 	}
 	if record.Query != input {
 		t.Fatalf("record.Query = %q, want %q", record.Query, input)
@@ -319,8 +344,8 @@ func TestTurnRunShipsTheCandidateLimitIntoRetrievalRatherThanACountOfItsOwn(t *t
 	if _, _, err := turn.Run(context.Background(), "q", 42); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if graph.recallLimit != 100 {
-		t.Fatalf("recall limit = %d, want 100: the turn hands retrieval its candidate limit of twenty and retrieval alone decides how many rows to ask the graph for, so either a turn that recalls at a count of its own or a retrieval that asks for exactly the aperture arrives at the graph on some other number", graph.recallLimit)
+	if graph.recallLimit != CandidateLimit {
+		t.Fatalf("recall limit = %d, want CandidateLimit %d: the count is one constant, so a turn that recalls at a count of its own or a retrieval that scales it arrives at the graph on some other number", graph.recallLimit, CandidateLimit)
 	}
 }
 
@@ -403,7 +428,7 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	if record.CapReached {
 		t.Fatal("record.CapReached = true, want false — the model answered on the first call, the cap never fired")
 	}
-	wantLimits := Limits{CandidateLimit: 20, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, AnsweringBudget: 192, RelevanceFloor: 0.63, MaxFills: 2, FillSizeFloor: 8_000, MaxFillContentBytes: 100_000, SubstanceRatioFloor: 0.10, HistoryExchangeLimit: 4, HistorySafetyLimit: 8_000}
+	wantLimits := Limits{CandidateLimit: CandidateLimit, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, AnsweringBudget: 192, RecallScopeReserve: RecallScopeReserve, ThinKnowledgeSimilarity: ThinKnowledgeSimilarity, MaxFills: 2, FillSizeFloor: 8_000, MaxFillContentBytes: 100_000, SubstanceRatioFloor: 0.10, HistoryExchangeLimit: 4, HistorySafetyLimit: 8_000}
 	if record.Limits != wantLimits {
 		t.Fatalf("record.Limits = %+v, want %+v", record.Limits, wantLimits)
 	}
@@ -462,7 +487,7 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
 		{Candidates: []Candidate{{ID: 99, Type: "task", Name: "Found", Similarity: 0.8, Content: "tool result body"}}},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -484,8 +509,8 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 	if len(graph.recallCalls) != primaryRecallCalls+1 {
 		t.Fatalf("Recall was called %d times, want %d (the primary pair + one supplementary)", len(graph.recallCalls), primaryRecallCalls+1)
 	}
-	if graph.recallCalls[primaryRecallCalls].Query != "the missing thing" {
-		t.Fatalf("supplementary recall query = %q, want %q", graph.recallCalls[primaryRecallCalls].Query, "the missing thing")
+	if !slices.Equal(graph.recallCalls[primaryRecallCalls].Queries, []string{"the missing thing"}) {
+		t.Fatalf("supplementary recall queries = %q, want %q", graph.recallCalls[primaryRecallCalls].Queries, []string{"the missing thing"})
 	}
 	if len(record.ToolCalls) != 1 {
 		t.Fatalf("record.ToolCalls has %d entries, want 1", len(record.ToolCalls))
@@ -549,7 +574,7 @@ func TestTurnRunRecordsASupplementaryRecallTransportFailureAsAnErrorFlaggedRound
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
 		{Err: errors.New("literal: 500 from graph")},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -649,7 +674,7 @@ func TestTurnRunCarriesTheSupplementaryRecallCauseIntoTheRoundAndLogsItWhole(t *
 	const cause = "literal: dial tcp 10.0.0.55:443: connect: connection refused"
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
 		{Err: errors.New(cause)},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -679,7 +704,7 @@ func TestTurnRunKeepsTheSupplementaryRecallCauseOutOfTheModelsNextCall(t *testin
 	const cause = "literal: 503 from graph: upstream is draining"
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
 		{Err: errors.New(cause)},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -760,7 +785,7 @@ func TestTurnRunUsageArrayLengthAlwaysEqualsModelCalls(t *testing.T) {
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
 		{Candidates: []Candidate{{ID: 2, Content: "tool result"}}},
 	}
 	usage1 := &Usage{InTokens: 10, OutTokens: 1}
@@ -937,7 +962,7 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
 		{Candidates: []Candidate{
 			{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", 9_000)},
 			{ID: 92, Similarity: 0.8, Content: strings.Repeat("b", 9_000)},
@@ -992,7 +1017,7 @@ func TestTurnRunSupplementaryAdmissionStaysInRankOrderEvenWhenIDsDescend(t *test
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
 		{Candidates: []Candidate{
 			{ID: 300, Similarity: 0.9, Content: "third-ranked-by-id-descending"},
 			{ID: 200, Similarity: 0.8, Content: "second"},
@@ -1033,7 +1058,7 @@ func TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRo
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
 		{Candidates: []Candidate{
 			{ID: 91, Content: strings.Repeat("a", 25_000)},
 		}},
@@ -1072,7 +1097,7 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Content: "initial"}}},
+		{Candidates: []Candidate{{ID: 1, Content: "initial", SelfProduced: true}}},
 		{Candidates: []Candidate{{ID: 91, Similarity: 0.9, Content: strings.Repeat("a", SupplementaryByteBudget)}}},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -1531,7 +1556,7 @@ func TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped
 		t.Fatalf("Run: %v", err)
 	}
 
-	wantBlock, wantDispositions := Assemble(graph.node, graph.candidates, AssemblyByteBudget, RelevanceFloor, SubstanceRatioThreshold)
+	wantBlock, wantDispositions := Assemble(graph.node, graph.candidates, AssemblyByteBudget, SubstanceRatioThreshold)
 	if record.Block != wantBlock {
 		t.Fatalf("record.Block changed when the top candidate was dropped:\ngot  %q\nwant %q", record.Block, wantBlock)
 	}
@@ -1703,7 +1728,7 @@ func TestTurnRunLogsNoRunFinishedWhenTheRunNeverReachedAnAnswer(t *testing.T) {
 	}
 }
 
-func TestTheSupplementaryRecallSendsTheModelsOwnQueryUnscopedAsExactlyOneCall(t *testing.T) {
+func TestTheSupplementaryRecallSendsTheModelsOwnQueryAsExactlyOneCall(t *testing.T) {
 	t.Parallel()
 
 	graph := &fakeGraph{nodeFound: true, node: Anchor{ID: 7, Type: "documentation", Name: "S", Content: "anchor"}}
@@ -1722,11 +1747,11 @@ func TestTheSupplementaryRecallSendsTheModelsOwnQueryUnscopedAsExactlyOneCall(t 
 	}
 
 	supplementary := graph.recallCalls[primaryRecallCalls]
-	if supplementary.Query != "the query the model composed" {
-		t.Fatalf("supplementary recall query = %q, want the model's own text %q verbatim: the model wrote this query knowing what the first block already gave it, and a path that rewrites or re-derives it answers a question nobody asked", supplementary.Query, "the query the model composed")
+	if !slices.Equal(supplementary.Queries, []string{"the query the model composed"}) {
+		t.Fatalf("supplementary recall queries = %q, want the model's own text %q verbatim: the model wrote this query knowing what the first block already gave it, and a path that rewrites or re-derives it answers a question nobody asked", supplementary.Queries, []string{"the query the model composed"})
 	}
-	if len(supplementary.Scope) != 0 {
-		t.Fatalf("the supplementary recall carried scope %v, want none: the model asks for what the subject's own neighbourhood did not supply, so confining its one follow-up to that neighbourhood is the surest way to return the block it already has", supplementary.Scope)
+	if supplementary.Limit != CandidateLimit {
+		t.Fatalf("the supplementary recall asked for %d rows, want the %d every other recall asks for", supplementary.Limit, CandidateLimit)
 	}
 }
 
@@ -1752,25 +1777,26 @@ func TestTheSupplementaryRecallCarriesTheRunsWindow(t *testing.T) {
 	}
 
 	supplementary := graph.recallCalls[len(graph.recallCalls)-1]
-	if supplementary.Query != "the query the model composed" {
-		t.Fatalf("supplementary recall query = %q, want the model's own text verbatim", supplementary.Query)
+	if !slices.Equal(supplementary.Queries, []string{"the query the model composed"}) {
+		t.Fatalf("supplementary recall queries = %q, want the model's own text verbatim", supplementary.Queries)
 	}
 	if supplementary.Window != record.Window {
 		t.Fatalf("supplementary recall window = %+v, want the run's own %+v: the model supplies only a query string, so a window observed here can only have come from the turn", supplementary.Window, record.Window)
 	}
 }
 
-func TestTheTurnHoldsThreeOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *testing.T) {
+func TestTheTurnAsksTheGraphForAllItsQueriesTogetherAndAdmitsTheTopCandidateLimitRows(t *testing.T) {
 	t.Parallel()
 
 	graph := baseGraph()
-	for id := int64(1001); id <= 1020; id++ {
-		graph.candidates = append(graph.candidates, Candidate{ID: id, Type: "documentation", Name: "whole graph"})
+	graph.honorsLimit = true
+	for id := int64(1001); id <= 1000+int64(CandidateLimit)+10; id++ {
+		graph.candidates = append(graph.candidates, Candidate{ID: id, Type: "documentation", Name: "whole graph", Similarity: 0.9})
 	}
-	for id := int64(2001); id <= 2005; id++ {
-		graph.scopedCandidates = append(graph.scopedCandidates, Candidate{ID: id, Type: "documentation", Name: "neighbourhood"})
+	model := &fakeModel{
+		derivedText: "a second phrasing?\na third phrasing?",
+		results:     []JudgeResult{{Answer: "done", Reason: Answered, RawReason: "stop"}},
 	}
-	model := &fakeModel{results: []JudgeResult{{Answer: "done", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
@@ -1778,20 +1804,29 @@ func TestTheTurnHoldsThreeOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *t
 		t.Fatalf("Run: %v", err)
 	}
 
-	var neighbourhood []int64
-	for _, d := range record.Candidates {
-		if d.ID >= 2001 {
-			neighbourhood = append(neighbourhood, d.ID)
-		}
+	if len(graph.recallCalls) != primaryRecallCalls {
+		t.Fatalf("the turn issued %d recalls, want %d: one for all the queries and one inside the subject's scope, and never one per query", len(graph.recallCalls), primaryRecallCalls)
+	}
+	global := graph.recallCalls[0]
+	if want := []string{"hello", "a second phrasing?", "a third phrasing?"}; !slices.Equal(global.Queries, want) {
+		t.Fatalf("the global recall carried queries %q, want %q", global.Queries, want)
+	}
+	if global.Limit != CandidateLimit {
+		t.Fatalf("the recall asked for %d rows, want CandidateLimit %d: a fetch beyond the count is rows fetched to be cut", global.Limit, CandidateLimit)
 	}
 
-	want := []int64{2001, 2002, 2003}
-	if !slices.Equal(neighbourhood, want) {
-		t.Fatalf("the run admitted neighbourhood candidates %v of the five on offer, want %v: the whole-graph ranking already fills the cap on its own, so the number of neighbourhood rows that reach the block is the number of slots withheld from it and nothing else", neighbourhood, want)
+	admitted := 0
+	for _, d := range record.Candidates {
+		if d.Included {
+			admitted++
+		}
+	}
+	if admitted != CandidateLimit {
+		t.Fatalf("the block admitted %d of %d dispositions, want %d: the aperture is the count the graph was asked for, and every row of it fits", admitted, len(record.Candidates), CandidateLimit)
 	}
 }
 
-func TestTheRecordCarriesTheFloorThatGovernedTheRun(t *testing.T) {
+func TestTheRecordCarriesTheScopeReserveAndTheThinKnowledgeSimilarityThatGovernedTheRun(t *testing.T) {
 	t.Parallel()
 
 	graph := baseGraph()
@@ -1803,8 +1838,11 @@ func TestTheRecordCarriesTheFloorThatGovernedTheRun(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if record.Limits.RelevanceFloor != RelevanceFloor {
-		t.Fatalf("record.Limits.RelevanceFloor = %v, want %v", record.Limits.RelevanceFloor, RelevanceFloor)
+	if record.Limits.RecallScopeReserve != RecallScopeReserve {
+		t.Fatalf("record.Limits.RecallScopeReserve = %v, want %v", record.Limits.RecallScopeReserve, RecallScopeReserve)
+	}
+	if record.Limits.ThinKnowledgeSimilarity != ThinKnowledgeSimilarity {
+		t.Fatalf("record.Limits.ThinKnowledgeSimilarity = %v, want %v", record.Limits.ThinKnowledgeSimilarity, ThinKnowledgeSimilarity)
 	}
 }
 
@@ -1821,7 +1859,7 @@ func TestTheRecordCarriesTheQuerySetEachCandidatesAttributionIndexesInto(t *test
 
 	want := []string{"hello"}
 	if !slices.Equal(record.Queries, want) {
-		t.Fatalf("record.Queries = %q, want %q: every candidate names the recall that returned it by position in this set, so a record that omits the set leaves that position resolvable only against a graph that has since moved", record.Queries, want)
+		t.Fatalf("record.Queries = %q, want %q: a candidate names how many queries its recall averaged, so a record that omits the set leaves that count resolvable only against a graph that has since moved", record.Queries, want)
 	}
 	if record.Query != "hello" {
 		t.Fatalf("record.Query = %q, want the raw input %q unchanged", record.Query, "hello")
@@ -1843,9 +1881,9 @@ func TestTheRecordSaysWhichRecallReturnedEachCandidateAndAtWhatRank(t *testing.T
 	if len(record.Candidates) != 1 {
 		t.Fatalf("record.Candidates has %d entries, want 1", len(record.Candidates))
 	}
-	want := []Source{{Query: 0, Rank: 1}}
+	want := []Source{{Rank: 1}}
 	if !slices.Equal(record.Candidates[0].Sources, want) {
-		t.Fatalf("the candidate carries %+v, want %+v: the whole-graph ranking returned this row first and the scoped one not at all, and evidence of which arm reached it that is not written into the record is unrecoverable, because the next read queries a graph that has moved", record.Candidates[0].Sources, want)
+		t.Fatalf("the candidate carries %+v, want %+v: evidence of how the recall reached a row that is not written into the record is unrecoverable, because the next read queries a graph that has moved", record.Candidates[0].Sources, want)
 	}
 }
 
@@ -1901,5 +1939,79 @@ func TestTheTopCutWarningReportsTheSizeTheBudgetRefusedNotTheContentsOwn(t *test
 	}
 	if strings.Contains(warning, "candidateSize=40000") {
 		t.Fatalf("the top-cut warning reports the content's own length beside a budget quantity:\n%s", warning)
+	}
+}
+
+func TestTheSupplementaryRecallNeverReturnsTheSubject(t *testing.T) {
+	t.Parallel()
+
+	for _, ignoresExclusion := range []bool{false, true} {
+		graph := baseGraph()
+		graph.ignoresExclusion = ignoresExclusion
+		graph.recallQueue = []recallResponse{
+			{Candidates: nil},
+			{Candidates: []Candidate{
+				{ID: 42, Type: "documentation", Name: "Subject", Similarity: 0.95, Content: "anchor body"},
+				{ID: 99, Type: "task", Name: "Found", Similarity: 0.8, Content: "tool result body"},
+			}},
+		}
+		model := &fakeModel{results: []JudgeResult{
+			{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "q"},
+			{Answer: "final", Reason: Answered, RawReason: "stop"},
+		}}
+		turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
+
+		record, _, err := turn.Run(context.Background(), "hello", 42)
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		supplementary := graph.recallCalls[len(graph.recallCalls)-1]
+		if !slices.Equal(supplementary.Exclude, []int64{42}) {
+			t.Fatalf("the supplementary recall excluded %v, want the subject 42: the block already renders it whole", supplementary.Exclude)
+		}
+		for _, result := range record.ToolCalls[0].Results {
+			if result.ID == 42 {
+				t.Fatalf("with a graph that ignores exclusion = %v the supplementary round admitted the subject itself", ignoresExclusion)
+			}
+		}
+		if ids := candidateIDsIn(model.calls[1].Block); !slices.Equal(ids, []int64{99}) {
+			t.Fatalf("the second call's block carries candidates %v, want only [99]", ids)
+		}
+	}
+}
+
+func TestTheTurnHoldsTwoOfItsCandidateSlotsForTheSubjectsOwnNeighbourhood(t *testing.T) {
+	t.Parallel()
+
+	graph := baseGraph()
+	graph.honorsLimit = true
+	graph.neighbours = []int64{7}
+	for i := range 10 {
+		graph.candidates = append(graph.candidates, Candidate{ID: int64(1001 + i), Type: "documentation", Name: "whole graph", Similarity: 0.9 - 0.01*float64(i), Content: "body"})
+	}
+	for i := range 5 {
+		graph.scopedCandidates = append(graph.scopedCandidates, Candidate{ID: int64(2001 + i), Type: "documentation", Name: "neighbourhood", Similarity: 0.5 - 0.01*float64(i), Content: "body"})
+	}
+	model := &fakeModel{results: []JudgeResult{{Answer: "done", Reason: Answered, RawReason: "stop"}}}
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
+
+	record, _, err := turn.Run(context.Background(), "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var neighbourhood []int64
+	for _, d := range record.Candidates {
+		if d.ID >= 2001 {
+			neighbourhood = append(neighbourhood, d.ID)
+		}
+	}
+	if want := []int64{2001, 2002}; !slices.Equal(neighbourhood, want) {
+		t.Fatalf("the run admitted neighbourhood candidates %v of the five on offer, want %v: the global ranking already fills the cap on its own, so the neighbourhood rows that reach the block are the slots held for them and nothing else", neighbourhood, want)
+	}
+	scoped := graph.recallCalls[1]
+	if !slices.Equal(scoped.Scope, []int64{7, 42}) {
+		t.Fatalf("the scoped recall carried scope %v, want the subject and its neighbours [7 42]", scoped.Scope)
 	}
 }

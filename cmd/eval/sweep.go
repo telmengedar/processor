@@ -51,12 +51,12 @@ func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row, de
 
 	queries := derivations.QueriesFor(row)
 
-	candidates, err := loop.Retrieve(ctx, graph, anchor, queries, loop.CandidateLimit, loop.RecallScopeReserve, loop.UpdateWindow{})
+	candidates, err := loop.Retrieve(ctx, graph, anchor, queries, loop.CandidateLimit, loop.RecallScopeReserve, loop.UpdateWindow{}, nil)
 	if err != nil {
 		return nil, nil, true, err
 	}
 
-	_, dispositions := loop.Assemble(anchor, candidates, loop.AssemblyByteBudget, loop.RelevanceFloor, threshold)
+	_, dispositions := loop.Assemble(anchor, candidates, loop.AssemblyByteBudget, threshold)
 	return queries, dispositions, true, nil
 }
 

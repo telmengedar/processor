@@ -198,8 +198,8 @@ func TestARefusalOnTheFifthCallReservesTheSixthWithoutReachingTheCap(t *testing.
 func TestNothingAboutARefusalReachesTheAnsweringCall(t *testing.T) {
 	t.Parallel()
 
-	rows := make([]Candidate, 0, ThinKnowledgeThreshold)
-	for i := range ThinKnowledgeThreshold {
+	rows := make([]Candidate, 0, CandidateLimit)
+	for i := range CandidateLimit {
 		rows = append(rows, rowOf(int64(200+i), fmt.Sprintf("body-%d", i)))
 	}
 	held := rows[0]

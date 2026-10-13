@@ -83,7 +83,7 @@ func TestAnAddressedReadsRowRendersItsContentAtEveryThresholdTheFormRuleCanTake(
 	}
 
 	for _, threshold := range []SubstanceRatio{0, SubstanceRatioFloor / 2, SubstanceRatioFloor, SubstanceRatioFloor * 2, 0.5, 1, 2} {
-		admitted, dispositions := admit([]Candidate{candidate}, SupplementaryByteBudget, 0, 0, BlockOccupancy, threshold)
+		admitted, dispositions := admit([]Candidate{candidate}, SupplementaryByteBudget, 0, BlockOccupancy, threshold)
 
 		if len(admitted) != 1 || len(dispositions) != 1 {
 			t.Fatalf("at threshold %v the read admitted %d rows and recorded %d, want one of each", threshold, len(admitted), len(dispositions))

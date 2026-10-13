@@ -124,15 +124,15 @@ func TestDialExerciseDeclaresTheSubstanceRatioFloorAsADialTheArchiveCannotYetAns
 func TestDialExerciseCountsOnlyValuesTheRecordItselfCarries(t *testing.T) {
 	t.Parallel()
 
-	archive := archiveOf(t, "one record carries the floor and one predates it",
-		`{"limits":{"relevanceFloor":0.63}}`,
+	archive := archiveOf(t, "one record carries the thin-knowledge similarity and one predates it",
+		`{"limits":{"thinKnowledgeSimilarity":0.63}}`,
 		`{"limits":{"candidateLimit":20}}`,
 	)
 
-	reading := readingFor(t, DialExercise(archive), "RelevanceFloor")
+	reading := readingFor(t, DialExercise(archive), "ThinKnowledgeSimilarity")
 
 	if reading.Verdict != DialUnexercised {
-		t.Fatalf("the floor took one recorded value and the other record carries no floor at all; verdict is %q, want %q", reading.Verdict, DialUnexercised)
+		t.Fatalf("the dial took one recorded value and the other record carries none at all; verdict is %q, want %q", reading.Verdict, DialUnexercised)
 	}
 	if reading.RecordedIn != 1 {
 		t.Fatalf("the floor is recorded in 1 record, got %d", reading.RecordedIn)
@@ -278,8 +278,8 @@ func TestDialExerciseDeclaresTheKnobNoRecordFieldCarriesAndCanNeverClearIt(t *te
 	t.Parallel()
 
 	archive := archiveOf(t, "every dial the record can carry, all at two values",
-		`{"limits":{"candidateLimit":20,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":3,"derivationBudget":160,"judgementBudget":192,"relevanceFloor":0,"maxFills":3,"fillSizeFloor":1,"maxFillContentBytes":1,"substanceRatioFloor":0.1,"substanceRatioThreshold":0}}`,
-		`{"limits":{"candidateLimit":21,"assemblyByteBudget":60001,"supplementaryByteBudget":20001,"maxModelCalls":6,"derivationBudget":161,"judgementBudget":193,"relevanceFloor":0.63,"maxFills":4,"fillSizeFloor":2,"maxFillContentBytes":2,"substanceRatioFloor":0.2,"substanceRatioThreshold":0.5}}`,
+		`{"limits":{"candidateLimit":20,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":3,"derivationBudget":160,"judgementBudget":192,"recallScopeReserve":2,"thinKnowledgeSimilarity":0,"maxFills":3,"fillSizeFloor":1,"maxFillContentBytes":1,"substanceRatioFloor":0.1,"substanceRatioThreshold":0}}`,
+		`{"limits":{"candidateLimit":21,"assemblyByteBudget":60001,"supplementaryByteBudget":20001,"maxModelCalls":6,"derivationBudget":161,"judgementBudget":193,"recallScopeReserve":3,"thinKnowledgeSimilarity":0.63,"maxFills":4,"fillSizeFloor":2,"maxFillContentBytes":2,"substanceRatioFloor":0.2,"substanceRatioThreshold":0.5}}`,
 	)
 
 	result := DialExercise(archive)
@@ -300,7 +300,7 @@ func TestARecordWhoseOwnBytesCarryNoReadableLimitsIsNamedRatherThanSwallowed(t *
 	t.Parallel()
 
 	archive := runarchive.Archive{Selector: "one record was hand-edited", Entries: []runarchive.Entry{
-		decoded(t, 1, "processor-run 2026-09-17T18:34:11Z — a run", `{"limits":{"candidateLimit":20,"assemblyByteBudget":60000,"maxModelCalls":6,"relevanceFloor":0.63}}`),
+		decoded(t, 1, "processor-run 2026-09-17T18:34:11Z — a run", `{"limits":{"candidateLimit":20,"assemblyByteBudget":60000,"maxModelCalls":6,"thinKnowledgeSimilarity":0.63}}`),
 		{Node: 77, Raw: []byte(`{"limits":5}`)},
 	}}
 
@@ -312,7 +312,7 @@ func TestARecordWhoseOwnBytesCarryNoReadableLimitsIsNamedRatherThanSwallowed(t *
 	if !failedOn(result.Failures, "record 77") {
 		t.Fatalf("an unreadable record must fail the property rather than be dropped, got %+v", result.Failures)
 	}
-	for _, name := range []string{"CandidateLimit", "AssemblyByteBudget", "MaxModelCalls", "RelevanceFloor"} {
+	for _, name := range []string{"CandidateLimit", "AssemblyByteBudget", "MaxModelCalls", "ThinKnowledgeSimilarity"} {
 		if got := readingFor(t, result, name).RecordedIn; got != 1 {
 			t.Errorf("the unreadable record contributes to no dial, so %s is recorded in 1, got %d", name, got)
 		}
