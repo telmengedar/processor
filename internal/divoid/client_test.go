@@ -681,6 +681,10 @@ func TestRecallSendsOneLinkedToParameterPerScopeIDBecauseAnUnknownScopeKeyIsSile
 		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 	}
 
+	if got := q.Get("count"); got != "6" {
+		t.Fatalf("count = %q, want the limit %q alone with three scope ids: the scope narrows the ranking and must not change how many rows are asked for", got, "6")
+	}
+
 	want := []string{"7", "11", "13"}
 	got := q["linkedto"]
 	if len(got) != len(want) {
