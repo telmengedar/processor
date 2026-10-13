@@ -13,10 +13,7 @@ import (
 const (
 	cutReasonByteBudget   = "byte budget exceeded"
 	cutReasonSelfProduced = "self-produced"
-	cutReasonOversized    = "oversized"
 )
-
-const noPayloadCeiling = 0
 
 // ThinKnowledgeSimilarity is the best admitted similarity a block must reach to escape the thin-knowledge hint; it signals and never cuts.
 const ThinKnowledgeSimilarity = 0.63
@@ -31,44 +28,31 @@ const (
 	nudgeThin = "Seems like your knowledge is still thin on the topic - your focus might be too narrow; try approaching the question from a different angle.\n"
 )
 
-// SubstanceRatio is a substance's byte length as a fraction of its content's.
-type SubstanceRatio float64
-
-// SubstanceRatioFloor is the form rule's measured lower bound: a substance compressed further than this renders as content whatever the threshold above it is raised to.
-const SubstanceRatioFloor SubstanceRatio = 0.10
-
-// SubstanceRatioThreshold is the form rule's shipped dial, zero: it leaves the band empty, so every candidate renders as content until a later change raises it.
-const SubstanceRatioThreshold SubstanceRatio = 0
-
-const formHeaderKey = "form"
-
 // Assemble is a pure function: no I/O, no clock, no randomness.
-func Assemble(anchor Anchor, candidates []Candidate, budget int, threshold SubstanceRatio) (block string, dispositions []Disposition) {
-	admitted, dispositions := admit(candidates, budget, len(anchor.Content), BlockOccupancy, threshold)
+func Assemble(anchor Anchor, candidates []Candidate, budget int) (block string, dispositions []Disposition) {
+	admitted, dispositions := admit(candidates, budget, len(anchor.Substance))
 
 	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
 
-	return renderBlock(anchor, admitted, len(candidates) > 0, threshold, true), dispositions
+	return renderBlock(anchor, admitted, len(candidates) > 0, true), dispositions
 }
 
-func admit(candidates []Candidate, budget, spent, occupancy int, threshold SubstanceRatio) (admitted []Candidate, dispositions []Disposition) {
-	return admitUnheld(candidates, budget, spent, occupancy, threshold, nil)
+func admit(candidates []Candidate, budget, spent int) (admitted []Candidate, dispositions []Disposition) {
+	return admitUnheld(candidates, budget, spent, nil)
 }
 
-func admitUnheld(candidates []Candidate, budget, spent, occupancy int, threshold SubstanceRatio, held func(Candidate) bool) (admitted []Candidate, dispositions []Disposition) {
+func admitUnheld(candidates []Candidate, budget, spent int, held func(Candidate) bool) (admitted []Candidate, dispositions []Disposition) {
 	remaining := budget - spent
 	if remaining < 0 {
 		remaining = 0
 	}
-
-	capBytes := payloadCap(budget, occupancy)
 
 	dispositions = make([]Disposition, len(candidates))
 	admitted = make([]Candidate, 0, len(candidates))
 
 	cumulative := 0
 	for i, c := range candidates {
-		form, rendered := renderedPayload(c, threshold)
+		form, rendered := renderedPayload(c)
 		payload := len(rendered)
 
 		d := Disposition{
@@ -80,11 +64,12 @@ func admitUnheld(candidates []Candidate, budget, spent, occupancy int, threshold
 			Size:               len(c.Content),
 			ContentHash:        contentHash(c.Content),
 			Sources:            c.Sources,
-			SubstanceAvailable: c.Substance != "",
-			SubstanceSize:      len(c.Substance),
-			PayloadCap:         capBytes,
+			SubstanceAvailable: c.Substance != "" && !c.Created,
 			Form:               form,
 			RenderedSize:       payload,
+		}
+		if d.SubstanceAvailable {
+			d.SubstanceSize = len(c.Substance)
 		}
 
 		switch {
@@ -94,8 +79,6 @@ func admitUnheld(candidates []Candidate, budget, spent, occupancy int, threshold
 			admitted = append(admitted, c)
 		case c.SelfProduced:
 			d.CutReason = cutReasonSelfProduced
-		case refusedForItsSize(payload, capBytes):
-			d.CutReason = cutReasonOversized
 		case cumulative+payload <= remaining:
 			cumulative += payload
 			d.Included = true
@@ -110,41 +93,37 @@ func admitUnheld(candidates []Candidate, budget, spent, occupancy int, threshold
 	return admitted, dispositions
 }
 
-func payloadCap(budget, occupancy int) int {
-	if occupancy <= 0 {
-		return noPayloadCeiling
-	}
-	return budget / occupancy
+func renderedPayload(c Candidate) (Form, string) {
+	return substanceForm(c.Substance)
 }
 
-func refusedForItsSize(payload, ceiling int) bool {
-	return ceiling != noPayloadCeiling && payload > ceiling
+func substanceForm(substance string) (Form, string) {
+	if substance == "" {
+		return FormUnavailable, ""
+	}
+	return FormSubstance, substance
 }
 
-func renderedPayload(c Candidate, threshold SubstanceRatio) (Form, string) {
-	if c.Substance == "" || c.Content == "" {
-		return FormContent, c.Content
-	}
-	ratio := SubstanceRatio(float64(len(c.Substance)) / float64(len(c.Content)))
-	if ratio >= SubstanceRatioFloor && ratio < threshold {
-		return FormSubstance, c.Substance
-	}
-	return FormContent, c.Content
-}
+const (
+	sectionCandidate = "CANDIDATE"
+	unavailableLine  = "substance: unavailable\n"
+)
 
-const sectionCandidate = "CANDIDATE"
-
-func renderSection(b *strings.Builder, c Candidate, threshold SubstanceRatio) {
-	form, rendered := renderedPayload(c, threshold)
-
+func renderSection(b *strings.Builder, c Candidate) {
 	fmt.Fprintf(b, "===== %s =====\nid: %d\ntype: %s\nname: %s\n", sectionCandidate, c.ID, c.Type, c.Name)
 	if !c.Read {
 		fmt.Fprintf(b, "similarity: %.3f\n", c.Similarity)
 	}
+	form, rendered := renderedPayload(c)
+	writePayload(b, form, rendered)
+}
+
+func writePayload(b *strings.Builder, form Form, rendered string) {
 	if form == FormSubstance {
-		fmt.Fprintf(b, "%s: %s\n", formHeaderKey, form)
+		fmt.Fprintf(b, "\n%s\n", rendered)
+		return
 	}
-	fmt.Fprintf(b, "\n%s\n", rendered)
+	b.WriteString(unavailableLine)
 }
 
 // RenderUserContent composes the user message: the request, the instant it states and the window it was bounded to when one applied, the earlier conversation when there is one, the assembled block, then the same request again.
@@ -181,21 +160,17 @@ func windowLine(w UpdateWindow) string {
 	return fmt.Sprintf("retrieval is limited to nodes updated %s … %s", from, to)
 }
 
-func cutForWantOfRoom(reason string) bool {
-	return reason == cutReasonByteBudget || reason == cutReasonOversized
-}
-
-func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, threshold SubstanceRatio, nudges bool) string {
+func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, nudges bool) string {
 	var b strings.Builder
 
 	b.WriteString("===== ANCHOR =====\n")
-	fmt.Fprintf(&b, "id: %d\ntype: %s\nname: %s\n\n", anchor.ID, anchor.Type, anchor.Name)
-	b.WriteString(anchor.Content)
-	b.WriteString("\n")
+	fmt.Fprintf(&b, "id: %d\ntype: %s\nname: %s\n", anchor.ID, anchor.Type, anchor.Name)
+	form, rendered := substanceForm(anchor.Substance)
+	writePayload(&b, form, rendered)
 
 	for _, c := range admitted {
 		b.WriteString("\n")
-		renderSection(&b, c, threshold)
+		renderSection(&b, c)
 	}
 
 	if len(admitted) == 0 && consideredAny {
@@ -230,7 +205,7 @@ func contentHash(content string) string {
 }
 
 func candidateFromAnchor(anchor Anchor) Candidate {
-	return Candidate{ID: anchor.ID, Type: anchor.Type, Name: anchor.Name, Content: anchor.Content, Read: true}
+	return Candidate{ID: anchor.ID, Type: anchor.Type, Name: anchor.Name, Content: anchor.Content, Substance: anchor.Substance, Read: true}
 }
 
 func rankedSimilarities(candidates []Candidate) []float64 {
@@ -244,11 +219,14 @@ func rankedSimilarities(candidates []Candidate) []float64 {
 }
 
 func summarizeAnchor(anchor Anchor) AnchorSummary {
+	form, rendered := substanceForm(anchor.Substance)
 	return AnchorSummary{
-		ID:          anchor.ID,
-		Type:        anchor.Type,
-		Name:        anchor.Name,
-		Size:        len(anchor.Content),
-		ContentHash: contentHash(anchor.Content),
+		ID:           anchor.ID,
+		Type:         anchor.Type,
+		Name:         anchor.Name,
+		Size:         len(anchor.Content),
+		ContentHash:  contentHash(anchor.Content),
+		Form:         form,
+		RenderedSize: len(rendered),
 	}
 }

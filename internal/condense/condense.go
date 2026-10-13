@@ -1,4 +1,4 @@
-// Package condense is the offline pass that derives a node's substance from its content, and is never reachable from a turn.
+// Package condense derives a node's substance from its content, for the offline command and for the turn's fill.
 package condense
 
 import (
@@ -18,8 +18,6 @@ const (
 	skipSelfProduced      = "self-produced"
 	skipNonProseContent   = "non-prose content type"
 	skipEmptyCondensation = "condensation empty"
-	skipNotShorter        = "condensation not shorter than content"
-	skipBelowFloor        = "condensation below the floor"
 	skipPreamble          = "condensation opens with a preamble"
 	skipTruncated         = "condensation truncated"
 	skipContentMoved      = "content moved during condensation"
@@ -165,17 +163,25 @@ func (r Result) OperationalFailures() int {
 func isOperationalFailure(reason string) bool {
 	switch reason {
 	case skipNodeAbsent, skipContentAbsent, skipSubstancePresent, skipSelfProduced,
-		skipNonProseContent, skipEmptyCondensation, skipNotShorter, skipBelowFloor,
-		skipPreamble, skipContentMoved:
+		skipNonProseContent, skipEmptyCondensation, skipPreamble, skipContentMoved:
 		return false
 	}
 	return true
 }
 
-type outcome struct {
-	provenance *Provenance
-	skip       *Skip
-	audit      AuditEntry
+// Condensation is one node's outcome: its provenance when a substance was produced, its skip when not, and an audit entry carrying the text produced or already present.
+type Condensation struct {
+	Provenance *Provenance
+	Skip       *Skip
+	Audit      AuditEntry
+}
+
+// Present returns the substance the node already carried, and whether that is why it was skipped.
+func (c Condensation) Present() (string, bool) {
+	if c.Skip == nil || c.Skip.Reason != skipSubstancePresent {
+		return "", false
+	}
+	return c.Audit.Substance, true
 }
 
 // Run condenses every target whose content is present and whose substance is absent, isolating each node's failure from the rest of the pass.
@@ -192,16 +198,16 @@ func Run(ctx context.Context, graph GraphPort, model ModelPort, targets []Target
 
 	ratios := make([]float64, 0, len(targets))
 	for _, target := range targets {
-		out := condenseOne(ctx, graph, model, target, opts, now)
-		if out.provenance != nil {
-			result.Provenance = append(result.Provenance, *out.provenance)
-			ratios = append(ratios, out.provenance.Ratio)
+		out := Condense(ctx, graph, model, target, opts, now)
+		if out.Provenance != nil {
+			result.Provenance = append(result.Provenance, *out.Provenance)
+			ratios = append(ratios, out.Provenance.Ratio)
 		}
-		if out.skip != nil {
-			result.Skipped = append(result.Skipped, *out.skip)
+		if out.Skip != nil {
+			result.Skipped = append(result.Skipped, *out.Skip)
 		}
 		if len(target.Why) > 0 {
-			result.Audit = append(result.Audit, out.audit)
+			result.Audit = append(result.Audit, out.Audit)
 		}
 	}
 
@@ -209,15 +215,16 @@ func Run(ctx context.Context, graph GraphPort, model ModelPort, targets []Target
 	return result
 }
 
-func condenseOne(ctx context.Context, graph GraphPort, model ModelPort, target Target, opts Options, now func() time.Time) outcome {
+// Condense derives one target's substance and stores it unless the options or a gate forbid it, and returns the text with its provenance.
+func Condense(ctx context.Context, graph GraphPort, model ModelPort, target Target, opts Options, now func() time.Time) Condensation {
 	audit := AuditEntry{Node: target.Node, Rows: target.Rows, Why: target.Why, Origin: originAbsent}
 
 	node, found, err := graph.NodeWithSubstance(ctx, target.Node)
 	if err != nil {
-		return outcome{skip: &Skip{Node: target.Node, Reason: skipReadFailed, Detail: err.Error()}, audit: audit}
+		return Condensation{Skip: &Skip{Node: target.Node, Reason: skipReadFailed, Detail: err.Error()}, Audit: audit}
 	}
 	if !found {
-		return outcome{skip: &Skip{Node: target.Node, Reason: skipNodeAbsent}, audit: audit}
+		return Condensation{Skip: &Skip{Node: target.Node, Reason: skipNodeAbsent}, Audit: audit}
 	}
 
 	audit.Name = node.Name
@@ -230,21 +237,21 @@ func condenseOne(ctx context.Context, graph GraphPort, model ModelPort, target T
 			audit.SubstanceSize = len(node.Substance)
 			audit.Ratio = ratio(len(node.Substance), len(node.Content))
 		}
-		return outcome{skip: &Skip{Node: target.Node, Reason: reason}, audit: audit}
+		return Condensation{Skip: &Skip{Node: target.Node, Reason: reason}, Audit: audit}
 	}
 
 	hash := contentHash(node.Content)
 	completion, err := model.Condense(ctx, Prompt(node.Name, node.Content), maxOutputTokens(node.Content))
 	if err != nil {
-		return outcome{skip: &Skip{Node: target.Node, Reason: skipModelFailed, Detail: err.Error()}, audit: audit}
+		return Condensation{Skip: &Skip{Node: target.Node, Reason: skipModelFailed, Detail: err.Error()}, Audit: audit}
 	}
 	if completion.FinishReason != finishReasonStop {
-		return outcome{skip: &Skip{Node: target.Node, Reason: skipTruncated, Detail: completion.FinishReason}, audit: audit}
+		return Condensation{Skip: &Skip{Node: target.Node, Reason: skipTruncated, Detail: completion.FinishReason}, Audit: audit}
 	}
 
 	substance := Postprocess(completion.Text)
-	if reason := Defect(node.Content, substance); reason != "" {
-		return outcome{skip: &Skip{Node: target.Node, Reason: reason}, audit: audit}
+	if reason := Defect(substance); reason != "" {
+		return Condensation{Skip: &Skip{Node: target.Node, Reason: reason}, Audit: audit}
 	}
 
 	audit.Substance = substance
@@ -266,24 +273,24 @@ func condenseOne(ctx context.Context, graph GraphPort, model ModelPort, target T
 	}
 
 	if opts.DryRun {
-		return outcome{provenance: &provenance, audit: audit}
+		return Condensation{Provenance: &provenance, Audit: audit}
 	}
 
 	live, found, err := graph.Content(ctx, node.ID)
 	if err != nil {
-		return outcome{skip: &Skip{Node: target.Node, Reason: skipReadFailed, Detail: err.Error()}, audit: audit}
+		return Condensation{Skip: &Skip{Node: target.Node, Reason: skipReadFailed, Detail: err.Error()}, Audit: audit}
 	}
 	if !found || contentHash(live) != hash {
-		return outcome{skip: &Skip{Node: target.Node, Reason: skipContentMoved}, audit: audit}
+		return Condensation{Skip: &Skip{Node: target.Node, Reason: skipContentMoved}, Audit: audit}
 	}
 
 	if err := graph.SetSubstance(ctx, node.ID, substance); err != nil {
-		return outcome{skip: &Skip{Node: target.Node, Reason: skipWriteFailed, Detail: err.Error()}, audit: audit}
+		return Condensation{Skip: &Skip{Node: target.Node, Reason: skipWriteFailed, Detail: err.Error()}, Audit: audit}
 	}
 
 	provenance.Written = true
 	audit.Origin = originGenerated
-	return outcome{provenance: &provenance, audit: audit}
+	return Condensation{Provenance: &provenance, Audit: audit}
 }
 
 func gate(node Node, opts Options) string {

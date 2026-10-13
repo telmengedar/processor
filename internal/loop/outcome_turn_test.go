@@ -26,7 +26,7 @@ func TestTurnRunPutsTheOutcomeOnTheRecordItFiles(t *testing.T) {
 	t.Parallel()
 
 	graph := baseGraph()
-	graph.candidates = []Candidate{{ID: 100, Type: "documentation", Name: "Doc", Similarity: 0.9, Content: "body"}}
+	graph.candidates = []Candidate{{ID: 100, Type: "documentation", Name: "Doc", Similarity: 0.9, Substance: "body"}}
 	model := &fakeModel{results: []JudgeResult{{Answer: "the answer", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
 
@@ -50,7 +50,7 @@ func TestTurnRunRecordsAnOutcomeThatMatchesWhatItsOwnFieldsRecompute(t *testing.
 	t.Parallel()
 
 	graph := baseGraph()
-	graph.candidates = []Candidate{{ID: 100, Type: "documentation", Name: "Doc", Similarity: 0.9, Content: "body"}}
+	graph.candidates = []Candidate{{ID: 100, Type: "documentation", Name: "Doc", Similarity: 0.9, Substance: "body"}}
 	model := &fakeModel{results: []JudgeResult{
 		{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "more"},
 		{Answer: "the answer", Reason: Answered, RawReason: "stop"},
@@ -117,7 +117,7 @@ func TestTheNotDeliveredWarnFiresOnAProducedAnswerNoAdmittedRowFed(t *testing.T)
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	graph := baseGraph()
-	graph.candidates = []Candidate{{ID: 100, Type: "documentation", Name: "Big", Similarity: 0.9, Content: strings.Repeat("x", AssemblyByteBudget+1)}}
+	graph.candidates = []Candidate{{ID: 100, Type: "documentation", Name: "Big", Similarity: 0.9, Substance: strings.Repeat("x", AssemblyByteBudget+1)}}
 	model := &fakeModel{results: []JudgeResult{{Answer: "an answer from nothing this system held", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 

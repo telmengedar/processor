@@ -18,10 +18,10 @@ func declared(tokensPerSecond, promptBytesPerSecond float64) boot.FloorsConfig {
 	return boot.FloorsConfig{TokensPerSecond: &tokensPerSecond, PromptBytesPerSecond: &promptBytesPerSecond}
 }
 
-func report(t *testing.T, floorsConfig boot.FloorsConfig, fillConfigured bool) []string {
+func report(t *testing.T, floorsConfig boot.FloorsConfig) []string {
 	t.Helper()
 
-	floors, sites, err := Affordability(boot.ProtocolOpenAICompat, floorsConfig, reportRunBound, fillConfigured)
+	floors, sites, err := Affordability(boot.ProtocolOpenAICompat, floorsConfig, reportRunBound)
 	if err != nil {
 		t.Fatalf("Affordability: %v", err)
 	}
@@ -73,15 +73,15 @@ func warnings(lines []string) []string {
 	return warned
 }
 
-func TestBootWarnsAboutNothingWhereTheDeclaredFloorsAffordEveryCallSiteIncludingTheFill(t *testing.T) {
+func TestBootWarnsAboutNothingWhereTheDeclaredFloorsAffordEveryCallSite(t *testing.T) {
 	t.Parallel()
 
-	lines := report(t, declared(1_000, 100_000), true)
+	lines := report(t, declared(1_000, 100_000))
 
 	if warned := warnings(lines); len(warned) != 0 {
 		t.Fatalf("a deployment declaring floors that afford every site was warned about %d of them, which is a check firing on a configuration that is fine: %v", len(warned), warned)
 	}
-	for _, site := range []string{loop.SiteDerivation, loop.SiteJudgement, loop.SiteFill} {
+	for _, site := range []string{loop.SiteDerivation, loop.SiteJudgement, loop.SiteAnswering} {
 		line := lineFor(t, lines, site)
 		if !strings.Contains(line, "level=INFO") {
 			t.Fatalf("the %s site is not reported at INFO on a configuration that affords it; line=%s", site, line)
@@ -97,7 +97,7 @@ func TestBootWarnsAboutAJudgementCallItsDeclaredFloorCannotAffordAndNamesTheRate
 
 	const declaredTokensPerSecond = 1.0
 
-	lines := report(t, declared(declaredTokensPerSecond, 3_000), false)
+	lines := report(t, declared(declaredTokensPerSecond, 3_000))
 	line := lineFor(t, lines, loop.SiteJudgement)
 
 	if !strings.Contains(line, "level=WARN") {
@@ -123,34 +123,18 @@ func TestBootWarnsAboutAJudgementCallItsDeclaredFloorCannotAffordAndNamesTheRate
 func TestTheRateTheHostWouldHaveToDeliverIsComputedRatherThanEchoedBackFromTheDeclaration(t *testing.T) {
 	t.Parallel()
 
-	first := floatAttribute(t, lineFor(t, report(t, declared(1, 3_000), false), loop.SiteJudgement), "requiredTokensPerSecond")
-	second := floatAttribute(t, lineFor(t, report(t, declared(2, 3_000), false), loop.SiteJudgement), "requiredTokensPerSecond")
+	first := floatAttribute(t, lineFor(t, report(t, declared(1, 3_000)), loop.SiteJudgement), "requiredTokensPerSecond")
+	second := floatAttribute(t, lineFor(t, report(t, declared(2, 3_000)), loop.SiteJudgement), "requiredTokensPerSecond")
 
 	if first != second {
 		t.Fatalf("two deployments declaring different generation floors are told they need %v and %v tokens per second; the rate a budget needs is a property of the budget and the bound, not of what the operator declared", first, second)
 	}
 }
 
-func TestTheFillSiteIsReportedOnlyWhereACondensationModelIsConfigured(t *testing.T) {
-	t.Parallel()
-
-	with := report(t, declared(1_000, 100_000), true)
-	without := report(t, declared(1_000, 100_000), false)
-
-	if len(with) != len(without)+1 {
-		t.Fatalf("configuring a condensation model changed the report by %d lines, want exactly one; with=%v without=%v", len(with)-len(without), with, without)
-	}
-	for _, line := range without {
-		if strings.Contains(line, "site="+loop.SiteFill) {
-			t.Fatalf("a deployment with no condensation model is told about a fill site it will never call; line=%s", line)
-		}
-	}
-}
-
 func TestBootStatesTheDeclaredFloorsThemselvesAsDeclarationsRatherThanAsMeasurements(t *testing.T) {
 	t.Parallel()
 
-	lines := report(t, declared(13, 4_400), false)
+	lines := report(t, declared(13, 4_400))
 
 	if !strings.Contains(lines[0], "tokensPerSecond=13") || !strings.Contains(lines[0], "promptBytesPerSecond=4400") {
 		t.Fatalf("the first boot line does not state the floors this deployment declared; line=%s", lines[0])
@@ -163,7 +147,7 @@ func TestBootStatesTheDeclaredFloorsThemselvesAsDeclarationsRatherThanAsMeasurem
 func TestADeploymentThatDeclaresNoFloorIsCheckedAgainstTheProductsOwnDeclaration(t *testing.T) {
 	t.Parallel()
 
-	floors, _, err := Affordability(boot.ProtocolOpenAICompat, boot.FloorsConfig{}, reportRunBound, false)
+	floors, _, err := Affordability(boot.ProtocolOpenAICompat, boot.FloorsConfig{}, reportRunBound)
 	if err != nil {
 		t.Fatalf("Affordability: %v", err)
 	}
@@ -177,7 +161,7 @@ func TestADeploymentThatDeclaresNoFloorIsCheckedAgainstTheProductsOwnDeclaration
 func TestADeploymentsOwnDeclarationIsPreferredToTheProductsAndReachesTheCheck(t *testing.T) {
 	t.Parallel()
 
-	floors, _, err := Affordability(boot.ProtocolOpenAICompat, declared(41, 5_300), reportRunBound, false)
+	floors, _, err := Affordability(boot.ProtocolOpenAICompat, declared(41, 5_300), reportRunBound)
 	if err != nil {
 		t.Fatalf("Affordability: %v", err)
 	}
@@ -195,7 +179,7 @@ func TestNoAffordabilityIsClaimedForAProtocolThisBinaryHasNoAdapterFor(t *testin
 		t.Fatal("a protocol with no adapter reported a client bound, which is a bound nothing enforces")
 	}
 
-	_, sites, err := Affordability("responses", boot.FloorsConfig{}, reportRunBound, false)
+	_, sites, err := Affordability("responses", boot.FloorsConfig{}, reportRunBound)
 	if err == nil {
 		t.Fatalf("a protocol with no adapter produced %d call sites, want a refusal", len(sites))
 	}
@@ -204,63 +188,15 @@ func TestNoAffordabilityIsClaimedForAProtocolThisBinaryHasNoAdapterFor(t *testin
 	}
 }
 
-func TestTheFillSitesBudgetIsTheLargestOneCondensationCanBeIssuedWith(t *testing.T) {
-	t.Parallel()
-
-	if got := FillBudgetCeiling(); got <= loop.JudgementBudget {
-		t.Fatalf("the fill site is checked at %d tokens, which is no larger than the judgement site's %d — a ceiling sized from the largest content a fill accepts cannot be that small", got, loop.JudgementBudget)
-	}
-}
-
-func TestTheFillSitesCeilingIsNotAffordableAtTheProductsOwnDeclaredFloorsAndIsReportedRatherThanRaised(t *testing.T) {
-	t.Parallel()
-
-	lines := report(t, boot.FloorsConfig{}, true)
-	line := lineFor(t, lines, loop.SiteFill)
-
-	if warned := warnings(lines); len(warned) != 0 {
-		t.Fatalf("the default shape of a fill-configured deployment raises %d warnings on every boot: %v — a permanent alarm is one a reader learns to filter, and the site it would hide is the judgement site this check exists for", len(warned), warned)
-	}
-	if !strings.Contains(line, "level=INFO") {
-		t.Fatalf("the fill site is not reported at INFO; its budget is sized per node by the condensation pass and is not the deployment's to set, so nothing an operator can do would clear a warning about it; line=%s", line)
-	}
-	if !strings.Contains(line, "not this deployment's to set") {
-		t.Fatalf("the fill line does not say why an unaffordable result here is reported rather than raised; line=%s", line)
-	}
-	if strings.HasPrefix(attribute(t, line, "shortfall"), "-") {
-		t.Fatalf("the fill line reports a negative shortfall, which is a headroom wearing the wrong name; line=%s", line)
-	}
-	if required := floatAttribute(t, line, "requiredTokensPerSecond"); required <= loop.DefaultFloorTokensPerSecond {
-		t.Fatalf("the fill line names %v tokens per second as the rate the host would need, which is not above the %v the product declares; the number must survive the drop to INFO", required, loop.DefaultFloorTokensPerSecond)
-	}
-}
-
-func TestASiteWhoseBudgetTheDeploymentCanActOnIsStillRaisedRatherThanOnlyReported(t *testing.T) {
-	t.Parallel()
-
-	lines := report(t, declared(1, 3_000), true)
-
-	judgement := lineFor(t, lines, loop.SiteJudgement)
-	if !strings.Contains(judgement, "level=WARN") {
-		t.Fatalf("dropping the deferred site to INFO also silenced the judgement site, which is the one a deployment can act on; line=%s", judgement)
-	}
-	if strings.Contains(judgement, "not this deployment's to set") {
-		t.Fatalf("the judgement site is reported with the deferred site's framing, so a condition the operator owns reads as one nobody owns; line=%s", judgement)
-	}
-	if fill := lineFor(t, lines, loop.SiteFill); strings.Contains(fill, "level=WARN") {
-		t.Fatalf("the fill site is raised as a warning even where the deployment declared a floor it cannot meet; line=%s", fill)
-	}
-}
-
 func judgementSentence(t *testing.T, tokensPerSecond, promptBytesPerSecond float64) string {
 	t.Helper()
-	return lineFor(t, report(t, declared(tokensPerSecond, promptBytesPerSecond), false), loop.SiteJudgement)
+	return lineFor(t, report(t, declared(tokensPerSecond, promptBytesPerSecond)), loop.SiteJudgement)
 }
 
 func TestWhereBothARateAndAPromptRateWouldAffordTheSiteTheReportNamesBoth(t *testing.T) {
 	t.Parallel()
 
-	line := judgementSentence(t, 6.4, 2666.67)
+	line := judgementSentence(t, 5, 2_000)
 
 	if floatAttribute(t, line, "requiredTokensPerSecond") <= 0 || floatAttribute(t, line, "requiredPromptBytesPerSecond") <= 0 {
 		t.Fatalf("this fixture is meant to leave both halves fixable on their own, and one of them reads as the sentinel; line=%s", line)

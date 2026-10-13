@@ -71,10 +71,10 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 	const input = "what did the split change"
 
 	graph := &poisoningGraph{
-		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "the subject body"},
+		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "the subject body"},
 		base: []loop.Candidate{
-			{ID: 7, Type: "documentation", Name: "A real document", Similarity: 0.81, Content: strings.Repeat("r", 59_000)},
-			{ID: 8, Type: divoid.RunNodeType, Name: "a session log another agent wrote", Similarity: 0.74, Content: strings.Repeat("h", 900)},
+			{ID: 7, Type: "documentation", Name: "A real document", Similarity: 0.81, Substance: strings.Repeat("r", 59_000)},
+			{ID: 8, Type: divoid.RunNodeType, Name: "a session log another agent wrote", Similarity: 0.74, Substance: strings.Repeat("h", 900)},
 		},
 	}
 	model := answeringModel{}

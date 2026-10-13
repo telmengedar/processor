@@ -18,7 +18,7 @@ func answeringWithTool(call JudgeResult) JudgeResult {
 func graphHoldingAShownPart() *fakeGraph {
 	held := readableNode(91, "a part the block already carries whole")
 	graph := graphHoldingNodes(held)
-	graph.candidates = []Candidate{{ID: held.ID, Type: held.Type, Name: held.Name, Similarity: 0.9, Content: held.Content}}
+	graph.candidates = []Candidate{{ID: held.ID, Type: held.Type, Name: held.Name, Similarity: 0.9, Content: held.Content, Substance: held.Substance}}
 	return graph
 }
 
@@ -44,7 +44,7 @@ func TestRepeatedRefusedReadsOfAPartAlreadyShownDoNotRunTheTurnToTheCap(t *testi
 	if record.Answer != "the answer" || !record.Outcome.Produced {
 		t.Errorf("answer = %q, produced = %v, want the answer the reserved call gave", record.Answer, record.Outcome.Produced)
 	}
-	if len(record.ToolCalls) != 1 || record.ToolCalls[0].Error != "that part has already been shown to you in full in this turn" {
+	if len(record.ToolCalls) != 1 || record.ToolCalls[0].Error != "that part has already been shown to you in this turn" {
 		t.Errorf("record.toolCalls = %+v, want exactly the one refused round", record.ToolCalls)
 	}
 }
@@ -204,7 +204,7 @@ func TestNothingAboutARefusalReachesTheAnsweringCall(t *testing.T) {
 	}
 	held := rows[0]
 
-	graph := graphHoldingNodes(readableNode(held.ID, held.Content))
+	graph := graphHoldingNodes(readableNode(held.ID, held.Substance))
 	graph.candidates = rows
 	model := &fakeModel{results: []JudgeResult{wantsRead(held.ID), answered("done")}}
 

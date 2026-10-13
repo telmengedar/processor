@@ -17,12 +17,15 @@ func (w UpdateWindow) IsZero() bool {
 	return w.From.IsZero() && w.To.IsZero()
 }
 
-// Anchor is the subject node a run is about, fetched with its full body.
+// Anchor is the subject node a run is about.
 type Anchor struct {
 	ID      int64
 	Type    string
 	Name    string
 	Content string
+
+	// Substance is the node's condensed form, empty when none has been generated.
+	Substance string
 }
 
 // Candidate is one row recall returned, in the rank order the graph
@@ -36,6 +39,9 @@ type Candidate struct {
 
 	// Substance is the node's condensed form, empty when none has been generated.
 	Substance string
+
+	// Created is true when the turn itself produced Substance.
+	Created bool
 
 	// SelfProduced is true when this row is a record this system wrote; the graph adapter sets it.
 	SelfProduced bool
@@ -62,6 +68,29 @@ type AnchorSummary struct {
 	Name        string `json:"name"`
 	Size        int    `json:"size"`
 	ContentHash string `json:"contentHash"`
+
+	// Form is the representation the anchor rendered as.
+	Form Form `json:"form"`
+
+	// RenderedSize is the byte length of that representation.
+	RenderedSize int `json:"renderedSize"`
+}
+
+// UnmarshalJSON decodes one anchor summary, restoring the rendered size on a record written before the anchor rendered its substance: the anchor of such a record was charged its content's own byte length.
+func (a *AnchorSummary) UnmarshalJSON(data []byte) error {
+	type wire AnchorSummary
+
+	var decoded wire
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+
+	if decoded.Form == "" && decoded.RenderedSize == 0 && decoded.Size != 0 {
+		decoded.RenderedSize = decoded.Size
+	}
+
+	*a = AnchorSummary(decoded)
+	return nil
 }
 
 // Disposition is one candidate's entry in a run record: whatever recall
@@ -81,19 +110,16 @@ type Disposition struct {
 	CutReason   string   `json:"cutReason,omitempty"`
 	Sources     []Source `json:"sources,omitempty"`
 
-	// SubstanceAvailable is true when this candidate carried a substance at recall time.
+	// SubstanceAvailable is true when this candidate carried a substance at retrieval, before any creation.
 	SubstanceAvailable bool `json:"substanceAvailable"`
 
 	// SubstanceSize is that substance's byte length, zero when SubstanceAvailable is false.
 	SubstanceSize int `json:"substanceSize"`
 
-	// PayloadCap is the per-candidate rendered-payload ceiling in force when this row was judged, absent when no ceiling was.
-	PayloadCap int `json:"payloadCap,omitempty"`
-
 	// Form is the representation the form rule selected for this candidate.
 	Form Form `json:"form"`
 
-	// RenderedSize is the byte length of the selected form; admission charged it and the ceiling refused against it unless Held.
+	// RenderedSize is the byte length of the selected form; admission charged it unless Held.
 	RenderedSize int `json:"renderedSize"`
 
 	// Held is true when the working memory already held this row in this form with these exact rendered bytes, so the round charged it nothing and it was Included whatever its rank or similarity.
@@ -109,7 +135,7 @@ func (d *Disposition) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	if decoded.RenderedSize == 0 && decoded.Size != 0 {
+	if decoded.Form == "" && decoded.RenderedSize == 0 && decoded.Size != 0 {
 		decoded.RenderedSize = decoded.Size
 	}
 
@@ -121,10 +147,10 @@ func (d *Disposition) UnmarshalJSON(data []byte) error {
 type Form string
 
 const (
-	// FormContent is the candidate's full content.
-	FormContent Form = "content"
 	// FormSubstance is the candidate's condensed substance.
 	FormSubstance Form = "substance"
+	// FormUnavailable is a candidate whose substance could not be produced, rendered as its header alone.
+	FormUnavailable Form = "unavailable"
 )
 
 // TerminalReason is the loop's own closed set of ways a judgement step can end.
@@ -261,17 +287,8 @@ type Limits struct {
 	// AnsweringBudget is the output budget a reserved answering call is issued with.
 	AnsweringBudget int `json:"answeringBudget"`
 
-	// MaxFills is the turn's own fill ceiling, never MaxModelCalls.
-	MaxFills int `json:"maxFills"`
-	// FillSizeFloor is the fill's size gate.
-	FillSizeFloor int `json:"fillSizeFloor"`
-	// MaxFillContentBytes is the fast-refusal ceiling for oversized content.
-	MaxFillContentBytes int `json:"maxFillContentBytes"`
-
-	// SubstanceRatioFloor is the form rule's lower bound as this run was configured.
-	SubstanceRatioFloor SubstanceRatio `json:"substanceRatioFloor"`
-	// SubstanceRatioThreshold is the form rule's dial as this run was configured.
-	SubstanceRatioThreshold SubstanceRatio `json:"substanceRatioThreshold"`
+	// FillWait is how long one substance step waits for its creations, in nanoseconds.
+	FillWait time.Duration `json:"fillWait"`
 
 	// HistoryExchangeLimit is how many of the newest earlier exchanges a turn is shown.
 	HistoryExchangeLimit int `json:"historyExchangeLimit"`
@@ -301,7 +318,7 @@ type Record struct {
 	Window     UpdateWindow  `json:"window,omitzero"`
 	Anchor     AnchorSummary `json:"anchor"`
 	Candidates []Disposition `json:"candidates"`
-	// Fills is one entry per candidate that lacked a substance at initial assembly, never the supplementary round: filled, or the reason it was not.
+	// Fills is one entry per creation the turn attempted, in every phase: filled, or the reason it was not.
 	Fills []FillOutcome `json:"fills"`
 	Block string        `json:"block"`
 
@@ -349,6 +366,9 @@ type ToolExchange struct {
 	Error        string
 	Results      []Candidate
 	Dispositions []Disposition
+
+	// Fills is every creation the round attempted before admitting its rows.
+	Fills []FillOutcome
 
 	// Yield is how many rows this round put in front of the model for the first time in the turn.
 	Yield int

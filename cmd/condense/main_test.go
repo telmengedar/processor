@@ -224,9 +224,9 @@ func TestAModelFailureLeavesTheGraphUntouchedAndExitsNonZero(t *testing.T) {
 	}
 }
 
-func TestACondensationNoShorterThanItsContentIsARuleSkipAndStillExitsZero(t *testing.T) {
+func TestAPreambleCondensationIsARuleSkipAndStillExitsZero(t *testing.T) {
 	recorder := &graphRecorder{}
-	bootEnv(t, testGraph(t, recorder).URL, testModel(t, nodeBody+" and then some more").URL)
+	bootEnv(t, testGraph(t, recorder).URL, testModel(t, "Here is the condensation you asked for, set out below.").URL)
 	corpus := writeCorpus(t, oneRowCorpus)
 
 	code, result, _ := runCondense(t, "-corpus", corpus)

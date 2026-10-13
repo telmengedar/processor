@@ -4,6 +4,7 @@ package ports
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/telmengedar/processor/internal/boot"
 	"github.com/telmengedar/processor/internal/condense"
@@ -109,17 +110,22 @@ func FillGraph(client *divoid.Client) condense.GraphPort {
 	return &fillGraphAdapter{client: client}
 }
 
-// Fill builds the loop's fill port over graph, or nil when no condense model is configured.
-func Fill(cfg boot.ModelConfig, configured bool, graph condense.GraphPort) (loop.FillPort, error) {
-	if !configured {
-		return nil, nil
+// FillModel returns the configuration the fill runs on: the condense model's where one is configured, else the judgement model's, which the second result reports.
+func FillModel(condensing boot.ModelConfig, configured bool, judgement boot.ModelConfig) (boot.ModelConfig, bool) {
+	if configured {
+		return condensing, false
 	}
+	return judgement, true
+}
+
+// Fill builds the loop's fill port over graph, running on cfg.
+func Fill(cfg boot.ModelConfig, graph condense.GraphPort, logger *slog.Logger) (*fill.Port, error) {
 	sampling := loop.Sampling{Temperature: cfg.Temperature, TopP: cfg.TopP}
 	model, err := fillModel(cfg, sampling)
 	if err != nil {
 		return nil, err
 	}
-	return fill.New(graph, model, nil), nil
+	return fill.New(graph, model, nil, logger), nil
 }
 
 // Model builds the model port that cfg's protocol names, sending sampling with every call.

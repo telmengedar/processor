@@ -198,7 +198,7 @@ type deadlineGraph struct {
 
 func (g *deadlineGraph) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) {
 	g.nodeDeadline, g.nodeBounded = ctx.Deadline()
-	return loop.Anchor{ID: id, Type: "documentation", Name: "Subject", Content: "anchor body"}, true, nil
+	return loop.Anchor{ID: id, Type: "documentation", Name: "Subject", Substance: "anchor body"}, true, nil
 }
 
 func (g *deadlineGraph) Recall(context.Context, []string, int, []int64, []int64, loop.UpdateWindow) ([]loop.Candidate, error) {
@@ -320,10 +320,10 @@ func TestRunsReturns200WithTheAssembledRecordOnSuccess(t *testing.T) {
 	t.Parallel()
 
 	turn := newTestTurn(stubGraph{
-		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		found:  true,
 		candidates: []loop.Candidate{
-			{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"},
+			{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Substance: "candidate body"},
 		},
 	})
 
@@ -368,9 +368,9 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 	t.Parallel()
 
 	graph := stubGraph{
-		anchor:       loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		anchor:       loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		found:        true,
-		candidates:   []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.9, Content: "candidate body"}},
+		candidates:   []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.9, Content: "candidate body", Substance: "candidate body"}},
 		writeReceipt: loop.WriteReceipt{State: loop.Stored, NodeID: 4242},
 	}
 	temperature := 0.4
@@ -482,11 +482,11 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 	t.Parallel()
 
 	graph := stubGraph{
-		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		found:  true,
 		recallSeq: []stubRecallResponse{
-			{candidates: []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}}},
-			{candidates: []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}}},
+			{candidates: []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Substance: "candidate body"}}},
+			{candidates: []loop.Candidate{{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Substance: "candidate body"}}},
 			{err: errors.New("literal: 500 from graph")},
 		},
 		recallIdx:    new(int),
@@ -549,10 +549,10 @@ func TestRunsRecordWireCarriesTheFailurePathFields(t *testing.T) {
 func TestRunsRecordWireCarriesCapReachedTrueOnATurnThatRunsToTheCap(t *testing.T) {
 	t.Parallel()
 
-	row := loop.Candidate{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Content: "candidate body"}
+	row := loop.Candidate{ID: 7, Type: "task", Name: "Cand", Similarity: 0.5, Substance: "candidate body"}
 	failing := 0
 	graph := stubGraph{
-		anchor:     loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		anchor:     loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		found:      true,
 		candidates: []loop.Candidate{row},
 		recallSeq:  []stubRecallResponse{{candidates: []loop.Candidate{row}}, {candidates: []loop.Candidate{row}}},
@@ -593,11 +593,11 @@ func TestRunsRecordWireCarriesCapReachedTrueOnATurnThatRunsToTheCap(t *testing.T
 func TestRunsToolCallsResultsCutReasonIsPopulatedAtTheWireLevel(t *testing.T) {
 	t.Parallel()
 
-	smallHit := loop.Candidate{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Content: "small body"}
-	largeHit := loop.Candidate{ID: 8, Type: "task", Name: "Large", Similarity: 0.9, Content: strings.Repeat("x", 21_000)}
+	smallHit := loop.Candidate{ID: 7, Type: "task", Name: "Small", Similarity: 0.9, Substance: "small body"}
+	largeHit := loop.Candidate{ID: 8, Type: "task", Name: "Large", Similarity: 0.9, Substance: strings.Repeat("x", 21_000)}
 	next := 0
 	graph := stubGraph{
-		anchor:    loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		anchor:    loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		found:     true,
 		recallSeq: []stubRecallResponse{{candidates: []loop.Candidate{smallHit}}, {}, {candidates: []loop.Candidate{smallHit, largeHit}}},
 		recallIdx: &next,
@@ -647,7 +647,7 @@ func TestRunsQueryReachesTheLoopVerbatim(t *testing.T) {
 	const rawInput = "  What Is Going ON  "
 
 	turn := newTestTurn(stubGraph{
-		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		found:  true,
 	})
 
@@ -673,7 +673,7 @@ func TestRunsCandidatesIsAnEmptyArrayNeverNullWhenThereAreNone(t *testing.T) {
 	t.Parallel()
 
 	turn := newTestTurn(stubGraph{
-		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		found:  true,
 		// candidates left at its zero value (nil) — recall returned nothing.
 	})
@@ -792,7 +792,7 @@ func TestRunsReturns502WhenRecallFails(t *testing.T) {
 func TestRunsReturns502WithModelUnavailableWhenTheModelCallFails(t *testing.T) {
 	t.Parallel()
 
-	graph := stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}
+	graph := stubGraph{anchor: loop.Anchor{ID: 42, Substance: "anchor body"}, found: true}
 	turn := loop.NewTurn(graph, &stubModel{err: errors.New("literal: connection reset")}, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRuns(t, turn, `{"input":"hello","subject":42}`)
@@ -1070,7 +1070,7 @@ func TestRunsReturns200AndNamesTheDerivationCauseOnTheRecordWhenTheQuerySetFellB
 	const cause = "openaicompat: unexpected status 503: model is loading"
 
 	model := &stubModel{deriveErr: errors.New(cause)}
-	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, fixedSystem("system text"), "test-model", testLogger())
+	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Substance: "anchor body"}, found: true}, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 
@@ -1094,7 +1094,7 @@ func TestRunsCarriesEveryDerivedQueryOntoTheWireAndLeavesTheCauseOffWhenThereIsN
 	t.Parallel()
 
 	model := &stubModel{derivedText: "a derived angle?\nanother derived angle?"}
-	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Content: "anchor body"}, found: true}, model, nil, fixedSystem("system text"), "test-model", testLogger())
+	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Substance: "anchor body"}, found: true}, model, nil, fixedSystem("system text"), "test-model", testLogger())
 
 	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 
@@ -1116,7 +1116,7 @@ func TestARunWithTooLittleTimeLeftForAJudgementCallIsNotFiledAsAModelFailure(t *
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	graph := stubGraph{anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"}, found: true}
+	graph := stubGraph{anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"}, found: true}
 	rec := postRunsWithContext(t, ctx, newTestTurn(graph), `{"input":"hello","subject":42}`)
 
 	if rec.Code != http.StatusGatewayTimeout {
