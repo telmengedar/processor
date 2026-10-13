@@ -25,15 +25,14 @@ budget, or past the block entirely. The stage stops at the block: whether an adm
 is the reader's call on the two answers, and it is the case no instrument in this project can see.
 
 Every task's substrate arm writes one run record to the graph, which this names on exit and never
-deletes. Two checks run before any model call to refuse a repeat: the loader refuses a task set that
-carries the same task text twice in one file, and a graph query (find_prior_run) refuses a task whose
-text an earlier invocation's run record already carries verbatim. The graph check is a semantic recall
-against the same endpoint the binary itself queries, ranked to a fixed number of rows -- it can miss an
-older record that no longer ranks near its own text, so it is a real check and not a guarantee.
-
-A run record does not reach the substrate arm's retrieval: the graph is asked to leave run records out
-by name before it counts, and the loop drops any that leak. For an archived record made before that,
-the per-task RETRIEVAL-SLOT DISPLACEMENT line reports each run record that took a recall slot.
+deletes, and which nothing needs to delete. The graph is asked to leave run records out of every
+recall by name before it counts, and the loop drops any that leak, so a record is never read back
+and a repeated task text is a fresh run: the same set can be run again as often as wanted. For an
+archived record made before that, the per-task RETRIEVAL-SLOT DISPLACEMENT line reports each run
+record that took a recall slot. A run may also store substances on the nodes it retrieved, and
+later runs see them; that is product behaviour, not contamination. The loader refuses a task set
+that carries the same task text twice in one file, as an authoring error: it would charge two
+model calls per arm for one question.
 
 Costs one model call per arm at minimum -- more where the substrate arm asks for supplementary recall
 -- and one graph write per task. Exit 0 every task ran both arms; 1 a task's substrate arm admitted
@@ -54,15 +53,11 @@ import textwrap
 import time
 import traceback
 import urllib.error
-import urllib.parse
 import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_TASKS = Path(__file__).resolve().parent / "compare_tasks.json"
-
-RUN_NAME_PREFIX = "processor-run"
-RUN_NODE_TYPE = "session-log"
 
 CUT_SELF_PRODUCED = "self-produced"
 CUT_BYTE_BUDGET = "byte budget exceeded"
@@ -74,8 +69,6 @@ TRANSCRIPT_TIMEOUT_S = 5 * 60
 IDLE_GRACE_S = 15
 SHUTDOWN_GRACE_S = 675  # mirrors internal/server/server.go's shutdownGrace
 DRAIN_GRACE_S = SHUTDOWN_GRACE_S + 30
-GRAPH_QUERY_TIMEOUT_S = 15
-GRAPH_QUERY_COUNT = 50
 
 RULE = "=" * 88
 THIN = "-" * 88
@@ -131,9 +124,10 @@ def load_tasks(path, only):
     seen_tasks = duplicates(" ".join(str(row["task"]).split()) for row in rows)
     if seen_tasks:
         raise CompareFailure(
-            f"{path} carries the same task text more than once. Refused rather than run: the substrate "
-            f"arm files a run record embedding its input verbatim, and the graph check runs once "
-            f"before any task does, so it cannot see a repeat inside one file. "
+            f"{path} carries the same task text more than once. Refused rather than run: that is an "
+            f"authoring error, because one question asked twice costs two model calls per arm and "
+            f"prints the text twice in the summary table, which double-weights it in any reading of "
+            f"the set. Remove the repeated row. "
             f"The repeated text begins {sorted(seen_tasks)[0][:80]!r}"
         )
 
@@ -141,8 +135,8 @@ def load_tasks(path, only):
         selected = rows
     else:
         # dict.fromkeys dedupes while keeping first-occurrence order: "--only t1,t1" must run t1
-        # once, not twice, or both the in-file duplicate-task check above and the graph check
-        # below are defeated by a repeated id rather than a repeated file row (DiVoid #11141).
+        # once, not twice, or the in-file duplicate-task check above is defeated by a repeated id
+        # rather than a repeated file row.
         wanted = list(dict.fromkeys(name.strip() for name in only.split(",") if name.strip()))
         by_id = {row["id"]: row for row in rows}
         missing = [name for name in wanted if name not in by_id]
@@ -224,108 +218,6 @@ def graph_credentials():
             "pair is set, so set DIVOID_URL and DIVOID_RAZIEL_KEY (or the PROCESSOR_ names directly)"
         )
     return url.rstrip("/"), key
-
-
-def extract_last_json_fence(content):
-    """Return the text inside the last ```json fenced block in content, or content unchanged
-    when it carries no such fence -- a record the write path composed carries one; a record from
-    before that path shipped does not, and the whole body is its own JSON."""
-    marker = "```json\n"
-    start = content.rfind(marker)
-    if start == -1:
-        return content
-    start += len(marker)
-    end = content.find("\n```", start)
-    if end == -1:
-        return content[start:]
-    return content[start:end]
-
-
-def parse_run_record(content):
-    """Parse a run record node's content as a Record, extracting it from its last ```json fence
-    and falling back to the whole body when there is none. Returns None rather than raising when
-    neither shape is valid JSON."""
-    try:
-        return json.loads(extract_last_json_fence(content))
-    except json.JSONDecodeError:
-        return None
-
-
-def select_prior_run(rows, task_text):
-    """Return (nodeId, name) of the first row in rows that is a run record whose input is
-    task_text verbatim, or None. The row-filtering half of find_prior_run, split out so it is
-    exercisable without a graph: rows is the parsed "result" array of a GET /api/nodes response."""
-    for row in rows:
-        if row.get("type") != RUN_NODE_TYPE or not str(row.get("name", "")).startswith(RUN_NAME_PREFIX):
-            continue
-        record = parse_run_record(row.get("content") or "")
-        if record is None:
-            continue
-        if record.get("input") == task_text:
-            return row.get("id"), row.get("name")
-    return None
-
-
-def find_prior_run(divoid_url, divoid_key, task_text):
-    """Return (nodeId, name) of an existing run record whose input is task_text verbatim, or None.
-
-    This queries GET /api/nodes?query=... -- the same semantic-recall endpoint
-    internal/divoid/client.go's Recall uses for retrieval -- rather than any kind of exact index
-    lookup, because the graph exposes no such lookup to this script. A record embedding task_text
-    verbatim normally ranks at or near the top of a recall for that same text, but this is still a
-    ranked search: a match outside GRAPH_QUERY_COUNT rows is missed. That is a real check, not a
-    guarantee.
-    """
-    query = urllib.parse.urlencode({
-        "query": task_text,
-        "count": str(GRAPH_QUERY_COUNT),
-        "fields": "id,type,name,content",
-    })
-    request = urllib.request.Request(
-        f"{divoid_url}/api/nodes?{query}",
-        headers={"Authorization": f"Bearer {divoid_key}", "Accept": "application/json"},
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=GRAPH_QUERY_TIMEOUT_S) as response:
-            payload = response.read().decode("utf-8", "replace")
-    except urllib.error.HTTPError as err:
-        detail = err.read().decode("utf-8", "replace").strip()
-        raise CompareFailure(
-            f"GET {divoid_url}/api/nodes returned {err.code} while checking for a prior run of this "
-            f"task: {detail}"
-        ) from err
-    except (urllib.error.URLError, OSError, http.client.HTTPException) as err:
-        raise CompareFailure(
-            f"GET {divoid_url}/api/nodes did not complete while checking for a prior run of this "
-            f"task, and arm SUBSTRATE needs the same graph regardless: {type(err).__name__}: {err}"
-        ) from err
-
-    try:
-        wire = json.loads(payload)
-    except json.JSONDecodeError as err:
-        raise CompareFailure(
-            f"{divoid_url}/api/nodes returned {len(payload)} bytes that are not JSON ({err}) while "
-            f"checking for a prior run of this task"
-        ) from err
-
-    return select_prior_run(wire.get("result") or [], task_text)
-
-
-def refuse_repeats_against_graph(tasks, divoid_url, divoid_key):
-    for task in tasks:
-        prior = find_prior_run(divoid_url, divoid_key, task["task"])
-        if prior is not None:
-            node_id, name = prior
-            raise CompareFailure(
-                f"task {task['id']} was already run: graph node #{node_id} ({name!r}) carries a run "
-                f"record whose input is this task's text verbatim. Refused rather than run again: a "
-                f"second run of the same text is not accepted while its record is in the graph, and "
-                f"deleting that node lifts the refusal. This is a semantic "
-                f"recall check, not an index lookup (see find_prior_run's docstring), and the loader's "
-                f"in-file duplicate check does not reach this case -- it only compares rows in the "
-                f"task set file against each other, not against the graph"
-            )
 
 
 def child_env(model_url, model_id, model_key, divoid_url, divoid_key):
@@ -1120,13 +1012,10 @@ def print_records_written(receipts):
     ids = ", ".join(f"#{r['nodeId']} ({r['state']})" for r in stored)
     print(f"GRAPH: this invocation wrote {len(stored)} run record(s): {ids}")
     print(
-        "       Nothing was deleted. Each record embeds its task text verbatim, so a semantic query "
-        "for its text that does not exclude run records ranks it near the top. Recall does exclude them: "
-        "it tells the graph to leave run records out by name before it counts, and the loop drops "
-        "any that leak, so a record left in place takes no recall slot and does not move a corpus "
-        "row's retrieval in the baseline sweep. This script's own prior-run check does not exclude "
-        "them, and refuses a task whose text a record already carries. Delete the record by hand "
-        "to run that task again."
+        "       Nothing was deleted and nothing needs to be: recall excludes run records by name before "
+        "the graph counts, and the loop drops any that leak, so a record takes no recall slot and a "
+        "repeat of its task is a fresh run. Substances this run stored on the nodes it retrieved "
+        "stay where they are whatever becomes of a record."
     )
 
 
@@ -1149,7 +1038,6 @@ def main():
     try:
         tasks = load_tasks(args.tasks, args.only)
         divoid_url, divoid_key = graph_credentials()
-        refuse_repeats_against_graph(tasks, divoid_url, divoid_key)
         model_url, model_id, model_key = model_config(args)
         env = child_env(model_url, model_id, model_key, divoid_url, divoid_key)
         probe_model(model_url, model_id, model_key)
