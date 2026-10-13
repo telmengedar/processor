@@ -651,7 +651,7 @@ class LoadTasksDuplicateTextTests(unittest.TestCase):
         message = str(caught.exception)
         self.assertIn("authoring error", message)
         self.assertIn("write the file", message)
-        self.assertNotIn("read back", message)
+        self.assertNotRegex(message, r"(?i)\bread\w*\b.*\bback\b")
         self.assertNotIn("run record", message)
         self.assertNotIn("11141", message)
 

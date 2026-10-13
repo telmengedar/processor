@@ -26,7 +26,7 @@ is the reader's call on the two answers, and it is the case no instrument in thi
 
 Every task's substrate arm writes one run record to the graph, which this names on exit and never
 deletes, and which nothing needs to delete. The graph is asked to leave run records out of every
-recall by name before it counts, and the loop drops any that leak, so a record is never read back
+recall by name before it counts, and the loop drops any that leak, so recall never returns one
 and a repeated task text is a fresh run: the same set can be run again as often as wanted. For an
 archived record made before that, the per-task RETRIEVAL-SLOT DISPLACEMENT line reports each run
 record that took a recall slot. A run may also store substances on the nodes it retrieved, and
