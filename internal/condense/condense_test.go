@@ -199,18 +199,18 @@ func TestANonProseContentTypeIsExcludedFromTheTargetSet(t *testing.T) {
 	}
 }
 
-func TestACondensationExactlyAsLongAsItsContentIsRejectedRatherThanWritten(t *testing.T) {
+func TestACondensationExactlyAsLongAsItsContentIsWritten(t *testing.T) {
 	content := strings.Repeat("a", 1000)
 	graph := newFakeGraph(proseNode(1, content))
 	model := &fakeModel{text: strings.Repeat("b", 1000)}
 
 	result := runPass(t, graph, model, Options{}, Target{Node: 1})
 
-	if got := onlySkip(t, result).Reason; got != skipNotShorter {
-		t.Fatalf("want skip reason %q at exact equality, got %q", skipNotShorter, got)
+	if len(result.Provenance) != 1 {
+		t.Fatalf("want one provenance row, got %d with skips %+v", len(result.Provenance), result.Skipped)
 	}
-	if _, wrote := graph.written(1); wrote {
-		t.Fatalf("a condensation that is not shorter must never be written")
+	if _, wrote := graph.written(1); !wrote {
+		t.Fatalf("a condensation as long as its content must be written: no length rule stands between a condensation and the node")
 	}
 }
 
@@ -229,17 +229,17 @@ func TestACondensationOneByteShorterThanItsContentIsWritten(t *testing.T) {
 	}
 }
 
-func TestACondensationBelowTheFloorIsRejectedAndOneAtTheFloorIsKept(t *testing.T) {
+func TestACondensationBelowFivePercentOfItsContentIsWritten(t *testing.T) {
 	content := strings.Repeat("a", 1000)
+	graph := newFakeGraph(proseNode(1, content))
 
-	below := runPass(t, newFakeGraph(proseNode(1, content)), &fakeModel{text: strings.Repeat("b", 49)}, Options{}, Target{Node: 1})
-	if got := onlySkip(t, below).Reason; got != skipBelowFloor {
-		t.Fatalf("want skip reason %q at 49 of 1000 bytes, got %q", skipBelowFloor, got)
+	result := runPass(t, graph, &fakeModel{text: strings.Repeat("b", 49)}, Options{}, Target{Node: 1})
+
+	if len(result.Provenance) != 1 {
+		t.Fatalf("49 of 1000 bytes must be written, got skips %+v", result.Skipped)
 	}
-
-	at := runPass(t, newFakeGraph(proseNode(1, content)), &fakeModel{text: strings.Repeat("b", 50)}, Options{}, Target{Node: 1})
-	if len(at.Provenance) != 1 {
-		t.Fatalf("50 of 1000 bytes is at the floor and must be kept, got skips %+v", at.Skipped)
+	if _, wrote := graph.written(1); !wrote {
+		t.Fatalf("a short condensation must be written: no ratio stands between a condensation and the node")
 	}
 }
 
@@ -423,7 +423,7 @@ func TestTheAuditEntryPairsThePreRegisteredReasonWithTheSubstanceTheNodeNowCarri
 
 func TestAnAuditEntryIsStillProducedForARequiredNodeThatEndedWithNoSubstance(t *testing.T) {
 	graph := newFakeGraph(proseNode(1, strings.Repeat("a", 1000)))
-	model := &fakeModel{text: strings.Repeat("b", 1000)}
+	model := &fakeModel{text: "Here is the condensation you asked for, set out below."}
 
 	result := runPass(t, graph, model, Options{}, Target{Node: 1, Rows: []string{"r01"}, Why: []string{"a reason"}})
 
@@ -503,8 +503,6 @@ func TestNoRuleThePassAppliesIsCountedAsAnOperationalFailure(t *testing.T) {
 		{skipSubstancePresent, runPass(t, newFakeGraph(carrying), &fakeModel{text: "unreached"}, Options{}, Target{Node: 5})},
 		{skipContentMoved, runPass(t, moved, &fakeModel{text: strings.Repeat("b", 200)}, Options{}, Target{Node: 6})},
 		{skipEmptyCondensation, runPass(t, newFakeGraph(proseNode(7, content)), &fakeModel{text: ""}, Options{}, Target{Node: 7})},
-		{skipNotShorter, runPass(t, newFakeGraph(proseNode(8, content)), &fakeModel{text: strings.Repeat("b", 1000)}, Options{}, Target{Node: 8})},
-		{skipBelowFloor, runPass(t, newFakeGraph(proseNode(9, content)), &fakeModel{text: strings.Repeat("b", 49)}, Options{}, Target{Node: 9})},
 		{skipPreamble, runPass(t, newFakeGraph(proseNode(10, content)), &fakeModel{text: "Here is the condensation you asked for, set out below."}, Options{}, Target{Node: 10})},
 	}
 

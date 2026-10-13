@@ -5,139 +5,130 @@ import (
 	"testing"
 )
 
-func memoryHolding(t *testing.T, anchor Anchor, threshold SubstanceRatio, candidates []Candidate) *workingMemory {
+func memoryHolding(t *testing.T, anchor Anchor, candidates []Candidate) *workingMemory {
 	t.Helper()
 
-	admitted, dispositions := admit(candidates, composedTestBudget, len(anchor.Content), BlockOccupancy, threshold)
-	return newWorkingMemory(anchor, len(candidates) > 0, threshold, admitted, dispositions)
+	admitted, dispositions := admit(candidates, composedTestBudget, len(anchor.Substance))
+	return newWorkingMemory(anchor, len(candidates) > 0, admitted, dispositions)
 }
 
-func TestTheMemoryAndTheAssembledBlockMarkASubstanceRenderedRowAlike(t *testing.T) {
+func TestTheMemoryAndTheAssembledBlockRenderASubstanceAlike(t *testing.T) {
 	t.Parallel()
 
 	content := strings.Repeat("x", 1_000)
 	substance := strings.Repeat("z", 300)
 	candidates := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
 
-	block, dispositions := Assemble(Anchor{ID: 1}, candidates, composedTestBudget, formRuleTestThreshold)
+	block, dispositions := Assemble(Anchor{ID: 1}, candidates, composedTestBudget)
 	if dispositions[0].Form != FormSubstance {
 		t.Fatalf("test setup error: Form = %q, want %q", dispositions[0].Form, FormSubstance)
 	}
 
-	memory := memoryHolding(t, Anchor{ID: 1}, formRuleTestThreshold, candidates)
+	memory := memoryHolding(t, Anchor{ID: 1}, candidates)
 
-	marker := "form: substance"
 	for _, surface := range []struct {
 		name     string
 		rendered string
 	}{{name: "assembled block", rendered: block}, {name: "memory", rendered: memory.render(true)}} {
-		if !strings.Contains(surface.rendered, marker) {
-			t.Errorf("the %s renders a condensed payload without %q; a surface that presents a condensation unmarked tells the model it is holding the node:\n%s", surface.name, marker, surface.rendered)
-		}
 		if !strings.Contains(surface.rendered, substance) || strings.Contains(surface.rendered, content) {
-			t.Errorf("the %s does not carry the form its admission charged for:\n%s", surface.name, surface.rendered)
+			t.Errorf("the %s does not carry the substance alone:\n%s", surface.name, surface.rendered)
 		}
 	}
 }
 
-func TestTheMemoryCarriesExactlyTheBytesItsAdmissionChargedUnderBothMechanisms(t *testing.T) {
+func TestTheMemoryCarriesExactlyTheBytesItsAdmissionCharged(t *testing.T) {
 	t.Parallel()
 
-	content := strings.Repeat("x", 20_000)
 	substance := strings.Repeat("z", 3_000)
 	candidates := []Candidate{
-		{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: substance},
-		{ID: 92, Type: "documentation", Name: "Charlie", Content: content},
+		{ID: 91, Type: "documentation", Name: "Bravo", Substance: substance},
+		{ID: 92, Type: "documentation", Name: "Charlie", Substance: strings.Repeat("y", SupplementaryByteBudget)},
 	}
 
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, testBlockOccupancy, formRuleTestThreshold)
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0)
 	if len(admitted) != 1 || admitted[0].ID != 91 {
-		t.Fatalf("test setup error: admitted %d rows %v, want the condensed one alone", len(admitted), dispositionIDs(dispositions))
+		t.Fatalf("test setup error: admitted %d rows %v, want the first alone", len(admitted), dispositionIDs(dispositions))
 	}
 
-	memory := newWorkingMemory(Anchor{ID: 1}, true, formRuleTestThreshold, admitted, dispositions)
+	memory := newWorkingMemory(Anchor{ID: 1}, true, admitted, dispositions)
 	rendered := memory.render(false)
 
 	if strings.Count(rendered, substance) != 1 {
 		t.Fatalf("the memory does not carry the substance its admission charged for exactly once:\n%s", rendered)
-	}
-	if strings.Contains(rendered, content) {
-		t.Fatalf("the memory carries content bytes nobody charged against the ceiling:\n%s", rendered)
 	}
 	if memory.spent != 3_000 {
 		t.Fatalf("memory.spent = %d, want 3000: the memory is charged what admission charged", memory.spent)
 	}
 }
 
-func TestTheMemoryRendersBothSidesOfTheFormBandAsTheirAdmissionChargedThem(t *testing.T) {
+func TestTheMemoryChargesTheAnchorItsRenderedBytes(t *testing.T) {
 	t.Parallel()
 
-	content := strings.Repeat("x", 1000)
-	banded := strings.Repeat("z", 300)
-	overCompressed := strings.Repeat("y", 50)
-	candidates := []Candidate{
-		{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: banded},
-		{ID: 92, Type: "documentation", Name: "Charlie", Content: content, Substance: overCompressed},
-	}
+	anchor := Anchor{ID: 1, Content: strings.Repeat("x", 9_000), Substance: strings.Repeat("z", 400)}
 
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, BlockOccupancy, formRuleTestThreshold)
-	if dispositions[0].Form != FormSubstance || dispositions[1].Form != FormContent {
-		t.Fatalf("test setup error: admission charged %q then %q, want %q then %q", dispositions[0].Form, dispositions[1].Form, FormSubstance, FormContent)
-	}
+	memory := newWorkingMemory(anchor, false, nil, nil)
 
-	got := newWorkingMemory(Anchor{ID: 1}, true, formRuleTestThreshold, admitted, dispositions).render(false)
-
-	want := "===== CANDIDATE =====\nid: 91\ntype: documentation\nname: Bravo\nsimilarity: 0.000\nform: substance\n\n" + banded + "\n" +
-		"\n===== CANDIDATE =====\nid: 92\ntype: documentation\nname: Charlie\nsimilarity: 0.000\n\n" + content + "\n"
-	if !strings.HasSuffix(got, want) {
-		t.Fatalf("the memory applies a different band from the one its admission charged at:\n%q\nwant it to end with:\n%q", got, want)
+	if memory.spent != 400 {
+		t.Fatalf("memory.spent = %d, want 400: the anchor is charged the substance it renders", memory.spent)
 	}
 }
 
-func TestAFullReadReplacesTheCondensedFormOfTheSameRow(t *testing.T) {
+func TestTheMemoryRendersAnUnavailableRowAsItsHeaderAndTheUnavailableLineAndChargesItNothing(t *testing.T) {
 	t.Parallel()
 
-	content := strings.Repeat("x", 1_000)
-	substance := strings.Repeat("z", 300)
-	condensed := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
+	candidates := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: strings.Repeat("x", 1_000)}}
 
-	memory := memoryHolding(t, Anchor{ID: 1}, formRuleTestThreshold, condensed)
-	if !strings.Contains(memory.render(false), substance) {
-		t.Fatalf("test setup error: the memory does not hold the condensed form to begin with:\n%s", memory.render(false))
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0)
+	if dispositions[0].Form != FormUnavailable {
+		t.Fatalf("test setup error: Form = %q, want %q", dispositions[0].Form, FormUnavailable)
 	}
 
-	read := []Candidate{candidateFromAnchor(Anchor{ID: 91, Type: "documentation", Name: "Bravo", Content: content})}
-	admitted, dispositions := admit(read, SupplementaryByteBudget, 0, BlockOccupancy, formRuleTestThreshold)
+	memory := newWorkingMemory(Anchor{ID: 1}, true, admitted, dispositions)
+
+	want := "===== CANDIDATE =====\nid: 91\ntype: documentation\nname: Bravo\nsimilarity: 0.000\nsubstance: unavailable\n"
+	if got := memory.render(false); !strings.HasSuffix(got, want) {
+		t.Fatalf("the memory renders an unavailable row differently:\n%q\nwant it to end with:\n%q", got, want)
+	}
+	if memory.spent != 0 {
+		t.Fatalf("memory.spent = %d, want 0: an unavailable row has no body to charge", memory.spent)
+	}
+}
+
+func TestASubstanceReplacesTheUnavailableFormOfTheSameRow(t *testing.T) {
+	t.Parallel()
+
+	substance := strings.Repeat("z", 300)
+
+	memory := memoryHolding(t, Anchor{ID: 1, Substance: "anchor"}, []Candidate{{ID: 91, Type: "documentation", Name: "Bravo"}})
+	if !strings.Contains(memory.render(false), "substance: unavailable") {
+		t.Fatalf("test setup error: the memory does not hold the unavailable form to begin with:\n%s", memory.render(false))
+	}
+
+	created := []Candidate{candidateFromAnchor(Anchor{ID: 91, Type: "documentation", Name: "Bravo", Substance: substance})}
+	admitted, dispositions := admit(created, SupplementaryByteBudget, 0)
 	memory.absorb(admitted, dispositions)
 
 	rendered := memory.render(false)
-	if strings.Contains(rendered, substance) || strings.Count(rendered, content) != 1 {
-		t.Fatalf("after a full read the memory still carries the condensed form, or carries the row twice:\n%s", rendered)
+	if strings.Contains(rendered, "substance: unavailable") || strings.Count(rendered, substance) != 1 {
+		t.Fatalf("after the substance exists the memory still carries the unavailable form, or carries the row twice:\n%s", rendered)
 	}
-	if strings.Count(rendered, "id: 91\n") != 1 {
-		t.Fatalf("the memory carries row 91 %d times, want once:\n%s", strings.Count(rendered, "id: 91\n"), rendered)
-	}
-	if memory.spent != 1_000 {
-		t.Fatalf("memory.spent = %d, want 1000: the replaced form must stop being charged", memory.spent)
+	if memory.spent != 306 {
+		t.Fatalf("memory.spent = %d, want 306", memory.spent)
 	}
 }
 
-func TestACondensedFormNeverReplacesTheFullFormOfTheSameRow(t *testing.T) {
+func TestAnUnavailableFormNeverReplacesTheSubstanceOfTheSameRow(t *testing.T) {
 	t.Parallel()
 
-	content := strings.Repeat("x", 1_000)
 	substance := strings.Repeat("z", 300)
 
-	memory := memoryHolding(t, Anchor{ID: 1}, formRuleTestThreshold, []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content}})
+	memory := memoryHolding(t, Anchor{ID: 1, Substance: "anchor"}, []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Substance: substance}})
 
-	condensed := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
-	admitted, dispositions := admit(condensed, SupplementaryByteBudget, 0, BlockOccupancy, formRuleTestThreshold)
-	if dispositions[0].Form != FormSubstance {
-		t.Fatalf("test setup error: Form = %q, want %q", dispositions[0].Form, FormSubstance)
-	}
+	unavailable := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo"}}
+	admitted, dispositions := admit(unavailable, SupplementaryByteBudget, 0)
 	memory.absorb(admitted, dispositions)
 
-	if rendered := memory.render(false); strings.Contains(rendered, substance) || !strings.Contains(rendered, content) {
-		t.Fatalf("a recall that returned the condensed form of a row already held whole replaced it:\n%s", rendered)
+	if rendered := memory.render(false); !strings.Contains(rendered, substance) || strings.Contains(rendered, "substance: unavailable") {
+		t.Fatalf("a recall that returned an unavailable form of a row already held with its substance replaced it:\n%s", rendered)
 	}
 }

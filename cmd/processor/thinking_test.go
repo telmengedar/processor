@@ -73,7 +73,7 @@ func TestTheServiceStatesAControlForEveryProtocolItActuallySendsOnNotOnlyTheJudg
 	}
 }
 
-func TestTheServiceStatesOneControlWhenNoSecondModelIsConfigured(t *testing.T) {
+func TestTheServiceStatesTheFillControlOnTheJudgementModelWhenNoSecondModelIsConfigured(t *testing.T) {
 	code, human := bootWith(t, "ollama")
 
 	if code == 0 {
@@ -82,7 +82,7 @@ func TestTheServiceStatesOneControlWhenNoSecondModelIsConfigured(t *testing.T) {
 	if !strings.Contains(human, "path=judgement") {
 		t.Fatalf("the service states no judgement control at all, so the absence of a fill one says nothing; log=%s", human)
 	}
-	if strings.Contains(human, "path=fill") {
-		t.Fatalf("the service states a fill control with no fill model configured; log=%s", human)
+	if !strings.Contains(human, "path=fill") || !strings.Contains(human, "the fill runs on the judgement model's configuration") {
+		t.Fatalf("the service states no fill control on the judgement model's configuration, so its fill calls carry a reasoning setting nobody read; log=%s", human)
 	}
 }

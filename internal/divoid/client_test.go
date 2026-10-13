@@ -108,7 +108,7 @@ func TestNodeDecodesAFoundResultIncludingContent(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"result": []map[string]any{
-				{"id": 42, "type": "documentation", "name": "Vision", "contentType": "text/markdown", "content": "the body text"},
+				{"id": 42, "type": "documentation", "name": "Vision", "contentType": "text/markdown", "content": "the body text", "substance": "the condensed text"},
 			},
 			"total": 1,
 		})
@@ -125,6 +125,9 @@ func TestNodeDecodesAFoundResultIncludingContent(t *testing.T) {
 	}
 	if anchor.ID != 42 || anchor.Type != "documentation" || anchor.Name != "Vision" || anchor.Content != "the body text" {
 		t.Fatalf("anchor = %+v, unexpected", anchor)
+	}
+	if anchor.Substance != "the condensed text" {
+		t.Fatalf("anchor.Substance = %q, want the substance the graph returned", anchor.Substance)
 	}
 }
 
@@ -489,7 +492,7 @@ func TestNodeReportsNotFoundWhenNoRowMatchesTheRequestedID(t *testing.T) {
 	}
 }
 
-func TestNodeRequestsEveryAnchorFieldAndNoCondensedFormInTheFieldsProjection(t *testing.T) {
+func TestNodeRequestsEveryAnchorFieldInTheFieldsProjection(t *testing.T) {
 	t.Parallel()
 
 	c, rec := recordingClient(t)
@@ -520,9 +523,6 @@ func TestNodeRequestsEveryAnchorFieldAndNoCondensedFormInTheFieldsProjection(t *
 		if !slices.Contains(requested, strings.ToLower(name)) {
 			t.Fatalf("fields = %q, want it to cover every field the anchor carries; %q is missing — a field the projection never requests arrives empty from a real graph, and every id the run records is the requested one, so nothing downstream disagrees", q.Get("fields"), name)
 		}
-	}
-	if slices.Contains(requested, "substance") {
-		t.Fatalf("fields = %q, want an addressed read to request the full content and never a condensed form", q.Get("fields"))
 	}
 }
 

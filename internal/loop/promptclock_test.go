@@ -21,9 +21,9 @@ func advancingClock(step time.Duration) func() time.Time {
 
 func promptClockGraph() *fakeGraph {
 	return &fakeGraph{
-		node:            Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		node:            Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		nodeFound:       true,
-		candidates:      []Candidate{{ID: 7, Type: "task", Name: "Row", Similarity: 0.9, Content: "row body"}},
+		candidates:      []Candidate{{ID: 7, Type: "task", Name: "Row", Similarity: 0.9, Substance: "row body"}},
 		writeRunReceipt: WriteReceipt{State: Stored, NodeID: 1},
 	}
 }

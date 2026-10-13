@@ -45,11 +45,18 @@ func (w *writeRecorder) all() []string {
 
 func testGraph(t *testing.T, recorder *writeRecorder) *httptest.Server {
 	t.Helper()
-	return graphServing(t, recorder, map[int64]string{202: candidateBody})
+	return graphServing(t, recorder, map[int64]string{202: candidateBody}, true)
 }
 
-func graphServing(t *testing.T, recorder *writeRecorder, bodies map[int64]string) *httptest.Server {
+func graphServing(t *testing.T, recorder *writeRecorder, bodies map[int64]string, condensed bool) *httptest.Server {
 	t.Helper()
+
+	substanceOf := func(body string) string {
+		if condensed {
+			return body
+		}
+		return ""
+	}
 
 	ids := slices.Sorted(maps.Keys(bodies))
 
@@ -72,14 +79,14 @@ func graphServing(t *testing.T, recorder *writeRecorder, bodies map[int64]string
 				if slices.Contains(query["excludeId"], strconv.FormatInt(id, 10)) {
 					continue
 				}
-				rows = append(rows, fmt.Sprintf(`{"id":%d,"type":"documentation","name":"candidate %d","similarity":%v,"content":%q}`, id, id, 0.95-0.01*float64(i), bodies[id]))
+				rows = append(rows, fmt.Sprintf(`{"id":%d,"type":"documentation","name":"candidate %d","similarity":%v,"content":%q,"substance":%q}`, id, id, 0.95-0.01*float64(i), bodies[id], substanceOf(bodies[id])))
 			}
 			fmt.Fprintf(w, `{"result":[%s],"total":%d}`, strings.Join(rows, ","), len(rows))
 		case query.Get("id") != "" && query.Get("id") != "101":
 			id, _ := strconv.ParseInt(query.Get("id"), 10, 64)
-			fmt.Fprintf(w, `{"result":[{"id":%d,"type":"documentation","name":"candidate %d","contentType":"text/markdown","content":%q}],"total":1}`, id, id, bodies[id])
+			fmt.Fprintf(w, `{"result":[{"id":%d,"type":"documentation","name":"candidate %d","contentType":"text/markdown","content":%q,"substance":%q}],"total":1}`, id, id, bodies[id], substanceOf(bodies[id]))
 		default:
-			fmt.Fprintf(w, `{"result":[{"id":101,"type":"documentation","name":"the anchor","contentType":"text/markdown","content":%q}],"total":1}`, anchorBody)
+			fmt.Fprintf(w, `{"result":[{"id":101,"type":"documentation","name":"the anchor","contentType":"text/markdown","content":%q,"substance":%q}],"total":1}`, anchorBody, substanceOf(anchorBody))
 		}
 	}))
 	t.Cleanup(srv.Close)
@@ -228,7 +235,7 @@ func TestAMeasuredRunWithTheFillOnCondensesACandidateAndStillSendsTheGraphNoWrit
 		202: strings.Repeat("the first candidate body, long enough to fill the budget on its own. ", 600),
 		303: strings.Repeat("the second candidate body, cut for want of room and worth condensing. ", 600),
 	}
-	bootEnv(t, graphServing(t, recorder, bodies).URL, testModel(t).URL)
+	bootEnv(t, graphServing(t, recorder, bodies, false).URL, testModel(t).URL)
 	condenseEnv(t, testCondenseModel(t, strings.Repeat("a condensed account of the second candidate. ", 80)).URL)
 
 	code, result, human := runMeasure(t, taskText, "-subject", "101")
@@ -249,8 +256,16 @@ func TestAMeasuredRunWithTheFillOnCondensesACandidateAndStillSendsTheGraphNoWrit
 	if !filled {
 		t.Fatalf("no fill fired, so this guard is written in the configuration where the hole is closed: %+v", result.Fills)
 	}
-	if len(result.Substances) != 1 || result.Substances[0].Node != 303 || result.Substances[0].Size == 0 {
-		t.Fatalf("want one sized substance withheld from node 303, got %+v", result.Substances)
+	withheld := make([]int64, 0, len(result.Substances))
+	for _, substance := range result.Substances {
+		if substance.Size == 0 {
+			t.Fatalf("a withheld substance from node %d is unsized", substance.Node)
+		}
+		withheld = append(withheld, substance.Node)
+	}
+	slices.Sort(withheld)
+	if want := []int64{101, 202, 303}; !slices.Equal(withheld, want) {
+		t.Fatalf("want a sized substance withheld from every row that lacked one, %v, got %v", want, withheld)
 	}
 	if result.Written.State != loop.NotStored {
 		t.Fatalf("the receipt reads %q, want %q", result.Written.State, loop.NotStored)
@@ -272,8 +287,8 @@ func TestBootStatesTheSuppressionControlInForceForTheProtocolTheRunWillUse(t *te
 	if !strings.Contains(human, "path=judgement") {
 		t.Fatalf("the stated control does not name the call path it governs; log=%s", human)
 	}
-	if strings.Contains(human, "path=fill") {
-		t.Fatalf("a measured run states a fill control with no fill model configured; log=%s", human)
+	if !strings.Contains(human, "path=fill") || !strings.Contains(human, "the fill runs on the judgement model's configuration") {
+		t.Fatalf("a measured run with no condense model states no fill control on the judgement model's configuration, so its fill calls carry a reasoning setting nobody read; log=%s", human)
 	}
 }
 

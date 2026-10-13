@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -60,10 +61,10 @@ type recordingGraph struct {
 
 func newRecordingGraph() *recordingGraph {
 	return &recordingGraph{
-		anchor: loop.Anchor{ID: 101, Type: "documentation", Name: "the anchor", Content: "the anchor body the run is about"},
+		anchor: loop.Anchor{ID: 101, Type: "documentation", Name: "the anchor", Substance: "the anchor body the run is about"},
 		found:  true,
 		candidates: []loop.Candidate{
-			{ID: 202, Type: "documentation", Name: "a candidate", Similarity: 0.91, Content: "the candidate body recall returned"},
+			{ID: 202, Type: "documentation", Name: "a candidate", Similarity: 0.91, Substance: "the candidate body recall returned"},
 		},
 		receipt: loop.WriteReceipt{State: loop.Stored, NodeID: 900},
 	}
@@ -156,8 +157,10 @@ func (f *writingFill) Fill(ctx context.Context, id int64) (loop.FillResult, erro
 	if err := f.graph.SetSubstance(ctx, id, f.substance); err != nil {
 		return loop.FillResult{}, err
 	}
-	return loop.FillResult{Written: true, Model: "test-condenser"}, nil
+	return loop.FillResult{Written: true, Substance: f.substance, Model: "test-condenser"}, nil
 }
+
+func (f *writingFill) Defer(int64) {}
 
 func crowdedGraph() *recordingGraph {
 	live := newRecordingGraph()
@@ -268,10 +271,10 @@ func TestAMeasuredRunsReadsStillReachTheGraphAndItsBlockCarriesWhatTheyReturned(
 	if result.Anchor.ID != live.anchor.ID {
 		t.Fatalf("the record anchors on node %d, want the node the graph returned, %d", result.Anchor.ID, live.anchor.ID)
 	}
-	if !strings.Contains(result.Block, live.anchor.Content) {
+	if !strings.Contains(result.Block, live.anchor.Substance) {
 		t.Fatal("the block does not carry the anchor body the graph returned")
 	}
-	if !strings.Contains(result.Block, live.candidates[0].Content) {
+	if !strings.Contains(result.Block, live.candidates[0].Substance) {
 		t.Fatal("the block does not carry the candidate body recall returned")
 	}
 	if len(result.Candidates) != 1 || result.Candidates[0].ID != live.candidates[0].ID || !result.Candidates[0].Included {
@@ -348,7 +351,7 @@ func sizeableRecord() loop.Record {
 		Query:      testInput,
 		Queries:    []string{testInput, "a derived query"},
 		Anchor:     loop.AnchorSummary{ID: 101, Type: "documentation", Name: "the anchor", Size: 32, ContentHash: "a-hash"},
-		Candidates: []loop.Disposition{{Rank: 1, ID: 202, Type: "documentation", Name: "a candidate", Similarity: 0.91, Size: 34, Included: true, Form: loop.FormContent, RenderedSize: 34}},
+		Candidates: []loop.Disposition{{Rank: 1, ID: 202, Type: "documentation", Name: "a candidate", Similarity: 0.91, Size: 34, Included: true, Form: loop.FormSubstance, RenderedSize: 34}},
 		Fills:      []loop.FillOutcome{},
 		Block:      strings.Repeat("the block the run assembled. ", 64),
 		Answer:     testAnswer,
@@ -473,7 +476,7 @@ func TestAMeasuredRunWhoseFillWroteNothingStillReportsNoSubstanceWithheld(t *tes
 	}
 }
 
-func TestAMeasuredRunWhoseFillFiredReportsTheSubstanceItWithheldInItsOwnResult(t *testing.T) {
+func TestAMeasuredTurnRendersTheCreatedSubstanceAndWritesNothing(t *testing.T) {
 	live := crowdedGraph()
 	substances, runner := fillingRunner(live)
 
@@ -482,22 +485,25 @@ func TestAMeasuredRunWhoseFillFiredReportsTheSubstanceItWithheldInItsOwnResult(t
 		t.Fatalf("the measured run failed: %v", err)
 	}
 
-	filled := false
-	for _, outcome := range result.Fills {
-		if outcome.Filled {
-			filled = true
-		}
+	if got := strings.Count(result.Block, testSubstance); got != 2 {
+		t.Fatalf("the block carries the created substance %d times, want 2 (one per candidate; the anchor already carried its own):\n%s", got, result.Block)
 	}
-	if !filled {
-		t.Fatalf("no fill fired, so nothing here shows a result can carry a withheld substance at all: %+v", result.Fills)
+	if strings.Contains(result.Block, "unavailable") {
+		t.Fatalf("a row rendered as unavailable although its creation succeeded:\n%s", result.Block)
 	}
 
-	want := []SuppressedSubstance{{Ordinal: 1, Node: 303, Size: len(testSubstance)}}
-	if !reflect.DeepEqual(result.Substances, want) {
-		t.Fatalf("the result carries %+v, want %+v", result.Substances, want)
-	}
-	if got := substances.Substances(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("the port carries %+v, want %+v", got, want)
+	for _, got := range [][]SuppressedSubstance{result.Substances, substances.Substances()} {
+		nodes := make([]int64, 0, len(got))
+		for _, withheld := range got {
+			if withheld.Size != len(testSubstance) {
+				t.Fatalf("a withheld substance has size %d, want %d", withheld.Size, len(testSubstance))
+			}
+			nodes = append(nodes, withheld.Node)
+		}
+		slices.Sort(nodes)
+		if want := []int64{202, 303}; !slices.Equal(nodes, want) {
+			t.Fatalf("the withheld substances belong to %v, want %v", nodes, want)
+		}
 	}
 	if writes := countEvents(live.log(), eventWrite); writes != 0 {
 		t.Fatalf("the graph saw %d writes from a run whose fill fired", writes)

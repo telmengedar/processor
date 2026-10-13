@@ -603,7 +603,7 @@ func TestRetrievalExcludesExactlyWhatAdmitWouldCutAsSelfProduced(t *testing.T) {
 		}
 	}
 
-	_, dispositions := admit(rows, AssemblyByteBudget, 0, BlockOccupancy, SubstanceRatioThreshold)
+	_, dispositions := admit(rows, AssemblyByteBudget, 0)
 	refused := make([]int64, 0, len(dispositions))
 	for _, d := range dispositions {
 		if d.CutReason == cutReasonSelfProduced {

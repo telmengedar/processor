@@ -11,7 +11,7 @@ import (
 func TestBootReportsTheAnsweringCallAsACallSiteOfItsOwn(t *testing.T) {
 	t.Parallel()
 
-	lines := report(t, declared(10, 3_000), false)
+	lines := report(t, declared(10, 3_000))
 
 	line := lineFor(t, lines, loop.SiteAnswering)
 	if strings.Contains(line, "level=WARN") {
@@ -28,7 +28,7 @@ func TestBootReportsTheAnsweringCallAsACallSiteOfItsOwn(t *testing.T) {
 func TestTheAnsweringSiteIsReportedUnaffordableWhereTheDeclaredFloorsCannotPayForIt(t *testing.T) {
 	t.Parallel()
 
-	line := lineFor(t, report(t, declared(1, 3_000), false), loop.SiteAnswering)
+	line := lineFor(t, report(t, declared(1, 3_000)), loop.SiteAnswering)
 
 	if !strings.Contains(line, "level=WARN") {
 		t.Fatalf("a deployment declaring a tenth of the product's generation floor is told nothing about the answering site, so the one budget this unit adds can be parked below its bound unreported:\n%s", line)

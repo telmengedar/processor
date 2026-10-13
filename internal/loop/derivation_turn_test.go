@@ -16,9 +16,9 @@ const distinctiveDerived = "which merge rule does the sweep share with the turn?
 
 func derivingGraph() *fakeGraph {
 	return &fakeGraph{
-		node:       Anchor{ID: 42, Type: "documentation", Name: "Subject", Content: "anchor body"},
+		node:       Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		nodeFound:  true,
-		candidates: []Candidate{{ID: 101, Name: "one", Content: "a"}, {ID: 102, Name: "two", Content: "b"}},
+		candidates: []Candidate{{ID: 101, Name: "one", Substance: "a"}, {ID: 102, Name: "two", Substance: "b"}},
 	}
 }
 

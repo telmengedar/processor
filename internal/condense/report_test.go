@@ -101,7 +101,7 @@ func TestTheSkipSectionGroupsNodesUnderTheRuleThatStoppedThem(t *testing.T) {
 	result.Skipped = []Skip{
 		{Node: 200, Reason: skipSubstancePresent},
 		{Node: 300, Reason: skipSubstancePresent},
-		{Node: 400, Reason: skipNotShorter},
+		{Node: 400, Reason: skipPreamble},
 	}
 
 	_, human := renderedPass(t, result)
@@ -109,7 +109,7 @@ func TestTheSkipSectionGroupsNodesUnderTheRuleThatStoppedThem(t *testing.T) {
 	if !strings.Contains(human, skipSubstancePresent) || !strings.Contains(human, "200 300") {
 		t.Fatalf("want the two nodes grouped under one rule, got:\n%s", human)
 	}
-	if !strings.Contains(human, skipNotShorter) {
+	if !strings.Contains(human, skipPreamble) {
 		t.Fatalf("want every rule listed, got:\n%s", human)
 	}
 }
@@ -180,7 +180,7 @@ func TestATruncatedCondensationIsNotListedUnderAHeadingThatCallsItARuleThePassAp
 func TestEverySkipIsListedUnderTheHeadingThatMatchesHowTheResultCountsIt(t *testing.T) {
 	reasons := []string{
 		skipNodeAbsent, skipContentAbsent, skipSubstancePresent, skipSelfProduced,
-		skipNonProseContent, skipEmptyCondensation, skipNotShorter, skipBelowFloor,
+		skipNonProseContent, skipEmptyCondensation,
 		skipPreamble, skipContentMoved, skipTruncated, skipReadFailed,
 		skipModelFailed, skipWriteFailed,
 	}
