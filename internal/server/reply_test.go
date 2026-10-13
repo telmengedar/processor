@@ -125,13 +125,78 @@ func TestRunsProducedIsTrueWhenTheRunProducedAnAnswer(t *testing.T) {
 func TestRunsProducedFollowsTheRunAndNotTheReplyText(t *testing.T) {
 	t.Parallel()
 
-	const fallbackText = "Sorry — I couldn't put an answer together for that just now. Could you say a bit more, or ask it another way?"
-	turn := replyTurn(&scriptedModel{step: answeringWith(fallbackText)})
+	turn := replyTurn(&scriptedModel{step: answeringWith(fallbackReply)})
 
 	members, _ := topLevelKeys(t, postTo(t, context.Background(), turn, "/runs"))
 
 	if !boolMember(t, members, "produced") {
 		t.Fatalf("produced = false for a model answer that happens to equal the fallback sentence: the flag must come from the run, not from comparing text")
+	}
+}
+
+func TestRunsProducedIsTrueForAnAnswerThatTheVerdictCallsCurtailedOrUngrounded(t *testing.T) {
+	t.Parallel()
+
+	const answer = "late answer"
+	const recallRounds = 3
+
+	cases := []struct {
+		name          string
+		model         func() *scriptedModel
+		graph         func() stubGraph
+		wantCurtailed bool
+		wantGrounded  bool
+	}{
+		{
+			name: "a curtailed run that answered on its reserved call",
+			model: func() *scriptedModel {
+				return &scriptedModel{step: func(call int) (loop.JudgeResult, error) {
+					if call <= recallRounds {
+						return loop.JudgeResult{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "q"}, nil
+					}
+					return loop.JudgeResult{Answer: answer, Reason: loop.Answered, RawReason: "stop"}, nil
+				}}
+			},
+			graph:         replyGraph,
+			wantCurtailed: true,
+			wantGrounded:  true,
+		},
+		{
+			name:  "an ungrounded answer when no row was admitted",
+			model: func() *scriptedModel { return &scriptedModel{step: answeringWith(answer)} },
+			graph: func() stubGraph {
+				graph := replyGraph()
+				graph.candidates = nil
+				return graph
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			verbose, _ := topLevelKeys(t, postTo(t, context.Background(), loop.NewTurn(c.graph(), c.model(), nil, fixedSystem("system text"), "test-model", testLogger()), "/runs?verbose=true"))
+			var outcome struct {
+				Produced  bool `json:"produced"`
+				Curtailed bool `json:"curtailed"`
+				Grounded  bool `json:"grounded"`
+			}
+			if err := json.Unmarshal(verbose["outcome"], &outcome); err != nil {
+				t.Fatalf("decode outcome: %v", err)
+			}
+			if !outcome.Produced || outcome.Curtailed != c.wantCurtailed || outcome.Grounded != c.wantGrounded {
+				t.Fatalf("outcome = %+v, want produced with curtailed=%v grounded=%v: the fixture does not reach the shape this row names", outcome, c.wantCurtailed, c.wantGrounded)
+			}
+
+			members, _ := topLevelKeys(t, postTo(t, context.Background(), loop.NewTurn(c.graph(), c.model(), nil, fixedSystem("system text"), "test-model", testLogger()), "/runs"))
+			if !boolMember(t, members, "produced") {
+				t.Fatalf("produced = false for a run that answered, so a caller would drop a real reply")
+			}
+			if got := stringMember(t, members, "reply"); got != answer {
+				t.Fatalf("reply = %q, want the answer %q", got, answer)
+			}
+		})
 	}
 }
 

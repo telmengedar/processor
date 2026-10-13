@@ -52,10 +52,9 @@ const messageInvalidHistory = "history must be an array of exchanges, each with 
 const fallbackReply = "Sorry — I couldn't put an answer together for that just now. Could you say a bit more, or ask it another way?"
 
 type chatResponse struct {
-	Reply   string            `json:"reply"`
-	Written loop.WriteReceipt `json:"written"`
-	// Produced is false when Reply is the fixed fallback sentence rather than an answer.
-	Produced bool `json:"produced"`
+	Reply    string            `json:"reply"`
+	Written  loop.WriteReceipt `json:"written"`
+	Produced bool              `json:"produced"`
 }
 
 type verboseResponse struct {
