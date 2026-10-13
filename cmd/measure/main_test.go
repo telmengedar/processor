@@ -85,8 +85,11 @@ func graphServing(t *testing.T, recorder *writeRecorder, bodies map[int64]string
 		case query.Get("id") != "" && query.Get("id") != "101":
 			id, _ := strconv.ParseInt(query.Get("id"), 10, 64)
 			fmt.Fprintf(w, `{"result":[{"id":%d,"type":"documentation","name":"candidate %d","contentType":"text/markdown","content":%q,"substance":%q}],"total":1}`, id, id, bodies[id], substanceOf(bodies[id]))
-		default:
+		case query.Get("id") == "101":
 			fmt.Fprintf(w, `{"result":[{"id":101,"type":"documentation","name":"the anchor","contentType":"text/markdown","content":%q,"substance":%q}],"total":1}`, anchorBody, substanceOf(anchorBody))
+		default:
+			t.Errorf("the graph server was sent a request it does not serve: %s %s", r.Method, r.URL.String())
+			http.Error(w, "unserved route", http.StatusInternalServerError)
 		}
 	}))
 	t.Cleanup(srv.Close)
