@@ -89,11 +89,135 @@ func TestRunsDefaultResponseCarriesOnlyTheReplyAndTheReceipt(t *testing.T) {
 	rec := postTo(t, context.Background(), turn, "/runs")
 
 	members, keys := topLevelKeys(t, rec)
-	if want := []string{"reply", "written"}; !slices.Equal(keys, want) {
+	if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
 		t.Fatalf("default body keys = %q, want %q", keys, want)
 	}
 	if got, want := string(members["written"]), `{"state":"stored","nodeId":10525}`; got != want {
 		t.Fatalf("written = %s, want %s", got, want)
+	}
+}
+
+func boolMember(t *testing.T, members map[string]json.RawMessage, key string) bool {
+	t.Helper()
+	raw, present := members[key]
+	if !present {
+		t.Fatalf("the body has no %q member", key)
+	}
+	var value bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Fatalf("member %q is not a boolean: %v; raw=%s", key, err, raw)
+	}
+	return value
+}
+
+func TestRunsProducedIsTrueWhenTheRunProducedAnAnswer(t *testing.T) {
+	t.Parallel()
+
+	turn := replyTurn(&scriptedModel{step: answeringWith("The grip drops because the hold is not set.")})
+
+	members, _ := topLevelKeys(t, postTo(t, context.Background(), turn, "/runs"))
+
+	if !boolMember(t, members, "produced") {
+		t.Fatalf("produced = false on a run that answered, so a caller would drop a real reply")
+	}
+}
+
+func TestRunsProducedFollowsTheRunAndNotTheReplyText(t *testing.T) {
+	t.Parallel()
+
+	turn := replyTurn(&scriptedModel{step: answeringWith(fallbackReply)})
+
+	members, _ := topLevelKeys(t, postTo(t, context.Background(), turn, "/runs"))
+
+	if !boolMember(t, members, "produced") {
+		t.Fatalf("produced = false for a model answer that happens to equal the fallback sentence: the flag must come from the run, not from comparing text")
+	}
+}
+
+func TestRunsProducedIsTrueForAnAnswerThatTheVerdictCallsCurtailedOrUngrounded(t *testing.T) {
+	t.Parallel()
+
+	const answer = "late answer"
+	const recallRounds = 3
+
+	cases := []struct {
+		name          string
+		model         func() *scriptedModel
+		graph         func() stubGraph
+		wantCurtailed bool
+		wantGrounded  bool
+	}{
+		{
+			name: "a curtailed run that answered on its reserved call",
+			model: func() *scriptedModel {
+				return &scriptedModel{step: func(call int) (loop.JudgeResult, error) {
+					if call <= recallRounds {
+						return loop.JudgeResult{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "q"}, nil
+					}
+					return loop.JudgeResult{Answer: answer, Reason: loop.Answered, RawReason: "stop"}, nil
+				}}
+			},
+			graph:         replyGraph,
+			wantCurtailed: true,
+			wantGrounded:  true,
+		},
+		{
+			name:  "an ungrounded answer when no row was admitted",
+			model: func() *scriptedModel { return &scriptedModel{step: answeringWith(answer)} },
+			graph: func() stubGraph {
+				graph := replyGraph()
+				graph.candidates = nil
+				return graph
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			verbose, _ := topLevelKeys(t, postTo(t, context.Background(), loop.NewTurn(c.graph(), c.model(), nil, fixedSystem("system text"), "test-model", testLogger()), "/runs?verbose=true"))
+			var outcome struct {
+				Produced  bool `json:"produced"`
+				Curtailed bool `json:"curtailed"`
+				Grounded  bool `json:"grounded"`
+			}
+			if err := json.Unmarshal(verbose["outcome"], &outcome); err != nil {
+				t.Fatalf("decode outcome: %v", err)
+			}
+			if !outcome.Produced || outcome.Curtailed != c.wantCurtailed || outcome.Grounded != c.wantGrounded {
+				t.Fatalf("outcome = %+v, want produced with curtailed=%v grounded=%v: the fixture does not reach the shape this row names", outcome, c.wantCurtailed, c.wantGrounded)
+			}
+
+			members, _ := topLevelKeys(t, postTo(t, context.Background(), loop.NewTurn(c.graph(), c.model(), nil, fixedSystem("system text"), "test-model", testLogger()), "/runs"))
+			if !boolMember(t, members, "produced") {
+				t.Fatalf("produced = false for a run that answered, so a caller would drop a real reply")
+			}
+			if got := stringMember(t, members, "reply"); got != answer {
+				t.Fatalf("reply = %q, want the answer %q", got, answer)
+			}
+		})
+	}
+}
+
+func TestRunsVerboseBodyKeepsProducedInsideTheOutcomeOnly(t *testing.T) {
+	t.Parallel()
+
+	turn := replyTurn(&scriptedModel{step: answeringWith("an answer")})
+
+	members, _ := topLevelKeys(t, postTo(t, context.Background(), turn, "/runs?verbose=true"))
+
+	if _, present := members["produced"]; present {
+		t.Fatalf("the verbose body gained a top-level produced member; it already carries outcome.produced")
+	}
+	var outcome struct {
+		Produced bool `json:"produced"`
+	}
+	if err := json.Unmarshal(members["outcome"], &outcome); err != nil {
+		t.Fatalf("decode outcome: %v", err)
+	}
+	if !outcome.Produced {
+		t.Fatalf("outcome.produced = false on a run that answered")
 	}
 }
 
@@ -240,11 +364,14 @@ func TestRunsReplyIsTheFallbackWhenTheRunProducedNothing(t *testing.T) {
 			ctx, cancel = newCtx()
 			defer cancel()
 			members, keys := topLevelKeys(t, postTo(t, ctx, replyTurn(c.model()), "/runs"))
-			if want := []string{"reply", "written"}; !slices.Equal(keys, want) {
+			if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
 				t.Fatalf("default body keys = %q, want %q", keys, want)
 			}
 			if got := stringMember(t, members, "reply"); got != fallback {
 				t.Fatalf("reply = %q, want the fallback sentence %q", got, fallback)
+			}
+			if got := boolMember(t, members, "produced"); got {
+				t.Fatalf("produced = true on a run that produced no answer, so a caller cannot tell the fallback from an answer")
 			}
 		})
 	}
@@ -277,7 +404,7 @@ func TestRunsVerboseFalseKeepsTheDefaultBody(t *testing.T) {
 			turn := replyTurn(&scriptedModel{step: answeringWith("an answer")})
 
 			_, keys := topLevelKeys(t, postTo(t, context.Background(), turn, target))
-			if want := []string{"reply", "written"}; !slices.Equal(keys, want) {
+			if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
 				t.Fatalf("%s body keys = %q, want %q", target, keys, want)
 			}
 		})

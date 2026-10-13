@@ -52,8 +52,9 @@ const messageInvalidHistory = "history must be an array of exchanges, each with 
 const fallbackReply = "Sorry — I couldn't put an answer together for that just now. Could you say a bit more, or ask it another way?"
 
 type chatResponse struct {
-	Reply   string            `json:"reply"`
-	Written loop.WriteReceipt `json:"written"`
+	Reply    string            `json:"reply"`
+	Written  loop.WriteReceipt `json:"written"`
+	Produced bool              `json:"produced"`
 }
 
 type verboseResponse struct {
@@ -140,7 +141,7 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(verboseResponse{Record: record, Written: receipt, Reply: reply})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(chatResponse{Reply: reply, Written: receipt})
+		_ = json.NewEncoder(w).Encode(chatResponse{Reply: reply, Written: receipt, Produced: record.Outcome.Produced})
 	}
 }
 
