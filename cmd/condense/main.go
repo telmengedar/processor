@@ -55,10 +55,21 @@ func run(args []string, machine, human io.Writer) int {
 		return exitError
 	}
 
-	modelCfg, err := boot.LoadModel()
+	judgementCfg, err := boot.LoadModel()
 	if err != nil {
 		logger.Error("boot configuration", "error", err)
 		return exitError
+	}
+
+	condenseCfg, condenseConfigured, err := boot.LoadCondenseModel()
+	if err != nil {
+		logger.Error("boot configuration", "error", err)
+		return exitError
+	}
+
+	modelCfg, fromJudgement := ports.FillModel(condenseCfg, condenseConfigured, judgementCfg)
+	if fromJudgement {
+		logger.Info(ports.FillOnJudgementNotice)
 	}
 
 	targets, err := resolveTargets(opts)
