@@ -59,9 +59,7 @@ type Source struct {
 	Scoped bool `json:"scoped,omitempty"`
 }
 
-// AnchorSummary is the anchor's entry in a run record: enough to identify
-// and size it without repeating the full body (the full body is inside
-// Record.Block instead).
+// AnchorSummary is the anchor's entry in a run record: enough to identify and size it.
 type AnchorSummary struct {
 	ID          int64  `json:"id"`
 	Type        string `json:"type"`

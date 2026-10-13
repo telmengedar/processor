@@ -106,7 +106,7 @@ func readNodeTool() wireTool {
 		Type: "function",
 		Function: wireFunction{
 			Name:        readNodeToolName,
-			Description: "Read one part of memory in full. Takes one argument: id, the integer id that part is printed with.",
+			Description: "Read one part of memory as its substance. Takes one argument: id, the integer id that part is printed with.",
 			Parameters: json.RawMessage(`{
 				"type": "object",
 				"properties": {"id": {"type": "integer"}},

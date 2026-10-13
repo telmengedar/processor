@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"io/fs"
 	"maps"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -18,7 +19,11 @@ import (
 const (
 	loopPackageDir     = "../loop"
 	toolConstantPrefix = "Tool"
+	readToolFunc       = "readNodeTool"
+	descriptionKey     = "Description"
 )
+
+var adapterWireFiles = []string{"../ollama/wire.go", "../openaicompat/wire.go"}
 
 func TestTheSystemTextDescribesEveryToolTheJudgementCallOffers(t *testing.T) {
 	t.Parallel()
@@ -145,4 +150,122 @@ func toolConstantsTheLoopDeclares(t *testing.T) map[string]string {
 	}
 
 	return declared
+}
+
+var bodyWord = regexp.MustCompile("(?i)(^|[^a-z])bod(y|ies)([^a-z]|$)")
+
+var bodyPromises = []string{"in full", "full text", "full content", "complete content"}
+
+func readParagraphOfTheSystemText(t *testing.T) string {
+	t.Helper()
+
+	for _, paragraph := range strings.Split(systemtext.Compose([]string{loop.ToolReadNode}), "\n\n") {
+		if strings.HasPrefix(paragraph, "A read tool is available.") {
+			return paragraph
+		}
+	}
+	t.Fatalf("the system text of a call offering the read tool carries no paragraph introducing it, so this guard has nothing to hold to the substance-only account")
+	return ""
+}
+
+func TestNoParagraphOfTheSystemTextOtherThanTheFileWriteSpeaksOfABodyOrPromisesFullContent(t *testing.T) {
+	t.Parallel()
+
+	composed := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile})
+
+	var kept []string
+	for _, paragraph := range strings.Split(composed, "\n\n") {
+		if !strings.HasPrefix(paragraph, "A file tool is available.") {
+			kept = append(kept, paragraph)
+		}
+	}
+	if len(kept) < 3 {
+		t.Fatalf("the composed system text has %d paragraphs outside the file tool's, which is too few for this guard to be reading the whole text", len(kept))
+	}
+	text := strings.Join(kept, "\n\n")
+
+	if paragraph := readParagraphOfTheSystemText(t); !strings.Contains(paragraph, "as its substance") {
+		t.Errorf("the read paragraph never says a read returns a part %q: %q", "as its substance", paragraph)
+	}
+	if bodyWord.MatchString(text) {
+		t.Errorf("the system text speaks of a body: the model works with substances and is never given a body.\n%s", text)
+	}
+	for _, promise := range bodyPromises {
+		if strings.Contains(strings.ToLower(text), promise) {
+			t.Errorf("the system text promises %q: a part is shown as its substance or marked unavailable.\n%s", promise, text)
+		}
+	}
+}
+
+func TestEveryAdapterDescribesTheReadAsTheSystemTextDoesAndTheTwoAgree(t *testing.T) {
+	t.Parallel()
+
+	const substanceVocabulary = "as its substance"
+
+	if !strings.Contains(readParagraphOfTheSystemText(t), substanceVocabulary) {
+		t.Fatalf("test setup error: the system text's read paragraph no longer says %q, so the adapters are being held to a phrase the model is not given", substanceVocabulary)
+	}
+
+	var descriptions []string
+	for _, path := range adapterWireFiles {
+		description := readToolDescription(t, path)
+		descriptions = append(descriptions, description)
+
+		if !strings.Contains(description, substanceVocabulary) {
+			t.Errorf("%s declares the read as %q, which does not say %q: the system text tells the model a read returns a part's substance and the tool schema must say the same", path, description, substanceVocabulary)
+		}
+		if bodyWord.MatchString(description) {
+			t.Errorf("%s declares the read as %q, which speaks of a body: the model works with substances", path, description)
+		}
+		for _, promise := range bodyPromises {
+			if strings.Contains(strings.ToLower(description), promise) {
+				t.Errorf("%s declares the read as %q, which promises %q: a read serves a part's substance or marks it unavailable and never serves its body", path, description, promise)
+			}
+		}
+	}
+
+	if descriptions[0] != descriptions[1] {
+		t.Errorf("the adapters declare the read differently: %q in %s, %q in %s; both reach the same model and must say the same thing", descriptions[0], adapterWireFiles[0], descriptions[1], adapterWireFiles[1])
+	}
+}
+
+func readToolDescription(t *testing.T, path string) string {
+	t.Helper()
+
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatalf("parsing %s failed: %v", path, err)
+	}
+
+	var found []string
+	for _, decl := range file.Decls {
+		function, ok := decl.(*ast.FuncDecl)
+		if !ok || function.Name.Name != readToolFunc {
+			continue
+		}
+		ast.Inspect(function, func(node ast.Node) bool {
+			pair, ok := node.(*ast.KeyValueExpr)
+			if !ok {
+				return true
+			}
+			key, ok := pair.Key.(*ast.Ident)
+			if !ok || key.Name != descriptionKey {
+				return true
+			}
+			literal, ok := pair.Value.(*ast.BasicLit)
+			if !ok || literal.Kind != token.STRING {
+				t.Fatalf("%s declares the %s of %s as something other than a string literal, so this guard cannot read it", path, descriptionKey, readToolFunc)
+			}
+			unquoted, err := strconv.Unquote(literal.Value)
+			if err != nil {
+				t.Fatalf("the %s in %s is not a quoted string: %v", descriptionKey, path, err)
+			}
+			found = append(found, unquoted)
+			return true
+		})
+	}
+	if len(found) != 1 {
+		t.Fatalf("%s declares %d descriptions inside %s, want exactly 1, so this guard would compare against nothing or the wrong text", path, len(found), readToolFunc)
+	}
+	return found[0]
 }

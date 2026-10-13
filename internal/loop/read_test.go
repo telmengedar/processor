@@ -107,7 +107,7 @@ func TestTurnRunRefusesASecondAddressedReadOfANodeAlreadyShownInFull(t *testing.
 		t.Fatalf("test setup error: the block admitted %+v, want the one row admitted or the account never saw it", record.Candidates)
 	}
 
-	round := refusedRound(t, record, errAlreadyReadInFull)
+	round := refusedRound(t, record, errAlreadyShownThisTurn)
 	if round.Bytes != 0 {
 		t.Fatalf("the refused round charged %d bytes, want none: refusing costs one round and one sentence, which is the whole reason it beats serving the bytes again", round.Bytes)
 	}
@@ -396,7 +396,7 @@ func TestTurnRunRefusesAReadOfAPartAlreadyShownInFullEvenWhereItIsAlsoTooLargeFo
 		t.Fatalf("test setup error: the block's disposition of the row is %+v, want it admitted in full, or the account never saw it and only one refusal applies", record.Candidates)
 	}
 
-	refusedRound(t, record, errAlreadyReadInFull)
+	refusedRound(t, record, errAlreadyShownThisTurn)
 }
 
 func TestOnlyTheRetrievalToolsAreAccountedSoAFileWriteCannotCloseRecall(t *testing.T) {

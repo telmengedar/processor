@@ -74,7 +74,7 @@ arm for "this script does not know", because both axes have grown under it befor
   causes were the adapter's own ToolError; it is false now, and demonstrably. Counted against
   dispatchRead's control flow rather than summarised: of the four refusals of a read, ONE
   (`errReadOfSubject`) is raised before `Graph.Node` is called and THREE (`errNoSuchNode`,
-  `errAlreadyReadInFull`, the too-large refusal) after it has returned -- so the retired sentence
+  `errAlreadyShownThisTurn`, the too-large refusal) after it has returned -- so the retired sentence
   was false of three of the four, not of some of them. The reserved-call refusal describes a
   well-formed request the loop declined, which is a third thing again. No arm of this script now
   says whether a refused round reached the graph, because the record does not carry it: the cause
@@ -265,7 +265,7 @@ REFUSAL_RESERVED_CALL = "the turn's last call was reserved for answering, so it 
 REFUSAL_RECALL_CLOSED = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
 REFUSAL_NO_SUCH_NODE = "no part of memory has that id"
 REFUSAL_READ_OF_SUBJECT = "that id is this request's own subject, and the context block already carries it"
-REFUSAL_ALREADY_READ_IN_FULL = "that part has already been shown to you in this turn"
+REFUSAL_ALREADY_SHOWN_THIS_TURN = "that part has already been shown to you in this turn"
 REFUSAL_NODE_TOO_LARGE_MIDDLE = " bytes and one read carries at most "
 
 LOOP_REFUSALS = (
@@ -273,7 +273,7 @@ LOOP_REFUSALS = (
     REFUSAL_RECALL_CLOSED,
     REFUSAL_NO_SUCH_NODE,
     REFUSAL_READ_OF_SUBJECT,
-    REFUSAL_ALREADY_READ_IN_FULL,
+    REFUSAL_ALREADY_SHOWN_THIS_TURN,
 )
 
 # internal/loop/types.go's ToolRecall / ToolWriteFile / ToolReadNode -- the record's own tool
