@@ -625,3 +625,21 @@ func TestCondenseWritesACondensationThatRepeatsOnlyWhatItsBodyRepeats(t *testing
 		t.Fatalf("a condensation repeating only what its body repeats must be written")
 	}
 }
+
+func TestARuleSkipOtherThanARepeatedPassageCarriesNoDetail(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+	}{
+		{"preamble", "Here is the condensation you asked for, set out below."},
+		{"empty", ""},
+	}
+
+	for _, c := range cases {
+		skip := onlySkip(t, runPass(t, newFakeGraph(proseNode(1, contractBody())), &fakeModel{text: c.text}, Options{}, Target{Node: 1}))
+
+		if skip.Detail != "" {
+			t.Fatalf("%s: a skip that is not a repeated passage must carry no detail, got %q", c.name, skip.Detail)
+		}
+	}
+}

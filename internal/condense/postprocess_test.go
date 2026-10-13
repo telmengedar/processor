@@ -126,7 +126,7 @@ func TestDefectRejectsAThreeLinePassageTheCondensationRepeatsMoreOftenThanItsBod
 	}
 }
 
-func TestDefectRejectsTheLoopShapeOfALargeDocumentThatEndsEarly(t *testing.T) {
+func TestDefectRejectsFourRulingsRepeatedEightTimesWhenTheBodyStatesThemOnce(t *testing.T) {
 	if got := Defect(contractBody(), loopedSubstance(8, "")); got != skipRepeatedPassage {
 		t.Fatalf("want %q for four rulings repeated eight times, got %q", skipRepeatedPassage, got)
 	}
