@@ -3,6 +3,7 @@ package condense
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 const fenceMarker = "```"
@@ -13,67 +14,79 @@ var (
 	spacePattern    = regexp.MustCompile(`[ \t]+`)
 )
 
-const passageLines = 3
+const passageLines = 2
 
 // Postprocess strips an outermost code fence and markdown emphasis from a raw condensation, and rewrites nothing else.
 func Postprocess(raw string) string {
 	return strings.TrimSpace(emphasisPattern.ReplaceAllString(stripFence(raw), "$1"))
 }
 
-// Defect names the storage rule a postprocessed condensation of content fails, or the empty string when it may be written.
-func Defect(content, substance string) string {
+// Defect names the storage rule a postprocessed condensation fails, or the empty string when it may be written.
+func Defect(substance string) string {
 	switch {
 	case substance == "":
 		return skipEmptyCondensation
 	case preamblePattern.MatchString(firstLine(substance)):
 		return skipPreamble
 	}
-	if count, _ := repeatedPassages(content, substance); count > 0 {
+	if count, _ := repeatedPassages(substance); count > 0 {
 		return skipRepeatedPassage
 	}
 	return ""
 }
 
-func repeatedPassages(content, substance string) (int, int) {
-	bodyCounts := passageCounts(normalisedLines(content))
-	lines := normalisedLines(substance)
-	substanceCounts := passageCounts(lines)
+func repeatedPassages(substance string) (int, int) {
+	lines := contentLines(substance)
+	counts := make(map[string]int)
+	for i := 0; i+passageLines <= len(lines); i++ {
+		counts[passageKey(lines[i:i+passageLines])]++
+	}
 
 	count, first := 0, 0
 	seen := make(map[string]bool)
 	for i := 0; i+passageLines <= len(lines); i++ {
-		passage := strings.Join(lines[i:i+passageLines], "\n")
-		if seen[passage] {
+		key := passageKey(lines[i : i+passageLines])
+		if seen[key] {
 			continue
 		}
-		seen[passage] = true
-		if substanceCounts[passage] >= 2 && substanceCounts[passage] > bodyCounts[passage] {
+		seen[key] = true
+		if counts[key] >= 2 {
 			count++
 			if first == 0 {
-				first = i + 1
+				first = lines[i].number
 			}
 		}
 	}
 	return count, first
 }
 
-func passageCounts(lines []string) map[string]int {
-	counts := make(map[string]int)
-	for i := 0; i+passageLines <= len(lines); i++ {
-		counts[strings.Join(lines[i:i+passageLines], "\n")]++
-	}
-	return counts
+type numberedLine struct {
+	number int
+	text   string
 }
 
-func normalisedLines(text string) []string {
-	var lines []string
-	for _, line := range strings.Split(strings.ReplaceAll(text, "\r", ""), "\n") {
-		line = spacePattern.ReplaceAllString(strings.TrimSpace(emphasisPattern.ReplaceAllString(line, "$1")), " ")
-		if line != "" {
-			lines = append(lines, line)
+func passageKey(window []numberedLine) string {
+	texts := make([]string, len(window))
+	for i, line := range window {
+		texts[i] = line.text
+	}
+	return strings.Join(texts, "\n")
+}
+
+func contentLines(text string) []numberedLine {
+	var lines []numberedLine
+	for i, line := range strings.Split(strings.ReplaceAll(text, "\r", ""), "\n") {
+		line = spacePattern.ReplaceAllString(strings.TrimSpace(line), " ")
+		if strings.HasPrefix(line, fenceMarker) || !strings.ContainsFunc(line, isLetterOrDigit) {
+			continue
 		}
+		lines = append(lines, numberedLine{number: i + 1, text: line})
 	}
 	return lines
+}
+
+func isLetterOrDigit(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 func stripFence(raw string) string {

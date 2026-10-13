@@ -611,18 +611,30 @@ func TestARepeatingCondensationsDetailNamesCountsAndCarriesNoPassageText(t *test
 	}
 }
 
-func TestCondenseWritesACondensationThatRepeatsOnlyWhatItsBodyRepeats(t *testing.T) {
-	block := "| ---- | ---- |\n| row | row |\n| end | end |"
-	body := "first table\n" + block + "\nsecond table\n" + block
+func TestCondenseRefusesACondensationThatRepeatsWhatItsBodyRepeats(t *testing.T) {
+	body := "first table\n| name | value |\n| alpha | 1 |\nsecond table\n| name | value |\n| alpha | 1 |"
 	graph := newFakeGraph(proseNode(1, body))
 
 	result := runPass(t, graph, &fakeModel{text: body}, Options{}, Target{Node: 1})
 
-	if len(result.Provenance) != 1 {
-		t.Fatalf("want a condensation repeating what its body repeats written, got skips %+v", result.Skipped)
+	if skip := onlySkip(t, result); skip.Reason != skipRepeatedPassage {
+		t.Fatalf("want skip reason %q for a condensation repeating its body's repeat, got %q", skipRepeatedPassage, skip.Reason)
 	}
-	if _, wrote := graph.written(1); !wrote {
-		t.Fatalf("a condensation repeating only what its body repeats must be written")
+	if len(result.Provenance) != 0 {
+		t.Fatalf("a refused condensation must leave no provenance, got %+v", result.Provenance)
+	}
+	if _, wrote := graph.written(1); wrote {
+		t.Fatalf("a condensation repeating a passage must never be written, even when its body repeats it")
+	}
+}
+
+func TestTheRepeatDetailNamesTheLineAsTheCondensationWritesIt(t *testing.T) {
+	text := "intro\n\n---\n\n| a | b |\n| ---- | ---- |\nfirst\nsecond\nthird\nfirst\nsecond"
+
+	skip := onlySkip(t, runPass(t, newFakeGraph(proseNode(1, contractBody())), &fakeModel{text: text}, Options{}, Target{Node: 1}))
+
+	if skip.Detail != "1 passages, first at line 7" {
+		t.Fatalf("want the repeat named at the line it was written on, got %q", skip.Detail)
 	}
 }
 

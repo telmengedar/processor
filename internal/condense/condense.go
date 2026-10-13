@@ -162,11 +162,11 @@ func (r Result) OperationalFailures() int {
 	return failures
 }
 
-func defectDetail(reason, content, substance string) string {
+func defectDetail(reason, substance string) string {
 	if reason != skipRepeatedPassage {
 		return ""
 	}
-	count, first := repeatedPassages(content, substance)
+	count, first := repeatedPassages(substance)
 	return fmt.Sprintf("%d passages, first at line %d", count, first)
 }
 
@@ -260,8 +260,8 @@ func Condense(ctx context.Context, graph GraphPort, model ModelPort, target Targ
 	}
 
 	substance := Postprocess(completion.Text)
-	if reason := Defect(node.Content, substance); reason != "" {
-		return Condensation{Skip: &Skip{Node: target.Node, Reason: reason, Detail: defectDetail(reason, node.Content, substance)}, Audit: audit}
+	if reason := Defect(substance); reason != "" {
+		return Condensation{Skip: &Skip{Node: target.Node, Reason: reason, Detail: defectDetail(reason, substance)}, Audit: audit}
 	}
 
 	audit.Substance = substance
