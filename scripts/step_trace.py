@@ -74,7 +74,7 @@ arm for "this script does not know", because both axes have grown under it befor
   causes were the adapter's own ToolError; it is false now, and demonstrably. Counted against
   dispatchRead's control flow rather than summarised: of the four refusals of a read, ONE
   (`errReadOfSubject`) is raised before `Graph.Node` is called and THREE (`errNoSuchNode`,
-  `errAlreadyReadInFull`, the too-large refusal) after it has returned -- so the retired sentence
+  `errAlreadyShownThisTurn`, the too-large refusal) after it has returned -- so the retired sentence
   was false of three of the four, not of some of them. The reserved-call refusal describes a
   well-formed request the loop declined, which is a third thing again. No arm of this script now
   says whether a refused round reached the graph, because the record does not carry it: the cause

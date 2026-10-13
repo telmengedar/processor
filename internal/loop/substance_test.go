@@ -596,7 +596,7 @@ func TestAReadOfARowThatIsStillUnavailableTriesTheCreationAgainAndIsThenRefusedA
 		t.Fatalf("the port was asked for %v, want the initial attempt and the retry the read makes", got)
 	}
 	round := onlyRound(t, record)
-	if round.Error != errAlreadyReadInFull {
+	if round.Error != errAlreadyShownThisTurn {
 		t.Fatalf("the read round carries %q, want the already-shown refusal that ends the turn's retrieval", round.Error)
 	}
 	if len(record.Fills) != 2 || record.Fills[1].Phase != phaseRead {

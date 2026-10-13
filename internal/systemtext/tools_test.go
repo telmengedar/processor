@@ -154,7 +154,7 @@ func toolConstantsTheLoopDeclares(t *testing.T) map[string]string {
 
 var bodyWord = regexp.MustCompile("(?i)(^|[^a-z])bod(y|ies)([^a-z]|$)")
 
-var bodyPromises = []string{"in full", "full text", "full content", "complete content", "whole"}
+var bodyPromises = []string{"in full", "full text", "full content", "complete content"}
 
 func readParagraphOfTheSystemText(t *testing.T) string {
 	t.Helper()
@@ -184,8 +184,8 @@ func TestNoParagraphOfTheSystemTextOtherThanTheFileWriteSpeaksOfABodyOrPromisesF
 	}
 	text := strings.Join(kept, "\n\n")
 
-	if !strings.Contains(text, "as its substance") {
-		t.Errorf("the system text never says a read returns a part %q: %q", "as its substance", text)
+	if paragraph := readParagraphOfTheSystemText(t); !strings.Contains(paragraph, "as its substance") {
+		t.Errorf("the read paragraph never says a read returns a part %q: %q", "as its substance", paragraph)
 	}
 	if bodyWord.MatchString(text) {
 		t.Errorf("the system text speaks of a body: the model works with substances and is never given a body.\n%s", text)

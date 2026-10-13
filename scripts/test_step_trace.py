@@ -559,9 +559,6 @@ class ShutoutOversizedAnchorTests(unittest.TestCase):
     it must NOT be described as 'anchor exempt', and every candidate should read as unadmittable."""
 
     def test_remaining_budget_floors_to_zero_and_shutout_fires(self):
-        # block is deliberately >= the anchor's own size: renderBlock always contains the anchor in
-        # full, so a block shorter than its anchor is a shape the binary cannot emit (reviewer note).
-        # No candidate here is admitted, so the block need not account for any candidate bytes.
         rec = record(
             anchor={"id": 1, "type": "documentation", "name": "huge", "size": 70_660, "contentHash": "deadbeef"},
             candidates=[
@@ -585,8 +582,6 @@ class UnadmittableUsesRemainingBudgetTests(unittest.TestCase):
     500 B; a 5,000-byte cut candidate is well under the raw budget but can never be admitted here."""
 
     def test_candidate_under_full_budget_but_over_remaining_is_flagged(self):
-        # Same block-size note as ShutoutOversizedAnchorTests above: block must be >= the anchor's
-        # own size, since renderBlock always renders the anchor, as its substance.
         rec = record(
             anchor={"id": 1, "type": "documentation", "name": "big", "size": 59_500, "contentHash": "cafe"},
             candidates=[
@@ -1462,7 +1457,7 @@ class MirroredConstantTests(unittest.TestCase):
             (step_trace.REFUSAL_RECALL_CLOSED, "errRecallClosedToModel"),
             (step_trace.REFUSAL_NO_SUCH_NODE, "errNoSuchNode"),
             (step_trace.REFUSAL_READ_OF_SUBJECT, "errReadOfSubject"),
-            (step_trace.REFUSAL_ALREADY_READ_IN_FULL, "errAlreadyReadInFull"),
+            (step_trace.REFUSAL_ALREADY_READ_IN_FULL, "errAlreadyShownThisTurn"),
             (step_trace.ERR_NO_WORKING_DIRECTORY, "errNoWorkingDirectory"),
         ):
             self.assertEqual(mirrored, go[name], f"{name} has drifted from this script's mirror")

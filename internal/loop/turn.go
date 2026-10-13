@@ -22,14 +22,14 @@ const (
 )
 
 const (
-	errRunTimeShort        = "the run's remaining time cannot afford another judgement call"
-	errNoWorkingDirectory  = "no working directory is configured"
-	errRecallClosedToModel = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
-	errReservedCallRefused = "the turn's last call was reserved for answering, so it offered no tool and dispatched none"
-	errNoSuchNode          = "no part of memory has that id"
-	errReadOfSubject       = "that id is this request's own subject, and the context block already carries it"
-	errAlreadyReadInFull   = "that part has already been shown to you in this turn"
-	errNodeTooLargeFormat  = "that part's substance is %d bytes and one read carries at most %d, so it cannot be shown"
+	errRunTimeShort         = "the run's remaining time cannot afford another judgement call"
+	errNoWorkingDirectory   = "no working directory is configured"
+	errRecallClosedToModel  = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
+	errReservedCallRefused  = "the turn's last call was reserved for answering, so it offered no tool and dispatched none"
+	errNoSuchNode           = "no part of memory has that id"
+	errReadOfSubject        = "that id is this request's own subject, and the context block already carries it"
+	errAlreadyShownThisTurn = "that part has already been shown to you in this turn"
+	errNodeTooLargeFormat   = "that part's substance is %d bytes and one read carries at most %d, so it cannot be shown"
 )
 
 type reservation string
@@ -722,7 +722,7 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 	read.Created = createdHere
 	admitted, dispositions := admit([]Candidate{read}, room, 0)
 	if account.alreadyShown(dispositions[0]) {
-		exchange.Error = errAlreadyReadInFull
+		exchange.Error = errAlreadyShownThisTurn
 		exchange.Refused = true
 		return exchange
 	}
