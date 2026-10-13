@@ -25,19 +25,15 @@ budget, or past the block entirely. The stage stops at the block: whether an adm
 is the reader's call on the two answers, and it is the case no instrument in this project can see.
 
 Every task's substrate arm writes one run record to the graph, which this names on exit and never
-deletes. Two checks run before any model call to keep a repeat from reading its own prior record back:
-the loader refuses a task set that carries the same task text twice in one file, and a graph query
-(find_prior_run) refuses a task whose text an earlier invocation's run record already carries verbatim
-(DiVoid #11141). The graph check is a semantic recall against the same endpoint the binary itself
-queries, ranked to a fixed number of rows -- it can miss an older record that no longer ranks near its
-own text, so it is a real check and not a guarantee.
+deletes. Two checks run before any model call to refuse a repeat: the loader refuses a task set that
+carries the same task text twice in one file, and a graph query (find_prior_run) refuses a task whose
+text an earlier invocation's run record already carries verbatim. The graph check is a semantic recall
+against the same endpoint the binary itself queries, ranked to a fixed number of rows -- it can miss an
+older record that no longer ranks near its own text, so it is a real check and not a guarantee.
 
-Neither check buys a clean invocation, and the first full run of the shipped set measured why: task 3
-retrieved the records tasks 1 and 2 had just written, minutes earlier, on unrelated text. #11141
-documents the mechanism for a repeated input; it also fires across different inputs, so a task late in
-a set is read against a graph the earlier ones moved. For an archived record the per-task RETRIEVAL-SLOT DISPLACEMENT line
-reports it whenever it happens. Nothing here prevents that, and the fix is #11092 section 4.2's
-decorating port, which is Go and has no caller yet.
+A run record does not reach the substrate arm's retrieval: the graph is asked to leave run records out
+by name before it counts, and the loop drops any that leak. For an archived record made before that,
+the per-task RETRIEVAL-SLOT DISPLACEMENT line reports each run record that took a recall slot.
 
 Costs one model call per arm at minimum -- more where the substrate arm asks for supplementary recall
 -- and one graph write per task. Exit 0 every task ran both arms; 1 a task's substrate arm admitted
@@ -136,8 +132,8 @@ def load_tasks(path, only):
     if seen_tasks:
         raise CompareFailure(
             f"{path} carries the same task text more than once. Refused rather than run: the substrate "
-            f"arm files a run record embedding its input verbatim, so the second run of one text reads "
-            f"what the first one wrote and is not a second measurement of anything (DiVoid #11141). "
+            f"arm files a run record embedding its input verbatim, and the graph check refuses the "
+            f"second run of a text once the first record exists. "
             f"The repeated text begins {sorted(seen_tasks)[0][:80]!r}"
         )
 
@@ -323,9 +319,9 @@ def refuse_repeats_against_graph(tasks, divoid_url, divoid_key):
             node_id, name = prior
             raise CompareFailure(
                 f"task {task['id']} was already run: graph node #{node_id} ({name!r}) carries a run "
-                f"record whose input is this task's text verbatim. Refused rather than run again: the "
-                f"substrate arm's retrieval would read that record back (DiVoid #11141), so a second "
-                f"run of the same text is not a second measurement of anything. This is a semantic "
+                f"record whose input is this task's text verbatim. Refused rather than run again: a "
+                f"second run of the same text is not accepted while its record is in the graph, and "
+                f"deleting that node lifts the refusal. This is a semantic "
                 f"recall check, not an index lookup (see find_prior_run's docstring), and the loader's "
                 f"in-file duplicate check does not reach this case -- it only compares rows in the "
                 f"task set file against each other, not against the graph"
@@ -934,8 +930,9 @@ def print_displacement(rows, label, limit):
         f"record assembly {cuts} as self-produced, ahead of the byte budget, so the product "
         f"never read its own history back -- but occupying {slot} in a fixed-size recall list "
         f"means a real candidate that would otherwise have been retrieved fell off the tail "
-        f"instead. That is the defect, not a self-read. The initial aperture no longer spends "
-        f"slots this way; a round reported here is one that does not pass through it."
+        f"instead. That is the defect, not a self-read. Recall now asks the graph to leave run "
+        f"records out by name before it counts, and the loop drops any that leak, so a round "
+        f"reported here was recorded before that and a run made now carries none."
     )
 
 
@@ -1125,12 +1122,11 @@ def print_records_written(receipts):
     print(
         "       Nothing was deleted. Each record embeds its task text verbatim, so a later query -- "
         "a repeat of this text, or an unrelated task whose vocabulary overlaps -- can rank it among "
-        "the top rows recall returns. The initial aperture now skips such a row before it becomes a "
-        "candidate and fetches deeper to replace it, so it no longer displaces a real row there. A "
-        "supplementary recall round does not pass through that aperture: the graph is told to "
-        "exclude run records by name before it counts, and the loop drops any that leak. "
-        "Leaving them in place also changes which rows the deeper fetch reaches and can move a "
-        "corpus row's retrieval in the baseline sweep. Delete them by hand."
+        "the top rows recall returns. Recall now tells the graph to exclude run records by name "
+        "before it counts, and the loop drops any that leak, so a record left in place takes no "
+        "recall slot and does not move a corpus row's retrieval in the baseline sweep. This "
+        "script's own prior-run check does not exclude them, though, and refuses a task whose "
+        "text a record already carries. Delete the record by hand to run that task again."
     )
 
 
