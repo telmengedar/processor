@@ -240,7 +240,7 @@ func TestTurnRunBoundsACauseLongerThanTheBoundBeforeItReachesTheRound(t *testing
 	cause := strings.Repeat("b", CarriedCauseRunes+400)
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: nil},
 		{Err: errors.New(cause)},
 	}
 	model := &fakeModel{results: []JudgeResult{

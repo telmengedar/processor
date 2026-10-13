@@ -428,7 +428,7 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	if record.CapReached {
 		t.Fatal("record.CapReached = true, want false — the model answered on the first call, the cap never fired")
 	}
-	wantLimits := Limits{CandidateLimit: CandidateLimit, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, AnsweringBudget: 192, RecallScopeReserve: RecallScopeReserve, ThinKnowledgeSimilarity: ThinKnowledgeSimilarity, FillWait: FillWait, HistoryExchangeLimit: 4, HistorySafetyLimit: 8_000}
+	wantLimits := Limits{CandidateLimit: 6, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, AnsweringBudget: 192, RecallScopeReserve: RecallScopeReserve, ThinKnowledgeSimilarity: 0.63, FillWait: FillWait, HistoryExchangeLimit: 4, HistorySafetyLimit: 8_000}
 	if record.Limits != wantLimits {
 		t.Fatalf("record.Limits = %+v, want %+v", record.Limits, wantLimits)
 	}
@@ -487,7 +487,7 @@ func TestTurnRunDispatchesRecallAndJudgesAgain(t *testing.T) {
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: nil},
 		{Candidates: []Candidate{{ID: 99, Type: "task", Name: "Found", Similarity: 0.8, Substance: "tool result body"}}},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -574,7 +574,7 @@ func TestTurnRunRecordsASupplementaryRecallTransportFailureAsAnErrorFlaggedRound
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: nil},
 		{Err: errors.New("literal: 500 from graph")},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -674,7 +674,7 @@ func TestTurnRunCarriesTheSupplementaryRecallCauseIntoTheRoundAndLogsItWhole(t *
 	const cause = "literal: dial tcp 10.0.0.55:443: connect: connection refused"
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: nil},
 		{Err: errors.New(cause)},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -704,7 +704,7 @@ func TestTurnRunKeepsTheSupplementaryRecallCauseOutOfTheModelsNextCall(t *testin
 	const cause = "literal: 503 from graph: upstream is draining"
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: nil},
 		{Err: errors.New(cause)},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -785,7 +785,7 @@ func TestTurnRunUsageArrayLengthAlwaysEqualsModelCalls(t *testing.T) {
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: nil},
 		{Candidates: []Candidate{{ID: 2, Substance: "tool result"}}},
 	}
 	usage1 := &Usage{InTokens: 10, OutTokens: 1}
@@ -962,7 +962,7 @@ func TestTurnRunAdmitsSupplementaryHitsByRankOrderAndBackFillsBehindACut(t *test
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: nil},
 		{Candidates: []Candidate{
 			{ID: 91, Similarity: 0.9, Substance: strings.Repeat("a", 9_000)},
 			{ID: 92, Similarity: 0.8, Substance: strings.Repeat("b", 9_000)},
@@ -1017,7 +1017,7 @@ func TestTurnRunSupplementaryAdmissionStaysInRankOrderEvenWhenIDsDescend(t *test
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: nil},
 		{Candidates: []Candidate{
 			{ID: 300, Similarity: 0.9, Substance: "third-ranked-by-id-descending"},
 			{ID: 200, Similarity: 0.8, Substance: "second"},
@@ -1058,7 +1058,7 @@ func TestTurnRunASupplementaryRoundAdmittingNothingIsNotAnErrorAndRecordsEveryRo
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: nil},
 		{Candidates: []Candidate{
 			{ID: 91, Substance: strings.Repeat("a", 25_000)},
 		}},
@@ -1097,7 +1097,7 @@ func TestTurnRunAdmitsASupplementaryHitExactlyAtTheRoundBudget(t *testing.T) {
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{
-		{Candidates: []Candidate{{ID: 1, Substance: "initial", SelfProduced: true}}},
+		{Candidates: nil},
 		{Candidates: []Candidate{{ID: 91, Similarity: 0.9, Substance: strings.Repeat("a", SupplementaryByteBudget)}}},
 	}
 	model := &fakeModel{results: []JudgeResult{
@@ -1811,8 +1811,8 @@ func TestTheRecordCarriesTheScopeReserveAndTheThinKnowledgeSimilarityThatGoverne
 	if record.Limits.RecallScopeReserve != RecallScopeReserve {
 		t.Fatalf("record.Limits.RecallScopeReserve = %v, want %v", record.Limits.RecallScopeReserve, RecallScopeReserve)
 	}
-	if record.Limits.ThinKnowledgeSimilarity != ThinKnowledgeSimilarity {
-		t.Fatalf("record.Limits.ThinKnowledgeSimilarity = %v, want %v", record.Limits.ThinKnowledgeSimilarity, ThinKnowledgeSimilarity)
+	if record.Limits.ThinKnowledgeSimilarity != 0.63 {
+		t.Fatalf("record.Limits.ThinKnowledgeSimilarity = %v, want 0.63", record.Limits.ThinKnowledgeSimilarity)
 	}
 }
 

@@ -229,16 +229,18 @@ func TestTheSearchNudgeAppearsOnlyOnCallsThatOfferRetrieval(t *testing.T) {
 func TestTheFirstCallCarriesTheBlockTheRecordKeeps(t *testing.T) {
 	t.Parallel()
 
-	belowFloor := Candidate{ID: 5, Type: "documentation", Name: "Row", Similarity: 0, Substance: "below the floor"}
+	oversized := rowOf(5, strings.Repeat("#", AssemblyByteBudget+1))
+	oversized.Similarity = 0.95
 
 	for _, tc := range []struct {
 		name string
 		rows []Candidate
+		cut  bool
 	}{
-		{"admitted rows in descending id order", []Candidate{rowOf(7, "a"), rowOf(3, "b")}},
-		{"a cut row ranked above an admitted one", []Candidate{belowFloor, rowOf(7, "the admitted body")}},
-		{"every row cut", []Candidate{belowFloor}},
-		{"no row at all", nil},
+		{"admitted rows in descending id order", []Candidate{rowOf(7, "a"), rowOf(3, "b")}, false},
+		{"an oversized cut row ranked above an admitted one", []Candidate{oversized, rowOf(7, "the admitted body")}, true},
+		{"every row cut as oversized", []Candidate{oversized}, true},
+		{"no row at all", nil, false},
 	} {
 		graph := baseGraph()
 		graph.recallQueue = []recallResponse{{Candidates: tc.rows}}
@@ -251,6 +253,9 @@ func TestTheFirstCallCarriesTheBlockTheRecordKeeps(t *testing.T) {
 
 		if model.calls[0].Block != record.Block {
 			t.Errorf("%s: the first call's block differs from the block the record keeps:\ncall:   %q\nrecord: %q", tc.name, model.calls[0].Block, record.Block)
+		}
+		if tc.cut && !slices.ContainsFunc(record.Candidates, func(d Disposition) bool { return d.ID == 5 && !d.Included && d.CutReason != "" }) {
+			t.Errorf("%s: row 5 was not recorded as cut, so the case does not exercise a cut row: %+v", tc.name, record.Candidates)
 		}
 	}
 }
