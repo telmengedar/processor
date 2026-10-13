@@ -106,8 +106,9 @@ func (g *recordingGraph) WriteRun(_ context.Context, record loop.Record) loop.Wr
 }
 
 type answeringModel struct {
-	mu     sync.Mutex
-	inputs []loop.JudgeInput
+	mu         sync.Mutex
+	inputs     []loop.JudgeInput
+	derivation string
 }
 
 func (m *answeringModel) Judge(_ context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
@@ -124,6 +125,9 @@ func (m *answeringModel) Judge(_ context.Context, in loop.JudgeInput) (loop.Judg
 }
 
 func (m *answeringModel) Derive(context.Context, string, int) (string, error) {
+	if m.derivation != "" {
+		return m.derivation, nil
+	}
 	return "a second phrasing of the task?\na third phrasing of the task?", nil
 }
 
@@ -136,8 +140,12 @@ func fixedClock() time.Time {
 }
 
 func measuredRunner(live loop.GraphPort) (*Graph, *Runner) {
+	return measuredRunnerWith(live, &answeringModel{})
+}
+
+func measuredRunnerWith(live loop.GraphPort, model *answeringModel) (*Graph, *Runner) {
 	graph := NewGraph(live, fixedClock, testLogger())
-	return graph, NewRunner(graph, NewCondenseGraph(newRecordingCondenseGraph()), &answeringModel{}, nil, nil, testSystem, testModelID, testLogger())
+	return graph, NewRunner(graph, NewCondenseGraph(newRecordingCondenseGraph()), model, nil, nil, testSystem, testModelID, testLogger())
 }
 
 type writingFill struct {
@@ -275,14 +283,15 @@ func TestAMeasuredRunsReadsStillReachTheGraphAndItsBlockCarriesWhatTheyReturned(
 }
 
 func TestAMeasuredRunsRecallsCarryTheSameQueriesLimitAndWindowAnUndecoratedRunCarries(t *testing.T) {
+	const derivation = "DATES: 2026-09-01..2026-09-10\na second phrasing of the task?"
 	measuredLive := newRecordingGraph()
-	_, runner := measuredRunner(measuredLive)
+	_, runner := measuredRunnerWith(measuredLive, &answeringModel{derivation: derivation})
 	if _, err := runner.Run(context.Background(), testInput, 101); err != nil {
 		t.Fatalf("the measured run failed: %v", err)
 	}
 
 	shippedLive := newRecordingGraph()
-	turn := loop.NewTurn(shippedLive, &answeringModel{}, nil, testSystem, testModelID, testLogger())
+	turn := loop.NewTurn(shippedLive, &answeringModel{derivation: derivation}, nil, testSystem, testModelID, testLogger())
 	if _, _, err := turn.Run(context.Background(), testInput, 101); err != nil {
 		t.Fatalf("the undecorated run failed: %v", err)
 	}
@@ -293,6 +302,15 @@ func TestAMeasuredRunsRecallsCarryTheSameQueriesLimitAndWindowAnUndecoratedRunCa
 	}
 	if len(measured) != len(shipped) {
 		t.Fatalf("the measured run issued %d recalls, the undecorated run %d", len(measured), len(shipped))
+	}
+	windowed := 0
+	for _, recall := range shipped {
+		if from, to := recall.Window.From.Format(time.DateOnly), recall.Window.To.Format(time.DateOnly); from == "2026-09-01" && to == "2026-09-11" {
+			windowed++
+		}
+	}
+	if windowed == 0 {
+		t.Fatalf("no undecorated recall carries the derived window, got %+v: the fixture must carry a window for this comparison to see one", shipped)
 	}
 	for i := range measured {
 		if !reflect.DeepEqual(measured[i], shipped[i]) {
