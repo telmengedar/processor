@@ -139,7 +139,7 @@ type wireError struct {
 func buildMessages(in loop.JudgeInput) []wireMessage {
 	return []wireMessage{
 		{Role: "system", Content: in.System},
-		{Role: "user", Content: loop.RenderUserContent(in.Block, in.Input, in.Now, in.Window)},
+		{Role: "user", Content: loop.RenderUserContent(in.Block, in.Input, in.Now, in.Window, in.Conversation)},
 	}
 }
 

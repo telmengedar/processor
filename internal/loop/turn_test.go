@@ -428,7 +428,7 @@ func TestTurnRunRecordsTheModelsAnswerAndStopsAtOneCallWhenAnswered(t *testing.T
 	if record.CapReached {
 		t.Fatal("record.CapReached = true, want false — the model answered on the first call, the cap never fired")
 	}
-	wantLimits := Limits{CandidateLimit: CandidateLimit, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, AnsweringBudget: 192, RecallScopeReserve: RecallScopeReserve, ThinKnowledgeSimilarity: ThinKnowledgeSimilarity, MaxFills: 2, FillSizeFloor: 8_000, MaxFillContentBytes: 100_000, SubstanceRatioFloor: 0.10}
+	wantLimits := Limits{CandidateLimit: CandidateLimit, AssemblyByteBudget: 60_000, SupplementaryByteBudget: 20_000, MaxModelCalls: 6, DerivationBudget: 160, JudgementBudget: 192, AnsweringBudget: 192, RecallScopeReserve: RecallScopeReserve, ThinKnowledgeSimilarity: ThinKnowledgeSimilarity, MaxFills: 2, FillSizeFloor: 8_000, MaxFillContentBytes: 100_000, SubstanceRatioFloor: 0.10, HistoryExchangeLimit: 4, HistorySafetyLimit: 8_000}
 	if record.Limits != wantLimits {
 		t.Fatalf("record.Limits = %+v, want %+v", record.Limits, wantLimits)
 	}
