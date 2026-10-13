@@ -87,7 +87,7 @@ type GraphPort interface {
 	// Recall returns the request's candidates in the graph's own rank order, never re-sorted, each carrying the mean similarity over its queries.
 	Recall(ctx context.Context, request RecallRequest) ([]Candidate, error)
 
-	// Neighbours returns the other endpoint of every edge incident to id, ascending and deduplicated.
+	// Neighbours returns the ids linked to id, ascending and deduplicated, never a run record.
 	Neighbours(ctx context.Context, id int64) ([]int64, error)
 
 	// WriteRun files the record and reports where it landed; the adapter alone chooses type, name and edge.

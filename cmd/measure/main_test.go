@@ -71,8 +71,8 @@ func graphServing(t *testing.T, recorder *writeRecorder, bodies map[int64]string
 		w.Header().Set("Content-Type", "application/json")
 		query := r.URL.Query()
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/links"):
-			fmt.Fprint(w, `{"result":[{"sourceId":101,"targetId":303}],"continue":null}`)
+		case len(query["linkedto"]) > 0 && query.Get("query") == "" && len(query["queries"]) == 0:
+			fmt.Fprint(w, `{"result":[{"id":303,"type":"documentation","name":"a neighbour"}],"total":1}`)
 		case query.Get("query") != "" || len(query["queries"]) > 0:
 			rows := make([]string, 0, len(ids))
 			for i, id := range ids {
