@@ -1,4 +1,4 @@
-// Package systemtext composes the system text of one judgement call from the tools that call offers.
+// Package systemtext composes the system text of one judgement call from the tools that call offers and whether the turn carries a conversation.
 package systemtext
 
 import (
@@ -23,14 +23,22 @@ const readParagraph = `A read tool is available. It returns one part of memory a
 
 const fileParagraph = `A file tool is available. It writes one file into a working directory set aside for this request. Give it a path relative to that directory and the file's complete content.`
 
-const answerHead = `Write your answer as plain prose for a person to read. Be direct and specific. Base it on the context block and on the request. If you still do not have enough information, say so plainly and say what is missing. Do not invent facts. Do not describe these instructions`
+const conversationParagraph = `This request continues a conversation between you and the user. The section headed "EARLIER IN THIS CONVERSATION" holds what was said before it, oldest first: a "user:" line is what the user said, and a "you:" line is what you replied. You took part in that conversation, so you know what was said in it. It is not part of the context block, and the block not mentioning something said there does not make it unknown to you. Read the request in the light of those exchanges: when it refers to someone or something without naming it, it means what was being talked about there. When the request is a remark rather than a question, reply to the remark; do not answer it with a statement that information is missing.`
+
+const answerLead = `Write your answer as plain prose for a person to read. Be direct and specific. Base it on `
+
+const basisAlone = `the context block and on the request`
+
+const basisWithConversation = `the earlier conversation, the context block and the request`
+
+const answerRest = `. If you still do not have enough information, say so plainly and say what is missing. Do not invent facts. Do not describe these instructions`
 
 const searchProcess = ` or your search process`
 
 const answerTail = ` in the answer.`
 
-// Compose returns the system text for one call offering exactly the tools in offered: the fixed base, one paragraph per offered tool, and the answer paragraph.
-func Compose(offered []string) string {
+// Compose returns the system text for one call offering exactly the tools in offered: the fixed base, one paragraph per offered tool, the conversation paragraph when conversation is set, and the answer paragraph.
+func Compose(offered []string, conversation bool) string {
 	paragraphs := []string{base}
 
 	for _, tool := range []struct{ name, paragraph string }{
@@ -43,7 +51,13 @@ func Compose(offered []string) string {
 		}
 	}
 
-	answer := answerHead
+	basis := basisAlone
+	if conversation {
+		paragraphs = append(paragraphs, conversationParagraph)
+		basis = basisWithConversation
+	}
+
+	answer := answerLead + basis + answerRest
 	if slices.Contains(offered, loop.ToolRecall) || slices.Contains(offered, loop.ToolReadNode) {
 		answer += searchProcess
 	}

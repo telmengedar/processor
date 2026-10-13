@@ -273,8 +273,10 @@ earlier exchanges, oldest first, each `{"input": "…", "reply": "…"}` with a 
 optional `reply` (an exchange without one stands for a line the bot did not answer). The service keeps no
 conversation state and has no conversation id. The turn is shown the newest **four** exchanges
 (`limits.historyExchangeLimit`) as one self-labelled section, `===== EARLIER IN THIS CONVERSATION =====`,
-of verbatim `user:` and `you:` lines, placed between the instant and the context block of the one user
-message of **every** judgement call of the turn. The section counts against the same prompt ceiling as the
+of verbatim `user:` and `you:` lines, placed after the context block, directly before the request is repeated,
+in the one user message of **every** judgement call of the turn, the reserved answering call included. The system text of
+those calls then also says a conversation is present; a call whose rendered section is empty gets the same system text and
+user message as a request without `history`. The section counts against the same prompt ceiling as the
 working memory, so it never grows a call past it. Only a safety limit of 8,000 bytes
 (`limits.historySafetyLimit`) can cut further: it drops the oldest whole exchanges, never truncates one,
 and logs a warning. The record keeps the exchanges the turn used (`history`) and how many it did not
@@ -302,7 +304,7 @@ which searches the same graph, `read_node`, which returns one part of memory as 
 directory is configured. None is urged — the system text names each in one sentence and still asks for
 prose — so whether a run reaches for the file tool is a property of the model and the task, not of the
 prompt. **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
-a system text and one user message. The system text is composed per call from the tools that call offers,
+a system text and one user message. The system text is composed per call from the tools that call offers and from whether the turn carries a conversation section,
 so a tool the call does not offer is not mentioned in it; and no tool call, query, error or write
 confirmation is ever replayed to the model. What a retrieval round *found* joins the turn's working memory
 and is rendered into the next call's context block, once per row and never beyond the prompt ceiling (the

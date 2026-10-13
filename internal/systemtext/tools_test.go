@@ -52,7 +52,7 @@ func TestTheSystemTextDescribesEveryToolTheJudgementCallOffers(t *testing.T) {
 
 	for tool, phrase := range described {
 		offered := "A " + phrase + " is available."
-		if !strings.Contains(systemtext.Compose([]string{tool}), offered) {
+		if !strings.Contains(systemtext.Compose([]string{tool}, false), offered) {
 			t.Errorf("the system text never offers the %q tool as %q; every tool the call offers is introduced there in that one neutral register, or the model is left to infer a tool from its schema alone, or to read an emphasis between them that the call does not intend", tool, offered)
 		}
 	}
@@ -76,7 +76,7 @@ func TestTheSystemTextNamesExactlyTheOfferedTools(t *testing.T) {
 			}
 		}
 
-		text := systemtext.Compose(offered)
+		text := systemtext.Compose(offered, false)
 		for _, tool := range every {
 			if got, want := strings.Contains(text, phrases[tool]), slices.Contains(offered, tool); got != want {
 				t.Errorf("offering %v: the system text mentions %q = %v, want %v: a tool the call does not declare must not be described, and one it declares must be", offered, tool, got, want)
@@ -88,7 +88,7 @@ func TestTheSystemTextNamesExactlyTheOfferedTools(t *testing.T) {
 func TestTheSystemTextOfACallThatOffersNothingNamesNoToolAndNoToolResults(t *testing.T) {
 	t.Parallel()
 
-	text := strings.ToLower(systemtext.Compose(nil))
+	text := strings.ToLower(systemtext.Compose(nil, false))
 
 	for _, forbidden := range []string{"tool", "recall", "search process", "query"} {
 		if strings.Contains(text, forbidden) {
@@ -159,7 +159,7 @@ var bodyPromises = []string{"in full", "full text", "full content", "complete co
 func readParagraphOfTheSystemText(t *testing.T) string {
 	t.Helper()
 
-	for _, paragraph := range strings.Split(systemtext.Compose([]string{loop.ToolReadNode}), "\n\n") {
+	for _, paragraph := range strings.Split(systemtext.Compose([]string{loop.ToolReadNode}, false), "\n\n") {
 		if strings.HasPrefix(paragraph, "A read tool is available.") {
 			return paragraph
 		}
@@ -171,28 +171,31 @@ func readParagraphOfTheSystemText(t *testing.T) string {
 func TestNoParagraphOfTheSystemTextOtherThanTheFileWriteSpeaksOfABodyOrPromisesFullContent(t *testing.T) {
 	t.Parallel()
 
-	composed := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile})
-
-	var kept []string
-	for _, paragraph := range strings.Split(composed, "\n\n") {
-		if !strings.HasPrefix(paragraph, "A file tool is available.") {
-			kept = append(kept, paragraph)
-		}
-	}
-	if len(kept) < 3 {
-		t.Fatalf("the composed system text has %d paragraphs outside the file tool's, which is too few for this guard to be reading the whole text", len(kept))
-	}
-	text := strings.Join(kept, "\n\n")
-
 	if paragraph := readParagraphOfTheSystemText(t); !strings.Contains(paragraph, "as its substance") {
 		t.Errorf("the read paragraph never says a read returns a part %q: %q", "as its substance", paragraph)
 	}
-	if bodyWord.MatchString(text) {
-		t.Errorf("the system text speaks of a body: the model works with substances and is never given a body.\n%s", text)
-	}
-	for _, promise := range bodyPromises {
-		if strings.Contains(strings.ToLower(text), promise) {
-			t.Errorf("the system text promises %q: a part is shown as its substance or marked unavailable.\n%s", promise, text)
+
+	for _, conversation := range []bool{false, true} {
+		composed := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}, conversation)
+
+		var kept []string
+		for _, paragraph := range strings.Split(composed, "\n\n") {
+			if !strings.HasPrefix(paragraph, "A file tool is available.") {
+				kept = append(kept, paragraph)
+			}
+		}
+		if len(kept) < 3 {
+			t.Fatalf("conversation %v: the composed system text has %d paragraphs outside the file tool's, which is too few for this guard to be reading the whole text", conversation, len(kept))
+		}
+		text := strings.Join(kept, "\n\n")
+
+		if bodyWord.MatchString(text) {
+			t.Errorf("conversation %v: the system text speaks of a body: the model works with substances and is never given a body.\n%s", conversation, text)
+		}
+		for _, promise := range bodyPromises {
+			if strings.Contains(strings.ToLower(text), promise) {
+				t.Errorf("conversation %v: the system text promises %q: a part is shown as its substance or marked unavailable.\n%s", conversation, promise, text)
+			}
 		}
 	}
 }

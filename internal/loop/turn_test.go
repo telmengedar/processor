@@ -211,8 +211,8 @@ func withoutToolRequest(result JudgeResult) JudgeResult {
 	return result
 }
 
-func fixedSystem(text string) func([]string) string {
-	return func([]string) string { return text }
+func fixedSystem(text string) func([]string, bool) string {
+	return func([]string, bool) string { return text }
 }
 
 var candidateSection = regexp.MustCompile(`(?m)^===== CANDIDATE =====\nid: (\d+)\n`)

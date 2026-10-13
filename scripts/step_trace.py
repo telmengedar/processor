@@ -32,8 +32,8 @@ refuses, answers about the task, asks for recall, claims completion without writ
 produces something confidently wrong.
 
 The file tool is offered but not urged, and only where a working directory exists:
-internal/systemtext composes each call's system text from the tools that call offers, naming each in
-one neutral sentence, and still tells the model to write its answer as prose for a person. A run in which the model describes the work instead of doing it is
+internal/systemtext composes each call's system text from the tools that call offers and from whether the
+turn carries a conversation section, naming each tool in one neutral sentence, and still tells the model to write its answer as prose for a person. A run in which the model describes the work instead of doing it is
 therefore a result, not a misconfiguration -- and stopReason "answered" on a run that wrote nothing
 stays exactly as wrong as it was before, deliberately: nothing here was changed to make it right.
 
