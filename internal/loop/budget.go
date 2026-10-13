@@ -120,10 +120,9 @@ func Afford(sites []CallSite, floors Floors) []Headroom {
 	return report
 }
 
-// JudgementCost is what one judgement call is declared to need at floors: its output budget at the generation floor, plus its prompt ceiling at the prompt floor.
+// JudgementCost is what one judgement call at the default settings is declared to need at floors: its output budget at the generation floor, plus its prompt ceiling at the prompt floor.
 func JudgementCost(floors Floors) time.Duration {
-	resolved := floors.Resolved()
-	return rateSeconds(float64(JudgementBudget), resolved.TokensPerSecond) + rateSeconds(float64(JudgementPromptCeiling), resolved.PromptBytesPerSecond)
+	return DefaultSettings().JudgementCost(floors)
 }
 
 func rateSeconds(quantity, rate float64) time.Duration {

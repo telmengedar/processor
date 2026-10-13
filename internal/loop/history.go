@@ -35,12 +35,12 @@ func renderConversation(exchanges []Exchange) string {
 	return b.String()
 }
 
-func selectExchanges(supplied []Exchange) (used []Exchange, section string, safetyCut int) {
-	used = supplied[max(0, len(supplied)-HistoryExchangeLimit):]
+func selectExchanges(supplied []Exchange, settings RunSettings) (used []Exchange, section string, safetyCut int) {
+	used = supplied[max(0, len(supplied)-settings.HistoryExchangeLimit):]
 	counted := len(used)
 
 	section = renderConversation(used)
-	for len(used) > 0 && len(section) > HistorySafetyLimit {
+	for len(used) > 0 && len(section) > settings.HistorySafetyLimit {
 		used = used[1:]
 		section = renderConversation(used)
 	}

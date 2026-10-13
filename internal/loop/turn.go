@@ -163,6 +163,12 @@ func (t *Turn) Run(ctx context.Context, input string, subject int64) (Record, Wr
 
 // RunWithHistory executes one turn for input against subject after the supplied earlier exchanges, oldest first, returning the record and where it was filed.
 func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, history []Exchange) (Record, WriteReceipt, error) {
+	return t.RunWithOptions(ctx, RunOptions{Input: input, Subject: subject, History: history, Settings: DefaultSettings()})
+}
+
+// RunWithOptions executes one turn as options describe it, returning the record and where it was filed.
+func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, WriteReceipt, error) {
+	input, subject, history, settings := options.Input, options.Subject, options.History, options.Settings
 	started := time.Now()
 	ctx = withPrepaid(ctx)
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
@@ -177,22 +183,22 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 
 	now := t.now()
 
-	used, conversation, safetyCut := selectExchanges(history)
+	used, conversation, safetyCut := selectExchanges(history, settings)
 	if safetyCut > 0 {
 		t.log().Warn("the conversation exceeded its safety limit: the oldest whole exchanges were dropped",
-			"subject", subject, "supplied", len(history), "used", len(used), "bytes", len(conversation), "safetyLimit", HistorySafetyLimit)
+			"subject", subject, "supplied", len(history), "used", len(used), "bytes", len(conversation), "safetyLimit", settings.HistorySafetyLimit)
 	}
 
 	queries, window, derivationError := t.derive(ctx, input, subject, now)
 
-	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, CandidateLimit, RecallScopeReserve, window, t.log())
+	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, settings.RecallScopeReserve, window, t.log())
 	if err != nil {
 		return t.failed(subject, started, fmt.Errorf("%w: %v", ErrGraphUnavailable, err))
 	}
 
-	anchor, candidates, fills := t.fillInitial(ctx, anchor, candidates)
+	anchor, candidates, fills := t.fillInitial(ctx, settings, anchor, candidates)
 
-	block, dispositions := Assemble(anchor, candidates, AssemblyByteBudget)
+	block, dispositions := Assemble(anchor, candidates, settings.AssemblyByteBudget)
 
 	record := Record{
 		Input:           input,
@@ -208,26 +214,13 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 		Block:           block,
 		History:         used,
 		HistoryCut:      len(history) - len(used),
-		Limits: Limits{
-			CandidateLimit:          CandidateLimit,
-			AssemblyByteBudget:      AssemblyByteBudget,
-			SupplementaryByteBudget: SupplementaryByteBudget,
-			MaxModelCalls:           MaxModelCalls,
-			DerivationBudget:        DerivationBudget,
-			JudgementBudget:         JudgementBudget,
-			AnsweringBudget:         AnsweringBudget,
-			RecallScopeReserve:      RecallScopeReserve,
-			ThinKnowledgeSimilarity: ThinKnowledgeSimilarity,
-			FillWait:                FillWait,
-			HistoryExchangeLimit:    HistoryExchangeLimit,
-			HistorySafetyLimit:      HistorySafetyLimit,
-		},
+		Limits:          settings.Limits(),
 	}
 
-	memory := newWorkingMemory(anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions)
+	memory := newWorkingMemory(settings.PromptCeiling(), anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions)
 	memory.charge(len(conversation))
 
-	judged, err := t.judge(ctx, memory, input, conversation, subject, now, window, dispositions)
+	judged, err := t.judge(ctx, settings, memory, input, conversation, subject, now, window, dispositions)
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
@@ -258,14 +251,14 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 	return record, receipt, nil
 }
 
-func (t *Turn) fillInitial(ctx context.Context, anchor Anchor, candidates []Candidate) (Anchor, []Candidate, []FillOutcome) {
+func (t *Turn) fillInitial(ctx context.Context, settings RunSettings, anchor Anchor, candidates []Candidate) (Anchor, []Candidate, []FillOutcome) {
 	var ids []int64
 	if anchor.Substance == "" {
 		ids = append(ids, anchor.ID)
 	}
 	ids = append(ids, missingSubstances(candidates, nil)...)
 
-	created, fills := t.createSubstances(ctx, phaseInitial, ids)
+	created, fills := t.createSubstances(ctx, settings, phaseInitial, ids)
 	if text, ok := created[anchor.ID]; ok && anchor.Substance == "" {
 		anchor.Substance = text
 	}
@@ -393,14 +386,14 @@ type judgement struct {
 	provider     Provider
 }
 
-func (t *Turn) judgementShortfall(ctx context.Context) string {
+func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) string {
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		return ""
 	}
 
 	floors := t.Floors.Resolved()
-	need := JudgementCost(floors)
+	need := settings.JudgementCost(floors)
 	remaining := deadline.Sub(t.now())
 	phase, granted := prepaidFrom(ctx).spend()
 	if remaining >= need {
@@ -414,10 +407,10 @@ func (t *Turn) judgementShortfall(ctx context.Context) string {
 
 	return BoundCause(fmt.Sprintf("%s: %s left, and one call needs %s — %d output tokens at the declared floor of %g tokens per second, plus %d prompt bytes at the declared floor of %g bytes per second",
 		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond),
-		JudgementBudget, floors.TokensPerSecond, JudgementPromptCeiling, floors.PromptBytesPerSecond))
+		settings.JudgementBudget, floors.TokensPerSecond, settings.PromptCeiling(), floors.PromptBytesPerSecond))
 }
 
-func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversation string, subject int64, now time.Time, window UpdateWindow, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation string, subject int64, now time.Time, window UpdateWindow, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -426,7 +419,7 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversa
 	dispatched := 0
 
 	for {
-		if shortfall := t.judgementShortfall(ctx); shortfall != "" {
+		if shortfall := t.judgementShortfall(ctx, settings); shortfall != "" {
 			if judged.modelCalls == 0 {
 				return judgement{fills: judged.fills}, fmt.Errorf("%w: %s", ErrRunTimeExhausted, shortfall)
 			}
@@ -436,11 +429,11 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversa
 			break
 		}
 
-		if reserved == "" && judged.modelCalls+1 >= MaxModelCalls {
+		if reserved == "" && judged.modelCalls+1 >= settings.MaxModelCalls {
 			reserved = reservedByCallCap
 			judged.capReached = true
 			judged.reservedCall = ReservedCall{State: ReservedCallUnmade}
-			t.logReservation(reserved, judged.modelCalls+1, dispatched)
+			t.logReservation(settings, reserved, judged.modelCalls+1, dispatched)
 		}
 
 		judged.modelCalls++
@@ -454,7 +447,7 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversa
 			Conversation:    conversation,
 			Now:             now,
 			Window:          window,
-			MaxOutputTokens: outputBudget(reserved),
+			MaxOutputTokens: outputBudget(settings, reserved),
 			Offered:         offered,
 		})
 		if jerr != nil {
@@ -511,11 +504,11 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversa
 			exchanges = append(exchanges, closed)
 			reserved = reservedByClosedRecall
 			judged.reservedCall = ReservedCall{State: ReservedCallUnmade}
-			t.logReservation(reserved, judged.modelCalls+1, dispatched)
+			t.logReservation(settings, reserved, judged.modelCalls+1, dispatched)
 			continue
 		}
 
-		exchange := t.dispatch(ctx, result, &judged.workspace, window, subject, account, memory)
+		exchange := t.dispatch(ctx, settings, result, &judged.workspace, window, subject, account, memory)
 		exchange.ToolSource = result.ToolSource
 		accountForYield(account, &exchange)
 		if retrieves(exchange.Tool) && exchange.Error == "" {
@@ -528,7 +521,7 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversa
 		if exchange.Refused {
 			reserved = reservedByRefusedRound
 			judged.reservedCall = ReservedCall{State: ReservedCallUnmade}
-			t.logReservation(reserved, judged.modelCalls+1, dispatched)
+			t.logReservation(settings, reserved, judged.modelCalls+1, dispatched)
 		}
 	}
 
@@ -536,9 +529,9 @@ func (t *Turn) judge(ctx context.Context, memory *workingMemory, input, conversa
 	return judged, nil
 }
 
-func (t *Turn) logReservation(reserved reservation, call, dispatched int) {
+func (t *Turn) logReservation(settings RunSettings, reserved reservation, call, dispatched int) {
 	t.log().Info("the turn reserved its last judgement call for answering: no tool is offered on a call whose tool request it would not dispatch",
-		"condition", string(reserved), "call", call, "callCap", MaxModelCalls, "dispatched", dispatched, "budget", AnsweringBudget)
+		"condition", string(reserved), "call", call, "callCap", settings.MaxModelCalls, "dispatched", dispatched, "budget", settings.AnsweringBudget)
 }
 
 func (t *Turn) offeredTools(reserved bool) []string {
@@ -564,11 +557,11 @@ func offersRetrieval(offered []string) bool {
 	return slices.Contains(offered, ToolRecall) || slices.Contains(offered, ToolReadNode)
 }
 
-func outputBudget(reserved reservation) int {
+func outputBudget(settings RunSettings, reserved reservation) int {
 	if reserved == "" {
-		return JudgementBudget
+		return settings.JudgementBudget
 	}
-	return AnsweringBudget
+	return settings.AnsweringBudget
 }
 
 func wantsTool(reason TerminalReason) bool {
@@ -615,14 +608,14 @@ func closedRecallExchange(result JudgeResult) ToolExchange {
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errRecallClosedToModel, Dispositions: []Disposition{}}
 }
 
-func (t *Turn) dispatch(ctx context.Context, result JudgeResult, workspace *string, window UpdateWindow, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
+func (t *Turn) dispatch(ctx context.Context, settings RunSettings, result JudgeResult, workspace *string, window UpdateWindow, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
 	switch result.Reason {
 	case WantsWrite:
 		return t.dispatchWrite(ctx, result, workspace)
 	case WantsRead:
-		return t.dispatchRead(ctx, result, subject, account, memory)
+		return t.dispatchRead(ctx, settings, result, subject, account, memory)
 	default:
-		return t.dispatchRecall(ctx, result, window, subject, memory)
+		return t.dispatchRecall(ctx, settings, result, window, subject, memory)
 	}
 }
 
@@ -669,12 +662,12 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 	return exchange
 }
 
-func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window UpdateWindow, subject int64, memory *workingMemory) ToolExchange {
+func (t *Turn) dispatchRecall(ctx context.Context, settings RunSettings, result JudgeResult, window UpdateWindow, subject int64, memory *workingMemory) ToolExchange {
 	if result.ToolError != "" {
 		return ToolExchange{Tool: ToolRecall, Error: BoundCause(result.ToolError), Dispositions: []Disposition{}, Refused: true}
 	}
 
-	candidates, err := t.Graph.Recall(ctx, RecallRequest{Queries: []string{result.RecallQuery}, Limit: CandidateLimit, Exclude: []int64{subject}, Window: window})
+	candidates, err := t.Graph.Recall(ctx, RecallRequest{Queries: []string{result.RecallQuery}, Limit: settings.CandidateLimit, Exclude: []int64{subject}, Window: window})
 	if err != nil {
 		t.log().Error("supplementary recall failed", "query", result.RecallQuery, "error", err)
 		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}
@@ -685,14 +678,14 @@ func (t *Turn) dispatchRecall(ctx context.Context, result JudgeResult, window Up
 		t.log().Warn(logLeakedRows, "subject", subject, "rows", leaked)
 	}
 
-	created, fills := t.createSubstances(ctx, phaseRecall, missingSubstances(candidates, func(c Candidate) bool { return memory.holds(c) }))
+	created, fills := t.createSubstances(ctx, settings, phaseRecall, missingSubstances(candidates, func(c Candidate) bool { return memory.holds(c) }))
 	candidates = withCreated(candidates, created)
 
-	admitted, dispositions := admitUnheld(candidates, memory.room(SupplementaryByteBudget), 0, memory.holds)
+	admitted, dispositions := admitUnheld(candidates, memory.room(settings.SupplementaryByteBudget), 0, memory.holds)
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions, Fills: fills}
 }
 
-func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
+func (t *Turn) dispatchRead(ctx context.Context, settings RunSettings, result JudgeResult, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
 	exchange := ToolExchange{Tool: ToolReadNode, NodeID: result.ReadNodeID, Dispositions: []Disposition{}}
 
 	if result.ToolError != "" {
@@ -720,13 +713,13 @@ func (t *Turn) dispatchRead(ctx context.Context, result JudgeResult, subject int
 
 	createdHere := false
 	if anchor.Substance == "" {
-		created, fills := t.createSubstances(ctx, phaseRead, []int64{anchor.ID})
+		created, fills := t.createSubstances(ctx, settings, phaseRead, []int64{anchor.ID})
 		exchange.Fills = fills
 		anchor.Substance = created[anchor.ID]
 		createdHere = anchor.Substance != ""
 	}
 
-	room := memory.roomToReplace(result.ReadNodeID, SupplementaryByteBudget)
+	room := memory.roomToReplace(result.ReadNodeID, settings.SupplementaryByteBudget)
 	read := candidateFromAnchor(anchor)
 	read.Created = createdHere
 	admitted, dispositions := admit([]Candidate{read}, room, 0)
