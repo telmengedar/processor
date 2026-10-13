@@ -557,10 +557,20 @@ class DescribeCutTests(unittest.TestCase):
         self.assertIn("self-produced", message)
         self.assertIn("before the byte budget is even consulted", message)
 
+    def test_unavailable_row_charged_zero_rendered_bytes_is_not_replaced_by_its_size(self):
+        row = {"id": 7, "size": 9000, "renderedSize": 0, "cutReason": compare.CUT_BYTE_BUDGET}
+        message = compare.describe_cut(row, 4000)
+        self.assertIn("0 bytes fits the 4000-byte budget", message)
+
+    def test_record_without_rendered_size_is_charged_its_size(self):
+        row = {"id": 8, "size": 9000, "cutReason": compare.CUT_BYTE_BUDGET}
+        message = compare.describe_cut(row, 4000)
+        self.assertIn("9000 bytes alone exceeds the 4000-byte budget", message)
+
 
 class RemainingAfterAnchorTests(unittest.TestCase):
-    """remaining_after_anchor mirrors internal/loop/assemble.go's `remaining := budget -
-    len(anchor.Content)`, floored at zero -- the anchor's bytes are spent before any candidate is
+    """remaining_after_anchor mirrors internal/loop/assemble.go: the budget less the anchor's
+    rendered bytes, floored at zero -- the anchor's bytes are spent before any candidate is
     considered, so the raw assemblyByteBudget overstates what a candidate actually faces."""
 
     def test_subtracts_anchor_from_budget(self):
@@ -892,6 +902,25 @@ class PrintTaskOutputTests(unittest.TestCase):
         )
         self.assertNotIn(
             "fits the 60000-byte budget left for candidates alone but not after", out
+        )
+
+    def test_new_shape_record_charges_rendered_bytes_for_anchor_and_row(self):
+        rec = record(
+            anchor_id=10850,
+            candidates=[
+                {
+                    "id": 6375, "size": 43273, "renderedSize": 30000,
+                    "cutReason": compare.CUT_BYTE_BUDGET, "rank": 1, "included": False,
+                },
+            ],
+            limits={"assemblyByteBudget": 60000},
+        )
+        rec["anchor"].update({"size": 18208, "renderedSize": 5000})
+        out = self._run(task([]), rec)
+        self.assertIn("anchor: #10850 documentation 5000 bytes", out)
+        self.assertIn(
+            "CUT #6375: 30000 bytes fits the 55000-byte budget left for candidates alone but not after",
+            out,
         )
 
 

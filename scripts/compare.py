@@ -866,9 +866,15 @@ def transcript_output_budget(task_id, limits):
     return budget
 
 
+def charged_size(entry, default=0):
+    """The bytes the loop charged an anchor or candidate: its renderedSize, falling back to size on
+    a record written before renderedSize existed, where the content's own length was the charge."""
+    return entry.get("renderedSize", entry.get("size", default))
+
+
 def remaining_after_anchor(budget, anchor_size):
     """The byte budget actually left for candidates once the anchor is charged against it --
-    internal/loop/assemble.go: remaining := budget - len(anchor.Content), floored at zero. The
+    internal/loop/assemble.go: the budget less the anchor's rendered bytes, floored at zero. The
     anchor's bytes are spent before any candidate is considered, so this is the ceiling a
     candidate faces, not the raw assemblyByteBudget. Returns None if either figure is unknown --
     an unknown anchor size must not be silently treated as zero, which would hand back the raw
@@ -883,7 +889,7 @@ def describe_cut(row, remaining_budget):
     inferred mechanism. internal/loop/assemble.go defines exactly two: self-produced and byte budget
     exceeded, and the latter covers both an individually oversized row and a cumulative overflow."""
     reason = row.get("cutReason") or "no reason given"
-    size = row.get("size", 0)
+    size = charged_size(row)
 
     if reason == CUT_SELF_PRODUCED:
         return (
@@ -953,7 +959,7 @@ def print_task(task, record, transcript):
     )
     anchor = record.get("anchor") or {}
     print(
-        f"           anchor: #{anchor.get('id')} {anchor.get('type')} {anchor.get('size')} bytes  "
+        f"           anchor: #{anchor.get('id')} {anchor.get('type')} {charged_size(anchor, None)} bytes  "
         f"{one_line(anchor.get('name'), 40)}"
     )
 
@@ -966,7 +972,7 @@ def print_task(task, record, transcript):
         )
 
     budget = (record.get("limits") or {}).get("assemblyByteBudget")
-    remaining_budget = remaining_after_anchor(budget, anchor.get("size"))
+    remaining_budget = remaining_after_anchor(budget, charged_size(anchor, None))
     for row in candidates(record):
         if not row.get("included"):
             print(f"           {describe_cut(row, remaining_budget)}")
