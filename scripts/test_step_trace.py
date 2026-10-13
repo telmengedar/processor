@@ -586,7 +586,7 @@ class UnadmittableUsesRemainingBudgetTests(unittest.TestCase):
 
     def test_candidate_under_full_budget_but_over_remaining_is_flagged(self):
         # Same block-size note as ShutoutOversizedAnchorTests above: block must be >= the anchor's
-        # own size, since renderBlock always contains the anchor in full.
+        # own size, since renderBlock always renders the anchor, as its substance.
         rec = record(
             anchor={"id": 1, "type": "documentation", "name": "big", "size": 59_500, "contentHash": "cafe"},
             candidates=[

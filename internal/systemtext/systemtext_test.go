@@ -7,13 +7,13 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
-func TestTheSystemTextStatesThatEveryBodyIsASubstanceAndWhatAnUnavailableMarkingMeans(t *testing.T) {
+func TestTheSystemTextStatesThatEveryPartIsShownAsItsSubstanceAndWhatAnUnavailableMarkingMeans(t *testing.T) {
 	t.Parallel()
 
 	text := Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile})
 
 	for _, want := range []string{
-		"Every part's body is the part's substance",
+		"and is shown as its substance: a condensed form written for another model as its only source",
 		`marked "substance: unavailable"`,
 		"has no substance yet",
 	} {
