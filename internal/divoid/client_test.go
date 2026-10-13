@@ -990,6 +990,9 @@ func TestEveryRecallAsksTheGraphToExcludeRunRecordsAndTheAnchor(t *testing.T) {
 			if got := q["excludeName"]; !slices.Equal(got, []string{"processor-run%"}) {
 				t.Fatalf("excludeName = %q, want the run-record name pattern alone: the graph leaves these rows out before the count, and a recall that does not ask spends its slots on them", got)
 			}
+			if got := q.Get("count"); got != "6" {
+				t.Fatalf("count = %q, want the limit %q alone: the graph leaves the excluded rows out before it counts, so the request must not pad the count to cover them", got, "6")
+			}
 			if got := q["excludeId"]; !slices.Equal(got, []string{"42"}) {
 				t.Fatalf("excludeId = %q, want the anchor id: the block renders the anchor whole, so a slot spent on it is a slot lost", got)
 			}
@@ -1020,6 +1023,9 @@ func TestSeveralExcludedIdsGoOutAsRepeatedKeysInTheOrderGiven(t *testing.T) {
 	}
 
 	q, _ := url.ParseQuery(rec.query)
+	if got := q.Get("count"); got != "6" {
+		t.Fatalf("count = %q, want the limit %q alone with two excluded ids: the graph leaves the excluded rows out before it counts", got, "6")
+	}
 	if got := q["excludeId"]; !slices.Equal(got, []string{"42", "7"}) {
 		t.Fatalf("excludeId = %q, want one repeated key per id, 42 then 7: the graph reads a repeated key as a list", got)
 	}
