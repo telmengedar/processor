@@ -9,11 +9,11 @@ import (
 
 const identityText = "You are a participant named Quill.\n\nSpeak as yourself."
 
-func layeredSystem(offered []string, conversation bool) string {
+func layeredSystem(offered []string, _, _ bool) string {
 	return "product for " + strings.Join(offered, ",") + "\n\nsecond paragraph"
 }
 
-func runWithIdentity(t *testing.T, graph *fakeGraph, model *fakeModel, system func([]string, bool) string, view *View, settings RunSettings) Record {
+func runWithIdentity(t *testing.T, graph *fakeGraph, model *fakeModel, system func([]string, bool, bool) string, view *View, settings RunSettings) Record {
 	t.Helper()
 
 	turn := NewTurn(graph, model, nil, system, "test-model", testLogger())
@@ -37,7 +37,7 @@ func TestEveryJudgementCallCarriesTheIdentityThenABlankLineThenTheProductText(t 
 		t.Fatalf("the last call offered %v, want the reserved call that offers no tool", last.Offered)
 	}
 	for i, call := range model.calls {
-		want := identityText + "\n\n" + layeredSystem(call.Offered, false)
+		want := identityText + "\n\n" + layeredSystem(call.Offered, false, false)
 		if call.System != want {
 			t.Errorf("call %d carried the system text %q, want %q", i, call.System, want)
 		}
@@ -55,7 +55,7 @@ func TestWithoutAnIdentityTheSystemTextIsTheProductTextByteForByte(t *testing.T)
 			t.Fatalf("%s: the run made %d calls, want 2", name, len(model.calls))
 		}
 		for i, call := range model.calls {
-			if want := layeredSystem(call.Offered, false); call.System != want {
+			if want := layeredSystem(call.Offered, false, false); call.System != want {
 				t.Errorf("%s: call %d carried %q, want %q with no leading separator", name, i, call.System, want)
 			}
 		}
@@ -117,6 +117,41 @@ func TestTheIdentityLeavesExactlyItsOwnBytesLessRoomForASupplementaryRound(t *te
 	}
 	if admitted(identity, 801) {
 		t.Error("with a 100 byte identity a 801 byte row was admitted: the identity was not charged to working memory")
+	}
+}
+
+func TestTheIdentityIsChargedOnceSoALaterSupplementaryRoundLosesNoMoreThanItsOwnBytes(t *testing.T) {
+	t.Parallel()
+
+	const firstRow = 300
+	admittedInSecondRound := func(identity string, rowBytes int) bool {
+		graph := baseGraph()
+		graph.node.Substance = strings.Repeat("a", 100)
+		graph.recallQueue = []recallResponse{{}, {Candidates: []Candidate{bulky(8, firstRow)}}, {Candidates: []Candidate{bulky(9, rowBytes)}}}
+		model := &fakeModel{results: []JudgeResult{recallFor("more"), recallFor("again"), answered("done")}}
+
+		settings := DefaultSettings()
+		settings.AssemblyByteBudget = 0
+		settings.SupplementaryByteBudget = 1_000
+		record := runWithIdentity(t, graph, model, fixedSystem("system"), &View{Config: 9, Identity: identity}, settings)
+		if len(record.ToolCalls) != 2 {
+			t.Fatalf("the record carries %d rounds, want the two recall rounds", len(record.ToolCalls))
+		}
+		if !record.ToolCalls[0].Results[0].Included {
+			t.Fatalf("the first round refused its %d byte row, so the room arithmetic of this test is off", firstRow)
+		}
+		return record.ToolCalls[1].Results[0].Included
+	}
+
+	identity := strings.Repeat("i", 100)
+	if !admittedInSecondRound("", 600) || admittedInSecondRound("", 601) {
+		t.Fatal("without an identity the second round's room is not 600 bytes, so the room arithmetic of this test is off")
+	}
+	if !admittedInSecondRound(identity, 500) {
+		t.Error("with a 100 byte identity a 500 byte row was refused in the second round: the identity was charged more than once")
+	}
+	if admittedInSecondRound(identity, 501) {
+		t.Error("with a 100 byte identity a 501 byte row was admitted in the second round: the identity was not charged")
 	}
 }
 

@@ -12,11 +12,11 @@ import (
 func TestDecodeReadsGangolfsConfigIntoRepeatedValuesInOrder(t *testing.T) {
 	t.Parallel()
 
-	got, err := Decode(`{"filter": {"type": ["thought", "knowledge"]}}`)
+	got, err := decodeFilter(`{"filter": {"type": ["thought", "knowledge"]}}`)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if want := (loop.Filter{"type": {"thought", "knowledge"}}); !reflect.DeepEqual(got.Filter, want) {
+	if want := (loop.Filter{"type": {"thought", "knowledge"}}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Decode = %v, want %v", got, want)
 	}
 }
@@ -24,7 +24,7 @@ func TestDecodeReadsGangolfsConfigIntoRepeatedValuesInOrder(t *testing.T) {
 func TestDecodeEncodesScalarsAsOneValueEachAndKeepsNumbersAndBooleansAsTheirJSONText(t *testing.T) {
 	t.Parallel()
 
-	got, err := Decode(`{"filter": {"status": "open", "severity": [3, 4.50], "nostatus": true, "minSimilarity": 0.40, "linkedto": 10422}}`)
+	got, err := decodeFilter(`{"filter": {"status": "open", "severity": [3, 4.50], "nostatus": true, "minSimilarity": 0.40, "linkedto": 10422}}`)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestDecodeEncodesScalarsAsOneValueEachAndKeepsNumbersAndBooleansAsTheirJSON
 		"minSimilarity": {"0.40"},
 		"linkedto":      {"10422"},
 	}
-	if !reflect.DeepEqual(got.Filter, want) {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Decode = %v, want %v: a number is forwarded as its own text, never re-rendered", got, want)
 	}
 }
@@ -45,11 +45,11 @@ func TestDecodeOfAConfigWithoutAFilterIsValidAndCarriesNone(t *testing.T) {
 	t.Parallel()
 
 	for _, content := range []string{`{}`, " {}\n"} {
-		got, err := Decode(content)
+		got, err := decodeFilter(content)
 		if err != nil {
 			t.Errorf("Decode(%q): %v", content, err)
 		}
-		if got.Filter != nil {
+		if got != nil {
 			t.Errorf("Decode(%q) = %v, want no filter", content, got)
 		}
 	}
@@ -91,12 +91,12 @@ func TestDecodeAcceptsEveryListedNameWithAScalarValue(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range forwardedNames {
-		got, err := Decode(`{"filter": {"` + name + `": "v"}}`)
+		got, err := decodeFilter(`{"filter": {"` + name + `": "v"}}`)
 		if err != nil {
 			t.Errorf("Decode refused the listed name %q: %v", name, err)
 			continue
 		}
-		if !reflect.DeepEqual(got.Filter, loop.Filter{name: {"v"}}) {
+		if !reflect.DeepEqual(got, loop.Filter{name: {"v"}}) {
 			t.Errorf("Decode kept %v for the name %q, want it forwarded verbatim", got, name)
 		}
 	}
@@ -178,11 +178,11 @@ func TestDecodeNamesTheFirstViolationInKeyOrderWhateverOrderTheConfigWroteThem(t
 func TestDecodeKeepsABooleanFalseAndAValueWithInnerOrOuterSpacesBecauseTheAuthorChoseThem(t *testing.T) {
 	t.Parallel()
 
-	got, err := Decode(`{"filter": {"nostatus": false, "name": " Mixed Case% "}}`)
+	got, err := decodeFilter(`{"filter": {"nostatus": false, "name": " Mixed Case% "}}`)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if want := (loop.Filter{"nostatus": {"false"}, "name": {" Mixed Case% "}}); !reflect.DeepEqual(got.Filter, want) {
+	if want := (loop.Filter{"nostatus": {"false"}, "name": {" Mixed Case% "}}); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Decode = %v, want %v", got, want)
 	}
 }
@@ -194,6 +194,31 @@ func TestDecodeRefusesABlankValueOnAnyKeyNamingIt(t *testing.T) {
 		_, err := Decode(`{"filter": {"` + name + `": ""}}`)
 		if err == nil || !strings.Contains(err.Error(), `"`+name+`"`) {
 			t.Errorf("a blank value on %q gave err = %v, want a refusal naming the key", name, err)
+		}
+	}
+}
+
+func decodeFilter(content string) (loop.Filter, error) {
+	config, err := Decode(content)
+	return config.Filter, err
+}
+
+func TestDecodeReadsTheSilenceSwitchAndLeavesTheFilterAsItWas(t *testing.T) {
+	t.Parallel()
+
+	for content, want := range map[string]Config{
+		`{"silence": true}`:  {Silence: true},
+		`{"silence": false}`: {},
+		` {"silence":true , "filter": {"type": "thought"}}`: {Silence: true, Filter: loop.Filter{"type": {"thought"}}},
+		`{"filter": {"type": "thought"}}`:                   {Filter: loop.Filter{"type": {"thought"}}},
+	} {
+		got, err := Decode(content)
+		if err != nil {
+			t.Errorf("Decode(%q): %v", content, err)
+			continue
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Decode(%q) = %+v, want %+v", content, got, want)
 		}
 	}
 }
@@ -256,6 +281,44 @@ func TestDecodeBoundsTheIdentityInBytesNotCharacters(t *testing.T) {
 		}
 		if c.refused && (!strings.Contains(err.Error(), `"identity"`) || !strings.Contains(err.Error(), "2048")) {
 			t.Errorf("%s: the refusal %q must name the key and the bound", name, err)
+		}
+	}
+}
+
+func TestDecodeRefusesASilenceThatIsNotAJSONBooleanNamingTheKey(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{`"true"`, `"false"`, `1`, `0`, `null`, `{}`, `[]`, `[true]`, `"yes"`} {
+		_, err := Decode(`{"silence": ` + value + `}`)
+		if err == nil {
+			t.Errorf("Decode accepted the silence %s, want a refusal", value)
+			continue
+		}
+		if !strings.Contains(err.Error(), `"silence"`) {
+			t.Errorf("Decode refused the silence %s with %q, want the error to name the key", value, err)
+		}
+	}
+}
+
+func TestDecodeBoundsTheIdentityAfterJSONUnescapingNotInItsEscapedForm(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		content string
+		refused bool
+	}{
+		"a newline escape at the bound":            {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes-1) + `\n"}`, false},
+		"a unicode escape at the bound":            {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes-2) + `é"}`, false},
+		"a newline escape one byte over the bound": {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes) + `\n"}`, true},
+	}
+	for name, c := range cases {
+		got, err := Decode(c.content)
+		if c.refused != (err != nil) {
+			t.Errorf("%s: Decode err = %v, want refused = %v", name, err, c.refused)
+			continue
+		}
+		if !c.refused && len(got.Identity) != MaxIdentityBytes {
+			t.Errorf("%s: the identity is %d bytes after unescaping, want %d", name, len(got.Identity), MaxIdentityBytes)
 		}
 	}
 }

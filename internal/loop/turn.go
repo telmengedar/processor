@@ -70,8 +70,6 @@ var ErrRunTimeExhausted = errors.New("run time exhausted")
 // ErrGraphRejected marks a graph answer of 400 or 414, the statuses the request's own parameters can cause, as distinct from a graph that could not be reached or failed.
 var ErrGraphRejected = errors.New("graph rejected the request")
 
-const paragraphBreak = "\n\n"
-
 // ErrInvalidConfig marks a configured run whose first recall the graph answered with 400 or 414, which the config's filter may have caused.
 var ErrInvalidConfig = errors.New("invalid config")
 
@@ -129,8 +127,8 @@ type Turn struct {
 	// Fill is the condensation behaviour that creates a missing substance; nil refuses every creation with a recorded reason.
 	Fill FillPort
 
-	// System composes the system text of one judgement call from the tools that call offers and whether the turn carries a conversation section.
-	System func(offered []string, conversation bool) string
+	// System composes the system text of one judgement call from the tools that call offers, whether the turn carries a conversation section, and whether the run offers silence.
+	System func(offered []string, conversation, silence bool) string
 
 	// ModelID is the model id sent with every judgement step, echoed into Record.Model.
 	ModelID string
@@ -144,7 +142,7 @@ type Turn struct {
 }
 
 // NewTurn builds a Turn over graph, model and files, judging with system and modelID.
-func NewTurn(graph GraphPort, model ModelPort, files FilePort, system func(offered []string, conversation bool) string, modelID string, logger *slog.Logger) *Turn {
+func NewTurn(graph GraphPort, model ModelPort, files FilePort, system func(offered []string, conversation, silence bool) string, modelID string, logger *slog.Logger) *Turn {
 	return &Turn{Graph: graph, Model: model, Files: files, System: system, ModelID: modelID, clock: time.Now, logger: logger}
 }
 
@@ -175,7 +173,7 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 // RunWithOptions executes one turn as options describe it, returning the record and where it was filed.
 func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, WriteReceipt, error) {
 	input, subject, history, settings := options.Input, options.Subject, options.History, options.Settings
-	filter, identity := options.filter(), options.identity()
+	filter, silence, identity := options.filter(), options.silence(), options.identity()
 	started := time.Now()
 	ctx = withPrepaid(ctx)
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
@@ -234,7 +232,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	memory.charge(len(conversation))
 	memory.charge(len(identity))
 
-	judged, err := t.judge(ctx, settings, memory, input, conversation, identity, subject, now, window, filter, dispositions)
+	judged, err := t.judge(ctx, settings, memory, input, conversation, identity, subject, now, window, filter, silence, dispositions)
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
@@ -242,6 +240,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	}
 
 	record.Answer = judged.answer
+	record.Silent = silence && choseSilence(judged.answer)
 	record.Model = t.ModelID
 	record.Provider = judged.provider
 	record.ToolCalls = judged.toolCalls
@@ -336,7 +335,9 @@ func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Dur
 		attrs = append(attrs, "node", receipt.NodeID)
 	}
 
-	if outcome := record.Outcome; outcome.Verdict != VerdictDelivered {
+	if outcome := record.Outcome; outcome.Verdict == VerdictSilent {
+		t.log().Info("the run chose silence: the model declined to reply", "subject", record.Subject, "modelCalls", record.ModelCalls)
+	} else if outcome.Verdict != VerdictDelivered {
 		t.log().Warn("the run did not deliver: what it obtained is not what a delivered run obtains",
 			"subject", record.Subject, "verdict", string(outcome.Verdict),
 			"produced", outcome.Produced, "grounded", outcome.Grounded, "curtailed", outcome.Curtailed)
@@ -440,7 +441,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		settings.JudgementBudget, floors.TokensPerSecond, settings.PromptCeiling(), floors.PromptBytesPerSecond))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -474,7 +475,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		judged.trailers = append(judged.trailers, trailerKind)
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
-			System:          t.composeSystem(identity, offered, conversation != ""),
+			System:          t.composeSystem(identity, offered, conversation != "", silence),
 			Block:           memory.render(offersRetrieval(offered)),
 			Input:           input,
 			Conversation:    conversation,
@@ -583,11 +584,13 @@ func (t *Turn) offeredTools(reserved bool) []string {
 	return offered
 }
 
-func (t *Turn) composeSystem(identity string, offered []string, conversation bool) string {
+const paragraphBreak = "\n\n"
+
+func (t *Turn) composeSystem(identity string, offered []string, conversation, silence bool) string {
 	if t.System == nil {
 		return identity
 	}
-	product := t.System(offered, conversation)
+	product := t.System(offered, conversation, silence)
 	if identity == "" {
 		return product
 	}

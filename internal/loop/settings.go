@@ -69,6 +69,10 @@ type RunOptions struct {
 	View *View
 }
 
+func (o RunOptions) silence() bool {
+	return o.View != nil && o.View.Silence
+}
+
 func (o RunOptions) filter() Filter {
 	if o.View == nil {
 		return nil

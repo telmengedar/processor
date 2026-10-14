@@ -42,17 +42,21 @@ func TestTheIdentityIsSeparatedFromTheRealProductTextByTheSeparatorComposeUsesBe
 		t.Fatalf("RunWithOptions: %v", err)
 	}
 
-	product := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode}, false)
+	product := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode}, false, false)
 	paragraphs := strings.Split(product, "\n\n")
 	if len(paragraphs) < 2 {
 		t.Fatalf("the product text has %d paragraphs, want several joined by one separator", len(paragraphs))
 	}
-	separator := product[len(paragraphs[0]) : len(product)-len(strings.Join(paragraphs[1:], "\n\n"))]
+	for i, paragraph := range paragraphs {
+		if paragraph == "" || strings.HasPrefix(paragraph, "\n") || strings.HasSuffix(paragraph, "\n") {
+			t.Fatalf("paragraph %d of the product text is %q: Compose joins its paragraphs by more than one blank line, so the identity separator no longer matches", i, paragraph)
+		}
+	}
 
 	if len(model.systems) != 1 {
 		t.Fatalf("the run made %d judgement calls, want 1", len(model.systems))
 	}
-	if want := identity + separator + product; model.systems[0] != want {
-		t.Fatalf("the system text is %q, want the identity, the separator Compose places between paragraphs, then the product text %q", model.systems[0], want)
+	if want := identity + "\n\n" + product; model.systems[0] != want {
+		t.Fatalf("the system text is %q, want the identity, one blank line, then the product text %q", model.systems[0], want)
 	}
 }

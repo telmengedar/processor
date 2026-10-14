@@ -20,11 +20,19 @@ const NodeType = "processor-config"
 
 const (
 	filterKey   = "filter"
+	silenceKey  = "silence"
 	identityKey = "identity"
 )
 
 // MaxIdentityBytes bounds the identity text, counted in UTF-8 bytes after JSON unescaping.
 const MaxIdentityBytes = 2048
+
+// Config is what a config node's content carries: the filter forwarded to the graph, whether the run offers the model a chosen silence, and the identity text, empty for none.
+type Config struct {
+	Filter   loop.Filter
+	Silence  bool
+	Identity string
+}
 
 var ownedKeys = []string{"query", "queries", "count", "continue", "sort", "descending", "fields", "id"}
 
@@ -40,12 +48,6 @@ func ReadFilter() loop.Filter {
 	return loop.Filter{"type": {NodeType}}
 }
 
-// Config is what a config node's content carries: Filter, nil for none, and Identity, empty for none.
-type Config struct {
-	Filter   loop.Filter
-	Identity string
-}
-
 // Decode returns what the config content carries, the zero Config for an empty object; the first violation is named in the error.
 func Decode(content string) (Config, error) {
 	top, err := objectOf([]byte(content))
@@ -54,17 +56,28 @@ func Decode(content string) (Config, error) {
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(top)) {
-		if name != filterKey && name != identityKey {
+		if name != filterKey && name != silenceKey && name != identityKey {
 			return Config{}, fmt.Errorf("the config has the key %q, which processor does not know", name)
 		}
 	}
 
 	var config Config
-	if raw, present := top[filterKey]; present {
-		if config.Filter, err = filterOf(raw); err != nil {
-			return Config{}, err
+	if raw, present := top[silenceKey]; present {
+		switch string(bytes.TrimSpace(raw)) {
+		case "true":
+			config.Silence = true
+		case "false":
+		default:
+			return Config{}, fmt.Errorf("the config's %q is not a JSON boolean", silenceKey)
 		}
 	}
+
+	filter, err := filterOf(top)
+	if err != nil {
+		return Config{}, err
+	}
+	config.Filter = filter
+
 	if raw, present := top[identityKey]; present {
 		if config.Identity, err = identityOf(raw); err != nil {
 			return Config{}, err
@@ -87,7 +100,12 @@ func identityOf(raw json.RawMessage) (string, error) {
 	return text, nil
 }
 
-func filterOf(raw json.RawMessage) (loop.Filter, error) {
+func filterOf(top map[string]json.RawMessage) (loop.Filter, error) {
+	raw, present := top[filterKey]
+	if !present {
+		return nil, nil
+	}
+
 	entries, err := objectOf(raw)
 	if err != nil {
 		return nil, fmt.Errorf("the config's %q is not a JSON object: %w", filterKey, err)

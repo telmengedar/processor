@@ -60,6 +60,7 @@ type chatResponse struct {
 	Reply    string            `json:"reply"`
 	Written  loop.WriteReceipt `json:"written"`
 	Produced bool              `json:"produced"`
+	Silent   bool              `json:"silent,omitempty"`
 }
 
 type verboseResponse struct {
@@ -69,6 +70,9 @@ type verboseResponse struct {
 }
 
 func replyFor(record loop.Record) string {
+	if record.Outcome.Silent {
+		return ""
+	}
 	if record.Outcome.Produced {
 		return record.Answer
 	}
@@ -161,7 +165,7 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(verboseResponse{Record: record, Written: receipt, Reply: reply})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(chatResponse{Reply: reply, Written: receipt, Produced: record.Outcome.Produced})
+		_ = json.NewEncoder(w).Encode(chatResponse{Reply: reply, Written: receipt, Produced: record.Outcome.Produced, Silent: record.Outcome.Silent})
 	}
 }
 
@@ -181,7 +185,7 @@ func resolveConfig(ctx context.Context, w http.ResponseWriter, turn *loop.Turn, 
 		writeError(w, http.StatusBadRequest, codeInvalidConfig, loop.BoundCause(err.Error()))
 		return nil, true
 	}
-	return &loop.View{Config: id, Filter: config.Filter, Identity: config.Identity}, false
+	return &loop.View{Config: id, Filter: config.Filter, Silence: config.Silence, Identity: config.Identity, Root: node.RootNodeID}, false
 }
 
 type errorEnvelope struct {

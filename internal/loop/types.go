@@ -20,11 +20,15 @@ func (w UpdateWindow) IsZero() bool {
 // Filter is the graph filter a run's config carries and every read that can admit a node forwards: opaque to the loop, whose names and values belong to the graph adapter's vocabulary alone.
 type Filter map[string][]string
 
-// View is the config a run was held to: the node that supplied it, the filter it forwarded and the identity text it put first, verbatim.
+// View is the config a run was held to: the node that supplied it, the filter it forwarded, whether it offered the model a chosen silence and the identity text it put first, verbatim.
 type View struct {
 	Config   int64  `json:"config"`
 	Filter   Filter `json:"filter,omitempty"`
+	Silence  bool   `json:"silence,omitempty"`
 	Identity string `json:"identity,omitempty"`
+
+	// Root is the node the config is rooted at, which the run record files itself under; zero means none.
+	Root int64 `json:"root,omitempty"`
 }
 
 // Anchor is the subject node a run is about.
@@ -36,6 +40,9 @@ type Anchor struct {
 
 	// Substance is the node's condensed form, empty when none has been generated.
 	Substance string
+
+	// RootNodeID is the node this one is rooted at, zero when it has no root.
+	RootNodeID int64
 }
 
 // Candidate is one row recall returned, in the rank order the graph
@@ -339,6 +346,8 @@ type Record struct {
 	HistoryCut int `json:"historyCut,omitempty"`
 
 	Answer string `json:"answer"`
+	// Silent is true when silence was offered and the answer carried the marker, fixed at run time so a later change of marker reclassifies no archived run.
+	Silent bool   `json:"silent,omitempty"`
 	Model  string `json:"model"`
 	// Provider is the adapter and endpoint the model calls went through, as the adapter itself reported them.
 	Provider  Provider         `json:"provider"`

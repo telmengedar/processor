@@ -10,7 +10,7 @@ import (
 func TestTheSystemTextStatesThatEveryPartIsShownAsItsSubstanceAndWhatAnUnavailableMarkingMeans(t *testing.T) {
 	t.Parallel()
 
-	text := Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}, false)
+	text := Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}, false, false)
 
 	for _, want := range []string{
 		"and is shown as its substance: a condensed form written for another model as its only source",
