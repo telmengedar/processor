@@ -31,9 +31,6 @@ const (
 	NoteAckNotStored NoteAck = "notStored"
 )
 
-// NoteSentence is the last paragraph of every judgement call that offers the note tool; it names the tool as the adapters' wire does.
-const NoteSentence = "When you are to note, remember or write something down, call the write_note tool with it instead of writing that you did."
-
 const (
 	recallClause = "When none of the parts above states what this request asks for, do not say the information is missing: call the recall tool with a short description of what is missing."
 	searchedLine = "You searched memory in this request for "
@@ -85,16 +82,9 @@ func acknowledgement(ack NoteAck, noteText string) string {
 	return ""
 }
 
-func noteSentenceFor(offered []string) string {
-	if offersNote(offered) {
-		return NoteSentence
-	}
-	return ""
-}
-
-func composeClosing(search, acknowledgement, sentence string) string {
+func composeClosing(search, acknowledgement string) string {
 	var parts []string
-	for _, part := range []string{search, acknowledgement, sentence} {
+	for _, part := range []string{search, acknowledgement} {
 		if part != "" {
 			parts = append(parts, part)
 		}
