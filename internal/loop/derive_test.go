@@ -300,7 +300,7 @@ func TestDeriveQueriesSendsTheRenderedPromptAndReturnsWhatTheTextParsesTo(t *tes
 	const input = "what did the split change"
 	model := &deriveFake{text: "first derived?\nsecond derived?"}
 
-	got, window, err := DeriveQueries(context.Background(), model, input, derivationPromptTestNow)
+	got, window, _, err := DeriveQueries(context.Background(), model, input, derivationPromptTestNow)
 	if err != nil {
 		t.Fatalf("DeriveQueries returned %v, want the parsed queries", err)
 	}
@@ -327,7 +327,7 @@ func TestDeriveQueriesBoundsTheCallAtThirtySecondsAndNotAtTheAdaptersOwnTimeout(
 
 	model := &deriveFake{text: "first derived?"}
 
-	if _, _, err := DeriveQueries(context.Background(), model, "what did the split change", derivationPromptTestNow); err != nil {
+	if _, _, _, err := DeriveQueries(context.Background(), model, "what did the split change", derivationPromptTestNow); err != nil {
 		t.Fatalf("DeriveQueries returned %v", err)
 	}
 
@@ -344,7 +344,7 @@ func TestDeriveQueriesNamesItsOwnBoundAndTheElapsedWhenTheDerivationOutlastsIt(t
 
 	model := &deriveFake{hold: make(chan struct{})}
 
-	_, _, err := deriveQueries(context.Background(), model, "what did the split change", derivationPromptTestNow, testBound)
+	_, _, _, err := deriveQueries(context.Background(), model, "what did the split change", derivationPromptTestNow, testBound)
 	if err == nil {
 		t.Fatalf("a derivation that outlasted its bound returned no error")
 	}
@@ -362,7 +362,7 @@ func TestDeriveQueriesNamesTheEnclosingRunBoundWhenTheParentDeadlineIsWhatExpire
 	ctx, cancel := context.WithTimeout(context.Background(), testBound)
 	defer cancel()
 
-	_, _, err := deriveQueries(ctx, model, "what did the split change", derivationPromptTestNow, time.Hour)
+	_, _, _, err := deriveQueries(ctx, model, "what did the split change", derivationPromptTestNow, time.Hour)
 	if err == nil {
 		t.Fatalf("a derivation whose enclosing run expired returned no error")
 	}
@@ -377,7 +377,7 @@ func TestDeriveQueriesCarriesTheAdaptersOwnSentenceWhenTheCallFailsWithNoDeadlin
 
 	model := &deriveFake{err: errors.New("openaicompat: unexpected status 503: model is loading")}
 
-	_, _, err := deriveQueries(context.Background(), model, "what did the split change", derivationPromptTestNow, time.Hour)
+	_, _, _, err := deriveQueries(context.Background(), model, "what did the split change", derivationPromptTestNow, time.Hour)
 	if err == nil {
 		t.Fatalf("a failed derivation call returned no error")
 	}
@@ -699,7 +699,7 @@ func TestDeriveQueriesRefusesATextThatParsesToNoQueryAtAll(t *testing.T) {
 	t.Parallel()
 
 	for _, text := range []string{"", "\n  \n", "what did the split change"} {
-		got, _, err := deriveQueries(context.Background(), &deriveFake{text: text}, "what did the split change", derivationPromptTestNow, time.Hour)
+		got, _, _, err := deriveQueries(context.Background(), &deriveFake{text: text}, "what did the split change", derivationPromptTestNow, time.Hour)
 		if err == nil {
 			t.Fatalf("a derivation yielding %q returned %q rather than a cause; a model that refuses returns something rather than erroring", text, got)
 		}

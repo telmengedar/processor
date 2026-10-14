@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -237,12 +238,12 @@ func MergeQueries(input string, derived []string) []string {
 	return queries
 }
 
-// DeriveQueries asks model for queries and a retrieval window derived from input and now under DerivationBound, returning a cause naming which deadline fired when one did.
-func DeriveQueries(ctx context.Context, model ModelPort, input string, now time.Time) ([]string, UpdateWindow, error) {
+// DeriveQueries asks model for queries and a retrieval window derived from input and now under DerivationBound, returning a cause naming which deadline fired when one did; a window the request and the instant cannot ground is returned as zero with the sentence naming it as the third result.
+func DeriveQueries(ctx context.Context, model ModelPort, input string, now time.Time) ([]string, UpdateWindow, string, error) {
 	return deriveQueries(ctx, model, input, now, DerivationBound)
 }
 
-func deriveQueries(ctx context.Context, model ModelPort, input string, now time.Time, bound time.Duration) ([]string, UpdateWindow, error) {
+func deriveQueries(ctx context.Context, model ModelPort, input string, now time.Time, bound time.Duration) ([]string, UpdateWindow, string, error) {
 	bounded, cancel := context.WithTimeoutCause(ctx, bound, errDerivationBound)
 	defer cancel()
 
@@ -250,15 +251,57 @@ func deriveQueries(ctx context.Context, model ModelPort, input string, now time.
 	text, err := model.Derive(bounded, DerivationPrompt(input, now), noOutputLimit)
 	elapsed := time.Since(started).Round(time.Millisecond)
 	if err != nil {
-		return nil, UpdateWindow{}, derivationFailure(bounded, bound, elapsed, err)
+		return nil, UpdateWindow{}, "", derivationFailure(bounded, bound, elapsed, err)
 	}
 
 	derived, window := ParseDerivation(text, input, now.Location())
 	if len(derived) == 0 {
-		return nil, UpdateWindow{}, fmt.Errorf("%w after %s", errDerivationUnusable, elapsed)
+		return nil, UpdateWindow{}, "", fmt.Errorf("%w after %s", errDerivationUnusable, elapsed)
 	}
 
-	return derived, window, nil
+	window, discarded := groundWindow(window, input, now)
+	return derived, window, discarded, nil
+}
+
+var standaloneDigitRun = regexp.MustCompile(`[0-9]+`)
+
+func writtenYears(input string) map[int]bool {
+	years := map[int]bool{}
+	for _, run := range standaloneDigitRun.FindAllString(input, -1) {
+		if len(run) != 4 {
+			continue
+		}
+		year, err := strconv.Atoi(run)
+		if err == nil {
+			years[year] = true
+		}
+	}
+	return years
+}
+
+func groundWindow(window UpdateWindow, input string, now time.Time) (UpdateWindow, string) {
+	if window.IsZero() {
+		return window, ""
+	}
+
+	const dateLayout = "2006-01-02"
+	last := window.To.AddDate(0, 0, -1)
+	written := writtenYears(input)
+	grounded := func(year int) bool { return year == now.Year() || written[year] }
+
+	var reason string
+	switch {
+	case !grounded(window.From.Year()):
+		reason = fmt.Sprintf("the start year %d is not written in the request and is not the run's year", window.From.Year())
+	case !grounded(last.Year()):
+		reason = fmt.Sprintf("the end year %d is not written in the request and is not the run's year", last.Year())
+	case window.From.After(now):
+		reason = "the range begins after the run's instant"
+	default:
+		return window, ""
+	}
+
+	return UpdateWindow{}, fmt.Sprintf("DATES %s..%s discarded: %s", window.From.Format(dateLayout), last.Format(dateLayout), reason)
 }
 
 func derivationFailure(ctx context.Context, bound, elapsed time.Duration, err error) error {

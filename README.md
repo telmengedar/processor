@@ -265,7 +265,9 @@ further queries derived from `input` **and for a calendar day range** — one ex
 That call is not charged to the run's six-call judgement budget, and any outcome which is not a usable
 query set leaves the run asking `input` alone when it is a phrase, and nothing otherwise, and records why on the record's `derivationError`. A
 `DATES` line that is absent, unrecognised or malformed yields **no window** rather than a guessed one,
-and retrieval is then unbounded, exactly as it was before the line existed.
+and retrieval is then unbounded, exactly as it was before the line existed. So does a well-formed range the request cannot
+support: one whose start or end year is neither the run's year nor written in the request, or that begins after the run's
+instant. Its queries are kept, and the record's `windowDiscarded` (and the summary) names the range and the rule it failed.
 A query is a phrase: at most 256 bytes of UTF-8. `input` is the first query when it is one; a longer `input` is content
 for the model and never a query, so the graph is then asked the derived phrases alone, or nothing when none were derived (the
 block is then the subject alone and the model may ask), and the turn does not fail for it. A derived line longer than a
