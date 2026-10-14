@@ -148,13 +148,13 @@ func TestARunThatAnswersBeforeItsLastCallIsOfferedBothToolsThroughout(t *testing
 		t.Fatalf("record.CapReached = %v and verdict = %q, want a delivered run untouched by reservation", record.CapReached, record.Outcome.Verdict)
 	}
 	for _, call := range model.calls {
-		if call.MaxOutputTokens != JudgementBudget {
-			t.Fatalf("a research call was issued %d output tokens, want the judgement site's own %d", call.MaxOutputTokens, JudgementBudget)
+		if call.MaxOutputTokens != 0 {
+			t.Fatalf("a research call was issued %d output tokens, want none", call.MaxOutputTokens)
 		}
 	}
 }
 
-func TestTheReservedCallIsIssuedTheAnsweringSitesOwnBudget(t *testing.T) {
+func TestEveryCallOfADefaultRunThatReachesTheReservedCallIsIssuedNoOutputLimit(t *testing.T) {
 	t.Parallel()
 
 	model := &fakeModel{results: researchThenAnswer("done")}
@@ -164,11 +164,19 @@ func TestTheReservedCallIsIssuedTheAnsweringSitesOwnBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got := model.calls[len(model.calls)-1].MaxOutputTokens; got != AnsweringBudget {
-		t.Fatalf("the reserved call was issued %d output tokens, want the answering site's own %d: it is a different call site from a research call and declares its own budget", got, AnsweringBudget)
+	if record.ReservedCall.State != ReservedCallCompleted {
+		t.Fatalf("reserved call state = %q, want the run to have reached and completed its reserved call", record.ReservedCall.State)
 	}
-	if record.Limits.AnsweringBudget != AnsweringBudget {
-		t.Fatalf("record.Limits.AnsweringBudget = %d, want %d: a record that carries an answer must carry the budget that produced it", record.Limits.AnsweringBudget, AnsweringBudget)
+	if len(model.calls) != MaxModelCalls {
+		t.Fatalf("the model was called %d times, want %d", len(model.calls), MaxModelCalls)
+	}
+	for i, call := range model.calls {
+		if call.MaxOutputTokens != 0 {
+			t.Fatalf("call %d of %d was issued %d output tokens, want none: no call site carries a limit of its own", i+1, len(model.calls), call.MaxOutputTokens)
+		}
+	}
+	if record.Limits.AnsweringBudget != 0 || record.Limits.JudgementBudget != 0 || record.Limits.DerivationBudget != 0 {
+		t.Fatalf("record.Limits = %+v, want no output budget stated where none was sent", record.Limits)
 	}
 }
 

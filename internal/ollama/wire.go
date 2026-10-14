@@ -28,7 +28,7 @@ type chatRequest struct {
 }
 
 type wireOptions struct {
-	NumPredict  int      `json:"num_predict"`
+	NumPredict  int      `json:"num_predict,omitempty"`
 	Temperature *float64 `json:"temperature,omitempty"`
 	TopP        *float64 `json:"top_p,omitempty"`
 }

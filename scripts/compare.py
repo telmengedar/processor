@@ -232,11 +232,13 @@ def child_env(model_url, model_id, model_key, divoid_url, divoid_key):
 
 
 def chat(model_url, model_id, model_key, text, max_tokens, timeout):
-    body = json.dumps({
+    payload_body = {
         "model": model_id,
         "messages": [{"role": "user", "content": text}],
-        "max_tokens": max_tokens,
-    }).encode("utf-8")
+    }
+    if max_tokens is not None:
+        payload_body["max_tokens"] = max_tokens
+    body = json.dumps(payload_body).encode("utf-8")
 
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if model_key:
@@ -731,27 +733,27 @@ def task_stage(task, record):
 def transcript_output_budget(task_id, limits):
     """The output-token bound arm TRANSCRIPT is sent with, matched to the bound arm SUBSTRATE's own
     visible answer was generated under -- so the two arms differ by memory substrate and not by how
-    much either was allowed to say.
+    much either was allowed to say. A run that sent no output limit carries no judgementBudget, and
+    arm TRANSCRIPT is then sent no max_tokens either: None means unbounded.
 
     internal/loop/turn.go's judge loop sets judged.answer from t.Model.Judge's result, and Judge is
     called with MaxOutputTokens: JudgementBudget -- so limits.judgementBudget is the bound the
     answer text actually came out of. derive.go's call only turns the input into recall queries
-    (DerivationBudget bounds that call, not the answer), so limits.derivationBudget sits right next
+    (derivation carries no bound of its own and is not the answer), so limits.derivationBudget sits right next
     to the right field in the same object and would be the wrong one to read.
 
     `limits` here is always this invocation's own fresh /runs response, never an archived graph
     record read back (compare.py never re-reads limits off the graph), so there is no older shape
-    to stay lenient for: an absent or unrecognised limits shape -- including the pre-#109 shape that
-    carried maxOutputTokens instead -- must stop the run rather than let the two arms be bounded
-    differently while looking like a comparison."""
-    budget = (limits or {}).get("judgementBudget")
-    if not budget:
+    to stay lenient for: an absent limits object or one in the older shape that carried
+    maxOutputTokens instead must stop the run rather than let the two arms be bounded differently
+    while looking like a comparison."""
+    if not isinstance(limits, dict) or "maxOutputTokens" in limits:
         raise CompareFailure(
-            f"task {task_id}'s run record carries no limits.judgementBudget, so arm TRANSCRIPT has "
-            f"no output bound to match arm SUBSTRATE's judgement calls with. The two arms would be "
-            f"bounded differently and the comparison would not be one."
+            f"task {task_id}'s run record carries no recognisable limits object, so arm TRANSCRIPT "
+            f"cannot tell whether arm SUBSTRATE's judgement calls were bounded. The two arms would "
+            f"be bounded differently and the comparison would not be one."
         )
-    return budget
+    return limits.get("judgementBudget") or None
 
 
 def charged_size(entry, default=0):

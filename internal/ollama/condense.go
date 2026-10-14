@@ -41,7 +41,7 @@ type condenseRequest struct {
 }
 
 type condenseOptions struct {
-	NumPredict       int      `json:"num_predict"`
+	NumPredict       int      `json:"num_predict,omitempty"`
 	Temperature      *float64 `json:"temperature,omitempty"`
 	TopP             *float64 `json:"top_p,omitempty"`
 	FrequencyPenalty float64  `json:"frequency_penalty"`

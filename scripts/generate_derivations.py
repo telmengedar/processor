@@ -204,7 +204,6 @@ def call_model(
             "model": model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": 500,
         }
     ).encode("utf-8")
 

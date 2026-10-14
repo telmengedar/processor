@@ -96,6 +96,17 @@ func TestTheOutputCeilingRangeIsReportedBecauseItVariesWithEachNodesSize(t *test
 	}
 }
 
+func TestAPassThatSentNoOutputLimitSaysSoRatherThanReportingARangeOfZero(t *testing.T) {
+	result := passWithOneAudit("a condensation", originGenerated)
+	result.Provenance[0].Sampling.MaxTokens = 0
+
+	_, human := renderedPass(t, result)
+
+	if !strings.Contains(human, "max_tokens none sent") || strings.Contains(human, "max_tokens 0..0") {
+		t.Fatalf("want a pass that sent no limit reported as none sent, got:\n%s", human)
+	}
+}
+
 func TestTheSkipSectionGroupsNodesUnderTheRuleThatStoppedThem(t *testing.T) {
 	result := passWithOneAudit("a condensation", originGenerated)
 	result.Skipped = []Skip{

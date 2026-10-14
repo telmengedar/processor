@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -1128,7 +1129,30 @@ func TestRenderSummaryAccountsACandidateByWhatTheBlockCarried(t *testing.T) {
 	}
 }
 
-func TestALegacyRecordCarryingNoPerSiteBudgetRendersThemAsAbsentRatherThanAsZero(t *testing.T) {
+func TestARecordWrittenBeforeTheSplitCarriesItsSingleLimitToEveryCallSiteItGoverned(t *testing.T) {
+	t.Parallel()
+
+	const archived = `{"input":"hello","limits":{"candidateLimit":20,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":6,"maxOutputTokens":4096}}`
+
+	var record Record
+	if err := json.Unmarshal([]byte(archived), &record); err != nil {
+		t.Fatalf("an archived record no longer decodes: %v", err)
+	}
+	if record.Limits.DerivationBudget != 4096 || record.Limits.JudgementBudget != 4096 || record.Limits.AnsweringBudget != 4096 {
+		t.Fatalf("limits = %+v, want the single archived limit of 4096 on derivation, judgement and answering", record.Limits)
+	}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	if !strings.Contains(summary, "4096 tok derive / 4096 tok judge") {
+		t.Fatalf("the summary does not state the limit the archived run was held to.summary:%s", summary)
+	}
+	if strings.Contains(summary, "unlimited tok") {
+		t.Fatalf("a run that was limited renders as unlimited.summary:%s", summary)
+	}
+}
+
+func TestARecordCarryingNoPerSiteBudgetRendersThemAsUnlimitedRatherThanAsZero(t *testing.T) {
 	t.Parallel()
 
 	record := summaryRecord()
@@ -1137,16 +1161,16 @@ func TestALegacyRecordCarryingNoPerSiteBudgetRendersThemAsAbsentRatherThanAsZero
 
 	summary := RenderSummary(record, summaryInstant())
 
-	const want = "6 calls / — tok derive / — tok judge"
+	const want = "6 calls / unlimited tok derive / unlimited tok judge"
 	if !strings.Contains(summary, want) {
-		t.Fatalf("the limits line does not state %q; a record written before the budgets existed carries the field at zero, and a zero token budget is a claim the run was allowed to generate nothing.summary:%s", want, summary)
+		t.Fatalf("the limits line does not state %q; a record that sent no output limit carries the field at zero, and a zero token budget is a claim the run was allowed to generate nothing.summary:%s", want, summary)
 	}
 	if strings.Contains(summary, "0 tok derive") || strings.Contains(summary, "0 tok judge") {
 		t.Fatalf("the limits line reads a gap as a zero.summary:%s", summary)
 	}
 }
 
-func TestARecordCarryingItsPerSiteBudgetsStillRendersTheNumbersRatherThanTheAbsentMarker(t *testing.T) {
+func TestARecordCarryingItsPerSiteBudgetsStillRendersTheNumbersRatherThanUnlimited(t *testing.T) {
 	t.Parallel()
 
 	summary := RenderSummary(summaryRecord(), summaryInstant())
@@ -1154,8 +1178,8 @@ func TestARecordCarryingItsPerSiteBudgetsStillRendersTheNumbersRatherThanTheAbse
 	if !strings.Contains(summary, "160 tok derive / 192 tok judge") {
 		t.Fatalf("a record carrying both budgets does not state them.summary:%s", summary)
 	}
-	if strings.Contains(summary, "— tok") {
-		t.Fatalf("a record carrying both budgets renders one of them as absent.summary:%s", summary)
+	if strings.Contains(summary, "unlimited tok") {
+		t.Fatalf("a record carrying both budgets renders one of them as unlimited.summary:%s", summary)
 	}
 }
 

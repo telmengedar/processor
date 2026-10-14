@@ -8,22 +8,22 @@ type RunSettings struct {
 	AssemblyByteBudget      int
 	SupplementaryByteBudget int
 	MaxModelCalls           int
-	JudgementBudget         int
-	AnsweringBudget         int
-	FillWait                time.Duration
-	HistoryExchangeLimit    int
-	HistorySafetyLimit      int
+	// JudgementBudget is the output limit of each judgement call; 0 sends none.
+	JudgementBudget int
+	// AnsweringBudget is the output limit of the reserved answering call; 0 sends none.
+	AnsweringBudget      int
+	FillWait             time.Duration
+	HistoryExchangeLimit int
+	HistorySafetyLimit   int
 }
 
-// DefaultSettings returns the settings every run has had since the loop shipped: the package constants, field for field.
+// DefaultSettings returns the settings a run has unless it is given others: the package constants, field for field, and no output limit.
 func DefaultSettings() RunSettings {
 	return RunSettings{
 		CandidateLimit:          CandidateLimit,
 		AssemblyByteBudget:      AssemblyByteBudget,
 		SupplementaryByteBudget: SupplementaryByteBudget,
 		MaxModelCalls:           MaxModelCalls,
-		JudgementBudget:         JudgementBudget,
-		AnsweringBudget:         AnsweringBudget,
 		FillWait:                FillWait,
 		HistoryExchangeLimit:    HistoryExchangeLimit,
 		HistorySafetyLimit:      HistorySafetyLimit,
@@ -35,7 +35,7 @@ func (s RunSettings) PromptCeiling() int {
 	return s.AssemblyByteBudget + s.SupplementaryByteBudget
 }
 
-// JudgementCost is what one judgement call of this run is declared to need at floors.
+// JudgementCost is what one judgement call of this run is declared to need at floors: its output limit, where it has one, plus its prompt ceiling.
 func (s RunSettings) JudgementCost(floors Floors) time.Duration {
 	resolved := floors.Resolved()
 	return rateSeconds(float64(s.JudgementBudget), resolved.TokensPerSecond) + rateSeconds(float64(s.PromptCeiling()), resolved.PromptBytesPerSecond)
@@ -48,7 +48,6 @@ func (s RunSettings) Limits() Limits {
 		AssemblyByteBudget:      s.AssemblyByteBudget,
 		SupplementaryByteBudget: s.SupplementaryByteBudget,
 		MaxModelCalls:           s.MaxModelCalls,
-		DerivationBudget:        DerivationBudget,
 		JudgementBudget:         s.JudgementBudget,
 		AnsweringBudget:         s.AnsweringBudget,
 		ThinKnowledgeSimilarity: ThinKnowledgeSimilarity,

@@ -43,25 +43,27 @@ func Affordability(protocol string, declared boot.FloorsConfig, runBound time.Du
 // StateAffordability writes the boot lines that report, per call site, what its budget costs at the declared floors and how much of the bound that binds it is left over.
 func StateAffordability(logger *slog.Logger, floors loop.Floors, sites []loop.CallSite) {
 	resolved := floors.Resolved()
-	logger.Info("model rate floors declared: these are the deployment's assertions about its endpoint, not measurements of it",
+	logger.Info("model rate floors declared: these are the deployment's assertions about its endpoint, not measurements of it; generation is priced only where a call site carries an output limit, and processor sets none",
 		"tokensPerSecond", resolved.TokensPerSecond, "promptBytesPerSecond", resolved.PromptBytesPerSecond, "safetyFactor", loop.AffordabilitySafety)
 
 	for _, headroom := range loop.Afford(sites, resolved) {
 		if headroom.Affordable() {
 			logger.Info("call site affordable at the declared floors",
-				"site", headroom.Name, "budget", headroom.Budget, "promptCeiling", headroom.PromptCeiling,
+				"site", headroom.Name, "budget", budgetField(headroom), "promptCeiling", headroom.PromptCeiling,
 				"bound", headroom.Bound, "generation", round(headroom.Generation), "prompt", round(headroom.Prompt),
 				"allowed", round(headroom.Allowed), "headroom", round(headroom.Spare))
 			continue
 		}
 
 		attrs := []any{
-			"site", headroom.Name, "budget", headroom.Budget, "promptCeiling", headroom.PromptCeiling,
+			"site", headroom.Name, "budget", budgetField(headroom), "promptCeiling", headroom.PromptCeiling,
 			"bound", headroom.Bound, "generation", round(headroom.Generation), "prompt", round(headroom.Prompt),
 			"allowed", round(headroom.Allowed), "shortfall", round(-headroom.Spare),
-			"declaredTokensPerSecond", resolved.TokensPerSecond, "requiredTokensPerSecond", headroom.RequiredTokensPerSecond,
-			"declaredPromptBytesPerSecond", resolved.PromptBytesPerSecond, "requiredPromptBytesPerSecond", headroom.RequiredPromptBytesPerSecond,
 		}
+		if headroom.Budget > 0 {
+			attrs = append(attrs, "declaredTokensPerSecond", resolved.TokensPerSecond, "requiredTokensPerSecond", headroom.RequiredTokensPerSecond)
+		}
+		attrs = append(attrs, "declaredPromptBytesPerSecond", resolved.PromptBytesPerSecond, "requiredPromptBytesPerSecond", headroom.RequiredPromptBytesPerSecond)
 
 		logger.Warn(unaffordableSentence(headroom), attrs...)
 	}
@@ -71,6 +73,11 @@ func unaffordableSentence(headroom loop.Headroom) string {
 	prefix := fmt.Sprintf("call site %q is not affordable at the declared floors", headroom.Name)
 
 	switch {
+	case headroom.Budget == 0 && headroom.RequiredPromptBytesPerSecond > 0:
+		return fmt.Sprintf("%s: it carries no output limit, so only its prompt is priced, and this host would have to process the prompt at %.0f bytes per second",
+			prefix, headroom.RequiredPromptBytesPerSecond)
+	case headroom.Budget == 0:
+		return fmt.Sprintf("%s: it carries no output limit, and no prompt rate affords the prompt within the bound", prefix)
 	case headroom.RequiredTokensPerSecond > 0 && headroom.RequiredPromptBytesPerSecond > 0:
 		return fmt.Sprintf("%s: this host would have to deliver at least %.1f tokens per second, or process the prompt at %.0f bytes per second",
 			prefix, headroom.RequiredTokensPerSecond, headroom.RequiredPromptBytesPerSecond)
@@ -84,6 +91,13 @@ func unaffordableSentence(headroom loop.Headroom) string {
 		return fmt.Sprintf("%s: neither a faster generation rate nor a faster prompt rate affords it alone, because each half already claims the whole bound",
 			prefix)
 	}
+}
+
+func budgetField(headroom loop.Headroom) any {
+	if headroom.Budget == 0 {
+		return "unlimited"
+	}
+	return headroom.Budget
 }
 
 func round(d time.Duration) time.Duration {
