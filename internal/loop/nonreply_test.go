@@ -98,7 +98,7 @@ func TestAnIdLineIsBlockTextOnlyWhenATypeLineFollowsIt(t *testing.T) {
 func TestAnAnswerOpeningWithEitherHistoryLabelIsBlockText(t *testing.T) {
 	t.Parallel()
 
-	for _, label := range []string{LabelUserSaid, LabelYouReplied} {
+	for _, label := range []string{LabelUserSaid, LabelYouReplied, "You replied:", "User said:", "USER SAID:"} {
 		record, _ := runAnswering(t, answered("  "+label+" something from the history"))
 
 		if record.NonReply != NonReplyBlockText || record.Outcome.Verdict != VerdictWithheld {
@@ -144,6 +144,38 @@ func TestAFinalAnswerThatIsATextualCallsOwnTextIsWithheldWhenTheTimeGuardStopsTh
 	}
 	if record.Outcome.Produced {
 		t.Fatalf("outcome = %+v, want produced false: the text of a call that asked for a tool is the call, not an answer", record.Outcome)
+	}
+}
+
+func TestABlankAnswerIsNeverWithheldWhateverCallItCameFrom(t *testing.T) {
+	t.Parallel()
+
+	instant := guardInstant
+	round := JudgeResult{Reason: WantsRecall, RawReason: "stop", RecallQuery: "more please", ToolSource: ToolSourceNative}
+	model := &fakeModel{results: []JudgeResult{round}}
+	model.beforeReturn = func() { instant = guardInstant.Add(9*time.Minute + 40*time.Second) }
+	turn := turnWithClock(model, baseGraph(), func() time.Time { return instant })
+
+	ctx, cancel := context.WithDeadline(context.Background(), guardInstant.Add(10*time.Minute))
+	defer cancel()
+
+	record, _, err := turn.Run(ctx, "hello", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if record.TimeShortfall == "" {
+		t.Fatal("test setup error: the time guard did not stop the turn")
+	}
+	if record.Answer != "" || record.NonReply != "" {
+		t.Fatalf("answer = %q, nonReply = %q, want a blank answer left without a non-reply", record.Answer, record.NonReply)
+	}
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(encoded), `"nonReply"`) {
+		t.Fatalf("record = %s, want no nonReply key on a blank answer", encoded)
 	}
 }
 

@@ -154,6 +154,39 @@ func TestATextualCallIsHonouredOnlyOnACallThatOfferedThatTool(t *testing.T) {
 	}
 }
 
+func nativeCallBesideText(content, name string) chatResponse {
+	return chatResponse{
+		Message: wireResponseMessage{
+			Content:   content,
+			ToolCalls: []wireToolCall{{Function: wireFunctionCall{Name: name, Arguments: json.RawMessage(`{"query":"x"}`)}}},
+		},
+		DoneReason: "stop",
+	}
+}
+
+func TestATextualCallIsFlaggedBesideANativeCallToAToolThisCallDidNotOffer(t *testing.T) {
+	t.Parallel()
+
+	result := translate(nativeCallBesideText("recall: secret plans", recallToolName), nil)
+	if result.Reason != loop.Answered || result.UnhonouredCall != loop.ToolRecall {
+		t.Fatalf("%+v, want an answer flagged %q", result, loop.ToolRecall)
+	}
+
+	prose := translate(nativeCallBesideText("Sure, here you go.", recallToolName), nil)
+	if prose.UnhonouredCall != "" {
+		t.Fatalf("prose beside a native call -> UnhonouredCall %q, want none", prose.UnhonouredCall)
+	}
+}
+
+func TestATextualCallIsFlaggedBesideANativeCallToAToolTheAdapterDoesNotKnow(t *testing.T) {
+	t.Parallel()
+
+	result := translate(nativeCallBesideText("write_file: x", "frobnicate"), []string{loop.ToolRecall, loop.ToolReadNode})
+	if result.Reason != loop.Unrecognised || result.UnhonouredCall != loop.ToolWriteFile {
+		t.Fatalf("%+v, want it unrecognised and flagged %q", result, loop.ToolWriteFile)
+	}
+}
+
 func TestSpeechThatOnlyResemblesAToolCallIsNotRecognised(t *testing.T) {
 	t.Parallel()
 

@@ -164,8 +164,12 @@ func opensWithProcessorSyntax(answer string) bool {
 	if frameLine.MatchString(first) {
 		return true
 	}
-	if strings.HasPrefix(opening, LabelUserSaid) || strings.HasPrefix(opening, LabelYouReplied) {
+	if hasPrefixFold(opening, LabelUserSaid) || hasPrefixFold(opening, LabelYouReplied) {
 		return true
 	}
 	return idLine.MatchString(first) && strings.HasPrefix(rest, typePrefix)
+}
+
+func hasPrefixFold(text, prefix string) bool {
+	return len(text) >= len(prefix) && strings.EqualFold(text[:len(prefix)], prefix)
 }

@@ -333,8 +333,9 @@ side-effect-free request, so processor honours it as if it were a native call, a
 No other tool is ever honoured from text. A final answer that is not a reply is withheld: one that came from a call asking
 for a tool (`toolRequest`), one that opens with a tool call processor did not honour (`toolText`), or one that opens with
 processor's own framing, a `===== NAME =====` line, an `id:` line followed by a `type:` line, or a conversation label
-(`blockText`). The record keeps the text verbatim and carries `nonReply` with the kind, the outcome's verdict is `withheld`
-and `produced` is `false`, so `/runs` answers with the fallback reply. Nothing is fed back to the model and nothing is retried.
+(`blockText`). The record keeps the text verbatim and carries `nonReply` with the kind, and `produced` is `false`, so `/runs`
+answers with the fallback reply. The outcome's verdict is `withheld`, except that a curtailed turn keeps `curtailed` and
+a silent one keeps `silent`. Nothing is fed back to the model and nothing is retried.
 
 **A config can let the model write one note.** `note` is an object with exactly one member, `type`: the graph node type
 every note of the run is filed as, non-blank. Absent, the tool does not exist for the run, and a

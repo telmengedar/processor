@@ -224,7 +224,7 @@ func translate(wire chatResponse, offered []string) loop.JudgeResult {
 
 		if !slices.Contains(names, call.Function.Name) && (len(names) == 0 || isKnownWireTool(call.Function.Name)) {
 			result.Reason = mapDoneReason(wire.DoneReason)
-			return result
+			return flagOpeningCall(result, wire.Message.Content)
 		}
 
 		result.ToolSource = loop.ToolSourceNative
@@ -241,7 +241,7 @@ func translate(wire chatResponse, offered []string) loop.JudgeResult {
 		}
 
 		result.Reason = loop.Unrecognised
-		return result
+		return flagOpeningCall(result, wire.Message.Content)
 	}
 
 	if len(names) > 0 {
@@ -251,6 +251,13 @@ func translate(wire chatResponse, offered []string) loop.JudgeResult {
 	}
 
 	return translateTextualCall(result, wire.Message.Content, wire.DoneReason, names)
+}
+
+func flagOpeningCall(result loop.JudgeResult, content string) loop.JudgeResult {
+	if tool, _, opens := openingToolCall(content); opens {
+		result.UnhonouredCall = tool.loopName
+	}
+	return result
 }
 
 func translateTextualCall(result loop.JudgeResult, content, doneReason string, names []string) loop.JudgeResult {
