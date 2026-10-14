@@ -54,12 +54,14 @@ func TestTheCallAfterARefusedReadOffersNoToolAndIsComposedForAnswering(t *testin
 
 	model := &fakeModel{results: []JudgeResult{wantsRead(91), answered("done")}}
 
-	if _, _, err := turnComposing(graphHoldingAShownPart(), model, nil).Run(context.Background(), "hello", readSubject); err != nil {
+	record, _, err := turnComposing(graphHoldingAShownPart(), model, nil).Run(context.Background(), "hello", readSubject)
+	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if len(model.calls) != 2 {
 		t.Fatalf("the model was called %d times, want 2", len(model.calls))
 	}
+	assertOfferedMatchesCalls(t, record, model.calls)
 
 	if first := model.calls[0]; !slices.Equal(first.Offered, []string{"recall", "readNode"}) || first.System != "offers:recall,readNode" {
 		t.Errorf("the first call offers %v with system text %q, want recall and readNode", first.Offered, first.System)

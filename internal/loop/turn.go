@@ -260,6 +260,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	record.ReservedCall = judged.reservedCall
 	record.Usage = judged.usages
 	record.Trailers = judged.trailers
+	record.Offered = judged.offered
 	record.LastResponse = judged.lastResponse
 	record.StopReason = judged.stop
 	record.Sampling = judged.sampling
@@ -430,6 +431,7 @@ type judgement struct {
 
 	usages       []*Usage
 	trailers     []TrailerKind
+	offered      [][]string
 	lastResponse *LastResponse
 	sampling     Sampling
 	provider     Provider
@@ -497,6 +499,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		offered := t.offeredTools(reserved != "", note.enabled && notesFiled < NotesPerTurn)
 		trailer, trailerKind := trailerFor(offered, searches)
 		judged.trailers = append(judged.trailers, trailerKind)
+		judged.offered = append(judged.offered, append([]string{}, offered...))
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
 			System:          t.composeSystem(identity, offered, conversation != "", silence),

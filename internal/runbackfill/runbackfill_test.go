@@ -351,3 +351,32 @@ func TestBackfillKeepsTheBuildAStampedRecordCarriesAndStampsNoneOnALegacyOne(t *
 		t.Fatalf("a legacy record was given a build by the re-render:\n%s", legacy)
 	}
 }
+
+func TestBackfillKeepsTheOfferedListsARecordCarriesAndStampsNoneOnALegacyOne(t *testing.T) {
+	const offeredJSON = `"offered":[["recall","readNode"],[]],`
+	offeredRecord := strings.Replace(legacyRecordJSON, `"model":"m1",`, `"model":"m1",`+offeredJSON, 1)
+	if offeredRecord == legacyRecordJSON {
+		t.Fatal("the fixture with offered lists equals the legacy one, so the test compares nothing")
+	}
+
+	run := func(id int64, content string) string {
+		graph := &fakeGraph{nodes: map[int64]Node{
+			id: {ID: id, Type: divoid.RunNodeType, Name: `processor-run 2026-09-02T11:35:08Z — do the thing`, ContentType: "application/json", Content: content},
+		}}
+		result := Run(context.Background(), graph, []int64{id}, Options{}, time.Now)
+		if len(result.Skipped) != 0 {
+			t.Fatalf("unexpected skips: %+v", result.Skipped)
+		}
+		return string(graph.contentWrites[id])
+	}
+
+	kept := run(1, offeredRecord)
+	if strings.Count(kept, offeredJSON) != 1 {
+		t.Fatalf("the re-rendered record does not carry its offered lists exactly once:\n%s", kept)
+	}
+
+	legacy := run(2, legacyRecordJSON)
+	if strings.Contains(legacy, `"offered"`) {
+		t.Fatalf("a legacy record was given offered lists by the re-render:\n%s", legacy)
+	}
+}
