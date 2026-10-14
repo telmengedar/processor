@@ -255,3 +255,13 @@ func TestARecallWithNothingAfterTheColonIsAnEmptyQueryError(t *testing.T) {
 		}
 	}
 }
+
+func TestATextualCallIsFlaggedBesideMarkupForAToolThisCallDidNotOffer(t *testing.T) {
+	t.Parallel()
+
+	content := "recall: x\n<function=write_file><parameter=path>a</parameter></function>"
+	result := translate(answerOf(content), []string{loop.ToolRecall, loop.ToolReadNode})
+	if result.Reason != loop.Unrecognised || result.ToolSource != loop.ToolSourceContent || result.UnhonouredCall != loop.ToolRecall {
+		t.Fatalf("%+v, want it unrecognised from content and flagged %q", result, loop.ToolRecall)
+	}
+}
