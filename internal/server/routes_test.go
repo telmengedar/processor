@@ -27,10 +27,6 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// stubGraph is a minimal loop.GraphPort double for handler-level tests.
-// The handler's own job is status codes and the error envelope (design
-// §5.5, §9.3); the stub controls that outcome deterministically without
-// depending on internal/divoid or a live graph.
 type stubGraph struct {
 	anchor     loop.Anchor
 	found      bool
@@ -184,8 +180,6 @@ func TestHealthWrongMethod(t *testing.T) {
 	}
 }
 
-// --- POST /runs ---
-
 func postRuns(t *testing.T, turn *loop.Turn, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	return postRunsAt(t, context.Background(), turn, "/runs", body)
@@ -249,13 +243,6 @@ func (g *blockingGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt
 	return loop.WriteReceipt{State: loop.NotStored}
 }
 
-// runRecordWire is a local, literal-tagged decode target for the record —
-// deliberately not loop.Record itself (CF-4). Decoding into the
-// production type would move both sides of an assertion together on a
-// field rename, which is the both-sides-move anti-pattern the design
-// warns about (#10466 §14 step 1); a locally-declared struct with literal
-// tags is what actually pins the wire shape, the same pattern already
-// used for the error envelope in assertErrorCode below.
 type runRecordWire struct {
 	Input           string   `json:"input"`
 	Subject         int64    `json:"subject"`
@@ -366,9 +353,6 @@ func TestRunsReturns200WithTheAssembledRecordOnSuccess(t *testing.T) {
 	if got.Block == "" {
 		t.Fatal("record.Block is empty, want the assembled context")
 	}
-	// The two fields CF-4 named explicitly as unasserted: a rename of
-	// either JSON key (candidates->kept, contentHash->hash) leaves these
-	// zero under the literal-tagged struct above.
 	if got.Anchor.ContentHash == "" {
 		t.Fatal("record.anchor.contentHash is empty under the literal JSON tag, want it populated")
 	}
@@ -652,15 +636,6 @@ func TestRunsToolCallsResultsCutReasonIsPopulatedAtTheWireLevel(t *testing.T) {
 	}
 }
 
-// TestRunsCandidatesIsAnEmptyArrayNeverNullWhenThereAreNone pins W-5 at the
-// wire level: a JSON-null candidates field is a broken contract for any
-// consumer that assumes an array.
-// TestRunsQueryReachesTheLoopVerbatim pins rule 4 (the query is the input
-// verbatim) at the handler layer — the third layer this anti-pattern can
-// hide at (CF-1 pinned it at the loop and adapter layers already). The
-// fixture is deliberately not already trimmed/lower-cased: an
-// already-normalised fixture would survive a TrimSpace/ToLower inserted
-// here and prove nothing (W-10).
 func TestRunsQueryReachesTheLoopVerbatim(t *testing.T) {
 	t.Parallel()
 
@@ -695,7 +670,6 @@ func TestRunsCandidatesIsAnEmptyArrayNeverNullWhenThereAreNone(t *testing.T) {
 	turn := newTestTurn(stubGraph{
 		anchor: loop.Anchor{ID: 42, Type: "documentation", Name: "Subject", Substance: "anchor body"},
 		found:  true,
-		// candidates left at its zero value (nil) — recall returned nothing.
 	})
 
 	rec := postRunsVerbose(t, turn, `{"input":"hello","subject":42}`)
@@ -741,9 +715,6 @@ func TestRunsReturns400OnMissingSubject(t *testing.T) {
 	assertErrorCode(t, rec, codeInvalidRequest)
 }
 
-// TestRunsReturns400OnNegativeSubject pins W-9: design line 374 requires
-// "missing or malformed -> 400", and a negative id is malformed — it must
-// not reach the graph.
 func TestRunsReturns400OnNegativeSubject(t *testing.T) {
 	t.Parallel()
 
@@ -755,8 +726,6 @@ func TestRunsReturns400OnNegativeSubject(t *testing.T) {
 	assertErrorCode(t, rec, codeInvalidRequest)
 }
 
-// TestRunsReturns400OnOversizedBody pins W-6: the request body is bounded,
-// not decoded unconditionally regardless of size.
 func TestRunsReturns400OnOversizedBody(t *testing.T) {
 	t.Parallel()
 

@@ -17,10 +17,6 @@ const (
 	readHeaderTimeout = 5 * time.Second
 )
 
-// httpServer is the subset of *http.Server that serve depends on. Extracted
-// so tests can substitute a fake and deterministically drive the serve
-// goroutine's outcome relative to shutdown, instead of relying on the real
-// accept loop's timing.
 type httpServer interface {
 	Serve(ln net.Listener) error
 	Shutdown(ctx context.Context) error
@@ -60,13 +56,6 @@ func serve(ctx context.Context, ln net.Listener, srv httpServer, logger *slog.Lo
 		return err
 	}
 
-	// The select above chose the cancellation branch, but that tells us
-	// nothing about what the serve goroutine actually reported: if a
-	// genuine serve failure and the context's cancellation became ready in
-	// the same window, the runtime may have picked this branch even though
-	// serveErr does not hold the shutdown sentinel. Only the sentinel is
-	// swallowed here — anything else is a real error and must propagate,
-	// same as the direct branch above.
 	if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
