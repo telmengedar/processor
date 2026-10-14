@@ -260,12 +260,12 @@ func TestAConfiguredRunsRecordCarriesTheConfigIdAndTheFilterVerbatimInTheRecordI
 func TestAViewMarshalsItsRootOnlyWhenItHasOneAndDecodesAnOldViewAsUnrooted(t *testing.T) {
 	t.Parallel()
 
-	rooted, err := json.Marshal(View{Config: 77, Root: 902})
+	rooted, err := json.Marshal(View{Config: 77, Root: 9001})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
-	if !strings.Contains(string(rooted), `"root":902`) {
-		t.Errorf("a rooted view marshalled as %s, want it to carry root 902", rooted)
+	if !strings.Contains(string(rooted), `"root":9001`) {
+		t.Errorf("a rooted view marshalled as %s, want it to carry root 9001", rooted)
 	}
 
 	unrooted, err := json.Marshal(View{Config: 77})
@@ -288,7 +288,7 @@ func TestAViewMarshalsItsRootOnlyWhenItHasOneAndDecodesAnOldViewAsUnrooted(t *te
 func TestARunWithoutAConfigWhoseSubjectHasARootStillRecordsNoPerspective(t *testing.T) {
 	t.Parallel()
 
-	graph := &viewGraph{subjectRoot: 10}
+	graph := &viewGraph{subjectRoot: 31}
 	record, _, err := runUnder(t, graph, nil, answeredFinal())
 	if err != nil {
 		t.Fatalf("Run: %v", err)

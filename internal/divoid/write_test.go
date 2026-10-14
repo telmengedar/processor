@@ -757,10 +757,24 @@ func TestWriteRunCreateBodyCarriesTheRootOfTheRecordsPerspective(t *testing.T) {
 	srv, calls := writeServer(t, 1)
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 
-	c.WriteRun(context.Background(), rootedRecord(902))
+	c.WriteRun(context.Background(), rootedRecord(9001))
 
-	if got := string(createBodyKeys(t, *calls)["rootNodeId"]); got != "902" {
-		t.Fatalf("create rootNodeId = %q, want 902; body=%s", got, (*calls)[0].Body)
+	if got := string(createBodyKeys(t, *calls)["rootNodeId"]); got != "9001" {
+		t.Fatalf("create rootNodeId = %q, want 9001; body=%s", got, (*calls)[0].Body)
+	}
+}
+
+func TestWriteRunOfARootedRecordIssuesTheSameFourCallsInTheSameOrder(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 10525)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	c.WriteRun(context.Background(), rootedRecord(9001))
+
+	want := []string{"POST /api/nodes", "POST /api/nodes/10525/content", "PATCH /api/nodes/10525", "POST /api/nodes/10525/links"}
+	if got := methodPaths(*calls); !slices.Equal(got, want) {
+		t.Fatalf("calls = %v, want %v for a rooted record", got, want)
 	}
 }
 
@@ -796,13 +810,13 @@ func TestWriteRunCreatesTheUnlinkedNodeWithTheRootAlreadyOnIt(t *testing.T) {
 	srv, calls := writeServer(t, 10525, legLink)
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 
-	receipt := c.WriteRun(context.Background(), rootedRecord(902))
+	receipt := c.WriteRun(context.Background(), rootedRecord(9001))
 
 	if receipt.State != loop.Unlinked {
 		t.Fatalf("receipt.State = %q, want %q", receipt.State, loop.Unlinked)
 	}
-	if got := string(createBodyKeys(t, *calls)["rootNodeId"]); got != "902" {
-		t.Fatalf("create rootNodeId = %q, want 902 on the node that never got its edge", got)
+	if got := string(createBodyKeys(t, *calls)["rootNodeId"]); got != "9001" {
+		t.Fatalf("create rootNodeId = %q, want 9001 on the node that never got its edge", got)
 	}
 	for _, call := range (*calls)[1:] {
 		if strings.Contains(string(call.Body), "rootNodeId") {
@@ -817,7 +831,7 @@ func TestWriteRunReportsNotStoredAndDoesNotRetryWithoutTheRootWhenTheGraphReject
 	srv, calls := writeServer(t, 1, legCreate)
 	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
 
-	receipt := c.WriteRun(context.Background(), rootedRecord(902))
+	receipt := c.WriteRun(context.Background(), rootedRecord(9001))
 
 	if receipt.State != loop.NotStored {
 		t.Fatalf("receipt.State = %q, want %q", receipt.State, loop.NotStored)

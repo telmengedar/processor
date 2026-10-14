@@ -325,13 +325,13 @@ func TestAConfigThatIsNotAPositiveNodeIdIsAnInvalidRequest(t *testing.T) {
 func TestARunUnderAConfigRootedAtANodeRecordsThatRootInItsPerspective(t *testing.T) {
 	t.Parallel()
 
-	graph := &configGraph{content: `{}`, configRoot: 902, subjectRoot: 10}
+	graph := &configGraph{content: `{}`, configRoot: 9001, subjectRoot: 31}
 	result, _ := runWithConfig(t, graph, configPostBodyHead+`77}`)
 
 	if result.code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", result.code, result.body)
 	}
-	if len(graph.written) != 1 || graph.written[0].Perspective == nil || graph.written[0].Perspective.Root != 902 {
+	if len(graph.written) != 1 || graph.written[0].Perspective == nil || graph.written[0].Perspective.Root != 9001 {
 		t.Fatalf("the record handed to the write was %+v, want the perspective rooted at the config root", graph.written)
 	}
 }
@@ -339,7 +339,7 @@ func TestARunUnderAConfigRootedAtANodeRecordsThatRootInItsPerspective(t *testing
 func TestARunWithoutAConfigWritesItsRecordUnrootedWhateverRootItsSubjectHas(t *testing.T) {
 	t.Parallel()
 
-	graph := &configGraph{subjectRoot: 10}
+	graph := &configGraph{subjectRoot: 31}
 	result, _ := runWithConfig(t, graph, `{"input":"hello","subject":42}`)
 
 	if result.code != http.StatusOK {
@@ -353,7 +353,7 @@ func TestARunWithoutAConfigWritesItsRecordUnrootedWhateverRootItsSubjectHas(t *t
 func TestARunUnderAConfigWithoutARootIgnoresTheRootOfItsSubject(t *testing.T) {
 	t.Parallel()
 
-	graph := &configGraph{content: `{}`, subjectRoot: 10}
+	graph := &configGraph{content: `{}`, subjectRoot: 31}
 	result, _ := runWithConfig(t, graph, configPostBodyHead+`77}`)
 
 	if result.code != http.StatusOK {

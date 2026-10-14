@@ -217,17 +217,26 @@ var writeBackPaths = []struct {
 	{"the link fails", []int{4}, 4},
 }
 
-func writeBackGraphCalls(failed ...int) int {
+func writeBackRecords() map[string]loop.Record {
+	unrooted := loop.Record{Input: "a run in flight at shutdown", Subject: 42}
+	rooted := unrooted
+	rooted.Perspective = &loop.View{Config: 77, Root: 9001}
+	return map[string]loop.Record{"unrooted": unrooted, "rooted": rooted}
+}
+
+func writeBackGraphCalls(record loop.Record, failed ...int) int {
 	counter := &graphCallCounter{failed: failed}
 	graph := divoid.NewClient("http://graph.test", "k", &http.Client{Transport: counter}, discardLogger())
-	graph.WriteRun(context.Background(), loop.Record{Input: "a run in flight at shutdown", Subject: 42})
+	graph.WriteRun(context.Background(), record)
 	return counter.calls
 }
 
 func writeBackGraphCallCeiling() int {
 	ceiling := 0
-	for _, p := range writeBackPaths {
-		ceiling = max(ceiling, writeBackGraphCalls(p.failed...))
+	for _, record := range writeBackRecords() {
+		for _, p := range writeBackPaths {
+			ceiling = max(ceiling, writeBackGraphCalls(record, p.failed...))
+		}
 	}
 	return ceiling
 }
@@ -235,9 +244,11 @@ func writeBackGraphCallCeiling() int {
 func TestTheWriteBackIssuesFourGraphCallsUnlessTheCreateOrTheContentWriteFails(t *testing.T) {
 	t.Parallel()
 
-	for _, p := range writeBackPaths {
-		if got := writeBackGraphCalls(p.failed...); got != p.calls {
-			t.Errorf("the write-back issued %d graph calls when %s, want %d", got, p.path, p.calls)
+	for kind, record := range writeBackRecords() {
+		for _, p := range writeBackPaths {
+			if got := writeBackGraphCalls(record, p.failed...); got != p.calls {
+				t.Errorf("the write-back of a %s record issued %d graph calls when %s, want %d", kind, got, p.path, p.calls)
+			}
 		}
 	}
 }

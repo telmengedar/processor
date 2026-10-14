@@ -777,7 +777,7 @@ func TestNodeDecodesTheRootOfARootedRowAndNoneForANullOrAbsentRoot(t *testing.T)
 		row  map[string]any
 		want int64
 	}{
-		"rooted": {map[string]any{"id": 42, "rootNodeId": 902}, 902},
+		"rooted": {map[string]any{"id": 42, "rootNodeId": 9001}, 9001},
 		"null":   {map[string]any{"id": 42, "rootNodeId": nil}, 0},
 		"absent": {map[string]any{"id": 42}, 0},
 	}
