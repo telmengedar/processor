@@ -349,9 +349,10 @@ the model was shown in this turn. The model chooses nothing else: processor file
 content, and links it to the request's subject and, when `about` was shown this turn, to that part; an `about` that was
 not shown is dropped and the note is still filed. The text must be valid UTF-8 and non-blank, with no size limit of processor's own, and
 its derived name may not begin `processor-run`, which is checked ignoring case; a note that fails this is refused and nothing is filed. A turn takes at
-most one note: the tool is withdrawn for the rest of the turn after any note round, whatever became of it, so a second note
-cannot be asked for. The model is shown no tool's result: it is told only a search's query and whether it brought anything and,
-after a note round, one acknowledgement. Every later call of the turn, the one reserved for answering included, ends with that
+most one note: the tool is withdrawn for the rest of the turn after any note round, whatever became of it, so no second note is offered or filed.
+No tool round is replayed to the model: what a recall or read_node round retrieved joins its working memory and appears in the
+context block, and of the rounds themselves it is told only a search's query and whether it brought anything and, after a note
+round, one acknowledgement. Every later call of the turn, the one reserved for answering included, ends with that
 acknowledgement paragraph, after its search paragraph if it has one. After a note that was filed
 (`stored` or `unlinked`) it reads `You stored this note in this request: "<the note's text>". Now write your answer to the request.`;
 after any other outcome it reads `Your note in this request was not stored. Now write your answer to the request.`, which names no

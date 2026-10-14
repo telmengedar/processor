@@ -199,6 +199,9 @@ func TestNoteAcksRecordWhatEachCallShowedNotWhatTheTurnEndedWith(t *testing.T) {
 	if got, want := run.record.NoteAcks, []NoteAck{NoteAckNone, NoteAckNone, NoteAckStored, NoteAckStored}; !slices.Equal(got, want) {
 		t.Errorf("noteAcks = %v, want %v", got, want)
 	}
+	if len(run.record.NoteAcks) != len(run.model.calls) {
+		t.Fatalf("noteAcks has %d entries for %d calls", len(run.record.NoteAcks), len(run.model.calls))
+	}
 	for i, call := range run.model.calls {
 		shown := strings.Contains(call.Trailer, "You stored")
 		if shown != (run.record.NoteAcks[i] == NoteAckStored) {
