@@ -54,6 +54,10 @@ func writeSampling(w io.Writer, result Result) {
 		fmt.Fprintf(w, "  %s\n", line)
 	}
 	low, high := outputCeilingRange(result.Provenance)
+	if high == 0 {
+		fmt.Fprint(w, "  max_tokens none sent\n\n")
+		return
+	}
 	fmt.Fprintf(w, "  max_tokens %d..%d\n\n", low, high)
 }
 

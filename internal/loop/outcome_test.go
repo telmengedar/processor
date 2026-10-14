@@ -1,8 +1,10 @@
 package loop
 
 import (
+	"context"
 	"encoding/json"
 	"maps"
+	"strings"
 	"testing"
 )
 
@@ -117,21 +119,29 @@ func TestARunWhoseEveryRowWasCutIsNotGrounded(t *testing.T) {
 	}
 }
 
-func TestATruncatedAnswerIsNotCurtailedSoARecordCanReadUngroundedAndTruncatedAtOnce(t *testing.T) {
+func TestALengthStopCurtailsTheTurnWhetherOrNotItProducedAnAnswer(t *testing.T) {
 	t.Parallel()
 
-	record := outcomeRecord()
-	record.Candidates = []Disposition{{Rank: 1, ID: 11, CutReason: cutReasonByteBudget}}
-	record.StopReason = StopReason{Reason: Truncated, Raw: "length"}
-	record.Limits = Limits{JudgementBudget: JudgementBudget}
+	for name, answer := range map[string]string{"with an answer": "half an ans", "without an answer": ""} {
+		record := outcomeRecord()
+		record.Answer = answer
+		record.StopReason = StopReason{Reason: Truncated, Raw: "length"}
 
-	outcome := ComputeOutcome(record)
+		outcome := ComputeOutcome(record)
+
+		if !outcome.Curtailed || outcome.Verdict != VerdictCurtailed {
+			t.Fatalf("a turn whose last call stopped at length %s reads curtailed=%v verdict=%q, want a curtailed turn", name, outcome.Curtailed, outcome.Verdict)
+		}
+	}
+}
+
+func TestATurnThatAnsweredWithNoBoundInForceIsNotCurtailed(t *testing.T) {
+	t.Parallel()
+
+	outcome := ComputeOutcome(outcomeRecord())
 
 	if outcome.Curtailed {
-		t.Fatalf("an output bound was read as curtailing the turn; only a tool-dispatch bound curtails; outcome = %+v", outcome)
-	}
-	if outcome.Verdict != VerdictUngrounded {
-		t.Fatalf("verdict = %q, want %q so that the verdict and the terminal reason each keep their own fact", outcome.Verdict, VerdictUngrounded)
+		t.Fatalf("a turn that stopped on its own answer is reported curtailed; outcome = %+v", outcome)
 	}
 }
 
@@ -396,5 +406,82 @@ func TestEveryWayAnAnsweringCallGetsReservedMakesTheTurnCurtailedAndAPlainTurnIs
 		if outcome.Curtailed != c.wantCurtailed || outcome.Verdict != wantVerdict {
 			t.Errorf("%s: curtailed = %t, verdict = %q, want %t and %q", c.name, outcome.Curtailed, outcome.Verdict, c.wantCurtailed, wantVerdict)
 		}
+	}
+}
+
+func TestATurnWhoseLastCallStoppedAtLengthWarnsOnceAndSaysWhetherAnyLimitWasSent(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		settings RunSettings
+		want     string
+		unwanted string
+	}{
+		{name: "no limit sent", settings: DefaultSettings(), want: "although processor sent no output limit", unwanted: "output limit the run carried"},
+		{name: "limit sent", settings: func() RunSettings { s := DefaultSettings(); s.JudgementBudget = 50; return s }(), want: "output limit the run carried", unwanted: "sent no output limit"},
+	}
+
+	for _, tc := range cases {
+		model := &fakeModel{results: []JudgeResult{{Answer: "half an ans", Reason: Truncated, RawReason: "length"}}}
+		turn, logged := capturingTurn(t, model)
+
+		record, _, err := turn.RunWithOptions(context.Background(), RunOptions{Input: "hello", Subject: 42, Settings: tc.settings})
+		if err != nil {
+			t.Fatalf("%s: Run: %v", tc.name, err)
+		}
+		if record.Outcome.Verdict != VerdictCurtailed {
+			t.Fatalf("%s: verdict = %q, want %q", tc.name, record.Outcome.Verdict, VerdictCurtailed)
+		}
+		if got := strings.Count(logged.String(), "stopped generation at length"); got != 1 {
+			t.Fatalf("%s: the turn logged the length stop %d times, want once:\n%s", tc.name, got, logged.String())
+		}
+		if !strings.Contains(logged.String(), tc.want) || strings.Contains(logged.String(), tc.unwanted) {
+			t.Fatalf("%s: the warning does not say %q (and not %q):\n%s", tc.name, tc.want, tc.unwanted, logged.String())
+		}
+	}
+}
+
+func TestAReservedCallThatStoppedAtLengthIsJudgedByTheAnsweringBudgetAlone(t *testing.T) {
+	t.Parallel()
+
+	settings := DefaultSettings()
+	settings.AnsweringBudget = 300
+	results := researchToTheCap()
+	results[MaxModelCalls-1] = JudgeResult{Answer: "half an ans", Reason: Truncated, RawReason: "length"}
+	turn, logged := capturingTurn(t, &fakeModel{results: results})
+
+	record, _, err := turn.RunWithOptions(context.Background(), RunOptions{Input: "hello", Subject: 42, Settings: settings})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if record.ReservedCall.State != ReservedCallCompleted || record.Limits.JudgementBudget != 0 || record.Limits.AnsweringBudget != 300 {
+		t.Fatalf("reserved call state = %q and limits = %+v, want a completed reserved call under an answering budget of 300 and no judgement budget", record.ReservedCall.State, record.Limits)
+	}
+	if !strings.Contains(logged.String(), "output limit the run carried") || strings.Contains(logged.String(), "sent no output limit") {
+		t.Fatalf("the warning claims no limit was sent for a reserved call issued 300 tokens:\n%s", logged.String())
+	}
+}
+
+func TestAnArchivedRecordWithALengthStopAndTheOldBudgetsDecodesAndRecomputesAsCurtailed(t *testing.T) {
+	t.Parallel()
+
+	const archived = `{"input":"hello","answer":"","candidates":[{"rank":1,"id":11,"included":true}],"toolCalls":[],
+"stopReason":{"reason":"truncated","raw":"length"},
+"limits":{"candidateLimit":6,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":6,"derivationBudget":160,"judgementBudget":192,"answeringBudget":192},
+"outcome":{"verdict":"empty","produced":false,"grounded":true,"curtailed":false}}`
+
+	var record Record
+	if err := json.Unmarshal([]byte(archived), &record); err != nil {
+		t.Fatalf("an archived record no longer decodes: %v", err)
+	}
+	if record.Limits.JudgementBudget != 192 || record.Limits.DerivationBudget != 160 || record.StopReason.Reason != Truncated {
+		t.Fatalf("the archived record decoded to limits %+v and stop %+v, want the old budgets and the length stop kept", record.Limits, record.StopReason)
+	}
+
+	outcome := ComputeOutcome(record)
+
+	if !outcome.Curtailed || outcome.Verdict != VerdictCurtailed {
+		t.Fatalf("recomputed outcome = %+v, want curtailed: the archived verdict %q is the one the recompute corrects", outcome, record.Outcome.Verdict)
 	}
 }

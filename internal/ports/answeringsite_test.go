@@ -1,7 +1,6 @@
 package ports
 
 import (
-	"strconv"
 	"strings"
 	"testing"
 
@@ -15,25 +14,25 @@ func TestBootReportsTheAnsweringCallAsACallSiteOfItsOwn(t *testing.T) {
 
 	line := lineFor(t, lines, loop.SiteAnswering)
 	if strings.Contains(line, "level=WARN") {
-		t.Fatalf("the answering site is reported unaffordable at the product's own declared floors, so the budget it declares is one the product cannot pay for:\n%s", line)
+		t.Fatalf("the answering site is reported unaffordable at the product's own declared floors, so the prompt it declares is one the product cannot pay for:\n%s", line)
 	}
-	if !strings.Contains(line, "budget="+strconv.Itoa(loop.AnsweringBudget)) {
+	if !strings.Contains(line, "budget=unlimited") {
 		t.Fatalf("the answering site's line does not name the budget it declares; a site reported without its budget cannot be checked against the bound that cuts it:\n%s", line)
 	}
 	if judgement := lineFor(t, lines, loop.SiteJudgement); judgement == line {
-		t.Fatal("the answering call is reported on the judgement site's own line, so the reserved call has no budget of its own to report")
+		t.Fatal("the answering call is reported on the judgement site's own line, so the reserved call has no line of its own to report")
 	}
 }
 
 func TestTheAnsweringSiteIsReportedUnaffordableWhereTheDeclaredFloorsCannotPayForIt(t *testing.T) {
 	t.Parallel()
 
-	line := lineFor(t, report(t, declared(1, 3_000)), loop.SiteAnswering)
+	line := lineFor(t, report(t, declared(10, 100)), loop.SiteAnswering)
 
 	if !strings.Contains(line, "level=WARN") {
-		t.Fatalf("a deployment declaring a tenth of the product's generation floor is told nothing about the answering site, so the one budget this unit adds can be parked below its bound unreported:\n%s", line)
+		t.Fatalf("a deployment declaring a thirtieth of the product's prompt floor is told nothing about the answering site, so the site can be parked below its bound unreported:\n%s", line)
 	}
-	if !strings.Contains(line, "requiredTokensPerSecond=") {
-		t.Fatalf("the answering site's shortfall does not name the rate the host would have to deliver:\n%s", line)
+	if !strings.Contains(line, "requiredPromptBytesPerSecond=") {
+		t.Fatalf("the answering site's shortfall does not name the prompt rate the host would have to deliver:\n%s", line)
 	}
 }

@@ -41,7 +41,7 @@ func bulky(id int64, size int) Candidate {
 	return Candidate{ID: id, Type: "documentation", Name: "Bulky", Similarity: 0.9, Content: body, Substance: body}
 }
 
-func TestDefaultSettingsNameEveryDialAtTheValueTheLoopShipped(t *testing.T) {
+func TestDefaultSettingsNameEveryDialAtTheValueTheLoopShipsAndSetNoOutputLimit(t *testing.T) {
 	t.Parallel()
 
 	want := RunSettings{
@@ -49,8 +49,6 @@ func TestDefaultSettingsNameEveryDialAtTheValueTheLoopShipped(t *testing.T) {
 		AssemblyByteBudget:      60_000,
 		SupplementaryByteBudget: 20_000,
 		MaxModelCalls:           6,
-		JudgementBudget:         192,
-		AnsweringBudget:         192,
 		FillWait:                90 * time.Second,
 		HistoryExchangeLimit:    4,
 		HistorySafetyLimit:      8_000,
@@ -76,7 +74,6 @@ func TestSettingsLimitsCarriesEveryDialToItsOwnRecordedField(t *testing.T) {
 		SupplementaryByteBudget: 900,
 		MaxModelCalls:           2,
 		ThinKnowledgeSimilarity: ThinKnowledgeSimilarity,
-		DerivationBudget:        DerivationBudget,
 		JudgementBudget:         301,
 		AnsweringBudget:         407,
 		FillWait:                7 * time.Second,
@@ -281,6 +278,31 @@ func TestTheJudgementBudgetOfTheSettingsPricesTheRemainingTimeGuard(t *testing.T
 	}
 }
 
+func TestAJudgementBudgetOfFiveHundredPricesTheGuardAtFiveHundredTokensPlusThePrompt(t *testing.T) {
+	t.Parallel()
+
+	run := func(remaining time.Duration) error {
+		turn := turnWithClock(&fakeModel{}, baseGraph(), func() time.Time { return guardInstant })
+		ctx, cancel := context.WithDeadline(context.Background(), guardInstant.Add(remaining))
+		defer cancel()
+		settings := DefaultSettings()
+		settings.JudgementBudget = 500
+		_, _, err := turn.RunWithOptions(ctx, RunOptions{Input: "hello", Subject: 42, Settings: settings})
+		return err
+	}
+
+	if err := run(80 * time.Second); err != nil {
+		t.Fatalf("80 seconds were refused for a call needing 50 seconds of generation and 26.7 of prompt: %v", err)
+	}
+	err := run(70 * time.Second)
+	if !errors.Is(err, ErrRunTimeExhausted) {
+		t.Fatalf("err = %v, want 70 seconds refused: 500 tokens at 10 per second and the prompt need 76.7", err)
+	}
+	if !strings.Contains(err.Error(), "500 output tokens") {
+		t.Fatalf("the refusal does not state the run's own output limit: %v", err)
+	}
+}
+
 func TestThePromptCeilingOfTheSettingsPricesTheRemainingTimeGuard(t *testing.T) {
 	t.Parallel()
 
@@ -289,14 +311,14 @@ func TestThePromptCeilingOfTheSettingsPricesTheRemainingTimeGuard(t *testing.T) 
 	settings.SupplementaryByteBudget = 10_000
 
 	turn := turnWithClock(&fakeModel{}, baseGraph(), func() time.Time { return guardInstant })
-	ctx, cancel := context.WithDeadline(context.Background(), guardInstant.Add(40*time.Second))
+	ctx, cancel := context.WithDeadline(context.Background(), guardInstant.Add(20*time.Second))
 	defer cancel()
 
 	if _, _, err := turn.RunWithOptions(ctx, RunOptions{Input: "hello", Subject: 42, Settings: settings}); err != nil {
-		t.Fatalf("a run whose own 40000 byte ceiling is affordable in 40 seconds was refused: %v", err)
+		t.Fatalf("a run whose own 40000 byte ceiling is affordable in 20 seconds was refused: %v", err)
 	}
 	if _, _, err := turn.RunWithOptions(ctx, RunOptions{Input: "hello", Subject: 42, Settings: DefaultSettings()}); !errors.Is(err, ErrRunTimeExhausted) {
-		t.Fatalf("err = %v, want the 80000 byte default refused in 40 seconds, so the case above proves the ceiling is the run's own", err)
+		t.Fatalf("err = %v, want the 80000 byte default refused in 20 seconds, so the case above proves the ceiling is the run's own", err)
 	}
 }
 
@@ -430,5 +452,38 @@ func TestTheLimitsAreRecordedWithoutAReserveBecauseNoRecallHoldsOne(t *testing.T
 
 	if strings.Contains(string(encoded), "recallScopeReserve") {
 		t.Fatalf("the recorded limits are %s, want no reserve key: a record that states a reserve of zero describes a mechanism the turn no longer has", encoded)
+	}
+}
+
+func TestAFreshRecordsLimitsCarryNoOutputBudgetKeyAndAnArchivedRecordsStillDecode(t *testing.T) {
+	t.Parallel()
+
+	fresh, err := json.Marshal(DefaultSettings().Limits())
+	if err != nil {
+		t.Fatalf("marshalling the limits failed: %v", err)
+	}
+	for _, key := range []string{"derivationBudget", "judgementBudget", "answeringBudget"} {
+		if strings.Contains(string(fresh), key) {
+			t.Fatalf("a run that sent no output limit states %q in its limits: %s", key, fresh)
+		}
+	}
+
+	var archived Limits
+	const stored = `{"candidateLimit":20,"derivationBudget":160,"judgementBudget":192,"answeringBudget":192}`
+	if err := json.Unmarshal([]byte(stored), &archived); err != nil {
+		t.Fatalf("an archived record's limits no longer decode: %v", err)
+	}
+	if archived.DerivationBudget != 160 || archived.JudgementBudget != 192 || archived.AnsweringBudget != 192 {
+		t.Fatalf("archived limits decoded to %+v, want the budgets the record carries", archived)
+	}
+
+	sent := DefaultSettings()
+	sent.JudgementBudget = 500
+	limited, err := json.Marshal(sent.Limits())
+	if err != nil {
+		t.Fatalf("marshalling the limits failed: %v", err)
+	}
+	if !strings.Contains(string(limited), `"judgementBudget":500`) {
+		t.Fatalf("a run that sent a limit of 500 does not state it: %s", limited)
 	}
 }

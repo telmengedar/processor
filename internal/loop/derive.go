@@ -247,7 +247,7 @@ func deriveQueries(ctx context.Context, model ModelPort, input string, now time.
 	defer cancel()
 
 	started := time.Now()
-	text, err := model.Derive(bounded, DerivationPrompt(input, now), DerivationBudget)
+	text, err := model.Derive(bounded, DerivationPrompt(input, now), noOutputLimit)
 	elapsed := time.Since(started).Round(time.Millisecond)
 	if err != nil {
 		return nil, UpdateWindow{}, derivationFailure(bounded, bound, elapsed, err)
