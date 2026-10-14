@@ -20,6 +20,8 @@ import (
 
 const storedNodeID = 10525
 
+const buildSentinel = "0f3a9c1d7be24a58a6c0d1e29b4f7a35c8e61d02"
+
 type answeringModel struct{}
 
 func (answeringModel) Judge(context.Context, loop.JudgeInput) (loop.JudgeResult, error) {
@@ -117,6 +119,7 @@ func runOneTurn(t *testing.T, failing string) (*httptest.ResponseRecorder, []byt
 
 	graph := divoid.NewClient(graphSrv.URL, "k", graphSrv.Client(), logger)
 	turn := loop.NewTurn(graph, answeringModel{}, nil, systemtext.Compose, "test-model-id", logger)
+	turn.Build = buildSentinel
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/runs?verbose=true", bytes.NewBufferString(`{"input":"what changed","subject":42}`))
@@ -268,5 +271,24 @@ func TestAnUnfiledRecordStillReachesTheCallerWithTheFateNamed(t *testing.T) {
 	}
 	if responseValues["answer"] != `"the answer the model gave"` {
 		t.Fatalf("response answer = %s, want the record delivered to the caller as the only surviving copy", responseValues["answer"])
+	}
+}
+
+func TestTheStoredRecordAndTheResponseBothCarryTheBuild(t *testing.T) {
+	t.Parallel()
+
+	rec, stored := runOneTurn(t, "")
+	if len(stored) == 0 {
+		t.Fatal("the graph never received a content body, so this test compared nothing")
+	}
+
+	want := `"` + buildSentinel + `"`
+	_, responseValues := topLevelMembers(t, rec.Body.Bytes())
+	if responseValues["build"] != want {
+		t.Fatalf("response build = %s, want %s", responseValues["build"], want)
+	}
+	_, storedValues := topLevelMembers(t, extractJSONFence(t, stored))
+	if storedValues["build"] != want {
+		t.Fatalf("stored build = %s, want %s", storedValues["build"], want)
 	}
 }

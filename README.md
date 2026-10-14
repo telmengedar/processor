@@ -425,7 +425,8 @@ when it is a phrase) together with `derivationError` when that derivation failed
 not a phrase and so was not sent to the graph (`query` is then empty), the update-time window retrieval was
 held to (`window`, absent when the run expressed no time constraint), the anchor summary, **every** candidate
 retrieval returned — not only the ones kept — each with its rank, similarity, size, content hash, and
-whether it was included or cut and why, the assembled block itself, the model's answer, the model id, which adapter and endpoint served the
+whether it was included or cut and why, the assembled block itself, the model's answer, the model id, the `build` the binary was
+stamped with (absent for an unstamped binary), which adapter and endpoint served the
 run's model calls (`provider`: `adapter` and `endpoint`, as the adapter itself reported them rather than as
 the environment was set — with two protocols live a trace that cannot name its own transport cannot be
 compared against another), every
@@ -531,8 +532,20 @@ $two.reply
 ## Container
 
 ```sh
-docker build -t processor .
+BUILD=$(git rev-parse HEAD)
+CTX=$(mktemp -d) && git archive "$BUILD" | tar -x -C "$CTX"
+docker build --build-arg PROCESSOR_BUILD="$BUILD" -t processor "$CTX"
 ```
+
+Build from a `git archive` of the commit you stamp, as above, so the image holds exactly what the stamp names: a build
+from a working tree with uncommitted changes would carry a commit that does not describe it.
+
+`PROCESSOR_BUILD` is required: the image build refuses an empty value. It is stamped into the binary
+and appears as the run record's `build` member (next to `model`, and so in the stored record and the
+`?verbose=true` response, never in the default body) and on the first line the process logs. The
+value is an opaque string. A binary built without it, such as one from `go build` or `go test`,
+records no `build` member and logs `build=unstamped`; an absent member means no build identity was
+known, never a default.
 
 The build stage is `golang:1.27` (matching the version pinned everywhere else in this file); the
 final image is `gcr.io/distroless/static-debian12:nonroot` — no shell, no package manager, CA

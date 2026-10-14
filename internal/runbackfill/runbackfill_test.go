@@ -319,3 +319,35 @@ func accountLineFor(t *testing.T, account, id string) string {
 	t.Fatalf("the account carries no row for %s:\n%s", id, account)
 	return ""
 }
+
+func TestBackfillKeepsTheBuildAStampedRecordCarriesAndStampsNoneOnALegacyOne(t *testing.T) {
+	const stampedBuild = "0f3a9c1d7be24a58a6c0d1e29b4f7a35c8e61d02"
+	stampedJSON := strings.Replace(legacyRecordJSON, `"model":"m1",`, `"model":"m1","build":"`+stampedBuild+`",`, 1)
+	if stampedJSON == legacyRecordJSON {
+		t.Fatal("the stamped fixture equals the legacy one, so the test compares nothing")
+	}
+
+	run := func(id int64, content string) string {
+		graph := &fakeGraph{nodes: map[int64]Node{
+			id: {ID: id, Type: divoid.RunNodeType, Name: `processor-run 2026-09-02T11:35:08Z — do the thing`, ContentType: "application/json", Content: content},
+		}}
+		result := Run(context.Background(), graph, []int64{id}, Options{}, time.Now)
+		if len(result.Skipped) != 0 {
+			t.Fatalf("unexpected skips: %+v", result.Skipped)
+		}
+		return string(graph.contentWrites[id])
+	}
+
+	stamped := run(1, stampedJSON)
+	if !strings.Contains(stamped, `"build":"`+stampedBuild+`"`) {
+		t.Fatalf("the stamped record lost its build in the re-render:\n%s", stamped)
+	}
+	if strings.Count(stamped, `"build"`) != 1 {
+		t.Fatalf("the re-rendered stamped record carries build more than once:\n%s", stamped)
+	}
+
+	legacy := run(2, legacyRecordJSON)
+	if strings.Contains(legacy, `"build"`) {
+		t.Fatalf("a legacy record was given a build by the re-render:\n%s", legacy)
+	}
+}

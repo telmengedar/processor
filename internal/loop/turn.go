@@ -135,6 +135,9 @@ type Turn struct {
 	// ModelID is the model id sent with every judgement step, echoed into Record.Model.
 	ModelID string
 
+	// Build is the build identity of the serving binary, echoed into Record.Build; empty for a binary that was not stamped.
+	Build string
+
 	// Floors is the deployment's declared model rates the remaining-time guard prices a judgement call at; the zero value is the product's own declaration.
 	Floors Floors
 
@@ -246,6 +249,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	record.NonReply = judged.nonReply
 	record.Silent = silence && choseSilence(judged.answer)
 	record.Model = t.ModelID
+	record.Build = t.Build
 	record.Provider = judged.provider
 	record.ToolCalls = judged.toolCalls
 	record.Workspace = judged.workspace

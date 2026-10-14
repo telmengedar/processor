@@ -19,12 +19,17 @@ import (
 	"github.com/telmengedar/processor/internal/workspace"
 )
 
+var build string
+
+const unstampedBuild = "unstamped"
+
 func main() {
 	os.Exit(run(os.Stderr))
 }
 
 func run(human io.Writer) int {
 	logger := slog.New(slog.NewTextHandler(human, nil))
+	logger.Info("processor build", "build", buildLabel())
 
 	addr, err := boot.LoadHTTPAddr()
 	if err != nil {
@@ -104,6 +109,7 @@ func run(human io.Writer) int {
 
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 	turn := loop.NewTurn(graph, model, files, systemtext.Compose, modelCfg.ID, logger)
+	turn.Build = build
 	turn.Floors = floors
 	turn.Notes = graph
 
@@ -125,4 +131,11 @@ func run(human io.Writer) int {
 	}
 
 	return 0
+}
+
+func buildLabel() string {
+	if build == "" {
+		return unstampedBuild
+	}
+	return build
 }
