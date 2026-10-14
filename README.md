@@ -295,7 +295,7 @@ array, an element that is not an object, a missing, blank or non-string `input`,
 is a `400 invalid_request`. A `null` `reply` is read as absent, as a `null` `history` is.
 
 **A run can be held to a filter by a config node.** The request may also carry `config`: the id of a node of
-type `processor-config`, whose content is a JSON object with one optional key, `filter`:
+type `processor-config`, whose content is a JSON object with two optional keys, `filter` and `identity`; the first is shown here:
 `{"filter": {"type": ["thought", "knowledge"]}}`. The service reads that node, filtered to its type by the graph,
 once per request and caches nothing. The filter is forwarded to the graph on every read that can put a node in front
 of the model: the first recall, the model's own recall, and the addressed read (which also sends the node's id and
@@ -310,7 +310,9 @@ array of them (one repeated key per element). A blank value (empty or whitespace
 `query`, `queries`, `count`, `continue`, `sort`, `descending`, `fields` and `id` itself, so a config naming one (in any
 case) is refused. The config's `excludeId` and `excludeName` are added to the service's own; a bound the config sets in
 `updatedFrom` or `updatedTo` replaces the window the run derived for that bound. A run without `config` is unchanged,
-and the record of a configured run carries `perspective`: the config id and the filter it forwarded.
+and the record of a configured run carries `perspective`: the config id, the filter it forwarded and the identity it used.
+
+The config's `identity` is a string the caller writes, of at most 2,048 bytes of UTF-8 and never blank. Processor puts it first in the system text of every judgement call, followed by a blank line, and forwards it as written without reading it; derivation and condensation never see it.
 
 The turn: fetch the subject, derive the query set and window described above, recall candidates against
 them, assemble a byte-budgeted context block (anchor first,

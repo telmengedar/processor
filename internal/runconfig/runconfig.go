@@ -1,4 +1,4 @@
-// Package runconfig decodes the config node a run request names: a strict JSON object whose filter processor forwards to the graph unread.
+// Package runconfig decodes the config node a run request names: a strict JSON object whose filter processor forwards to the graph unread and whose identity it places first in the system text unread.
 package runconfig
 
 import (
@@ -18,7 +18,13 @@ import (
 // NodeType is the graph node type a config must have; a node of any other type is no config.
 const NodeType = "processor-config"
 
-const filterKey = "filter"
+const (
+	filterKey   = "filter"
+	identityKey = "identity"
+)
+
+// MaxIdentityBytes bounds the identity text, counted in UTF-8 bytes after JSON unescaping.
+const MaxIdentityBytes = 2048
 
 var ownedKeys = []string{"query", "queries", "count", "continue", "sort", "descending", "fields", "id"}
 
@@ -34,24 +40,54 @@ func ReadFilter() loop.Filter {
 	return loop.Filter{"type": {NodeType}}
 }
 
-// Decode returns the filter the config content carries, nil when it carries none; the first violation is named in the error.
-func Decode(content string) (loop.Filter, error) {
+// Config is what a config node's content carries: Filter, nil for none, and Identity, empty for none.
+type Config struct {
+	Filter   loop.Filter
+	Identity string
+}
+
+// Decode returns what the config content carries, the zero Config for an empty object; the first violation is named in the error.
+func Decode(content string) (Config, error) {
 	top, err := objectOf([]byte(content))
 	if err != nil {
-		return nil, fmt.Errorf("the config is not a JSON object: %w", err)
+		return Config{}, fmt.Errorf("the config is not a JSON object: %w", err)
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(top)) {
-		if name != filterKey {
-			return nil, fmt.Errorf("the config has the key %q, which processor does not know", name)
+		if name != filterKey && name != identityKey {
+			return Config{}, fmt.Errorf("the config has the key %q, which processor does not know", name)
 		}
 	}
 
-	raw, present := top[filterKey]
-	if !present {
-		return nil, nil
+	var config Config
+	if raw, present := top[filterKey]; present {
+		if config.Filter, err = filterOf(raw); err != nil {
+			return Config{}, err
+		}
 	}
+	if raw, present := top[identityKey]; present {
+		if config.Identity, err = identityOf(raw); err != nil {
+			return Config{}, err
+		}
+	}
+	return config, nil
+}
 
+func identityOf(raw json.RawMessage) (string, error) {
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return "", fmt.Errorf("the config's %q is not a JSON string", identityKey)
+	}
+	if strings.TrimSpace(text) == "" {
+		return "", fmt.Errorf("the config's %q is blank", identityKey)
+	}
+	if len(text) > MaxIdentityBytes {
+		return "", fmt.Errorf("the config's %q is %d bytes, over the bound of %d", identityKey, len(text), MaxIdentityBytes)
+	}
+	return text, nil
+}
+
+func filterOf(raw json.RawMessage) (loop.Filter, error) {
 	entries, err := objectOf(raw)
 	if err != nil {
 		return nil, fmt.Errorf("the config's %q is not a JSON object: %w", filterKey, err)

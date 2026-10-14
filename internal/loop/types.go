@@ -20,10 +20,11 @@ func (w UpdateWindow) IsZero() bool {
 // Filter is the graph filter a run's config carries and every read that can admit a node forwards: opaque to the loop, whose names and values belong to the graph adapter's vocabulary alone.
 type Filter map[string][]string
 
-// View is the config a run was held to: the node that supplied it and the filter it forwarded.
+// View is the config a run was held to: the node that supplied it, the filter it forwarded and the identity text it put first, verbatim.
 type View struct {
-	Config int64  `json:"config"`
-	Filter Filter `json:"filter,omitempty"`
+	Config   int64  `json:"config"`
+	Filter   Filter `json:"filter,omitempty"`
+	Identity string `json:"identity,omitempty"`
 }
 
 // Anchor is the subject node a run is about.

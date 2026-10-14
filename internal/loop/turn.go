@@ -70,6 +70,8 @@ var ErrRunTimeExhausted = errors.New("run time exhausted")
 // ErrGraphRejected marks a graph answer of 400 or 414, the statuses the request's own parameters can cause, as distinct from a graph that could not be reached or failed.
 var ErrGraphRejected = errors.New("graph rejected the request")
 
+const paragraphBreak = "\n\n"
+
 // ErrInvalidConfig marks a configured run whose first recall the graph answered with 400 or 414, which the config's filter may have caused.
 var ErrInvalidConfig = errors.New("invalid config")
 
@@ -173,7 +175,7 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 // RunWithOptions executes one turn as options describe it, returning the record and where it was filed.
 func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, WriteReceipt, error) {
 	input, subject, history, settings := options.Input, options.Subject, options.History, options.Settings
-	filter := options.filter()
+	filter, identity := options.filter(), options.identity()
 	started := time.Now()
 	ctx = withPrepaid(ctx)
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
@@ -230,8 +232,9 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 
 	memory := newWorkingMemory(settings.PromptCeiling(), anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions)
 	memory.charge(len(conversation))
+	memory.charge(len(identity))
 
-	judged, err := t.judge(ctx, settings, memory, input, conversation, subject, now, window, filter, dispositions)
+	judged, err := t.judge(ctx, settings, memory, input, conversation, identity, subject, now, window, filter, dispositions)
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
@@ -437,7 +440,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		settings.JudgementBudget, floors.TokensPerSecond, settings.PromptCeiling(), floors.PromptBytesPerSecond))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation string, subject int64, now time.Time, window UpdateWindow, filter Filter, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -471,7 +474,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		judged.trailers = append(judged.trailers, trailerKind)
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
-			System:          t.composeSystem(offered, conversation != ""),
+			System:          t.composeSystem(identity, offered, conversation != ""),
 			Block:           memory.render(offersRetrieval(offered)),
 			Input:           input,
 			Conversation:    conversation,
@@ -580,11 +583,15 @@ func (t *Turn) offeredTools(reserved bool) []string {
 	return offered
 }
 
-func (t *Turn) composeSystem(offered []string, conversation bool) string {
+func (t *Turn) composeSystem(identity string, offered []string, conversation bool) string {
 	if t.System == nil {
-		return ""
+		return identity
 	}
-	return t.System(offered, conversation)
+	product := t.System(offered, conversation)
+	if identity == "" {
+		return product
+	}
+	return identity + paragraphBreak + product
 }
 
 func offersRetrieval(offered []string) bool {

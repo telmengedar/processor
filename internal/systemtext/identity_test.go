@@ -1,0 +1,58 @@
+package systemtext_test
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/telmengedar/processor/internal/loop"
+	"github.com/telmengedar/processor/internal/systemtext"
+)
+
+type bareGraph struct{}
+
+func (bareGraph) Node(_ context.Context, id int64, _ loop.Filter) (loop.Anchor, bool, error) {
+	return loop.Anchor{ID: id, Type: "documentation", Name: "Subject", Substance: "body"}, true, nil
+}
+
+func (bareGraph) Recall(context.Context, loop.RecallRequest) ([]loop.Candidate, error) {
+	return nil, nil
+}
+
+func (bareGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt {
+	return loop.WriteReceipt{State: loop.Stored, NodeID: 5}
+}
+
+type systemRecorder struct{ systems []string }
+
+func (m *systemRecorder) Derive(context.Context, string, int) (string, error) { return "", nil }
+
+func (m *systemRecorder) Judge(_ context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
+	m.systems = append(m.systems, in.System)
+	return loop.JudgeResult{Reason: loop.Answered, RawReason: "stop", Answer: "an answer"}, nil
+}
+
+func TestTheIdentityIsSeparatedFromTheRealProductTextByTheSeparatorComposeUsesBetweenItsParagraphs(t *testing.T) {
+	t.Parallel()
+
+	const identity = "You are a participant named Quill."
+	model := &systemRecorder{}
+	turn := loop.NewTurn(bareGraph{}, model, nil, systemtext.Compose, "test-model", nil)
+	if _, _, err := turn.RunWithOptions(context.Background(), loop.RunOptions{Input: "hello", Subject: 42, Settings: loop.DefaultSettings(), View: &loop.View{Config: 9, Identity: identity}}); err != nil {
+		t.Fatalf("RunWithOptions: %v", err)
+	}
+
+	product := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode}, false)
+	paragraphs := strings.Split(product, "\n\n")
+	if len(paragraphs) < 2 {
+		t.Fatalf("the product text has %d paragraphs, want several joined by one separator", len(paragraphs))
+	}
+	separator := product[len(paragraphs[0]) : len(product)-len(strings.Join(paragraphs[1:], "\n\n"))]
+
+	if len(model.systems) != 1 {
+		t.Fatalf("the run made %d judgement calls, want 1", len(model.systems))
+	}
+	if want := identity + separator + product; model.systems[0] != want {
+		t.Fatalf("the system text is %q, want the identity, the separator Compose places between paragraphs, then the product text %q", model.systems[0], want)
+	}
+}

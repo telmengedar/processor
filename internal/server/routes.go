@@ -176,12 +176,12 @@ func resolveConfig(ctx context.Context, w http.ResponseWriter, turn *loop.Turn, 
 		return nil, true
 	}
 
-	filter, err := runconfig.Decode(node.Content)
+	config, err := runconfig.Decode(node.Content)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, codeInvalidConfig, loop.BoundCause(err.Error()))
 		return nil, true
 	}
-	return &loop.View{Config: id, Filter: filter}, false
+	return &loop.View{Config: id, Filter: config.Filter, Identity: config.Identity}, false
 }
 
 type errorEnvelope struct {
