@@ -177,3 +177,30 @@ func TestACallThatOffersTheNoteToolAlwaysOffersRecallToo(t *testing.T) {
 		}
 	}
 }
+
+func TestTheNoteSentenceIsAbsentFromTheReservedCallWhateverReservedIt(t *testing.T) {
+	t.Parallel()
+
+	runs := map[string]noteRun{
+		"a closed recall": runNotes(t, graphReturningTheSameRowsToEveryRecall(), noteView(), &fakeNotes{}, &fakeModel{results: recallsDifferingOnlyByADateSuffix(MaxModelCalls)}),
+		"a refused round": runNotes(t, graphHoldingNodes(), noteView(), &fakeNotes{}, &fakeModel{results: []JudgeResult{wantsRead(71), answeredFinal()}}),
+		"the call budget": runNoteResults(t, graphYieldingNewRowsToEveryRecall(), researchToTheCap()...),
+	}
+	if closed := runs["a closed recall"].record; !closed.RecallClosed || closed.CapReached {
+		t.Fatalf("the closed-recall run has recallClosed %v and capReached %v, want the recall closed before the cap fired", closed.RecallClosed, closed.CapReached)
+	}
+	for name, run := range runs {
+		assertSentenceMatchesOffer(t, name, run)
+
+		last := run.model.calls[len(run.model.calls)-1]
+		if len(last.Offered) != 0 {
+			t.Fatalf("%s: the last call offered %v, want the reserved call that offers nothing", name, last.Offered)
+		}
+		if strings.Contains(userContentOf(last), NoteSentence) {
+			t.Errorf("%s: the reserved call carries the note sentence", name)
+		}
+		if !strings.Contains(userContentOf(run.model.calls[0]), NoteSentence) {
+			t.Errorf("%s: the first call lacks the note sentence", name)
+		}
+	}
+}
