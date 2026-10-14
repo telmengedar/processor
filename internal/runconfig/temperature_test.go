@@ -85,3 +85,14 @@ func TestDecodeStillRefusesAnUnknownKeyBesideATemperature(t *testing.T) {
 		t.Fatalf("Decode = %v, want the unknown key refused by name", err)
 	}
 }
+
+func TestDecodeSaysWhyANumberTooLargeForADoubleIsRefused(t *testing.T) {
+	t.Parallel()
+
+	for _, text := range []string{"1e400", "1E400"} {
+		_, err := Decode(`{"temperature": ` + text + `}`)
+		if err == nil || !strings.Contains(err.Error(), "does not fit a double") {
+			t.Errorf("Decode(temperature %s) = %v, want the refusal to say the number does not fit a double", text, err)
+		}
+	}
+}

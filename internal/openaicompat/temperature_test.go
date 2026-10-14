@@ -3,6 +3,9 @@ package openaicompat
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
@@ -109,7 +112,53 @@ func TestADerivationCallSendsAndReportsTheConfiguredSamplingWhateverTheJudgement
 	if sent := sentSamplingOf(t, captured.Body); !reflect.DeepEqual(sent, want) {
 		t.Errorf("the derivation request carried %+v, want the configured %+v", sent, want)
 	}
-	if !reflect.DeepEqual(result.Sampling, want) {
+	if result.Sampling == nil || !reflect.DeepEqual(*result.Sampling, want) {
 		t.Errorf("Derive reports %+v, want what the request carried, %+v", result.Sampling, want)
+	}
+}
+
+func TestADerivationCallThatFailedAfterItsRequestWasSentStillReportsTheSamplingItCarried(t *testing.T) {
+	t.Parallel()
+
+	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(refusing.Close)
+
+	gone := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	goneURL, goneClient := gone.URL, gone.Client()
+	gone.Close()
+
+	configured := loop.Sampling{Temperature: floatPtr(0.2), TopP: floatPtr(0.9)}
+	cases := map[string]*Client{
+		"a non-success status":    NewClient(refusing.URL, "model-x", "", configured, refusing.Client()),
+		"a connection that fails": NewClient(goneURL, "model-x", "", configured, goneClient),
+	}
+	for name, c := range cases {
+		result, err := c.Derive(context.Background(), "derive from this", 64)
+		if err == nil {
+			t.Fatalf("%s: Derive returned no error", name)
+		}
+		if result.Sampling == nil || !reflect.DeepEqual(*result.Sampling, configured) {
+			t.Errorf("%s: Derive reports %+v beside the error, want the %+v its request carried", name, result.Sampling, configured)
+		}
+		if result.Text != "" {
+			t.Errorf("%s: Derive returned the text %q beside an error", name, result.Text)
+		}
+	}
+}
+
+func TestADerivationCallWhoseRequestNeverLeftReportsNoSampling(t *testing.T) {
+	t.Parallel()
+
+	c := NewClient("http://[::1", "model-x", "", loop.Sampling{Temperature: floatPtr(0.2)}, nil)
+
+	result, err := c.Derive(context.Background(), "derive from this", 64)
+	if err == nil {
+		t.Fatal("Derive returned no error for a base URL no request can be built against")
+	}
+	if result.Sampling != nil {
+		t.Fatalf("Derive reports %+v for a request that was never sent, want none", result.Sampling)
 	}
 }

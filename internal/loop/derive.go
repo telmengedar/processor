@@ -238,7 +238,7 @@ func MergeQueries(input string, derived []string) []string {
 	return queries
 }
 
-// DeriveQueries asks model for queries and a retrieval window derived from input and now under DerivationBound, returning a cause naming which deadline fired when one did; a window the request and the instant cannot ground is returned as zero with the sentence naming it as the third result, and the sampling the call carried as the fourth, nil where no call returned.
+// DeriveQueries asks model for queries and a retrieval window derived from input and now under DerivationBound, returning a cause naming which deadline fired when one did; a window the request and the instant cannot ground is returned as zero with the sentence naming it as the third result, and the sampling the call carried as the fourth, nil where no request was sent.
 func DeriveQueries(ctx context.Context, model ModelPort, input string, now time.Time) ([]string, UpdateWindow, string, *Sampling, error) {
 	return deriveQueries(ctx, model, input, now, DerivationBound)
 }
@@ -251,10 +251,10 @@ func deriveQueries(ctx context.Context, model ModelPort, input string, now time.
 	result, err := model.Derive(bounded, DerivationPrompt(input, now), noOutputLimit)
 	elapsed := time.Since(started).Round(time.Millisecond)
 	if err != nil {
-		return nil, UpdateWindow{}, "", nil, derivationFailure(bounded, bound, elapsed, err)
+		return nil, UpdateWindow{}, "", result.Sampling, derivationFailure(bounded, bound, elapsed, err)
 	}
 
-	sampling := &result.Sampling
+	sampling := result.Sampling
 	derived, window := ParseDerivation(result.Text, input, now.Location())
 	if len(derived) == 0 {
 		return nil, UpdateWindow{}, "", sampling, fmt.Errorf("%w after %s", errDerivationUnusable, elapsed)

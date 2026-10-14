@@ -131,7 +131,7 @@ type fakeModel struct {
 	beforeReturn func()
 
 	derivedText     string
-	derivedSampling Sampling
+	derivedSampling *Sampling
 	deriveErr       error
 	deriveHold      chan struct{}
 

@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -59,7 +60,7 @@ func TestADerivationCallIsReportedAtTheDeploymentSamplingWhateverTemperatureTheV
 
 	model := &fakeModel{
 		derivedText:     "an earlier phrasing of the request",
-		derivedSampling: Sampling{Temperature: temperatureOf(0.2)},
+		derivedSampling: &Sampling{Temperature: temperatureOf(0.2)},
 		results:         []JudgeResult{{Answer: "done", Reason: Answered, RawReason: "stop", Sampling: Sampling{Temperature: temperatureOf(0.7)}}},
 	}
 	record := runWithView(t, model, &View{Config: 1, Temperature: temperatureOf(0.7)})
@@ -95,7 +96,7 @@ func TestARunWithNoViewOrAViewWithoutATemperatureSendsNoPerCallTemperatureAndRec
 		for i := range results {
 			results[i].Sampling = Sampling{Temperature: temperatureOf(0.2)}
 		}
-		model := &fakeModel{results: results, derivedText: "an earlier phrasing", derivedSampling: Sampling{Temperature: temperatureOf(0.2)}}
+		model := &fakeModel{results: results, derivedText: "an earlier phrasing", derivedSampling: &Sampling{Temperature: temperatureOf(0.2)}}
 		record := runWithView(t, model, view)
 
 		for i, call := range model.calls {
@@ -183,5 +184,122 @@ func TestTheSummaryNamesTheDerivationSamplingOnlyWhenItDiffersFromTheJudgementCa
 		if summary := RenderSummary(record, summaryInstant()); !strings.Contains(summary, tc.want) {
 			t.Errorf("%s: the limits line does not end in %q.\nsummary:\n%s", name, tc.want, summary)
 		}
+	}
+}
+
+func TestAViewTemperatureReachesEveryCallOnEveryPathThatReservesOrOffersATool(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		graph   *fakeGraph
+		view    *View
+		results []JudgeResult
+		notes   bool
+		subject int64
+		check   func(t *testing.T, record Record, calls []JudgeInput)
+	}{
+		"a recall that closed": {
+			graph:   graphReturningTheSameRowsToEveryRecall(),
+			view:    &View{Config: 1, Temperature: temperatureOf(0.7)},
+			results: recallsDifferingOnlyByADateSuffix(MaxModelCalls),
+			subject: 42,
+			check: func(t *testing.T, record Record, _ []JudgeInput) {
+				if !record.RecallClosed || record.CapReached {
+					t.Fatalf("recallClosed = %v and capReached = %v, want the closed recall to be what reserved the call", record.RecallClosed, record.CapReached)
+				}
+			},
+		},
+		"a round the loop refused": {
+			graph:   graphHoldingAShownPart(),
+			view:    &View{Config: 1, Temperature: temperatureOf(0.7)},
+			results: []JudgeResult{wantsRead(91), answered("done")},
+			subject: readSubject,
+			check: func(t *testing.T, record Record, _ []JudgeInput) {
+				if len(record.ToolCalls) != 1 || record.ToolCalls[0].Error == "" {
+					t.Fatalf("toolCalls = %+v, want the one refused round that reserved the call", record.ToolCalls)
+				}
+			},
+		},
+		"a call that offers the note tool": {
+			graph:   noteGraph(),
+			view:    func() *View { v := noteView(); v.Temperature = temperatureOf(0.7); return v }(),
+			results: []JudgeResult{wantsNoteOf("a thought", 0), answered("done")},
+			notes:   true,
+			subject: noteSubject,
+			check: func(t *testing.T, _ Record, calls []JudgeInput) {
+				if !offeredNote(calls[0].Offered) {
+					t.Fatalf("the first call offered %v, want the note tool among them", calls[0].Offered)
+				}
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		model := &fakeModel{results: tc.results}
+		turn := NewTurn(tc.graph, model, nil, fixedSystem("system"), "test-model", testLogger())
+		if tc.notes {
+			turn.Notes = &fakeNotes{}
+		}
+		record, _, err := turn.RunWithOptions(context.Background(), RunOptions{Input: "hello", Subject: tc.subject, Settings: DefaultSettings(), View: tc.view})
+		if err != nil {
+			t.Fatalf("%s: RunWithOptions: %v", name, err)
+		}
+
+		if len(model.calls) < 2 {
+			t.Fatalf("%s: the model saw %d calls, want a tool round followed by at least one more", name, len(model.calls))
+		}
+		tc.check(t, record, model.calls)
+		for i, call := range model.calls {
+			if call.Temperature == nil || *call.Temperature != 0.7 {
+				t.Errorf("%s: judgement call %d (offering %v) carried temperature %v, want 0.7", name, i, call.Offered, call.Temperature)
+			}
+		}
+	}
+}
+
+func TestADerivationThatFailedAfterItsRequestWasSentStillRecordsTheSamplingItCarried(t *testing.T) {
+	t.Parallel()
+
+	model := &fakeModel{
+		deriveErr:       errors.New("the endpoint answered 500"),
+		derivedSampling: &Sampling{Temperature: temperatureOf(0.2)},
+		results:         []JudgeResult{answered("done")},
+	}
+	record := runWithView(t, model, &View{Config: 1, Temperature: temperatureOf(0.7)})
+
+	if record.DerivationError == "" {
+		t.Fatal("derivationError is empty, want the failed derivation named")
+	}
+	if record.DerivationSampling == nil || record.DerivationSampling.Temperature == nil || *record.DerivationSampling.Temperature != 0.2 {
+		t.Fatalf("derivationSampling = %+v, want the 0.2 the failed request carried and not an absent field", record.DerivationSampling)
+	}
+}
+
+func TestADerivationWhoseTextParsedToNoQueryStillRecordsTheSamplingItCarried(t *testing.T) {
+	t.Parallel()
+
+	model := &fakeModel{
+		derivedText:     "",
+		derivedSampling: &Sampling{Temperature: temperatureOf(0.2)},
+		results:         []JudgeResult{answered("done")},
+	}
+	record := runWithView(t, model, &View{Config: 1, Temperature: temperatureOf(0.7)})
+
+	if record.DerivationError == "" {
+		t.Fatal("derivationError is empty, want the unusable derivation named")
+	}
+	if record.DerivationSampling == nil || record.DerivationSampling.Temperature == nil || *record.DerivationSampling.Temperature != 0.2 {
+		t.Fatalf("derivationSampling = %+v, want the 0.2 the request carried", record.DerivationSampling)
+	}
+}
+
+func TestADerivationWhoseRequestWasNeverSentRecordsNoSampling(t *testing.T) {
+	t.Parallel()
+
+	model := &fakeModel{deriveErr: errors.New("the request could not be built"), results: []JudgeResult{answered("done")}}
+	record := runWithView(t, model, &View{Config: 1, Temperature: temperatureOf(0.7)})
+
+	if record.DerivationSampling != nil {
+		t.Fatalf("derivationSampling = %+v, want absent for a request that never left", record.DerivationSampling)
 	}
 }

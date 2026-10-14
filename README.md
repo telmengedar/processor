@@ -473,7 +473,7 @@ string), why the turn stopped where the run's own remaining time could not affor
 (`limits`: candidate limit, assembly byte budget, supplementary byte budget, max model calls, and the
 output budget per model call site — `derivationBudget`, `judgementBudget` and `answeringBudget`, each key absent when no output limit was sent, which is every run unless a limit was set — and the two history bounds, `historyExchangeLimit` and `historySafetyLimit`), and the sampling the run's judgement calls were made with
 (`sampling`: `temperature` and `topP`, each key absent when nothing was sent for it) beside the sampling its derivation call
-was made with (`derivationSampling`, the same two keys, absent on a run that issued no derivation call).
+was made with (`derivationSampling`, the same two keys, present whenever a derivation request was sent, including one that failed or returned nothing usable, and absent on a run whose derivation request was never sent).
 
 **Read that as a description, not as the field list.** `Record` in `internal/loop/types.go` is the field
 list; three merges have each added a key that did not reach this paragraph until someone
@@ -496,8 +496,10 @@ config asked for, present only when it asked. `sampling` is what the run's judge
 the request each adapter built, so it is the config's temperature on a run that asked for one and the deployment's
 otherwise. `derivationSampling` is what the derivation call was sent with, read back the same way, and it is always the
 deployment's. A reader who wants the temperature of the model's reply reads `sampling`; one who wants the temperature that
-produced the run's queries reads `derivationSampling`. **A record without `derivationSampling` predates the field, and its
-derivation was sent with `sampling`**, because before the field one client sent one sampling on every call. When the two
+produced the run's queries reads `derivationSampling`. **A record written before the field existed has none, and its
+derivation was sent with `sampling`**, because before the field one client sent one sampling on every call; a later record
+without it is one whose derivation request was never sent. The field is present whether the derivation succeeded, failed or
+returned nothing usable. When the two
 differ the run's summary line shows both, for example `temp=0.7, derivation temp=0.2`; when they agree it shows the one, as
 it always did.
 
