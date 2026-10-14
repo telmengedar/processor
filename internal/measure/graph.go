@@ -44,8 +44,8 @@ func NewGraph(reads loop.GraphPort, clock func() time.Time, logger *slog.Logger)
 }
 
 // Node fetches the subject node by id through the decorated port, unchanged.
-func (g *Graph) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) {
-	return g.reads.Node(ctx, id)
+func (g *Graph) Node(ctx context.Context, id int64, filter loop.Filter) (loop.Anchor, bool, error) {
+	return g.reads.Node(ctx, id, filter)
 }
 
 // Recall returns the decorated port's candidates for queries, unchanged.

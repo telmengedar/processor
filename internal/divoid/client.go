@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -35,9 +37,12 @@ const (
 const (
 	nodesPath = "/api/nodes"
 
-	queriesParam     = "queries"
-	excludeIDParam   = "excludeId"
-	excludeNameParam = "excludeName"
+	queriesParam       = "queries"
+	excludeIDParam     = "excludeId"
+	excludeNameParam   = "excludeName"
+	updatedFromParam   = "updatedFrom"
+	updatedToParam     = "updatedTo"
+	minSimilarityParam = "minSimilarity"
 )
 
 var errNoQuery = errors.New("divoid: recall needs at least one query")
@@ -117,6 +122,34 @@ type listingResponse struct {
 	Continue *int  `json:"continue"`
 }
 
+type rejectedError struct {
+	status int
+	body   string
+}
+
+func (e *rejectedError) Error() string {
+	return fmt.Sprintf("divoid: unexpected status %d: %s", e.status, e.body)
+}
+
+func (e *rejectedError) Is(target error) bool {
+	return target == loop.ErrGraphRejected
+}
+
+func appendFilter(q url.Values, filter loop.Filter, recall bool) {
+	for _, name := range slices.Sorted(maps.Keys(filter)) {
+		switch {
+		case name == minSimilarityParam && !recall:
+			continue
+		case name == updatedFromParam || name == updatedToParam:
+			q[name] = slices.Clone(filter[name])
+		default:
+			for _, value := range filter[name] {
+				q.Add(name, value)
+			}
+		}
+	}
+}
+
 // Node fetches the subject node by id, with its content, over the listing
 // route rather than the single-node route: a missing id returns 200 with
 // an empty result (design C30), not 404 — the shape this method surfaces
@@ -128,8 +161,9 @@ type listingResponse struct {
 // requested id (W-4) rather than trusting Result[0] — anchoring on an
 // arbitrary row would leave Record.Subject reporting the requested id
 // while the anchor body came from a different node entirely.
-func (c *Client) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) {
+func (c *Client) Node(ctx context.Context, id int64, filter loop.Filter) (loop.Anchor, bool, error) {
 	q := url.Values{}
+	appendFilter(q, filter, false)
 	q.Set("id", strconv.FormatInt(id, 10))
 	q.Set("fields", nodeFields)
 
@@ -175,9 +209,14 @@ func (c *Client) Recall(ctx context.Context, request loop.RecallRequest) ([]loop
 		q.Add(excludeIDParam, strconv.FormatInt(id, 10))
 	}
 	q.Set(excludeNameParam, RunNamePrefix+"%")
+	appendFilter(q, request.Filter, true)
 	if !window.IsZero() {
-		q.Set("updatedFrom", window.From.Format(time.RFC3339))
-		q.Set("updatedTo", window.To.Format(time.RFC3339))
+		if _, set := q[updatedFromParam]; !set {
+			q.Set(updatedFromParam, window.From.Format(time.RFC3339))
+		}
+		if _, set := q[updatedToParam]; !set {
+			q.Set(updatedToParam, window.To.Format(time.RFC3339))
+		}
 	}
 
 	var resp listingResponse
@@ -218,6 +257,9 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, errorBodyBytes))
+		if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusRequestURITooLong {
+			return &rejectedError{status: resp.StatusCode, body: string(body)}
+		}
 		return fmt.Errorf("divoid: unexpected status %d: %s", resp.StatusCode, string(body))
 	}
 

@@ -181,3 +181,26 @@ func TestARecordFiledWhileAScopedRecallExistedStillDecodes(t *testing.T) {
 		t.Errorf("sources decoded as %+v, want both recalls' ranks kept", got)
 	}
 }
+
+func TestReadDecodesARecordWithAPerspectiveAndOneWrittenBeforeTheFieldExistedAlike(t *testing.T) {
+	t.Parallel()
+
+	view := &loop.View{Config: 77, Filter: loop.Filter{"type": {"thought", "knowledge"}}}
+	configured := recordJSON(t, loop.Record{Input: "configured", Subject: 10422, Perspective: view})
+	archived := `{"input":"archived","subject":10422,"query":"archived","queries":["archived"]}`
+
+	archive := Read("a configured and an archived record", []Node{
+		{ID: 1, Name: runName, Content: configured},
+		{ID: 2, Name: runName, Content: archived},
+	})
+
+	if len(archive.Entries) != 2 || len(archive.Skipped) != 0 {
+		t.Fatalf("want two entries and no skip, got %d entries and %+v", len(archive.Entries), archive.Skipped)
+	}
+	if got := archive.Entries[0].Record.Perspective; got == nil || got.Config != 77 || len(got.Filter["type"]) != 2 {
+		t.Errorf("the configured record decoded with the perspective %+v, want %+v", got, view)
+	}
+	if got := archive.Entries[1].Record.Perspective; got != nil {
+		t.Errorf("the archived record decoded with the perspective %+v, want none", got)
+	}
+}

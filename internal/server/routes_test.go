@@ -49,7 +49,7 @@ type stubRecallResponse struct {
 	err        error
 }
 
-func (s stubGraph) Node(context.Context, int64) (loop.Anchor, bool, error) {
+func (s stubGraph) Node(context.Context, int64, loop.Filter) (loop.Anchor, bool, error) {
 	return s.anchor, s.found, s.nodeErr
 }
 
@@ -194,7 +194,7 @@ type deadlineGraph struct {
 	writeBounded bool
 }
 
-func (g *deadlineGraph) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) {
+func (g *deadlineGraph) Node(ctx context.Context, id int64, _ loop.Filter) (loop.Anchor, bool, error) {
 	g.nodeDeadline, g.nodeBounded = ctx.Deadline()
 	return loop.Anchor{ID: id, Type: "documentation", Name: "Subject", Substance: "anchor body"}, true, nil
 }
@@ -210,7 +210,7 @@ func (g *deadlineGraph) WriteRun(ctx context.Context, _ loop.Record) loop.WriteR
 
 type blockingGraph struct{ runContextEnded bool }
 
-func (g *blockingGraph) Node(ctx context.Context, _ int64) (loop.Anchor, bool, error) {
+func (g *blockingGraph) Node(ctx context.Context, _ int64, _ loop.Filter) (loop.Anchor, bool, error) {
 	select {
 	case <-ctx.Done():
 		g.runContextEnded = true
@@ -989,13 +989,13 @@ func envelopeCodes(t *testing.T) []string {
 	return slices.Compact(codes)
 }
 
-func TestTheErrorEnvelopeCanEmitExactlyFiveCodes(t *testing.T) {
+func TestTheErrorEnvelopeCanEmitExactlySevenCodes(t *testing.T) {
 	t.Parallel()
 
-	want := []string{"graph_unavailable", "invalid_request", "model_unavailable", "run_deadline_exceeded", "subject_not_found"}
+	want := []string{"config_not_found", "graph_unavailable", "invalid_config", "invalid_request", "model_unavailable", "run_deadline_exceeded", "subject_not_found"}
 
 	if got := envelopeCodes(t); !slices.Equal(got, want) {
-		t.Fatalf("the envelope can emit %v, want exactly %v — a sixth code is a design decision, not an addition", got, want)
+		t.Fatalf("the envelope can emit %v, want exactly %v — an eighth code is a design decision, not an addition", got, want)
 	}
 }
 
@@ -1011,6 +1011,8 @@ func TestEachErrorCodeConstantCarriesItsWireValue(t *testing.T) {
 		{codeGraphUnavailable, "graph_unavailable"},
 		{codeModelUnavailable, "model_unavailable"},
 		{codeRunDeadlineExceeded, "run_deadline_exceeded"},
+		{codeConfigNotFound, "config_not_found"},
+		{codeInvalidConfig, "invalid_config"},
 	}
 
 	for _, c := range cases {
@@ -1069,7 +1071,7 @@ func TestRunsReturns200AndNamesTheDerivationCauseOnTheRecordWhenTheQuerySetFellB
 	rec := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d: a degraded query set is not a failed run, and a non-2xx here would add a sixth code to the five this route maintains; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		t.Fatalf("status = %d, want %d: a degraded query set is not a failed run, and a non-2xx here would add an eighth code to the seven this route maintains; body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
 	var got runRecordWire

@@ -74,7 +74,7 @@ type nodeResponse struct {
 	Err    error
 }
 
-func (f *fakeGraph) Node(_ context.Context, id int64) (Anchor, bool, error) {
+func (f *fakeGraph) Node(_ context.Context, id int64, _ Filter) (Anchor, bool, error) {
 	if f.onNode != nil {
 		f.onNode()
 	}

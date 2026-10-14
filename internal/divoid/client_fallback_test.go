@@ -39,7 +39,7 @@ func TestClientBuiltByAnExternalKeyedLiteralSurvivesTheNilHTTPClientBranch(t *te
 
 	c := divoid.Client{}
 
-	_, found, err := c.Node(context.Background(), 42)
+	_, found, err := c.Node(context.Background(), 42, nil)
 	if err == nil {
 		t.Fatal("Node on a zero-value Client returned no error, want a transport error")
 	}
@@ -68,7 +68,7 @@ func TestNodeSendsItsRequestThroughTheHTTPClientSuppliedToNewClient(t *testing.T
 	rt := &recordingTransport{}
 	c := divoid.NewClient("http://divoid.invalid", "supplied-key", &http.Client{Transport: rt}, testLogger())
 
-	anchor, found, err := c.Node(context.Background(), 42)
+	anchor, found, err := c.Node(context.Background(), 42, nil)
 	if err != nil {
 		t.Fatalf("Node: %v", err)
 	}

@@ -294,6 +294,24 @@ the same prompts as before. Query derivation does not yet see the section. A mal
 array, an element that is not an object, a missing, blank or non-string `input`, a `reply` that is neither a string nor `null` —
 is a `400 invalid_request`. A `null` `reply` is read as absent, as a `null` `history` is.
 
+**A run can be held to a filter by a config node.** The request may also carry `config`: the id of a node of
+type `processor-config`, whose content is a JSON object with one optional key, `filter`:
+`{"filter": {"type": ["thought", "knowledge"]}}`. The service reads that node, filtered to its type by the graph,
+once per request and caches nothing. The filter is forwarded to the graph on every read that can put a node in front
+of the model: the first recall, the model's own recall, and the addressed read (which also sends the node's id and
+never `minSimilarity`, because the graph answers 400 to that without a query). The graph applies it before it counts,
+so the top six are not starved, and a node outside it reads as a missing id. The anchor is read without it: the caller
+names the subject itself. Each key is a graph listing filter name from a closed list (`type`, `name`, `status`,
+`nostatus`, `linkedto`, `path`, `bounds`, `minSimilarity`, `excludeId`, `excludeName`, `updatedFrom`, `updatedTo`,
+`createdFrom`, `createdTo`, `severity`, `severityMin`, `severityMax`, `noSeverity`, `refinement`, `norefinement`,
+`rootNodeId`, `noRootNodeId`), matched exactly and case-sensitively, because the graph ignores a name it does not know
+and a misspelt one would silently show the whole graph. A value is a string, a number or a boolean, or a non-empty
+array of them (one repeated key per element). A blank value (empty or whitespace only, scalar or element) is refused, because the graph ignores `type=` and the run would silently see the whole graph; the service checks no other value, the graph does. The service sets
+`query`, `queries`, `count`, `continue`, `sort`, `descending`, `fields` and `id` itself, so a config naming one (in any
+case) is refused. The config's `excludeId` and `excludeName` are added to the service's own; a bound the config sets in
+`updatedFrom` or `updatedTo` replaces the window the run derived for that bound. A run without `config` is unchanged,
+and the record of a configured run carries `perspective`: the config id and the filter it forwarded.
+
 The turn: fetch the subject, derive the query set and window described above, recall candidates against
 them, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
@@ -428,7 +446,9 @@ the operating system's — bounded to 512 runes. The operator's log carries the 
 
 | Code | Status | Meaning |
 |---|---|---|
-| `invalid_request` | 400 | Body unparseable, `input`/`subject` missing or empty, `history` malformed, or `verbose` not a boolean |
+| `invalid_request` | 400 | Body unparseable, `input`/`subject` missing or empty, `history` malformed, `config` present but not a positive node id, or `verbose` not a boolean |
+| `config_not_found` | 404 | `config` names a node that does not exist or is not of type `processor-config` |
+| `invalid_config` | 400 | The config is not the JSON object described above (`message` names the first violation), or the config carries a filter and the graph answered 400 or 414 to the turn's first recall (`message` carries the graph's own words; the filter may be the cause, a long query can be too); no model call was made to judge anything |
 | `subject_not_found` | 404 | The subject id resolves to nothing |
 | `graph_unavailable` | 502 | The graph could not be read, or a failure the service does not classify; `message` names the cause |
 | `model_unavailable` | 502 | The model call did not complete (transport failure, non-2xx status, or an undecodable response). `message` names the model, the endpoint, the assembled request's size in bytes, the elapsed time against the client bound that was in force, and then the cause |

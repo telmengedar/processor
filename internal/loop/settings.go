@@ -64,4 +64,14 @@ type RunOptions struct {
 	Subject  int64
 	History  []Exchange
 	Settings RunSettings
+
+	// View is the config the run is held to, nil for a run that has none.
+	View *View
+}
+
+func (o RunOptions) filter() Filter {
+	if o.View == nil {
+		return nil
+	}
+	return o.View.Filter
 }
