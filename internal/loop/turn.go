@@ -351,6 +351,11 @@ func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Dur
 			"produced", outcome.Produced, "grounded", outcome.Grounded, "curtailed", outcome.Curtailed)
 	}
 
+	if record.StopReason.Reason == Truncated {
+		t.log().Warn(truncationCause(record),
+			"subject", record.Subject, "adapter", record.Provider.Adapter, "rawStop", record.StopReason.Raw, "modelCalls", record.ModelCalls)
+	}
+
 	if record.RecallClosed {
 		t.log().Warn("recall was closed for the turn: consecutive rounds returned nothing the model had not already been shown",
 			"subject", record.Subject, "rounds", len(record.ToolCalls), "modelCalls", record.ModelCalls)
@@ -444,9 +449,12 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		return ""
 	}
 
-	return BoundCause(fmt.Sprintf("%s: %s left, and one call needs %s — %d output tokens at the declared floor of %g tokens per second, plus %d prompt bytes at the declared floor of %g bytes per second",
-		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond),
-		settings.JudgementBudget, floors.TokensPerSecond, settings.PromptCeiling(), floors.PromptBytesPerSecond))
+	prompt := fmt.Sprintf("%d prompt bytes at the declared floor of %g bytes per second", settings.PromptCeiling(), floors.PromptBytesPerSecond)
+	if settings.JudgementBudget > 0 {
+		prompt = fmt.Sprintf("%d output tokens at the declared floor of %g tokens per second, plus %s", settings.JudgementBudget, floors.TokensPerSecond, prompt)
+	}
+	return BoundCause(fmt.Sprintf("%s: %s left, and one call needs %s — %s",
+		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond), prompt))
 }
 
 func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, admitted []Disposition) (judgement, error) {
@@ -581,7 +589,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 
 func (t *Turn) logReservation(settings RunSettings, reserved reservation, call, dispatched int) {
 	t.log().Info("the turn reserved its last judgement call for answering: no tool is offered on a call whose tool request it would not dispatch",
-		"condition", string(reserved), "call", call, "callCap", settings.MaxModelCalls, "dispatched", dispatched, "budget", settings.AnsweringBudget)
+		"condition", string(reserved), "call", call, "callCap", settings.MaxModelCalls, "dispatched", dispatched)
 }
 
 func (t *Turn) offeredTools(reserved, noteOpen bool) []string {
@@ -614,6 +622,17 @@ func (t *Turn) composeSystem(identity string, offered []string, conversation, si
 
 func offersRetrieval(offered []string) bool {
 	return slices.Contains(offered, ToolRecall) || slices.Contains(offered, ToolReadNode)
+}
+
+func truncationCause(record Record) string {
+	limit := record.Limits.JudgementBudget
+	if record.ReservedCall.State == ReservedCallCompleted {
+		limit = record.Limits.AnsweringBudget
+	}
+	if limit == 0 {
+		return "the endpoint stopped generation at length although processor sent no output limit: a deployment default or the context window cut the answer"
+	}
+	return "the endpoint stopped generation at length: the output limit the run carried cut the answer"
 }
 
 func outputBudget(settings RunSettings, reserved reservation) int {

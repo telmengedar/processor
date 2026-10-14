@@ -3,20 +3,13 @@ package loop
 import "time"
 
 const (
-	// DerivationBudget is the output budget one query-derivation call is issued with.
-	DerivationBudget = 160
-	// JudgementBudget is the output budget one judgement call is issued with.
-	JudgementBudget = 192
-	// AnsweringBudget is the output budget the reserved answering call is issued with.
-	AnsweringBudget = 192
-)
-
-const (
 	// DerivationPromptCeiling bounds the bytes one derivation call sends: its instructions and exemplars, plus the run's input.
 	DerivationPromptCeiling = 12_000
 	// JudgementPromptCeiling bounds the bytes one judgement call sends: the working memory, which is the assembled block plus one supplementary round and never more.
 	JudgementPromptCeiling = AssemblyByteBudget + SupplementaryByteBudget
 )
+
+const noOutputLimit = 0
 
 // AffordabilitySafety is the share of a bound one call site's declared cost may claim, leaving the rest for everything the declaration does not model.
 const AffordabilitySafety = 0.8
@@ -54,7 +47,7 @@ func (f Floors) Resolved() Floors {
 	return f
 }
 
-// CallSite is one model call the product can issue: the output budget it declares, the prompt it may send, and the bound that will cut it.
+// CallSite is one model call the product can issue: the output budget it declares (0 for none), the prompt it may send, and the bound that will cut it.
 type CallSite struct {
 	Name          string
 	Budget        int
@@ -91,9 +84,9 @@ func JudgementBound(clientBound, runBound time.Duration) time.Duration {
 func CallSites(clientBound, runBound time.Duration) []CallSite {
 	judgement := JudgementBound(clientBound, runBound)
 	return []CallSite{
-		{Name: SiteDerivation, Budget: DerivationBudget, PromptCeiling: DerivationPromptCeiling, Bound: DerivationBound},
-		{Name: SiteJudgement, Budget: JudgementBudget, PromptCeiling: JudgementPromptCeiling, Bound: judgement},
-		{Name: SiteAnswering, Budget: AnsweringBudget, PromptCeiling: JudgementPromptCeiling, Bound: judgement},
+		{Name: SiteDerivation, PromptCeiling: DerivationPromptCeiling, Bound: DerivationBound},
+		{Name: SiteJudgement, PromptCeiling: JudgementPromptCeiling, Bound: judgement},
+		{Name: SiteAnswering, PromptCeiling: JudgementPromptCeiling, Bound: judgement},
 	}
 }
 
@@ -120,7 +113,7 @@ func Afford(sites []CallSite, floors Floors) []Headroom {
 	return report
 }
 
-// JudgementCost is what one judgement call at the default settings is declared to need at floors: its output budget at the generation floor, plus its prompt ceiling at the prompt floor.
+// JudgementCost is what one judgement call at the default settings is declared to need at floors: its prompt ceiling at the prompt floor, as the default settings carry no output budget.
 func JudgementCost(floors Floors) time.Duration {
 	return DefaultSettings().JudgementCost(floors)
 }

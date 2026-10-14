@@ -33,6 +33,7 @@ import json
 import pickle
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import compare
@@ -518,15 +519,40 @@ class TranscriptOutputBudgetTests(unittest.TestCase):
         with self.assertRaises(compare.CompareFailure) as ctx:
             compare.transcript_output_budget("t1", None)
         self.assertIn("t1", str(ctx.exception))
-        self.assertIn("limits.judgementBudget", str(ctx.exception))
+        self.assertIn("limits", str(ctx.exception))
 
-    def test_raises_when_limits_is_empty(self):
-        with self.assertRaises(compare.CompareFailure):
-            compare.transcript_output_budget("t1", {})
+    def test_a_limits_object_without_a_judgement_budget_is_unbounded(self):
+        """A run that sent no output limit writes no judgementBudget key: arm TRANSCRIPT is then
+        unbounded as well, and an empty limits object is not the same thing as no limits object."""
+        self.assertIsNone(compare.transcript_output_budget("t1", {}))
+        self.assertIsNone(compare.transcript_output_budget("t1", {"candidateLimit": 20, "maxModelCalls": 6}))
 
-    def test_raises_when_judgement_budget_is_zero(self):
-        with self.assertRaises(compare.CompareFailure):
-            compare.transcript_output_budget("t1", {"judgementBudget": 0})
+    def test_a_zero_judgement_budget_is_unbounded(self):
+        self.assertIsNone(compare.transcript_output_budget("t1", {"judgementBudget": 0}))
+
+    def test_an_unbounded_transcript_request_carries_no_max_tokens(self):
+        sent = []
+
+        class Reply:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def read(self):
+                return b'{"choices":[{"message":{"content":"x"},"finish_reason":"stop"}]}'
+
+        def capture(request, timeout):
+            sent.append(json.loads(request.data))
+            return Reply()
+
+        with mock.patch.object(compare.urllib.request, "urlopen", capture):
+            compare.chat("http://m", "model", "", "hello", compare.transcript_output_budget("t1", {}), 5)
+            compare.chat("http://m", "model", "", "hello", compare.transcript_output_budget("t1", {"judgementBudget": 300}), 5)
+
+        self.assertNotIn("max_tokens", sent[0])
+        self.assertEqual(sent[1]["max_tokens"], 300)
 
     def test_raises_on_the_pre_split_wire_shape(self):
         """The exact regression: a record carrying the retired single-budget field and neither of
@@ -535,11 +561,11 @@ class TranscriptOutputBudgetTests(unittest.TestCase):
         key were left in the lookup chain."""
         with self.assertRaises(compare.CompareFailure) as ctx:
             compare.transcript_output_budget("t1", {"maxOutputTokens": 4096})
-        self.assertIn("limits.judgementBudget", str(ctx.exception))
+        self.assertIn("limits", str(ctx.exception))
 
     def test_failure_message_names_the_task(self):
         with self.assertRaises(compare.CompareFailure) as ctx:
-            compare.transcript_output_budget("t3-second-ask-worse", {})
+            compare.transcript_output_budget("t3-second-ask-worse", None)
         self.assertIn("t3-second-ask-worse", str(ctx.exception))
 
 

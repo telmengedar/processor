@@ -6,7 +6,7 @@ import "strings"
 type Verdict string
 
 const (
-	// VerdictCurtailed is a turn whose last call was reserved for answering, or which the remaining-time guard stopped, rather than one that ran to its own end.
+	// VerdictCurtailed is a turn whose last call was reserved for answering, which the remaining-time guard stopped, or whose last call the endpoint stopped at length, rather than one that ran to its own end.
 	VerdictCurtailed Verdict = "curtailed"
 	// VerdictSilent is a run whose model chose silence on a run that offered it, and which no tool-dispatch bound curtailed.
 	VerdictSilent Verdict = "silent"
@@ -31,7 +31,7 @@ type Outcome struct {
 	// Grounded is true when an admitted row reached the model, from the block or from a dispatched round.
 	Grounded bool `json:"grounded"`
 
-	// Curtailed is true when the turn's last call was reserved for answering or the remaining-time guard stopped the turn, whatever the model then produced.
+	// Curtailed is true when the turn's last call was reserved for answering, the remaining-time guard stopped the turn, or the endpoint stopped the last call at length, whatever the model then produced.
 	Curtailed bool `json:"curtailed"`
 
 	// Acted counts the tool rounds that completed without error, by tool; no verdict consumes it.
@@ -42,7 +42,7 @@ type Outcome struct {
 func ComputeOutcome(record Record) Outcome {
 	produced := producedText(record) && !record.Silent
 	grounded := groundedInAdmittedRows(record)
-	curtailed := record.ReservedCall.State != "" || record.CapReached || record.RecallClosed || record.TimeShortfall != ""
+	curtailed := record.ReservedCall.State != "" || record.CapReached || record.RecallClosed || record.TimeShortfall != "" || record.StopReason.Reason == Truncated
 
 	return Outcome{
 		Verdict:   verdictFor(produced, record.Silent, grounded, curtailed),

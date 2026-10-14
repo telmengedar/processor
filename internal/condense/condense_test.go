@@ -445,15 +445,6 @@ func TestATargetCarryingNoPreRegisteredReasonProducesNoAuditEntry(t *testing.T) 
 	}
 }
 
-func TestTheOutputTokenCeilingHasAFloorAndOtherwiseTracksTheInputSize(t *testing.T) {
-	if got := maxOutputTokens(strings.Repeat("a", 100)); got != minOutputTokens {
-		t.Fatalf("want the floor %d for a small node, got %d", minOutputTokens, got)
-	}
-	if got := maxOutputTokens(strings.Repeat("a", 100000)); got <= minOutputTokens {
-		t.Fatalf("want a ceiling above the floor for a large node, got %d", got)
-	}
-}
-
 func TestAnEmptyContentTypeIsTreatedAsProseAndAnImageOneIsNot(t *testing.T) {
 	if !isProse("") {
 		t.Fatalf("an absent content type must not exclude a node from the target set")
@@ -553,22 +544,15 @@ func TestASkipReasonNoConstantInThisPackageNamesCountsAsAFailureOfThePass(t *tes
 	}
 }
 
-func TestTheOutputCeilingIsOneTokenPerInputTokenRatherThanHalfOfThem(t *testing.T) {
-	if got := maxOutputTokens(strings.Repeat("a", 100000)); got != 23810 {
-		t.Fatalf("want a ceiling of 23810 tokens for a 100000 byte node, got %d", got)
-	}
-	if got := maxOutputTokens(strings.Repeat("a", 100)); got != 2048 {
-		t.Fatalf("want the floor of 2048 tokens for a 100 byte node, got %d", got)
-	}
-}
+func TestNoCondensationCallCarriesAnOutputLimitWhateverTheNodesSize(t *testing.T) {
+	for _, size := range []int{100, 100000} {
+		model := &fakeModel{text: strings.Repeat("b", 200)}
 
-func TestTheCeilingHandedToTheModelIsTheOneTheNodesOwnSizeProduces(t *testing.T) {
-	model := &fakeModel{text: strings.Repeat("b", 200)}
+		runPass(t, newFakeGraph(proseNode(1, strings.Repeat("a", size))), model, Options{}, Target{Node: 1})
 
-	runPass(t, newFakeGraph(proseNode(1, strings.Repeat("a", 100000))), model, Options{}, Target{Node: 1})
-
-	if len(model.maxTokens) != 1 || model.maxTokens[0] != 23810 {
-		t.Fatalf("want one call carrying a ceiling of 23810, got %v", model.maxTokens)
+		if len(model.maxTokens) != 1 || model.maxTokens[0] != 0 {
+			t.Fatalf("want one call carrying no output limit for a %d byte node, got %v", size, model.maxTokens)
+		}
 	}
 }
 
