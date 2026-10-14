@@ -1506,7 +1506,7 @@ class MirroredConstantTests(unittest.TestCase):
         go = go_string_constants(self.TURN)
         for mirrored, name in (
             (step_trace.REFUSAL_RESERVED_CALL, "errReservedCallRefused"),
-            (step_trace.REFUSAL_RECALL_CLOSED, "errRecallClosedToModel"),
+            (step_trace.REFUSAL_RECALL_CLOSED, "errRecallClosed"),
             (step_trace.REFUSAL_NO_SUCH_NODE, "errNoSuchNode"),
             (step_trace.REFUSAL_READ_OF_SUBJECT, "errReadOfSubject"),
             (step_trace.REFUSAL_ALREADY_SHOWN_THIS_TURN, "errAlreadyShownThisTurn"),

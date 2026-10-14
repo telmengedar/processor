@@ -73,7 +73,7 @@ var ErrGraphRejected = errors.New("graph rejected the request")
 // ErrInvalidConfig marks a configured run whose first recall the graph answered with 400 or 414, which the config's filter may have caused.
 var ErrInvalidConfig = errors.New("invalid config")
 
-// ErrWriteRejected marks a write the working directory refused; its message is recorded on the round and never shown to the model.
+// ErrWriteRejected marks a write the working directory refused; its message is recorded on the round and not fed back to the following call.
 var ErrWriteRejected = errors.New("write rejected")
 
 // RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, Exclude ids and every run record left out, a zero Window unbounded, and Filter, nil for none, the run's config filter the graph applies before it counts.

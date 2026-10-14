@@ -63,7 +63,7 @@ func refusedRound(t *testing.T, record Record, want string) ToolCallRecord {
 		t.Fatalf("the round was recorded against tool %q, want %q", round.Tool, ToolReadNode)
 	}
 	if round.Error != want {
-		t.Fatalf("the round carries error %q, want %q: the refusal is the only thing the model is shown for the round it spent", round.Error, want)
+		t.Fatalf("the round carries error %q, want %q: the refusal is the only thing the round records as its outcome", round.Error, want)
 	}
 	if len(round.Results) != 0 {
 		t.Fatalf("a refused round carries %d result rows, want none: exactly one of the refusal and the rows may be set, or which of them renders is decided silently", len(round.Results))
@@ -201,7 +201,7 @@ func TestAnAddressedReadRoundNeverCountsTowardsClosingRecall(t *testing.T) {
 		t.Fatalf("the dispatched recalls recorded yields %v, want %v: all three must be barren, or the round that closed recall was not a barren one", yieldsOf(record), want)
 	}
 	if closed := record.ToolCalls[4]; closed.Error != errRecallClosed {
-		t.Fatalf("the last round carries error %q, want the sentence the model was shown when recall closed", closed.Error)
+		t.Fatalf("the last round carries error %q, want the sentence recorded when recall closed", closed.Error)
 	}
 }
 
@@ -490,7 +490,7 @@ func TestTheRefusalsAnAddressedReadCanReturnAreTheSentencesTheRecordCarries(t *t
 		record := runWithResults(t, c.graph, wantsRead(c.asked), answeredFinal())
 		round := onlyRound(t, record)
 		if round.Error != c.want {
-			t.Errorf("%s is refused with %q, want %q verbatim. A refusal is product text the model acts on, so the wording is pinned against a literal here rather than against the constant the message is built from", c.name, round.Error, c.want)
+			t.Errorf("%s is refused with %q, want %q verbatim. A refusal is product text recorded on the round, so the wording is pinned against a literal here rather than against the constant the message is built from", c.name, round.Error, c.want)
 		}
 	}
 }
