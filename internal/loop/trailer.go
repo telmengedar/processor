@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// TrailerKind names the search state a judgement call was made in, which decides its closing paragraph.
+// TrailerKind names the search state a judgement call was made in, which decides its search paragraph.
 type TrailerKind string
 
 const (
@@ -19,10 +19,27 @@ const (
 	TrailerBarren TrailerKind = "barren"
 )
 
+// NoteAck names which acknowledgement of a note round a judgement call carried.
+type NoteAck string
+
+const (
+	// NoteAckNone is a call that follows no note round, so it carries no acknowledgement.
+	NoteAckNone NoteAck = "none"
+	// NoteAckStored is a call told that its turn's note was stored.
+	NoteAckStored NoteAck = "stored"
+	// NoteAckNotStored is a call told that its turn's note was not stored, without a cause.
+	NoteAckNotStored NoteAck = "notStored"
+)
+
 const (
 	recallClause = "When none of the parts above states what this request asks for, do not say the information is missing: call the recall tool with a short description of what is missing."
 	searchedLine = "You searched memory in this request for "
 	barrenLine   = ", and it found nothing new. Answer now from what you have; where it does not say, say plainly that you do not know."
+
+	storedAckOpening    = `You stored this note in this request: "`
+	storedAckClosing    = `". Now write your answer to the request.`
+	notStoredAckLine    = "Your note in this request was not stored. Now write your answer to the request."
+	closingParagraphGap = "\n\n"
 )
 
 type recallSearch struct {
@@ -53,4 +70,24 @@ func trailerFor(offered []string, searches []recallSearch) (string, TrailerKind)
 
 func quoted(query string) string {
 	return `"` + query + `"`
+}
+
+func acknowledgement(ack NoteAck, noteText string) string {
+	switch ack {
+	case NoteAckStored:
+		return storedAckOpening + noteText + storedAckClosing
+	case NoteAckNotStored:
+		return notStoredAckLine
+	}
+	return ""
+}
+
+func composeClosing(search, acknowledgement string) string {
+	var parts []string
+	for _, part := range []string{search, acknowledgement} {
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, closingParagraphGap)
 }

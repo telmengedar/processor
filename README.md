@@ -364,8 +364,16 @@ the model was shown in this turn. The model chooses nothing else: processor file
 content, and links it to the request's subject and, when `about` was shown this turn, to that part; an `about` that was
 not shown is dropped and the note is still filed. The text must be valid UTF-8 and non-blank, with no size limit of processor's own, and
 its derived name may not begin `processor-run`, which is checked ignoring case; a note that fails this is refused and nothing is filed. A turn takes at
-most one note: the tool is withdrawn for the rest of the turn after any note round, whatever became of it, because the
-model is never shown the outcome of a tool round. It is never offered on the call reserved for answering. A note that
+most one note: the tool is withdrawn for the rest of the turn after any note round, whatever became of it, so no second note is offered or filed.
+No tool round is replayed to the model: what a recall or read_node round retrieved joins its working memory and appears in the
+context block, and of the rounds themselves it is told only a search's query and whether it brought anything and, after a note
+round, one acknowledgement. Every later call of the turn, the one reserved for answering included, ends with that
+acknowledgement paragraph, after its search paragraph if it has one. After a note that was filed
+(`stored` or `unlinked`) it reads `You stored this note in this request: "<the note's text>". Now write your answer to the request.`;
+after any other outcome it reads `Your note in this request was not stored. Now write your answer to the request.`, which names no
+cause, quotes no text and does not name the tool. A note that fails does not by itself reserve the next call: that call is
+reserved only when the call cap or another condition reserves it, and otherwise it is an ordinary call. The note tool is never
+offered on the call reserved for answering. A note that
 could not be filed does not fail the run. The types `processor-config` and `session-log` are refused as the note type,
 and when the config's `filter` has a `type` key the note type must be one of its values, so a run can recall what its
 config lets it write; either violation is a `400 invalid_config`. Every note round appears in the run record's
@@ -399,10 +407,10 @@ paragraph at all, because the paragraph made it search again, mostly with the sa
 brought nothing new it is told so, by the query it ran, and is not given the paragraph. The paragraph sits
 there because that is where the call-or-answer decision of the model in use is made, and the record names
 in `trailers` the search state each call was made in (`clause`, `found`, `barren`, or `none` where recall
-was not offered) and in `offered` the tools each call offered. **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
+was not offered), in `offered` the tools each call offered and in `noteAcks` which acknowledgement each call carried (`none`, `stored` or `notStored`). **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
 a system text and one user message. The system text is composed per call from the tools that call offers and from whether the turn carries a conversation section,
 so a tool the call does not offer is not mentioned in it; and no tool call, error or write
-confirmation is ever replayed to the model, the one thing it is told of a search being its query and whether it brought anything. What a retrieval round *found* joins the turn's working memory
+confirmation is ever replayed to the model (a note round is the one exception, described above, and only as that acknowledgement), the one thing it is told of a search being its query and whether it brought anything. What a retrieval round *found* joins the turn's working memory
 and is rendered into the next call's context block, once per row and never beyond the prompt ceiling (the
 assembly byte budget plus one supplementary round). A row a later round returns again, unchanged, is
 recorded as included with `held: true` and charged nothing. What the model *did* stays on the run
