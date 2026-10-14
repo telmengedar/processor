@@ -249,13 +249,6 @@ func (g *blockingGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt
 	return loop.WriteReceipt{State: loop.NotStored}
 }
 
-// runRecordWire is a local, literal-tagged decode target for the record —
-// deliberately not loop.Record itself (CF-4). Decoding into the
-// production type would move both sides of an assertion together on a
-// field rename, which is the both-sides-move anti-pattern the design
-// warns about (#10466 §14 step 1); a locally-declared struct with literal
-// tags is what actually pins the wire shape, the same pattern already
-// used for the error envelope in assertErrorCode below.
 type runRecordWire struct {
 	Input           string   `json:"input"`
 	Subject         int64    `json:"subject"`

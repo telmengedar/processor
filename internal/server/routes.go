@@ -14,11 +14,7 @@ import (
 	"github.com/telmengedar/processor/internal/runconfig"
 )
 
-// NewHandler builds the HTTP handler for the Processor API route table.
-// turn is the loop that POST /runs delegates to — the handler takes the
-// loop itself, not an abstraction of it (design §9.2), and turn arrives as
-// the handler-building function's first parameter (design §5.5, #10466
-// archetype C).
+// NewHandler builds the routes for GET /health and POST /runs over turn.
 func NewHandler(turn *loop.Turn) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(turn.Build))

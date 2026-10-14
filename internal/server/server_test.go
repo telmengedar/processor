@@ -61,13 +61,6 @@ func TestServeServesThenShutsDownCleanly(t *testing.T) {
 	}
 }
 
-// fakeHTTPServer lets a test control exactly what the serve goroutine
-// reports and exactly when, relative to Shutdown being invoked — the two
-// events whose relative timing the real accept loop cannot be made to
-// order deterministically. Serve blocks until Shutdown is called, which
-// guarantees serve()'s outer select observes only ctx.Done() as ready (the
-// cancellation branch, not the direct-error branch) and that serveErr is
-// populated only afterward — precisely the window #10464 identified.
 type fakeHTTPServer struct {
 	serveErr       error
 	shutdownCalled chan struct{}
