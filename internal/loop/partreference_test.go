@@ -85,7 +85,7 @@ func TestANumberThatWasNotShownIsAReplyAndNoReadIsMade(t *testing.T) {
 func TestAShownIdWithAnythingElseAroundItIsAReply(t *testing.T) {
 	t.Parallel()
 
-	for _, answer := range []string{"id: 71 is the one", "the id is 71", "#71", "node 71", "71.", "71\n72", "id: 71\nid: 71", "id 71", "71 71", "-71", "+71", "id: 7 1"} {
+	for _, answer := range []string{"id: 71 is the one", "the id is 71", "#71", "node 71", "71.", "id:\n71", "71\n72", "id: 71\nid: 71", "id 71", "71 71", "-71", "+71", "id: 7 1"} {
 		record, model := runShowingAPart(t, answered(answer))
 
 		if len(record.ToolCalls) != 0 || len(model.calls) != 1 || record.NonReply != "" || !record.Outcome.Produced {
@@ -201,5 +201,33 @@ func TestAShownLoneIdIsNoLongerDeliveredButAnUnshownOneStillIs(t *testing.T) {
 	}
 	if got := classifyNonReply("12", false, ToolRecall, shown); got != NonReplyToolText {
 		t.Errorf("an unhonoured call that wrote a shown id = %q, want %q", got, NonReplyToolText)
+	}
+}
+
+func TestAToolRequestWhoseContentIsAShownIdKeepsItsNativeRoundAndIsNeverReadAsAReference(t *testing.T) {
+	t.Parallel()
+
+	recall := recallFor("a phrase")
+	write := wantsWriteOf("notes.md", "what I have so far")
+	for name, request := range map[string]JudgeResult{"recall": recall, "write": write} {
+		request.Answer = "id: 71"
+		request.ToolSource = ToolSourceNative
+
+		model := &fakeModel{results: []JudgeResult{request, answered("a reply")}}
+		turn := NewTurn(graphShowingAPart(), model, nil, fixedSystem("system"), "test-model", testLogger())
+		turn.Files = &fakeFiles{dir: "/runs/run-1"}
+		record, _, err := turn.Run(context.Background(), "hello", readSubject)
+		if err != nil {
+			t.Fatalf("%s: Run: %v", name, err)
+		}
+
+		if len(record.ToolCalls) != 1 {
+			t.Fatalf("%s: the record carries %d rounds, want the native request's one: %+v", name, len(record.ToolCalls), record.ToolCalls)
+		}
+		round := record.ToolCalls[0]
+		wantTool := map[string]string{"recall": ToolRecall, "write": ToolWriteFile}[name]
+		if round.Tool != wantTool || round.Source != ToolSourceNative {
+			t.Fatalf("%s: round = tool %q source %q, want %q and %q: the native request must not be rewritten into a read", name, round.Tool, round.Source, wantTool, ToolSourceNative)
+		}
 	}
 }
