@@ -262,6 +262,28 @@ func TestRunsVerboseResponseNamesTheTrailerOfEveryModelCallInTheRawBody(t *testi
 	}
 }
 
+func TestRunsVerboseResponseNamesACallAfterAFruitfulRecallAsFoundInTheRawBody(t *testing.T) {
+	t.Parallel()
+
+	graph := replyGraph()
+	fresh := loop.Candidate{ID: 8, Type: "task", Name: "Fresh", Similarity: 0.5, Substance: "fresh body"}
+	graph.recallSeq = []stubRecallResponse{{candidates: graph.candidates}, {candidates: append(slices.Clone(graph.candidates), fresh)}}
+	graph.recallIdx = new(int)
+	model := &scriptedModel{step: func(call int) (loop.JudgeResult, error) {
+		if call == 1 {
+			return loop.JudgeResult{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the fresh row"}, nil
+		}
+		return loop.JudgeResult{Answer: "Found it.", Reason: loop.Answered, RawReason: "stop"}, nil
+	}}
+	turn := loop.NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
+
+	members, _ := topLevelKeys(t, postTo(t, context.Background(), turn, "/runs?verbose=true"))
+
+	if got, want := string(members["trailers"]), `["clause","found"]`; got != want {
+		t.Fatalf("trailers = %s, want %s", got, want)
+	}
+}
+
 func TestRunsReplyIsTheAnswerWhenTheRunProducedOne(t *testing.T) {
 	t.Parallel()
 

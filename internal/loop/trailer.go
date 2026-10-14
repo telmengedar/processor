@@ -5,15 +5,15 @@ import (
 	"strings"
 )
 
-// TrailerKind names which closing paragraph a judgement call's user message carried.
+// TrailerKind names the search state a judgement call was made in, which decides its closing paragraph.
 type TrailerKind string
 
 const (
-	// TrailerNone is a call whose user message carried no closing paragraph.
+	// TrailerNone is a call not offered recall, so it carries no closing paragraph.
 	TrailerNone TrailerKind = "none"
 	// TrailerClause is a call told to search when no part states what the request asks for.
 	TrailerClause TrailerKind = "clause"
-	// TrailerFound is a call told what its earlier search found, then given the clause.
+	// TrailerFound is a call that follows a search which brought rows, and carries no closing paragraph.
 	TrailerFound TrailerKind = "found"
 	// TrailerBarren is a call told its earlier search found nothing new, with no clause.
 	TrailerBarren TrailerKind = "barren"
@@ -22,7 +22,6 @@ const (
 const (
 	recallClause = "When none of the parts above states what this request asks for, do not say the information is missing: call the recall tool with a short description of what is missing."
 	searchedLine = "You searched memory in this request for "
-	foundLine    = "; what it found is included above."
 	barrenLine   = ", and it found nothing new. Answer now from what you have; where it does not say, say plainly that you do not know."
 )
 
@@ -41,7 +40,7 @@ func trailerFor(offered []string, searches []recallSearch) (string, TrailerKind)
 
 	last := searches[len(searches)-1]
 	if last.yield > 0 {
-		return searchedLine + quoted(last.query) + foundLine + "\n\n" + recallClause, TrailerFound
+		return "", TrailerFound
 	}
 
 	var barren []string

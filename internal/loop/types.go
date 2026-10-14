@@ -358,7 +358,7 @@ type Record struct {
 	ReservedCall ReservedCall `json:"reservedCall,omitzero"`
 	// Usage carries one entry per model call, in call order, nil where the endpoint reported none.
 	Usage []*Usage `json:"usage"`
-	// Trailers carries one entry per model call, in call order: which closing paragraph that call's user message ended with.
+	// Trailers carries one entry per model call, in call order: the search state that call was made in, which decides its closing paragraph.
 	Trailers []TrailerKind `json:"trailers"`
 	// LastResponse is present exactly when the turn's last judgement call returned a response; absent means either that call returned none, or the record predates this field.
 	LastResponse *LastResponse `json:"lastResponse,omitempty"`
