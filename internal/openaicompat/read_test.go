@@ -162,9 +162,9 @@ func TestATranslatedAddressedReadWithoutANumericIdIsAToolErrorAndNeverAReadOfNod
 		case result.ToolError == "":
 			t.Errorf("%s: the adapter reported no tool error at all, so the loop is asked to read whatever id fell out of the parse", c.name)
 		case c.prefix && !strings.HasPrefix(result.ToolError, c.wantCause):
-			t.Errorf("%s: the cause is %q, want it to begin %q. A cause is what the model acts on, so it is pinned against a literal here; the tail is the JSON decoder's and is not ours to spell", c.name, result.ToolError, c.wantCause)
+			t.Errorf("%s: the cause is %q, want it to begin %q. A cause is recorded on the round, so it is pinned against a literal here; the tail is the JSON decoder's and is not ours to spell", c.name, result.ToolError, c.wantCause)
 		case !c.prefix && result.ToolError != c.wantCause:
-			t.Errorf("%s: the cause is %q, want %q verbatim. Asserted only as non-empty, a malformed read's cause can be replaced by a sentence about a failed file write and the model is told to fix the wrong thing", c.name, result.ToolError, c.wantCause)
+			t.Errorf("%s: the cause is %q, want %q verbatim. Asserted only as non-empty, a malformed read's cause can be replaced by a sentence about a failed file write and the recorded cause names the wrong failure", c.name, result.ToolError, c.wantCause)
 		}
 	}
 }

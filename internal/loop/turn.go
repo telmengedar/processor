@@ -23,7 +23,7 @@ const (
 const (
 	errRunTimeShort         = "the run's remaining time cannot afford another judgement call"
 	errNoWorkingDirectory   = "no working directory is configured"
-	errRecallClosedToModel  = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
+	errRecallClosed         = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
 	errReservedCallRefused  = "the turn's last call was reserved for answering, so it offered no tool and dispatched none"
 	errNoSuchNode           = "no part of memory has that id"
 	errReadOfSubject        = "that id is this request's own subject, and the context block already carries it"
@@ -41,7 +41,7 @@ const (
 	reservedByRefusedRound reservation = "refusedRound"
 )
 
-// CarriedCauseRunes bounds a cause carried to a durable, shared or prompt-bearing destination.
+// CarriedCauseRunes bounds a cause carried to a durable or shared destination.
 const CarriedCauseRunes = 512
 
 // BoundCause returns cause bounded to CarriedCauseRunes, the whole of it when it already fits.
@@ -73,7 +73,7 @@ var ErrGraphRejected = errors.New("graph rejected the request")
 // ErrInvalidConfig marks a configured run whose first recall the graph answered with 400 or 414, which the config's filter may have caused.
 var ErrInvalidConfig = errors.New("invalid config")
 
-// ErrWriteRejected marks a write the working directory refused; its message is shown to the model.
+// ErrWriteRejected marks a write the working directory refused; its message is recorded on the round and not fed back to the following call.
 var ErrWriteRejected = errors.New("write rejected")
 
 // RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, Exclude ids and every run record left out, a zero Window unbounded, and Filter, nil for none, the run's config filter the graph applies before it counts.
@@ -649,7 +649,7 @@ func retrieves(tool string) bool {
 }
 
 func closedRecallExchange(result JudgeResult) ToolExchange {
-	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errRecallClosedToModel, Dispositions: []Disposition{}}
+	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errRecallClosed, Dispositions: []Disposition{}}
 }
 
 func (t *Turn) dispatch(ctx context.Context, settings RunSettings, result JudgeResult, workspace *string, window UpdateWindow, filter Filter, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {

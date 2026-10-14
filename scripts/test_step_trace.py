@@ -1506,7 +1506,7 @@ class MirroredConstantTests(unittest.TestCase):
         go = go_string_constants(self.TURN)
         for mirrored, name in (
             (step_trace.REFUSAL_RESERVED_CALL, "errReservedCallRefused"),
-            (step_trace.REFUSAL_RECALL_CLOSED, "errRecallClosedToModel"),
+            (step_trace.REFUSAL_RECALL_CLOSED, "errRecallClosed"),
             (step_trace.REFUSAL_NO_SUCH_NODE, "errNoSuchNode"),
             (step_trace.REFUSAL_READ_OF_SUBJECT, "errReadOfSubject"),
             (step_trace.REFUSAL_ALREADY_SHOWN_THIS_TURN, "errAlreadyShownThisTurn"),
@@ -1538,7 +1538,7 @@ class MirroredConstantTests(unittest.TestCase):
 
     def test_the_write_rejection_prefix_is_built_from_the_loops_own_sentinel(self):
         """The mirror this file's map calls the worst-behaved of them: a drifted prefix used to make
-        a refusal the model was actually shown print as a tool call that never parsed."""
+        a refusal the loop actually recorded print as a tool call that never parsed."""
         text = (pathlib.Path(step_trace.REPO) / self.TURN).read_text(encoding="utf-8")
         sentinel = re.search(r'ErrWriteRejected\s*=\s*errors\.New\("([^"]*)"\)', text)
         self.assertIsNotNone(sentinel, "ErrWriteRejected is no longer declared where this mirror reads it")

@@ -63,7 +63,7 @@ func refusedRound(t *testing.T, record Record, want string) ToolCallRecord {
 		t.Fatalf("the round was recorded against tool %q, want %q", round.Tool, ToolReadNode)
 	}
 	if round.Error != want {
-		t.Fatalf("the round carries error %q, want %q: the refusal is the only thing the model is shown for the round it spent", round.Error, want)
+		t.Fatalf("the round carries error %q, want %q: the refusal is the only thing the round records as its outcome", round.Error, want)
 	}
 	if len(round.Results) != 0 {
 		t.Fatalf("a refused round carries %d result rows, want none: exactly one of the refusal and the rows may be set, or which of them renders is decided silently", len(round.Results))
@@ -141,7 +141,7 @@ func TestTurnRunRefusesAnAddressedReadTheGraphCouldNotServeRatherThanFailingTheR
 
 	round := onlyRound(t, record)
 	if !strings.Contains(round.Error, "the graph is unreachable") {
-		t.Fatalf("the round carries error %q, want the transport cause carried to the model", round.Error)
+		t.Fatalf("the round carries error %q, want the transport cause recorded on the round", round.Error)
 	}
 	if record.Answer != "final" {
 		t.Fatalf("record.Answer = %q, want the answer the turn went on to produce: a graph that cannot serve one read degrades to a refusal, never to a failed run", record.Answer)
@@ -195,13 +195,13 @@ func TestAnAddressedReadRoundNeverCountsTowardsClosingRecall(t *testing.T) {
 		t.Fatalf("recall never closed, so this guard observed the closing rule on no round at all: %+v", record.ToolCalls)
 	}
 	if len(record.ToolCalls) != 5 {
-		t.Fatalf("recall closed after %d rounds, want 5 — one barren recall, the read, two more barren recalls and the round the refusal was shown on. Closing sooner means the read was counted towards the barren run it interrupted, and the rule closes on two *consecutive* barren rounds", len(record.ToolCalls))
+		t.Fatalf("recall closed after %d rounds, want 5 — one barren recall, the read, two more barren recalls and the round the refusal was recorded on. Closing sooner means the read was counted towards the barren run it interrupted, and the rule closes on two *consecutive* barren rounds", len(record.ToolCalls))
 	}
 	if want := []int{0, 0, 0}; !sameInts(yieldsOf(record), want) {
 		t.Fatalf("the dispatched recalls recorded yields %v, want %v: all three must be barren, or the round that closed recall was not a barren one", yieldsOf(record), want)
 	}
-	if closed := record.ToolCalls[4]; closed.Error != errRecallClosedToModel {
-		t.Fatalf("the last round carries error %q, want the sentence the model was shown when recall closed", closed.Error)
+	if closed := record.ToolCalls[4]; closed.Error != errRecallClosed {
+		t.Fatalf("the last round carries error %q, want the sentence recorded when recall closed", closed.Error)
 	}
 }
 
@@ -426,7 +426,7 @@ func TestOnlyTheRetrievalToolsAreAccountedSoAFileWriteCannotCloseRecall(t *testi
 		t.Fatalf("recall never closed, so this guard observed the closing rule on no round at all: %+v", record.ToolCalls)
 	}
 	if len(record.ToolCalls) != 4 {
-		t.Fatalf("recall closed after %d rounds, want 4 — two barren recalls with a file write between them and the round the refusal was shown on. Closing sooner means the write was accounted as a retrieval round: it carries no rows, so it would score as barren and a file write alone could shut recall for the turn", len(record.ToolCalls))
+		t.Fatalf("recall closed after %d rounds, want 4 — two barren recalls with a file write between them and the round the refusal was recorded on. Closing sooner means the write was accounted as a retrieval round: it carries no rows, so it would score as barren and a file write alone could shut recall for the turn", len(record.ToolCalls))
 	}
 	if write := record.ToolCalls[1]; write.Yield != 0 {
 		t.Fatalf("the file-write round is recorded with yield %d, want 0: a round that retrieves nothing puts no row in front of the model and has no yield to report", write.Yield)
@@ -490,7 +490,7 @@ func TestTheRefusalsAnAddressedReadCanReturnAreTheSentencesTheRecordCarries(t *t
 		record := runWithResults(t, c.graph, wantsRead(c.asked), answeredFinal())
 		round := onlyRound(t, record)
 		if round.Error != c.want {
-			t.Errorf("%s is refused with %q, want %q verbatim. A refusal is product text the model acts on, so the wording is pinned against a literal here rather than against the constant the message is built from", c.name, round.Error, c.want)
+			t.Errorf("%s is refused with %q, want %q verbatim. A refusal is product text recorded on the round, so the wording is pinned against a literal here rather than against the constant the message is built from", c.name, round.Error, c.want)
 		}
 	}
 }

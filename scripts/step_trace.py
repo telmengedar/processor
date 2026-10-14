@@ -1053,7 +1053,7 @@ def refused_round_lines(tool_call, out_tok, refusal):
     """
     return [
         f"{'':<24} output: {round_wanted(tool_call)}, and the LOOP refused the round in its own "
-        f"words -- {refusal!r}. That sentence is what the model was shown for the call it spent, "
+        f"words -- {refusal!r}. That sentence is what the record carries for the call it spent, "
         f"and it is the whole of what the record says about the refusal. out={out_tok}",
         "",
     ]
@@ -1249,7 +1249,7 @@ def write_round_lines(head, tool_call, out_tok, limits):
     elif category == WRITE_REFUSED:
         lines.append(
             f"{'':<24} output: REFUSED by the path rules -- {tool_call.get('error')!r}. Nothing was "
-            f"written. The model is shown this sentence and may try again."
+            f"written. The sentence is recorded on the round; the loop does not feed it back to the model."
         )
     elif category == WRITE_UNCONFIGURED:
         lines.append(
