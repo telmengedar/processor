@@ -237,6 +237,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	record.TimeShortfall = judged.timeShortfall
 	record.ReservedCall = judged.reservedCall
 	record.Usage = judged.usages
+	record.Trailers = judged.trailers
 	record.LastResponse = judged.lastResponse
 	record.StopReason = judged.stop
 	record.Sampling = judged.sampling
@@ -394,6 +395,7 @@ type judgement struct {
 	reservedCall ReservedCall
 
 	usages       []*Usage
+	trailers     []TrailerKind
 	lastResponse *LastResponse
 	sampling     Sampling
 	provider     Provider
@@ -428,6 +430,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 	var exchanges []ToolExchange
 
 	account := newYieldAccount(admitted)
+	var searches []recallSearch
 	reserved := reservation("")
 	dispatched := 0
 
@@ -452,12 +455,15 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		judged.modelCalls++
 
 		offered := t.offeredTools(reserved != "")
+		trailer, trailerKind := trailerFor(offered, searches)
+		judged.trailers = append(judged.trailers, trailerKind)
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
 			System:          t.composeSystem(offered, conversation != ""),
 			Block:           memory.render(offersRetrieval(offered)),
 			Input:           input,
 			Conversation:    conversation,
+			Trailer:         trailer,
 			Now:             now,
 			Window:          window,
 			MaxOutputTokens: outputBudget(settings, reserved),
@@ -524,6 +530,9 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		exchange := t.dispatch(ctx, settings, result, &judged.workspace, window, subject, account, memory)
 		exchange.ToolSource = result.ToolSource
 		accountForYield(account, &exchange)
+		if exchange.Tool == ToolRecall && exchange.Error == "" {
+			searches = append(searches, recallSearch{query: exchange.Query, yield: exchange.Yield})
+		}
 		if retrieves(exchange.Tool) && exchange.Error == "" {
 			memory.absorb(exchange.Results, exchange.Dispositions)
 		}

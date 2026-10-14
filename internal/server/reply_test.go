@@ -229,7 +229,7 @@ func TestRunsVerboseResponseCarriesTheRecordTheReceiptAndTheReply(t *testing.T) 
 	rec := postTo(t, context.Background(), turn, "/runs?verbose=true")
 
 	members, keys := topLevelKeys(t, rec)
-	for _, want := range []string{"input", "query", "queries", "anchor", "candidates", "block", "answer", "model", "toolCalls", "modelCalls", "usage", "stopReason", "limits", "sampling", "outcome", "written", "reply"} {
+	for _, want := range []string{"input", "query", "queries", "anchor", "candidates", "block", "answer", "model", "toolCalls", "modelCalls", "usage", "trailers", "stopReason", "limits", "sampling", "outcome", "written", "reply"} {
 		if !slices.Contains(keys, want) {
 			t.Fatalf("verbose body keys = %q, missing %q", keys, want)
 		}
@@ -242,6 +242,23 @@ func TestRunsVerboseResponseCarriesTheRecordTheReceiptAndTheReply(t *testing.T) 
 	}
 	if got, want := stringMember(t, members, "answer"), "The grip drops because the hold is not set."; got != want {
 		t.Fatalf("answer = %q, want %q", got, want)
+	}
+}
+
+func TestRunsVerboseResponseNamesTheTrailerOfEveryModelCallInTheRawBody(t *testing.T) {
+	t.Parallel()
+
+	turn := replyTurn(&scriptedModel{step: func(call int) (loop.JudgeResult, error) {
+		if call == 1 {
+			return loop.JudgeResult{Reason: loop.WantsRecall, RawReason: "tool_calls", RecallQuery: "the pinkerton theory"}, nil
+		}
+		return loop.JudgeResult{Answer: "I do not know.", Reason: loop.Answered, RawReason: "stop"}, nil
+	}})
+
+	members, _ := topLevelKeys(t, postTo(t, context.Background(), turn, "/runs?verbose=true"))
+
+	if got, want := string(members["trailers"]), `["clause","barren"]`; got != want {
+		t.Fatalf("trailers = %s, want %s", got, want)
 	}
 }
 
