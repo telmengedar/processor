@@ -5,11 +5,11 @@ import (
 	"strings"
 )
 
-// TrailerKind names which closing paragraph a judgement call's user message carried.
+// TrailerKind names the search state a judgement call was made in, which decides its closing paragraph.
 type TrailerKind string
 
 const (
-	// TrailerNone is a call whose user message carried no closing paragraph.
+	// TrailerNone is a call not offered recall, so it carries no closing paragraph.
 	TrailerNone TrailerKind = "none"
 	// TrailerClause is a call told to search when no part states what the request asks for.
 	TrailerClause TrailerKind = "clause"

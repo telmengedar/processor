@@ -314,11 +314,12 @@ directory is configured. The system text names each in one sentence and still as
 run reaches for the file tool is a property of the model and the task, not of the prompt. `recall` alone is
 urged, once, at the very end of the user message: while no search has run in the turn, a closing paragraph
 tells the model that when none of the parts above states what the request asks for it is not to say the
-information is missing but to call `recall`; after a search that brought rows it is given no closing paragraph
-at all, since the paragraph made it repeat the search it had just run; after one that brought nothing new it is told
-so, by the query it ran, and is not given the paragraph. The paragraph sits there because that is where the
-call-or-answer decision of the model in use is made, and the record names which paragraph each call carried
-in `trailers`. **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
+information is missing but to call `recall`; after a search that brought rows it is given no closing
+paragraph at all, because the paragraph made it search again, mostly with the same query; after one that
+brought nothing new it is told so, by the query it ran, and is not given the paragraph. The paragraph sits
+there because that is where the call-or-answer decision of the model in use is made, and the record names
+in `trailers` the search state each call was made in (`clause`, `found`, `barren`, or `none` where recall
+was not offered). **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
 a system text and one user message. The system text is composed per call from the tools that call offers and from whether the turn carries a conversation section,
 so a tool the call does not offer is not mentioned in it; and no tool call, error or write
 confirmation is ever replayed to the model, the one thing it is told of a search being its query and whether it brought anything. What a retrieval round *found* joins the turn's working memory
