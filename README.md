@@ -310,7 +310,7 @@ array of them (one repeated key per element). A blank value (empty or whitespace
 `query`, `queries`, `count`, `continue`, `sort`, `descending`, `fields` and `id` itself, so a config naming one (in any
 case) is refused. The config's `excludeId` and `excludeName` are added to the service's own; a bound the config sets in
 `updatedFrom` or `updatedTo` replaces the window the run derived for that bound. A run without `config` is unchanged,
-and the record of a configured run carries `perspective`: the config id and the filter it forwarded.
+and the record of a configured run carries `perspective`: the config id, the filter it forwarded and, when the config node is rooted, that root. The run's node in the graph is created under the same root; a run without a config, or whose config has no root, is stored unrooted.
 
 The turn: fetch the subject, derive the query set and window described above, recall candidates against
 them, assemble a byte-budgeted context block (anchor first,

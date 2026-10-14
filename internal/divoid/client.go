@@ -30,7 +30,7 @@ const DefaultTimeout = 15 * time.Second
 var _ loop.GraphPort = (*Client)(nil)
 
 const (
-	nodeFields      = "id,type,name,content,substance"
+	nodeFields      = "id,type,name,content,substance,rootNodeId"
 	candidateFields = "id,type,name,similarity,content,substance"
 )
 
@@ -113,6 +113,7 @@ type row struct {
 	Similarity  float64 `json:"similarity"`
 	Content     string  `json:"content"`
 	Substance   string  `json:"substance"`
+	RootNodeID  *int64  `json:"rootNodeId"`
 }
 
 // listingResponse is the shape of GET /api/nodes, regardless of query.
@@ -176,13 +177,17 @@ func (c *Client) Node(ctx context.Context, id int64, filter loop.Filter) (loop.A
 		if r.ID != id {
 			continue
 		}
-		return loop.Anchor{
+		anchor := loop.Anchor{
 			ID:        r.ID,
 			Type:      r.Type,
 			Name:      r.Name,
 			Content:   r.Content,
 			Substance: r.Substance,
-		}, true, nil
+		}
+		if r.RootNodeID != nil {
+			anchor.RootNodeID = *r.RootNodeID
+		}
+		return anchor, true, nil
 	}
 	return loop.Anchor{}, false, nil
 }

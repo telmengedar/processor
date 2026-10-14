@@ -40,6 +40,8 @@ func IsRunRecord(nodeType, name string) bool {
 type createNodeRequest struct {
 	Type string `json:"type"`
 	Name string `json:"name"`
+
+	RootNodeID int64 `json:"rootNodeId,omitempty"`
 }
 
 type createNodeResponse struct {
@@ -58,7 +60,7 @@ func (c *Client) WriteRun(ctx context.Context, record loop.Record) loop.WriteRec
 	account := loop.RenderSummary(record, at)
 	content := ComposeRunContent(account, recordJSON)
 
-	id, err := c.createRunNode(ctx, c.runName(record, at))
+	id, err := c.createRunNode(ctx, c.runName(record, at), runRoot(record))
 	if err != nil {
 		c.log().Error(logWriteBackFailed, "subject", record.Subject, "error", err)
 		return loop.WriteReceipt{State: loop.NotStored}
@@ -103,8 +105,8 @@ func (c *Client) discardShell(ctx context.Context, id int64) {
 	}
 }
 
-func (c *Client) createRunNode(ctx context.Context, name string) (int64, error) {
-	reqBody, err := json.Marshal(createNodeRequest{Type: RunNodeType, Name: name})
+func (c *Client) createRunNode(ctx context.Context, name string, root int64) (int64, error) {
+	reqBody, err := json.Marshal(createNodeRequest{Type: RunNodeType, Name: name, RootNodeID: root})
 	if err != nil {
 		return 0, fmt.Errorf("divoid: encode run node create: %w", err)
 	}
@@ -114,6 +116,13 @@ func (c *Client) createRunNode(ctx context.Context, name string) (int64, error) 
 		return 0, fmt.Errorf("divoid: create run node: %w", err)
 	}
 	return resp.ID, nil
+}
+
+func runRoot(record loop.Record) int64 {
+	if record.Perspective == nil || record.Perspective.Root <= 0 {
+		return 0
+	}
+	return record.Perspective.Root
 }
 
 func (c *Client) linkRunNode(ctx context.Context, id, target int64) error {

@@ -181,7 +181,7 @@ func resolveConfig(ctx context.Context, w http.ResponseWriter, turn *loop.Turn, 
 		writeError(w, http.StatusBadRequest, codeInvalidConfig, loop.BoundCause(err.Error()))
 		return nil, true
 	}
-	return &loop.View{Config: id, Filter: filter}, false
+	return &loop.View{Config: id, Filter: filter, Root: node.RootNodeID}, false
 }
 
 type errorEnvelope struct {

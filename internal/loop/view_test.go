@@ -20,7 +20,8 @@ type nodeCall struct {
 type viewGraph struct {
 	visibleWith func(id int64, filter Filter) bool
 
-	recallErr error
+	recallErr   error
+	subjectRoot int64
 
 	nodeCalls   []nodeCall
 	recallCalls []RecallRequest
@@ -32,7 +33,7 @@ func (g *viewGraph) Node(_ context.Context, id int64, filter Filter) (Anchor, bo
 	if g.visibleWith != nil && !g.visibleWith(id, filter) {
 		return Anchor{}, false, nil
 	}
-	return Anchor{ID: id, Type: "thought", Name: fmt.Sprintf("node %d", id), Content: "body", Substance: "substance"}, true, nil
+	return Anchor{ID: id, Type: "thought", Name: fmt.Sprintf("node %d", id), Content: "body", Substance: "substance", RootNodeID: g.subjectRoot}, true, nil
 }
 
 func (g *viewGraph) Recall(_ context.Context, request RecallRequest) ([]Candidate, error) {
@@ -253,5 +254,49 @@ func TestAConfiguredRunsRecordCarriesTheConfigIdAndTheFilterVerbatimInTheRecordI
 	}
 	if !reflect.DeepEqual(back.Perspective, gangolfView) {
 		t.Fatalf("the perspective came back as %+v after an archive round trip, want %+v", back.Perspective, gangolfView)
+	}
+}
+
+func TestAViewMarshalsItsRootOnlyWhenItHasOneAndDecodesAnOldViewAsUnrooted(t *testing.T) {
+	t.Parallel()
+
+	rooted, err := json.Marshal(View{Config: 77, Root: 902})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !strings.Contains(string(rooted), `"root":902`) {
+		t.Errorf("a rooted view marshalled as %s, want it to carry root 902", rooted)
+	}
+
+	unrooted, err := json.Marshal(View{Config: 77})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(unrooted), "root") {
+		t.Errorf("an unrooted view marshalled as %s, want no root key", unrooted)
+	}
+
+	var old View
+	if err := json.Unmarshal([]byte(`{"config":77,"filter":{"type":["thought"]}}`), &old); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if old.Root != 0 || old.Config != 77 {
+		t.Errorf("an old view decoded as %+v, want config 77 and no root", old)
+	}
+}
+
+func TestARunWithoutAConfigWhoseSubjectHasARootStillRecordsNoPerspective(t *testing.T) {
+	t.Parallel()
+
+	graph := &viewGraph{subjectRoot: 10}
+	record, _, err := runUnder(t, graph, nil, answeredFinal())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if record.Perspective != nil {
+		t.Errorf("the record carries the perspective %+v, want none for a run without a config", record.Perspective)
+	}
+	if len(graph.written) != 1 || graph.written[0].Perspective != nil {
+		t.Errorf("the written record was %+v, want no perspective", graph.written)
 	}
 }

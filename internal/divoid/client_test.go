@@ -752,3 +752,52 @@ func TestARecallCarriesNoGraphConstraintOfItsOwnWhateverTheRequestHolds(t *testi
 		}
 	}
 }
+
+func TestNodeRequestsTheRootNodeIdByItsGraphName(t *testing.T) {
+	t.Parallel()
+
+	c, rec := recordingClient(t)
+	if _, _, err := c.Node(context.Background(), 42, nil); err != nil {
+		t.Fatalf("Node: %v", err)
+	}
+
+	q, err := url.ParseQuery(rec.query)
+	if err != nil {
+		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
+	}
+	if !slices.Contains(strings.Split(q.Get("fields"), ","), "rootNodeId") {
+		t.Fatalf("fields = %q, want it to name rootNodeId", q.Get("fields"))
+	}
+}
+
+func TestNodeDecodesTheRootOfARootedRowAndNoneForANullOrAbsentRoot(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		row  map[string]any
+		want int64
+	}{
+		"rooted": {map[string]any{"id": 42, "rootNodeId": 902}, 902},
+		"null":   {map[string]any{"id": 42, "rootNodeId": nil}, 0},
+		"absent": {map[string]any{"id": 42}, 0},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"result": []map[string]any{tc.row}, "total": 1})
+			}))
+			defer srv.Close()
+
+			c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+			anchor, found, err := c.Node(context.Background(), 42, nil)
+			if err != nil || !found {
+				t.Fatalf("Node: found=%v err=%v", found, err)
+			}
+			if anchor.RootNodeID != tc.want {
+				t.Fatalf("anchor.RootNodeID = %d, want %d", anchor.RootNodeID, tc.want)
+			}
+		})
+	}
+}
