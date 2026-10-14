@@ -296,22 +296,37 @@ var textualRecoverable = []textualRecovery{
 	{loop.ToolReadNode, "id"},
 }
 
+const modelCallPrefix = "call:"
+
 func openingToolCall(content string) (toolBinding, string, bool) {
 	text := strings.TrimLeftFunc(content, unicode.IsSpace)
+	if len(text) > len(modelCallPrefix) && strings.EqualFold(text[:len(modelCallPrefix)], modelCallPrefix) {
+		text = text[len(modelCallPrefix):]
+	}
 
 	for _, tool := range toolTable {
 		end := len(tool.wireName)
 		if len(text) <= end || !strings.EqualFold(text[:end], tool.wireName) {
 			continue
 		}
-		if delimiter := text[end]; delimiter == ':' || delimiter == '{' {
+		switch text[end] {
+		case ':', '{':
 			return tool, text[end:], true
+		case '(':
+			if strings.IndexByte(text[end:], ')') > 0 {
+				return tool, text[end:], true
+			}
 		}
 	}
 	return toolBinding{}, "", false
 }
 
 func textualArgument(rest, parameter string) (string, bool) {
+	if rest[0] == '(' {
+		end := strings.IndexByte(rest, ')')
+		return unquoted(strings.TrimSpace(rest[1:end])), true
+	}
+
 	if rest[0] == ':' {
 		line, _, _ := strings.Cut(rest[1:], "\n")
 		return unquoted(strings.TrimSpace(line)), true

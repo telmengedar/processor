@@ -265,3 +265,85 @@ func TestATextualCallIsFlaggedBesideMarkupForAToolThisCallDidNotOffer(t *testing
 		t.Fatalf("%+v, want it unrecognised from content and flagged %q", result, loop.ToolRecall)
 	}
 }
+
+func TestAParenthesisCallIsRecoveredLikeTheColonForm(t *testing.T) {
+	t.Parallel()
+
+	result := translate(answerOf("read_node(6840)"), readOnlyTools)
+	if result.Reason != loop.WantsRead || result.ReadNodeID != 6840 || result.ToolSource != loop.ToolSourceTextual || result.UnhonouredCall != "" {
+		t.Fatalf("read_node(6840) -> %+v, want a textual read of 6840", result)
+	}
+
+	result = translate(answerOf(`recall("level of rugenforth")`), readOnlyTools)
+	if result.Reason != loop.WantsRecall || result.RecallQuery != "level of rugenforth" || result.ToolSource != loop.ToolSourceTextual {
+		t.Fatalf("recall(...) -> %+v, want a textual recall", result)
+	}
+
+	result = translate(answerOf("read_node(abc)"), readOnlyTools)
+	if result.Reason != loop.WantsRead || result.ToolError == "" || result.ReadNodeID != 0 {
+		t.Fatalf("read_node(abc) -> %+v, want a read with a tool error", result)
+	}
+}
+
+func TestAParenthesisCallToAToolOutsideTheAllowListIsFlaggedNeverHonoured(t *testing.T) {
+	t.Parallel()
+
+	for _, tool := range toolTable {
+		if slices.Contains(readOnlyTools, tool.loopName) {
+			continue
+		}
+		result := translate(answerOf(tool.wireName+"(something)"), everyLoopTool())
+		if result.Reason != loop.Answered || result.UnhonouredCall != tool.loopName || result.ToolSource != "" {
+			t.Fatalf("%s(...) -> %+v, want an answer flagged as an unhonoured call", tool.wireName, result)
+		}
+	}
+}
+
+func TestTheModelsOwnCallTextIsRecoveredOrFlagged(t *testing.T) {
+	t.Parallel()
+
+	result := translate(answerOf("call:recall{query:level of rugenforth}<tool_call|>"), readOnlyTools)
+	if result.Reason != loop.WantsRecall || result.RecallQuery != "level of rugenforth" || result.ToolSource != loop.ToolSourceTextual {
+		t.Fatalf("model call text -> %+v, want a textual recall", result)
+	}
+
+	result = translate(answerOf("call:write_note{text:hello}<tool_call|>"), everyLoopTool())
+	if result.Reason != loop.Answered || result.UnhonouredCall != loop.ToolNote {
+		t.Fatalf("model note call -> %+v, want it flagged", result)
+	}
+}
+
+func TestParenthesisAndModelCallNearMissesStayReplies(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"I would use read_node(6840) here",
+		"read_node (6840)",
+		"read_node(6840",
+		"read_nodes(6840)",
+		"foo(6840)",
+		"call: hello there",
+		"call:foo{query:x}",
+		"Sure (recall)",
+	} {
+		result := translate(answerOf(content), everyLoopTool())
+		if result.Reason != loop.Answered || result.UnhonouredCall != "" || result.ToolSource != "" {
+			t.Fatalf("%q -> %+v, want it passed through as prose", content, result)
+		}
+	}
+}
+
+func TestANativeCallOutranksAParenthesisCall(t *testing.T) {
+	t.Parallel()
+
+	native := chatResponse{
+		Message: wireResponseMessage{
+			Content:   "read_node(1)",
+			ToolCalls: []wireToolCall{{Function: wireFunctionCall{Name: readNodeToolName, Arguments: json.RawMessage(`{"id":2}`)}}},
+		},
+		DoneReason: "stop",
+	}
+	if result := translate(native, readOnlyTools); result.ReadNodeID != 2 || result.ToolSource != loop.ToolSourceNative {
+		t.Fatalf("native + paren -> %+v, want the native call", result)
+	}
+}
