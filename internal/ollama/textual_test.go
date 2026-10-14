@@ -224,7 +224,7 @@ func TestANativeCallOutranksTextAndMarkupOutranksAnOpeningCall(t *testing.T) {
 	}
 
 	markup := "recall: from the opening\n<function=recall>\n<parameter=query>\nfrom the markup\n</parameter>\n</function>"
-	if result := translate(answerOf(markup), []string{loop.ToolRecall}); result.RecallQuery != "from the markup" || result.ToolSource != loop.ToolSourceContent {
+	if result := translate(answerOf(markup), []string{loop.ToolRecall}); result.RecallQuery != "from the markup" || result.ToolSource != loop.ToolSourceContent || result.UnhonouredCall != "" {
 		t.Fatalf("markup + opening call -> %+v, want the markup call with source %q", result, loop.ToolSourceContent)
 	}
 }
