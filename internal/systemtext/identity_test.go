@@ -60,3 +60,28 @@ func TestTheIdentityIsSeparatedFromTheRealProductTextByTheSeparatorComposeUsesBe
 		t.Fatalf("the system text is %q, want the identity, one blank line, then the product text %q", model.systems[0], want)
 	}
 }
+
+func TestARunThatCarriesBothTheIdentityAndSilenceGetsTheIdentityThenTheProductTextWithTheSilenceParagraph(t *testing.T) {
+	t.Parallel()
+
+	const identity = "You are a participant named Quill."
+	model := &systemRecorder{}
+	turn := loop.NewTurn(bareGraph{}, model, nil, systemtext.Compose, "test-model", nil)
+	view := &loop.View{Config: 9, Silence: true, Identity: identity}
+	if _, _, err := turn.RunWithOptions(context.Background(), loop.RunOptions{Input: "hello", Subject: 42, Settings: loop.DefaultSettings(), View: view}); err != nil {
+		t.Fatalf("RunWithOptions: %v", err)
+	}
+
+	offered := []string{loop.ToolRecall, loop.ToolReadNode}
+	silent := systemtext.Compose(offered, false, true)
+	if silent == systemtext.Compose(offered, false, false) {
+		t.Fatal("the silence paragraph does not change the product text, so this test cannot tell it present from absent")
+	}
+
+	if len(model.systems) != 1 {
+		t.Fatalf("the run made %d judgement calls, want 1", len(model.systems))
+	}
+	if want := identity + "\n\n" + silent; model.systems[0] != want {
+		t.Fatalf("the system text is %q, want the identity, one blank line, then the product text with the silence paragraph %q", model.systems[0], want)
+	}
+}

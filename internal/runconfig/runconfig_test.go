@@ -308,7 +308,7 @@ func TestDecodeBoundsTheIdentityAfterJSONUnescapingNotInItsEscapedForm(t *testin
 		refused bool
 	}{
 		"a newline escape at the bound":            {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes-1) + `\n"}`, false},
-		"a unicode escape at the bound":            {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes-2) + `é"}`, false},
+		"a unicode escape at the bound":            {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes-2) + `\u00e9"}`, false},
 		"a newline escape one byte over the bound": {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes) + `\n"}`, true},
 	}
 	for name, c := range cases {
