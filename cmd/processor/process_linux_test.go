@@ -88,6 +88,16 @@ func harnessEnvWith(overrides map[string]string) []string {
 // temporary directory and returns the path to the built binary.
 func buildProcessorBinary(t *testing.T) string {
 	t.Helper()
+	return buildProcessorBinaryWithFlags(t)
+}
+
+func buildStampedProcessorBinary(t *testing.T, build string) string {
+	t.Helper()
+	return buildProcessorBinaryWithFlags(t, "-ldflags", "-X main.build="+build)
+}
+
+func buildProcessorBinaryWithFlags(t *testing.T, flags ...string) string {
+	t.Helper()
 
 	goBin, err := exec.LookPath("go")
 	if err != nil {
@@ -95,7 +105,8 @@ func buildProcessorBinary(t *testing.T) string {
 	}
 
 	binPath := filepath.Join(t.TempDir(), "processor")
-	cmd := exec.Command(goBin, "build", "-o", binPath, ".")
+	args := append([]string{"build"}, flags...)
+	cmd := exec.Command(goBin, append(args, "-o", binPath, ".")...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}
@@ -613,5 +624,117 @@ func TestTheConfiguredSamplingReachesTheModelEndpointUncrossed(t *testing.T) {
 	}
 	if *wire.TopP != topPSentinel {
 		t.Fatalf("the model endpoint received top_p %v, want %v — %s reached the wire as some other value; body=%s", *wire.TopP, topPSentinel, envModelTopP, sent)
+	}
+}
+
+func servingBuildHarness(t *testing.T, bin string) (*servingProcess, map[string]json.RawMessage) {
+	t.Helper()
+
+	stored := &storedBody{}
+	graphSrv, _ := graphServer(t, stored, "")
+
+	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"the answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":22}}`))
+	}))
+	t.Cleanup(modelSrv.Close)
+
+	rp := startServingProcess(t, bin, harnessEnvWith(map[string]string{
+		envHTTPAddr:  "127.0.0.1:0",
+		envDivoidURL: graphSrv.URL,
+		envModelURL:  modelSrv.URL,
+		envModelKey:  modelKeySentinel,
+	}))
+	t.Cleanup(func() {
+		_ = rp.cmd.Process.Kill()
+		_ = rp.cmd.Wait()
+	})
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Post("http://"+rp.addr+"/runs?verbose=true", "application/json", strings.NewReader(`{"input":"what changed","subject":42}`))
+	if err != nil {
+		t.Fatalf("POST /runs: %v; stderr:\n%s", err, rp.stderr.String())
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read the response: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("POST /runs status = %d, want %d; body=%s", resp.StatusCode, http.StatusOK, body)
+	}
+
+	var members map[string]json.RawMessage
+	if err := json.Unmarshal(body, &members); err != nil {
+		t.Fatalf("decode the verbose body: %v; body=%s", err, body)
+	}
+	return rp, members
+}
+
+func firstStderrLine(t *testing.T, stderr *syncBuffer) string {
+	t.Helper()
+
+	first, _, _ := strings.Cut(stderr.String(), "\n")
+	if first == "" {
+		t.Fatalf("the process wrote nothing to stderr")
+	}
+	return first
+}
+
+func TestAStampedBinaryLogsItsBuildFirstAndRecordsItInTheVerboseBody(t *testing.T) {
+	t.Parallel()
+
+	bin := buildStampedProcessorBinary(t, buildSentinel)
+	rp, members := servingBuildHarness(t, bin)
+
+	first := firstStderrLine(t, rp.stderr)
+	if !strings.Contains(first, `msg="processor build"`) || !strings.Contains(first, "build="+buildSentinel) {
+		t.Fatalf("the first stderr record = %q, want msg=\"processor build\" build=%s; stderr:\n%s", first, buildSentinel, rp.stderr.String())
+	}
+	if got, want := string(members["build"]), `"`+buildSentinel+`"`; got != want {
+		t.Fatalf("verbose build = %s, want %s", got, want)
+	}
+}
+
+func TestAStampedBinaryThatFailsConfigurationHasAlreadyLoggedItsBuild(t *testing.T) {
+	t.Parallel()
+
+	bin := buildStampedProcessorBinary(t, buildSentinel)
+
+	stderr := &syncBuffer{}
+	cmd := exec.Command(bin)
+	cmd.Env = []string{"PROCESSOR_HTTP_ADDR="}
+	cmd.Stderr = stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	awaitExit(t, cmd, 5*time.Second, stderr)
+
+	if code := cmd.ProcessState.ExitCode(); code != 1 {
+		t.Fatalf("exit code = %d, want 1; stderr:\n%s", code, stderr.String())
+	}
+	out := stderr.String()
+	idxFailure := strings.Index(out, `level=ERROR msg="boot configuration"`)
+	if idxFailure == -1 {
+		t.Fatalf("no boot configuration error was logged, so the process did not fail configuration; stderr:\n%s", out)
+	}
+	idxBuild := strings.Index(out, "build="+buildSentinel)
+	if idxBuild == -1 || idxBuild > idxFailure {
+		t.Fatalf("the build was not logged before the configuration failure; stderr:\n%s", out)
+	}
+}
+
+func TestAnUnstampedBinaryLogsUnstampedAndRecordsNoBuild(t *testing.T) {
+	t.Parallel()
+
+	bin := buildProcessorBinary(t)
+	rp, members := servingBuildHarness(t, bin)
+
+	first := firstStderrLine(t, rp.stderr)
+	if !strings.Contains(first, `msg="processor build"`) || !strings.Contains(first, "build=unstamped") {
+		t.Fatalf("the first stderr record = %q, want msg=\"processor build\" build=unstamped; stderr:\n%s", first, rp.stderr.String())
+	}
+	if raw, present := members["build"]; present {
+		t.Fatalf("an unstamped binary recorded build = %s, want no build member", raw)
 	}
 }

@@ -9,10 +9,15 @@ WORKDIR /src
 COPY . .
 
 ARG TARGETARCH
+# The git commit this image is built from. Required: an unstamped image would leave run
+# records unable to name their build. The binary treats the value as opaque.
+ARG PROCESSOR_BUILD
 ENV CGO_ENABLED=0 \
     GOOS=linux
 
-RUN GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w" -o /out/processor ./cmd/processor
+RUN test -n "${PROCESSOR_BUILD}" || { echo "PROCESSOR_BUILD is required: docker build --build-arg PROCESSOR_BUILD=<git commit> ..." >&2; exit 1; }
+
+RUN GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X main.build=${PROCESSOR_BUILD}" -o /out/processor ./cmd/processor
 
 # The build stage still has a shell and coreutils, which the final distroless stage does
 # not — so the workspace directory is created and chowned to the final image's non-root

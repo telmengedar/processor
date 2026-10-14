@@ -520,8 +520,15 @@ $two.reply
 ## Container
 
 ```sh
-docker build -t processor .
+docker build --build-arg PROCESSOR_BUILD="$(git rev-parse HEAD)" -t processor .
 ```
+
+`PROCESSOR_BUILD` is required: the image build refuses an empty value. It is stamped into the binary
+and appears as the run record's `build` member (next to `model`, and so in the stored record and the
+`?verbose=true` response, never in the default body) and on the first line the process logs. The
+value is an opaque string. A binary built without it, such as one from `go build` or `go test`,
+records no `build` member and logs `build=unstamped`; an absent member means no build identity was
+known, never a default.
 
 The build stage is `golang:1.27` (matching the version pinned everywhere else in this file); the
 final image is `gcr.io/distroless/static-debian12:nonroot` — no shell, no package manager, CA

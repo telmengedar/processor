@@ -395,6 +395,8 @@ type Record struct {
 	// Silent is true when silence was offered and the answer carried the marker, fixed at run time so a later change of marker reclassifies no archived run.
 	Silent bool   `json:"silent,omitempty"`
 	Model  string `json:"model"`
+	// Build is the git commit the serving binary was built from, absent when the binary carried no build identity or the record predates the field.
+	Build string `json:"build,omitempty"`
 	// Provider is the adapter and endpoint the model calls went through, as the adapter itself reported them.
 	Provider  Provider         `json:"provider"`
 	ToolCalls []ToolCallRecord `json:"toolCalls"`
