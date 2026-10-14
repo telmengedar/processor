@@ -88,7 +88,7 @@ func TestAnIdLineIsBlockTextOnlyWhenATypeLineFollowsIt(t *testing.T) {
 		t.Fatalf("an id line and a type line: nonReply = %q, want %q", record.NonReply, NonReplyBlockText)
 	}
 
-	for _, answer := range []string{"id: 12 is my favourite", "id: 12", "id: 12\nand that is all", "id: 12\n  type: not at the line start"} {
+	for _, answer := range []string{"id: 12 is my favourite.", "id: 12", "id: 12\nand that is all", "id: 12\n  type: not at the line start"} {
 		record, model := runAnswering(t, answered(answer))
 		if slices.Contains(candidateIDsIn(model.calls[0].Block), 12) {
 			t.Fatalf("test setup error: part 12 was shown, and a lone id of a shown part is not delivered")
@@ -207,12 +207,12 @@ func TestOrdinaryRepliesThatMerelyResembleProcessorSyntaxAreDelivered(t *testing
 
 	for _, answer := range []string{
 		"Gangolf: hey",
-		"Recall that we met in May",
-		"the id: field is the node's number",
-		"You replied earlier, I think",
+		"Recall that we met in May.",
+		"the id: field is the node's number.",
+		"You replied earlier, I think.",
 		"==== not a frame ====",
 		"A line with ===== inside =====",
-		"I said user said: nothing",
+		"I said user said: nothing.",
 	} {
 		record, _ := runAnswering(t, answered(answer))
 
