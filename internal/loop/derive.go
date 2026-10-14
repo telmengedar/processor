@@ -238,7 +238,7 @@ func MergeQueries(input string, derived []string) []string {
 	return queries
 }
 
-// DeriveQueries derives queries and a retrieval window from input and now under DerivationBound, returning the sentence for a window it could not ground and the sampling the request carried, nil where none was issued; an error names the deadline that fired.
+// DeriveQueries derives queries and a retrieval window from input and now under DerivationBound, returning the sentence for a window it could not ground and the sampling the request carried, nil where none was issued; an error names the deadline that fired, when one did.
 func DeriveQueries(ctx context.Context, model ModelPort, input string, now time.Time) ([]string, UpdateWindow, string, *Sampling, error) {
 	return deriveQueries(ctx, model, input, now, DerivationBound)
 }
