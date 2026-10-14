@@ -21,14 +21,22 @@ import (
 // archetype C).
 func NewHandler(turn *loop.Turn) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", handleHealth)
+	mux.HandleFunc("GET /health", handleHealth(turn.Build))
 	mux.HandleFunc("POST /runs", handleRuns(turn))
 	return mux
 }
 
-func handleHealth(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+type healthResponse struct {
+	Status string `json:"status"`
+	Build  string `json:"build,omitempty"`
+}
+
+func handleHealth(build string) http.HandlerFunc {
+	body, _ := json.Marshal(healthResponse{Status: "ok", Build: build})
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}
 }
 
 // runRequest is the POST /runs request body.

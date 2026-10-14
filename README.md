@@ -134,7 +134,8 @@ words; that document carries the argument.
   one — *retrieved* (did retrieval surface the node at all) and *admitted* (did it survive the
   byte budget) — because they fail differently and imply opposite fixes
   (DiVoid **#10926**).
-- `GET /health` — returns `200` with `Content-Type: application/json` and body `{"status":"ok"}`.
+- `GET /health` — returns `200` with `Content-Type: application/json` and body `{"status":"ok","build":"<build>"}` on a stamped binary (see "Container" below) and
+  `{"status":"ok"}` on an unstamped one, where the `build` key is omitted.
 - `POST /runs` — assembles context for one input against one subject node, judges it against the
   configured model (dispatching the recall and file-write tools as needed), writes the run record to the
   graph, and returns the reply, or the record with `?verbose=true` (see "`POST /runs`" below).
@@ -177,6 +178,8 @@ Content-Type: application/json
 
 {"status":"ok"}
 ```
+
+A binary stamped with a build (see "Container" below) adds it: `{"status":"ok","build":"<build>"}`.
 
 **Shutdown on `Ctrl+C`:** in an interactive terminal, pressing `Ctrl+C` sends `os.Interrupt`, the same
 signal exercised by the automated test described under "What is and isn't verified here" below, which
@@ -542,9 +545,10 @@ from a working tree with uncommitted changes would carry a commit that does not 
 
 `PROCESSOR_BUILD` is required: the image build refuses an empty value. It is stamped into the binary
 and appears as the run record's `build` member (next to `model`, and so in the stored record and the
-`?verbose=true` response, never in the default body) and on the first line the process logs. The
-value is an opaque string. A binary built without it, such as one from `go build` or `go test`,
-records no `build` member and logs `build=unstamped`; an absent member means no build identity was
+`?verbose=true` response, never in the default body), as the `build` member of `GET /health`, and on
+the first line the process logs. The value is an opaque string. A binary built without it, such as
+one from `go build` or `go test`, records no `build` member, leaves it out of `/health`, and logs
+`build=unstamped`; an absent member means no build identity was
 known, never a default.
 
 The build stage is `golang:1.27` (matching the version pinned everywhere else in this file); the
