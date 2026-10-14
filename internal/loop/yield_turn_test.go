@@ -104,7 +104,7 @@ func TestFiveRecallsDifferingOnlyByADateSuffixStopBuyingRoundsOnceTwoInARowAdded
 	if len(record.ToolCalls) != 4 {
 		t.Fatalf("the record carries %d rounds, want 4: three dispatched and the refusal the model was shown; the call that followed was offered no tool and asked for nothing", len(record.ToolCalls))
 	}
-	if refused := record.ToolCalls[3]; refused.Error != errRecallClosedToModel {
+	if refused := record.ToolCalls[3]; refused.Error != errRecallClosed {
 		t.Fatalf("the refused round carries error %q, want the sentence the model was shown", refused.Error)
 	}
 	if record.Outcome.Verdict != VerdictCurtailed {

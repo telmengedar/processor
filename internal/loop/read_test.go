@@ -200,7 +200,7 @@ func TestAnAddressedReadRoundNeverCountsTowardsClosingRecall(t *testing.T) {
 	if want := []int{0, 0, 0}; !sameInts(yieldsOf(record), want) {
 		t.Fatalf("the dispatched recalls recorded yields %v, want %v: all three must be barren, or the round that closed recall was not a barren one", yieldsOf(record), want)
 	}
-	if closed := record.ToolCalls[4]; closed.Error != errRecallClosedToModel {
+	if closed := record.ToolCalls[4]; closed.Error != errRecallClosed {
 		t.Fatalf("the last round carries error %q, want the sentence the model was shown when recall closed", closed.Error)
 	}
 }
