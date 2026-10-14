@@ -35,9 +35,10 @@ func TestTheSystemTextDescribesEveryToolTheJudgementCallOffers(t *testing.T) {
 		loop.ToolNote:      "note tool",
 	}
 	nonToolConstants := map[string]bool{
-		"ToolSourceNative":  true,
-		"ToolSourceContent": true,
-		"ToolSourceTextual": true,
+		"ToolSourceNative":    true,
+		"ToolSourceContent":   true,
+		"ToolSourceTextual":   true,
+		"ToolSourceReference": true,
 	}
 
 	var declared []string

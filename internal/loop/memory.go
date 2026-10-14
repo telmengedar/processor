@@ -85,6 +85,10 @@ func (m *workingMemory) shows(id int64) bool {
 	return held
 }
 
+func (m *workingMemory) displays(id int64) bool {
+	return id == m.anchor.ID || m.shows(id)
+}
+
 func (m *workingMemory) render() string {
 	rows := make([]Candidate, 0, len(m.rows))
 	for _, held := range m.rows {

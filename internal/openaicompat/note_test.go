@@ -145,3 +145,11 @@ func TestANoteCallOnACallThatDidNotOfferTheToolIsNotHonoured(t *testing.T) {
 		t.Errorf("UnofferedToolCalls = %d, want 1", result.UnofferedToolCalls)
 	}
 }
+
+func TestTheLoopsNoteSentenceNamesTheToolByThisAdaptersWireName(t *testing.T) {
+	t.Parallel()
+
+	if !strings.Contains(loop.NoteSentence, noteToolName) {
+		t.Errorf("the note sentence %q does not contain this adapter's wire name %q for the note tool", loop.NoteSentence, noteToolName)
+	}
+}
