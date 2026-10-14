@@ -122,3 +122,19 @@ func TestARecordRoundTripsItsOfferedListsIncludingTheEmptyOne(t *testing.T) {
 		t.Fatalf("offered re-encodes as %s, want %s", got, want)
 	}
 }
+
+func assertOfferedMatchesCalls(t *testing.T, record Record, calls []JudgeInput) {
+	t.Helper()
+
+	if len(record.Offered) != record.ModelCalls || len(record.Offered) != len(calls) {
+		t.Fatalf("record.Offered has %d entries for %d model calls and %d issued calls, want one per call", len(record.Offered), record.ModelCalls, len(calls))
+	}
+	for i := range calls {
+		if !slices.Equal(record.Offered[i], calls[i].Offered) {
+			t.Errorf("call %d: the record says %v was offered, the call offered %v", i+1, record.Offered[i], calls[i].Offered)
+		}
+	}
+	if last := record.Offered[len(record.Offered)-1]; last == nil || len(last) != 0 {
+		t.Errorf("the reserved call recorded %#v, want an empty non-nil list", last)
+	}
+}
