@@ -29,7 +29,7 @@ func TestTheMemoryAndTheAssembledBlockRenderASubstanceAlike(t *testing.T) {
 	for _, surface := range []struct {
 		name     string
 		rendered string
-	}{{name: "assembled block", rendered: block}, {name: "memory", rendered: memory.render(true)}} {
+	}{{name: "assembled block", rendered: block}, {name: "memory", rendered: memory.render()}} {
 		if !strings.Contains(surface.rendered, substance) || strings.Contains(surface.rendered, content) {
 			t.Errorf("the %s does not carry the substance alone:\n%s", surface.name, surface.rendered)
 		}
@@ -51,7 +51,7 @@ func TestTheMemoryCarriesExactlyTheBytesItsAdmissionCharged(t *testing.T) {
 	}
 
 	memory := newWorkingMemory(JudgementPromptCeiling, Anchor{ID: 1}, true, admitted, dispositions)
-	rendered := memory.render(false)
+	rendered := memory.render()
 
 	if strings.Count(rendered, substance) != 1 {
 		t.Fatalf("the memory does not carry the substance its admission charged for exactly once:\n%s", rendered)
@@ -86,7 +86,7 @@ func TestTheMemoryRendersAnUnavailableRowAsItsHeaderAndTheUnavailableLineAndChar
 	memory := newWorkingMemory(JudgementPromptCeiling, Anchor{ID: 1}, true, admitted, dispositions)
 
 	want := "===== CANDIDATE =====\nid: 91\ntype: documentation\nname: Bravo\nsimilarity: 0.000\nsubstance: unavailable\n"
-	if got := memory.render(false); !strings.HasSuffix(got, want) {
+	if got := memory.render(); !strings.HasSuffix(got, want) {
 		t.Fatalf("the memory renders an unavailable row differently:\n%q\nwant it to end with:\n%q", got, want)
 	}
 	if memory.spent != 0 {
@@ -100,15 +100,15 @@ func TestASubstanceReplacesTheUnavailableFormOfTheSameRow(t *testing.T) {
 	substance := strings.Repeat("z", 300)
 
 	memory := memoryHolding(t, Anchor{ID: 1, Substance: "anchor"}, []Candidate{{ID: 91, Type: "documentation", Name: "Bravo"}})
-	if !strings.Contains(memory.render(false), "substance: unavailable") {
-		t.Fatalf("test setup error: the memory does not hold the unavailable form to begin with:\n%s", memory.render(false))
+	if !strings.Contains(memory.render(), "substance: unavailable") {
+		t.Fatalf("test setup error: the memory does not hold the unavailable form to begin with:\n%s", memory.render())
 	}
 
 	created := []Candidate{candidateFromAnchor(Anchor{ID: 91, Type: "documentation", Name: "Bravo", Substance: substance})}
 	admitted, dispositions := admit(created, SupplementaryByteBudget, 0)
 	memory.absorb(admitted, dispositions)
 
-	rendered := memory.render(false)
+	rendered := memory.render()
 	if strings.Contains(rendered, "substance: unavailable") || strings.Count(rendered, substance) != 1 {
 		t.Fatalf("after the substance exists the memory still carries the unavailable form, or carries the row twice:\n%s", rendered)
 	}
@@ -128,7 +128,7 @@ func TestAnUnavailableFormNeverReplacesTheSubstanceOfTheSameRow(t *testing.T) {
 	admitted, dispositions := admit(unavailable, SupplementaryByteBudget, 0)
 	memory.absorb(admitted, dispositions)
 
-	if rendered := memory.render(false); !strings.Contains(rendered, substance) || strings.Contains(rendered, "substance: unavailable") {
+	if rendered := memory.render(); !strings.Contains(rendered, substance) || strings.Contains(rendered, "substance: unavailable") {
 		t.Fatalf("a recall that returned an unavailable form of a row already held with its substance replaced it:\n%s", rendered)
 	}
 }

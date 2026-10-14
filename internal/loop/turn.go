@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 	"time"
 )
@@ -488,7 +487,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
 			System:          t.composeSystem(identity, offered, conversation != "", silence),
-			Block:           memory.render(offersRetrieval(offered)),
+			Block:           memory.render(),
 			Input:           input,
 			Conversation:    conversation,
 			Trailer:         trailer,
@@ -613,10 +612,6 @@ func (t *Turn) composeSystem(identity string, offered []string, conversation, si
 		return product
 	}
 	return identity + paragraphBreak + product
-}
-
-func offersRetrieval(offered []string) bool {
-	return slices.Contains(offered, ToolRecall) || slices.Contains(offered, ToolReadNode)
 }
 
 func truncationCause(record Record) string {

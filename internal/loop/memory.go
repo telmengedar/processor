@@ -85,12 +85,12 @@ func (m *workingMemory) shows(id int64) bool {
 	return held
 }
 
-func (m *workingMemory) render(nudges bool) string {
+func (m *workingMemory) render() string {
 	rows := make([]Candidate, 0, len(m.rows))
 	for _, held := range m.rows {
 		rows = append(rows, held.candidate)
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
 
-	return renderBlock(m.anchor, rows, m.considered, nudges)
+	return renderBlock(m.anchor, rows, m.considered)
 }

@@ -268,7 +268,7 @@ func TestRenderUserContentWithoutATrailerIsByteIdenticalToTheLayoutBeforeTheTrai
 	t.Parallel()
 
 	instant := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
-	for _, conversation := range []string{"", "===== EARLIER IN THIS CONVERSATION =====\nuser: hi"} {
+	for _, conversation := range []string{"", "===== EARLIER IN THIS CONVERSATION =====\nuser said: hi"} {
 		got := RenderUserContent("BLOCK\n", trailerTestRequest, instant, UpdateWindow{}, conversation, "")
 
 		want := "===== INPUT =====\n" + trailerTestRequest + "\n\n===== NOW =====\n2026-03-04T05:06:07Z\n\n\nBLOCK\n"

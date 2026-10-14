@@ -59,7 +59,7 @@ func TestTheUserMessageCarriesTheConversationSection(t *testing.T) {
 
 	const (
 		block        = "===== ANCHOR =====\nid: 1\ntype: t\nname: solo\n\njust the anchor\n"
-		conversation = "===== EARLIER IN THIS CONVERSATION =====\nuser: he is climbing again\nyou: bold of him"
+		conversation = "===== EARLIER IN THIS CONVERSATION =====\nuser said: he is climbing again\nyou replied: bold of him"
 		want         = "===== INPUT =====\nso he drops\n\n===== NOW =====\n2026-03-04T05:06:07+02:00\n\n\n" + block + "\n\n" + conversation + "\n\n===== INPUT =====\nso he drops"
 	)
 

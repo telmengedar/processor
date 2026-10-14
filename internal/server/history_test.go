@@ -45,7 +45,7 @@ func TestRunsPassesTheHistoryToTheTurnOldestFirst(t *testing.T) {
 	if len(model.conversations) != 1 {
 		t.Fatalf("the model was called %d times, want 1", len(model.conversations))
 	}
-	if want := "===== EARLIER IN THIS CONVERSATION =====\nuser: first said\nyou: first answered\nuser: second said\nuser: third said\nyou: third answered"; model.conversations[0] != want {
+	if want := "===== EARLIER IN THIS CONVERSATION =====\nuser said: first said\nyou replied: first answered\nuser said: second said\nuser said: third said\nyou replied: third answered"; model.conversations[0] != want {
 		t.Fatalf("the model saw the conversation %q, want %q", model.conversations[0], want)
 	}
 }
@@ -114,7 +114,7 @@ func TestRunsTreatsANullReplyAsNoReply(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if want := "===== EARLIER IN THIS CONVERSATION =====\nuser: said"; len(model.conversations) != 1 || model.conversations[0] != want {
+	if want := "===== EARLIER IN THIS CONVERSATION =====\nuser said: said"; len(model.conversations) != 1 || model.conversations[0] != want {
 		t.Fatalf("the model saw the conversations %q, want one reading %q", model.conversations, want)
 	}
 }

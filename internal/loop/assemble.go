@@ -12,7 +12,7 @@ import (
 
 const cutReasonByteBudget = "byte budget exceeded"
 
-// ThinKnowledgeSimilarity is the best admitted similarity a block must reach to escape the thin-knowledge hint; it signals and never cuts.
+// ThinKnowledgeSimilarity is the best admitted similarity a block must reach to escape being thin; the ledger reads it, and it never cuts.
 const ThinKnowledgeSimilarity = 0.63
 
 // Thin reports whether none of the admitted similarities reaches ThinKnowledgeSimilarity; a block that admitted nothing is thin.
@@ -20,18 +20,13 @@ func Thin(similarities []float64) bool {
 	return len(similarities) == 0 || slices.Max(similarities) < ThinKnowledgeSimilarity
 }
 
-const (
-	nudgeNone = "Seems you know nothing about this topic - or maybe you are asking the wrong question; try looking at it from a different angle.\n"
-	nudgeThin = "Seems like your knowledge is still thin on the topic - your focus might be too narrow; try approaching the question from a different angle.\n"
-)
-
 // Assemble is a pure function: no I/O, no clock, no randomness.
 func Assemble(anchor Anchor, candidates []Candidate, budget int) (block string, dispositions []Disposition) {
 	admitted, dispositions := admit(candidates, budget, len(anchor.Substance))
 
 	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
 
-	return renderBlock(anchor, admitted, len(candidates) > 0, true), dispositions
+	return renderBlock(anchor, admitted, len(candidates) > 0), dispositions
 }
 
 func admit(candidates []Candidate, budget, spent int) (admitted []Candidate, dispositions []Disposition) {
@@ -160,7 +155,7 @@ func windowLine(w UpdateWindow) string {
 	return fmt.Sprintf("retrieval is limited to nodes updated %s … %s", from, to)
 }
 
-func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, nudges bool) string {
+func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool) string {
 	var b strings.Builder
 
 	b.WriteString("===== ANCHOR =====\n")
@@ -177,21 +172,6 @@ func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, nudges
 		b.WriteString("\nresults were found, but none were included.\n")
 	}
 
-	if !nudges {
-		return b.String()
-	}
-
-	switch {
-	case len(admitted) == 0 && consideredAny:
-		b.WriteString(nudgeNone)
-	case len(admitted) == 0:
-		b.WriteString("\n")
-		b.WriteString(nudgeNone)
-	case Thin(rankedSimilarities(admitted)):
-		b.WriteString("\n")
-		b.WriteString(nudgeThin)
-	}
-
 	return b.String()
 }
 
@@ -206,16 +186,6 @@ func contentHash(content string) string {
 
 func candidateFromAnchor(anchor Anchor) Candidate {
 	return Candidate{ID: anchor.ID, Type: anchor.Type, Name: anchor.Name, Content: anchor.Content, Substance: anchor.Substance, Read: true}
-}
-
-func rankedSimilarities(candidates []Candidate) []float64 {
-	similarities := make([]float64, 0, len(candidates))
-	for _, c := range candidates {
-		if !c.Read {
-			similarities = append(similarities, c.Similarity)
-		}
-	}
-	return similarities
 }
 
 func summarizeAnchor(anchor Anchor) AnchorSummary {

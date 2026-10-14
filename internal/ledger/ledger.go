@@ -78,7 +78,7 @@ func Over(archive runarchive.Archive) []Entry {
 	return entries
 }
 
-// ComputeRequery derives one run's requery account from that record's own fields and the block thinness the loop itself applies.
+// ComputeRequery derives one run's requery account from that record's own fields and the loop's thinness rule.
 func ComputeRequery(record loop.Record) Requery {
 	visible := make(map[int64]bool, len(record.Candidates))
 	requery := Requery{}

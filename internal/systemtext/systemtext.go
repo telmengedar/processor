@@ -15,7 +15,8 @@ A context block is provided with this request. It was assembled by an automatic 
 Treat the context block this way:
 - It is not a conversation transcript. It is not a complete record.
 - It may be missing information you need. It may also contain material that is not relevant.
-- Use the parts that help you. Ignore the parts that do not.`
+- Use the parts that help you. Ignore the parts that do not.
+- Its ids, headers, labels and notes are for you alone; never copy them into your answer.`
 
 const recallParagraph = `A recall tool is available. It searches the same memory for text you give it and returns what it finds. Use it only when the context block does not contain something you need. Do not use it to confirm what the block already says. When you use it, write the query as a short description of the information you are missing.`
 
@@ -25,7 +26,7 @@ const fileParagraph = `A file tool is available. It writes one file into a worki
 
 const noteParagraph = `A note tool is available. It stores one short text of yours in memory, where later requests can find it. One note per request is accepted. Give it the text and, if the note is about one part of memory you have been shown, that part's id.`
 
-const conversationParagraph = `This request continues a conversation between you and the user. The section headed "EARLIER IN THIS CONVERSATION" holds what was said before it, oldest first: a "user:" line is what the user said, and a "you:" line is what you replied. You took part in that conversation, so you know what was said in it. It is not part of the context block, and the block not mentioning something said there does not make it unknown to you. Read the request in the light of those exchanges: when it refers to someone or something without naming it, it means what was being talked about there. When the request is a remark rather than a question, reply to the remark; do not answer it with a statement that information is missing.`
+const conversationParagraph = `This request continues a conversation between you and the user. The section headed "EARLIER IN THIS CONVERSATION" holds what was said before it, oldest first: a "user said:" line is what the user said, and a "you replied:" line is what you replied. You took part in that conversation, so you know what was said in it. It is not part of the context block, and the block not mentioning something said there does not make it unknown to you. Read the request in the light of those exchanges: when it refers to someone or something without naming it, it means what was being talked about there. When the request is a remark rather than a question, reply to the remark; do not answer it with a statement that information is missing.`
 
 const silenceParagraph = `You may choose not to reply. To stay silent, write ` + loop.SilenceMarker + ` as your whole answer, with nothing before or after it. Staying silent this way is a valid answer, not a failure, and nothing is shown for it.`
 
