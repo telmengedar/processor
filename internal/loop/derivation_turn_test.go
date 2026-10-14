@@ -241,7 +241,7 @@ func TestTheOperatorLogTimesTheDerivationStepOnBothPathsAndCarriesTheWholeCauseO
 	}
 
 	fallback := fallbackLog.String()
-	if !strings.Contains(fallback, "the query set fell back to the raw input alone") {
+	if !strings.Contains(fallback, "the query set holds no derived query") {
 		t.Fatalf("the operator log carries no warning for a run that fell back:\n%s", fallback)
 	}
 	if !strings.Contains(fallback, strings.Repeat(longCause, 12)) {
