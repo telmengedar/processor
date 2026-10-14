@@ -197,7 +197,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 			"subject", subject, "supplied", len(history), "used", len(used), "bytes", len(conversation), "safetyLimit", settings.HistorySafetyLimit)
 	}
 
-	queries, window, derivationError := t.derive(ctx, input, subject, now)
+	queries, window, windowDiscarded, derivationError := t.derive(ctx, input, subject, now)
 	notPhrase := inputNotPhraseNote(input)
 
 	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, window, filter, t.log())
@@ -221,6 +221,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 		DerivationError: derivationError,
 		InputNotPhrase:  notPhrase,
 		Window:          window,
+		WindowDiscarded: windowDiscarded,
 		Anchor:          summarizeAnchor(anchor),
 		Candidates:      dispositions,
 		Fills:           fills,
@@ -282,19 +283,23 @@ func (t *Turn) fillInitial(ctx context.Context, settings RunSettings, anchor Anc
 	return anchor, withCreated(candidates, created), fills
 }
 
-func (t *Turn) derive(ctx context.Context, input string, subject int64, now time.Time) ([]string, UpdateWindow, string) {
+func (t *Turn) derive(ctx context.Context, input string, subject int64, now time.Time) ([]string, UpdateWindow, string, string) {
 	started := time.Now()
-	derived, window, err := DeriveQueries(ctx, t.Model, input, now)
+	derived, window, discarded, err := DeriveQueries(ctx, t.Model, input, now)
 	elapsed := time.Since(started)
 
 	if err != nil {
 		t.log().Warn("the query set holds no derived query", "subject", subject, "elapsed", elapsed, "error", err)
-		return MergeQueries(input, nil), UpdateWindow{}, BoundCause(err.Error())
+		return MergeQueries(input, nil), UpdateWindow{}, "", BoundCause(err.Error())
+	}
+
+	if discarded != "" {
+		t.log().Warn("the derived window was discarded and the run is unbounded", "subject", subject, "discarded", discarded)
 	}
 
 	queries := MergeQueries(input, derived)
 	t.log().Info("queries derived", "subject", subject, "derived", len(derived), "queries", len(queries), "elapsed", elapsed)
-	return queries, window, ""
+	return queries, window, discarded, ""
 }
 
 func firstQuery(input string) string {
