@@ -681,6 +681,22 @@ func firstStderrLine(t *testing.T, stderr *syncBuffer) string {
 	return first
 }
 
+func healthBody(t *testing.T, rp *servingProcess) string {
+	t.Helper()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://" + rp.addr + "/health")
+	if err != nil {
+		t.Fatalf("GET /health: %v; stderr:\n%s", err, rp.stderr.String())
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read the health body: %v", err)
+	}
+	return string(body)
+}
+
 func TestAStampedBinaryLogsItsBuildFirstAndRecordsItInTheVerboseBody(t *testing.T) {
 	t.Parallel()
 
@@ -693,6 +709,26 @@ func TestAStampedBinaryLogsItsBuildFirstAndRecordsItInTheVerboseBody(t *testing.
 	}
 	if got, want := string(members["build"]), `"`+buildSentinel+`"`; got != want {
 		t.Fatalf("verbose build = %s, want %s", got, want)
+	}
+}
+
+func TestAStampedBinaryServesItsBuildOnHealth(t *testing.T) {
+	t.Parallel()
+
+	rp, _ := servingBuildHarness(t, buildStampedProcessorBinary(t, buildSentinel))
+
+	if got, want := healthBody(t, rp), `{"status":"ok","build":"`+buildSentinel+`"}`; got != want {
+		t.Fatalf("health body = %s, want %s", got, want)
+	}
+}
+
+func TestAnUnstampedBinaryServesHealthWithoutABuild(t *testing.T) {
+	t.Parallel()
+
+	rp, _ := servingBuildHarness(t, buildProcessorBinary(t))
+
+	if got, want := healthBody(t, rp), `{"status":"ok"}`; got != want {
+		t.Fatalf("health body = %s, want %s", got, want)
 	}
 }
 
