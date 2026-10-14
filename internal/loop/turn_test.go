@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func testLogger() *slog.Logger {
@@ -859,13 +860,18 @@ func TestTurnRunReportsEachWriteStateVerbatimAndInterpretsNone(t *testing.T) {
 	}
 }
 
+var instantWhoseFractionHoldsFourTwoFourTwo = time.Date(2026, 10, 14, 20, 24, 58, 424244100, time.FixedZone("test+02", 2*60*60))
+
 func TestTurnRunRecordSerialisesWithNoKeyAboutItsOwnFiling(t *testing.T) {
 	t.Parallel()
 
+	const receiptNode int64 = 7390518264
+
 	graph := baseGraph()
-	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: 4242}
+	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: receiptNode}
 	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
+	turn.clock = func() time.Time { return instantWhoseFractionHoldsFourTwoFourTwo }
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -876,7 +882,7 @@ func TestTurnRunRecordSerialisesWithNoKeyAboutItsOwnFiling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal record: %v", err)
 	}
-	for _, absent := range []string{`"written"`, `"state"`, `"nodeId"`, "4242"} {
+	for _, absent := range []string{`"written"`, `"state"`, `"nodeId"`, strconv.FormatInt(receiptNode, 10)} {
 		if strings.Contains(string(body), absent) {
 			t.Fatalf("record JSON contains %q, want a record that says nothing about its own filing; body=%s", absent, body)
 		}
