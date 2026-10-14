@@ -17,6 +17,15 @@ func (w UpdateWindow) IsZero() bool {
 	return w.From.IsZero() && w.To.IsZero()
 }
 
+// Filter is the graph filter a run's config carries and every read that can admit a node forwards: opaque to the loop, whose names and values belong to the graph adapter's vocabulary alone.
+type Filter map[string][]string
+
+// View is the config a run was held to: the node that supplied it and the filter it forwarded.
+type View struct {
+	Config int64  `json:"config"`
+	Filter Filter `json:"filter,omitempty"`
+}
+
 // Anchor is the subject node a run is about.
 type Anchor struct {
 	ID      int64
@@ -317,6 +326,9 @@ type Record struct {
 	// Fills is one entry per creation the turn attempted, in every phase: filled, or the reason it was not.
 	Fills []FillOutcome `json:"fills"`
 	Block string        `json:"block"`
+
+	// Perspective is the config the run was held to, absent on a run that had none.
+	Perspective *View `json:"perspective,omitempty"`
 
 	// History is the earlier exchanges the turn was shown, oldest first, absent when none were used.
 	History []Exchange `json:"history,omitempty"`

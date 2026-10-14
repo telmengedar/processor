@@ -10,7 +10,7 @@ import (
 
 type probeGraph struct{ recallN int }
 
-func (g *probeGraph) Node(ctx context.Context, id int64) (loop.Anchor, bool, error) {
+func (g *probeGraph) Node(ctx context.Context, id int64, _ loop.Filter) (loop.Anchor, bool, error) {
 	return loop.Anchor{ID: id, Type: "documentation", Name: "S", Substance: "anchor"}, true, nil
 }
 func (g *probeGraph) Recall(ctx context.Context, request loop.RecallRequest) ([]loop.Candidate, error) {

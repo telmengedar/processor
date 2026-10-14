@@ -20,7 +20,7 @@ type poisoningGraph struct {
 	lastErr error
 }
 
-func (g *poisoningGraph) Node(context.Context, int64) (loop.Anchor, bool, error) {
+func (g *poisoningGraph) Node(context.Context, int64, loop.Filter) (loop.Anchor, bool, error) {
 	return g.anchor, true, nil
 }
 

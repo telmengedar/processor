@@ -64,22 +64,29 @@ var ErrModelUnavailable = errors.New("model unavailable")
 // ErrRunTimeExhausted marks a judgement call the run's remaining time could not afford: a call that was never made, and therefore not a model failure.
 var ErrRunTimeExhausted = errors.New("run time exhausted")
 
+// ErrGraphRejected marks a graph answer of 400 or 414, the statuses the request's own parameters can cause, as distinct from a graph that could not be reached or failed.
+var ErrGraphRejected = errors.New("graph rejected the request")
+
+// ErrInvalidConfig marks a configured run whose first recall the graph answered with 400 or 414, which the config's filter may have caused.
+var ErrInvalidConfig = errors.New("invalid config")
+
 // ErrWriteRejected marks a write the working directory refused; its message is shown to the model.
 var ErrWriteRejected = errors.New("write rejected")
 
-// RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, Exclude ids and every run record left out, and a zero Window unbounded.
+// RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, Exclude ids and every run record left out, a zero Window unbounded, and Filter, nil for none, the run's config filter the graph applies before it counts.
 type RecallRequest struct {
 	Queries []string
 	Limit   int
 	Exclude []int64
 	Window  UpdateWindow
+	Filter  Filter
 }
 
 // GraphPort is the seam between the loop and the graph. Declared here,
 // implemented by internal/divoid, constructed in main (design §5.2, §8.3).
 type GraphPort interface {
-	// Node fetches a node by id, with its content; found is false when the id resolves to nothing.
-	Node(ctx context.Context, id int64) (anchor Anchor, found bool, err error)
+	// Node fetches a node by id, with its content; filter, nil for none, is applied by the graph, and found is false when the id resolves to nothing or to a node the filter excludes.
+	Node(ctx context.Context, id int64, filter Filter) (anchor Anchor, found bool, err error)
 
 	// Recall returns the request's candidates in the graph's own rank order, never re-sorted, each carrying the mean similarity over its queries.
 	Recall(ctx context.Context, request RecallRequest) ([]Candidate, error)
@@ -163,11 +170,12 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 // RunWithOptions executes one turn as options describe it, returning the record and where it was filed.
 func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, WriteReceipt, error) {
 	input, subject, history, settings := options.Input, options.Subject, options.History, options.Settings
+	filter := options.filter()
 	started := time.Now()
 	ctx = withPrepaid(ctx)
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
 
-	anchor, found, err := t.Graph.Node(ctx, subject)
+	anchor, found, err := t.Graph.Node(ctx, subject, nil)
 	if err != nil {
 		return t.failed(subject, started, fmt.Errorf("%w: %v", ErrGraphUnavailable, err))
 	}
@@ -185,8 +193,11 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 
 	queries, window, derivationError := t.derive(ctx, input, subject, now)
 
-	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, window, t.log())
+	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, window, filter, t.log())
 	if err != nil {
+		if len(filter) > 0 && errors.Is(err, ErrGraphRejected) {
+			return t.failed(subject, started, fmt.Errorf("%w: %v", ErrInvalidConfig, err))
+		}
 		return t.failed(subject, started, fmt.Errorf("%w: %v", ErrGraphUnavailable, err))
 	}
 
@@ -209,12 +220,13 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 		History:         used,
 		HistoryCut:      len(history) - len(used),
 		Limits:          settings.Limits(),
+		Perspective:     options.View,
 	}
 
 	memory := newWorkingMemory(settings.PromptCeiling(), anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions)
 	memory.charge(len(conversation))
 
-	judged, err := t.judge(ctx, settings, memory, input, conversation, subject, now, window, dispositions)
+	judged, err := t.judge(ctx, settings, memory, input, conversation, subject, now, window, filter, dispositions)
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
@@ -404,7 +416,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		settings.JudgementBudget, floors.TokensPerSecond, settings.PromptCeiling(), floors.PromptBytesPerSecond))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation string, subject int64, now time.Time, window UpdateWindow, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation string, subject int64, now time.Time, window UpdateWindow, filter Filter, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -502,7 +514,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 			continue
 		}
 
-		exchange := t.dispatch(ctx, settings, result, &judged.workspace, window, subject, account, memory)
+		exchange := t.dispatch(ctx, settings, result, &judged.workspace, window, filter, subject, account, memory)
 		exchange.ToolSource = result.ToolSource
 		accountForYield(account, &exchange)
 		if retrieves(exchange.Tool) && exchange.Error == "" {
@@ -602,14 +614,14 @@ func closedRecallExchange(result JudgeResult) ToolExchange {
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errRecallClosedToModel, Dispositions: []Disposition{}}
 }
 
-func (t *Turn) dispatch(ctx context.Context, settings RunSettings, result JudgeResult, workspace *string, window UpdateWindow, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
+func (t *Turn) dispatch(ctx context.Context, settings RunSettings, result JudgeResult, workspace *string, window UpdateWindow, filter Filter, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
 	switch result.Reason {
 	case WantsWrite:
 		return t.dispatchWrite(ctx, result, workspace)
 	case WantsRead:
-		return t.dispatchRead(ctx, settings, result, subject, account, memory)
+		return t.dispatchRead(ctx, settings, result, filter, subject, account, memory)
 	default:
-		return t.dispatchRecall(ctx, settings, result, window, subject, memory)
+		return t.dispatchRecall(ctx, settings, result, window, filter, subject, memory)
 	}
 }
 
@@ -656,12 +668,12 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 	return exchange
 }
 
-func (t *Turn) dispatchRecall(ctx context.Context, settings RunSettings, result JudgeResult, window UpdateWindow, subject int64, memory *workingMemory) ToolExchange {
+func (t *Turn) dispatchRecall(ctx context.Context, settings RunSettings, result JudgeResult, window UpdateWindow, filter Filter, subject int64, memory *workingMemory) ToolExchange {
 	if result.ToolError != "" {
 		return ToolExchange{Tool: ToolRecall, Error: BoundCause(result.ToolError), Dispositions: []Disposition{}, Refused: true}
 	}
 
-	candidates, err := t.Graph.Recall(ctx, RecallRequest{Queries: []string{result.RecallQuery}, Limit: settings.CandidateLimit, Exclude: []int64{subject}, Window: window})
+	candidates, err := t.Graph.Recall(ctx, RecallRequest{Queries: []string{result.RecallQuery}, Limit: settings.CandidateLimit, Exclude: []int64{subject}, Window: window, Filter: filter})
 	if err != nil {
 		t.log().Error("supplementary recall failed", "query", result.RecallQuery, "error", err)
 		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}
@@ -679,7 +691,7 @@ func (t *Turn) dispatchRecall(ctx context.Context, settings RunSettings, result 
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions, Fills: fills}
 }
 
-func (t *Turn) dispatchRead(ctx context.Context, settings RunSettings, result JudgeResult, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
+func (t *Turn) dispatchRead(ctx context.Context, settings RunSettings, result JudgeResult, filter Filter, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
 	exchange := ToolExchange{Tool: ToolReadNode, NodeID: result.ReadNodeID, Dispositions: []Disposition{}}
 
 	if result.ToolError != "" {
@@ -693,7 +705,7 @@ func (t *Turn) dispatchRead(ctx context.Context, settings RunSettings, result Ju
 		return exchange
 	}
 
-	anchor, found, err := t.Graph.Node(ctx, result.ReadNodeID)
+	anchor, found, err := t.Graph.Node(ctx, result.ReadNodeID, filter)
 	if err != nil {
 		t.log().Error("addressed read failed", "node", result.ReadNodeID, "error", err)
 		exchange.Error = BoundCause(err.Error())

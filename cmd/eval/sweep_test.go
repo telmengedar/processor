@@ -44,7 +44,7 @@ func newFakeGraph(t *testing.T) *fakeGraph {
 	}
 }
 
-func (f *fakeGraph) Node(_ context.Context, id int64) (loop.Anchor, bool, error) {
+func (f *fakeGraph) Node(_ context.Context, id int64, _ loop.Filter) (loop.Anchor, bool, error) {
 	f.nodeCalls = append(f.nodeCalls, id)
 	if f.nodeErr != nil {
 		return loop.Anchor{}, false, f.nodeErr
@@ -203,7 +203,7 @@ func fetchCountRetrievalIssues(t *testing.T) int {
 	t.Helper()
 
 	graph := newFakeGraph(t)
-	if _, err := loop.Retrieve(context.Background(), graph, loop.Anchor{ID: 100}, []string{"a probe query"}, loop.CandidateLimit, loop.UpdateWindow{}, nil); err != nil {
+	if _, err := loop.Retrieve(context.Background(), graph, loop.Anchor{ID: 100}, []string{"a probe query"}, loop.CandidateLimit, loop.UpdateWindow{}, nil, nil); err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
 	if len(graph.recallCalls) == 0 {

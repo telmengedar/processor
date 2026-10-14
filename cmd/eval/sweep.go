@@ -44,14 +44,14 @@ func sweepRow(ctx context.Context, graph loop.GraphPort, row eval.Row, derivatio
 }
 
 func rowDispositions(ctx context.Context, graph loop.GraphPort, row eval.Row, derivations eval.Derivations) ([]string, []loop.Disposition, bool, error) {
-	anchor, found, err := graph.Node(ctx, row.Subject)
+	anchor, found, err := graph.Node(ctx, row.Subject, nil)
 	if err != nil || !found {
 		return nil, nil, found, err
 	}
 
 	queries := derivations.QueriesFor(row)
 
-	candidates, err := loop.Retrieve(ctx, graph, anchor, queries, loop.CandidateLimit, loop.UpdateWindow{}, nil)
+	candidates, err := loop.Retrieve(ctx, graph, anchor, queries, loop.CandidateLimit, loop.UpdateWindow{}, nil, nil)
 	if err != nil {
 		return nil, nil, true, err
 	}
@@ -66,7 +66,7 @@ func resolveMisses(ctx context.Context, graph loop.GraphPort, required []eval.No
 			continue
 		}
 
-		_, found, err := graph.Node(ctx, node.Node)
+		_, found, err := graph.Node(ctx, node.Node, nil)
 		if err != nil {
 			return err
 		}

@@ -79,7 +79,7 @@ func (g *recordingGraph) recallCalls() []loop.RecallRequest {
 	return append([]loop.RecallRequest(nil), g.recalls...)
 }
 
-func (g *recordingGraph) Node(_ context.Context, id int64) (loop.Anchor, bool, error) {
+func (g *recordingGraph) Node(_ context.Context, id int64, _ loop.Filter) (loop.Anchor, bool, error) {
 	g.mark(eventNode, id)
 	return g.anchor, g.found, nil
 }

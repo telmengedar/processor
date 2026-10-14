@@ -29,7 +29,7 @@ type rankedGraph struct {
 	calls []RecallRequest
 }
 
-func (g *rankedGraph) Node(_ context.Context, id int64) (Anchor, bool, error) {
+func (g *rankedGraph) Node(_ context.Context, id int64, _ Filter) (Anchor, bool, error) {
 	return Anchor{ID: id}, true, nil
 }
 
@@ -69,7 +69,7 @@ func ranked(ids ...int64) []Candidate {
 func mustRetrieveCandidates(t *testing.T, graph GraphPort, queries []string, limit int) []Candidate {
 	t.Helper()
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, limit, UpdateWindow{}, quietLogger())
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, limit, UpdateWindow{}, nil, quietLogger())
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestRetrieveIssuesExactlyOneRecallCarryingEveryQueryTheWindowAndTheFullLimi
 		To:   time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC),
 	}
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, 6, window, quietLogger())
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, 6, window, nil, quietLogger())
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestARowTheGraphWasToldToExcludeIsDroppedAndReported(t *testing.T) {
 	var logged strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logged, nil))
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, UpdateWindow{}, logger)
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, UpdateWindow{}, nil, logger)
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestARecallThatLeaksNothingLogsNoLeak(t *testing.T) {
 	graph := &rankedGraph{global: ranked(11, 12)}
 	var logged strings.Builder
 
-	if _, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, UpdateWindow{}, slog.New(slog.NewTextHandler(&logged, nil))); err != nil {
+	if _, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, UpdateWindow{}, nil, slog.New(slog.NewTextHandler(&logged, nil))); err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
 
@@ -258,7 +258,7 @@ func TestRetrieveReadsTheGraphNotAtAllWhenThereIsNoQueryToIssue(t *testing.T) {
 
 	graph := &rankedGraph{global: ranked(810)}
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, nil, 6, UpdateWindow{}, quietLogger())
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, nil, 6, UpdateWindow{}, nil, quietLogger())
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestRetrieveReportsAGraphFailureRatherThanAnEmptyAperture(t *testing.T) {
 	failure := errors.New("literal: 500 from graph")
 	graph := &rankedGraph{err: failure}
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, UpdateWindow{}, quietLogger())
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, UpdateWindow{}, nil, quietLogger())
 
 	if !errors.Is(err, failure) {
 		t.Fatalf("Retrieve returned error %v, want the graph's own %v", err, failure)

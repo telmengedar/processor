@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/telmengedar/processor/internal/loop"
+	"github.com/telmengedar/processor/internal/runconfig"
 )
 
 // NewHandler builds the HTTP handler for the Processor API route table.
@@ -35,12 +36,16 @@ type runRequest struct {
 	Input   string          `json:"input"`
 	Subject int64           `json:"subject"`
 	History []loop.Exchange `json:"history"`
+
+	Config *int64 `json:"config"`
 }
 
 const jsonContentType = "application/json; charset=utf-8"
 
 const (
 	codeInvalidRequest      = "invalid_request"
+	codeConfigNotFound      = "config_not_found"
+	codeInvalidConfig       = "invalid_config"
 	codeSubjectNotFound     = "subject_not_found"
 	codeGraphUnavailable    = "graph_unavailable"
 	codeModelUnavailable    = "model_unavailable"
@@ -114,10 +119,23 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			return
 		}
 
+		if req.Config != nil && *req.Config <= 0 {
+			writeError(w, http.StatusBadRequest, codeInvalidRequest, "config must be a node id")
+			return
+		}
+
 		runCtx, cancel := context.WithTimeout(r.Context(), RunBound)
 		defer cancel()
 
-		record, receipt, err := turn.RunWithHistory(runCtx, req.Input, req.Subject, req.History)
+		var view *loop.View
+		if req.Config != nil {
+			var failed bool
+			if view, failed = resolveConfig(runCtx, w, turn, *req.Config); failed {
+				return
+			}
+		}
+
+		record, receipt, err := turn.RunWithOptions(runCtx, loop.RunOptions{Input: req.Input, Subject: req.Subject, History: req.History, Settings: loop.DefaultSettings(), View: view})
 		if err != nil {
 			switch {
 			case errors.Is(runCtx.Err(), context.DeadlineExceeded):
@@ -126,6 +144,8 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 				writeError(w, http.StatusNotFound, codeSubjectNotFound, "the subject node was not found")
 			case errors.Is(err, loop.ErrRunTimeExhausted):
 				writeError(w, http.StatusGatewayTimeout, codeRunDeadlineExceeded, withCause("the run had too little time left to afford a judgement call, so none was made", err, loop.ErrRunTimeExhausted))
+			case errors.Is(err, loop.ErrInvalidConfig):
+				writeError(w, http.StatusBadRequest, codeInvalidConfig, withCause("the graph answered 400 or 414 to the first recall of a run holding a config filter", err, loop.ErrInvalidConfig))
 			case errors.Is(err, loop.ErrModelUnavailable):
 				writeError(w, http.StatusBadGateway, codeModelUnavailable, withCause("the model call did not complete", err, loop.ErrModelUnavailable))
 			default:
@@ -143,6 +163,25 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 		}
 		_ = json.NewEncoder(w).Encode(chatResponse{Reply: reply, Written: receipt, Produced: record.Outcome.Produced})
 	}
+}
+
+func resolveConfig(ctx context.Context, w http.ResponseWriter, turn *loop.Turn, id int64) (view *loop.View, failed bool) {
+	node, found, err := turn.Graph.Node(ctx, id, runconfig.ReadFilter())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, codeGraphUnavailable, "the graph could not be read: "+loop.BoundCause(err.Error()))
+		return nil, true
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, codeConfigNotFound, "the config node was not found")
+		return nil, true
+	}
+
+	filter, err := runconfig.Decode(node.Content)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, codeInvalidConfig, loop.BoundCause(err.Error()))
+		return nil, true
+	}
+	return &loop.View{Config: id, Filter: filter}, false
 }
 
 type errorEnvelope struct {
