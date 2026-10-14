@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -88,7 +89,10 @@ func TestAnIdLineIsBlockTextOnlyWhenATypeLineFollowsIt(t *testing.T) {
 	}
 
 	for _, answer := range []string{"id: 12 is my favourite", "id: 12", "id: 12\nand that is all", "id: 12\n  type: not at the line start"} {
-		record, _ := runAnswering(t, answered(answer))
+		record, model := runAnswering(t, answered(answer))
+		if slices.Contains(candidateIDsIn(model.calls[0].Block), 12) {
+			t.Fatalf("test setup error: part 12 was shown, and a lone id of a shown part is not delivered")
+		}
 		if record.NonReply != "" || !record.Outcome.Produced {
 			t.Fatalf("%q: nonReply = %q, produced = %t, want it delivered as an ordinary reply", answer, record.NonReply, record.Outcome.Produced)
 		}

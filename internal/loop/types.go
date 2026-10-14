@@ -219,6 +219,8 @@ const (
 	ToolSourceContent ToolSource = "content"
 	// ToolSourceTextual is a call the adapter recovered from an answer that opened with an offered retrieval tool's name followed by a colon or a brace, with no call markup.
 	ToolSourceTextual ToolSource = "textual"
+	// ToolSourceReference is a read of a part shown in that call, taken from an answer that consisted only of that part's id.
+	ToolSourceReference ToolSource = "reference"
 )
 
 // Provider names the adapter and the endpoint that served a run's model calls.
@@ -531,4 +533,8 @@ type JudgeResult struct {
 
 	// UnhonouredCall is the loop's name of the tool an answer wrote as its opening call text and the adapter did not honour, empty otherwise.
 	UnhonouredCall string
+}
+
+func (r JudgeResult) deliveredText() string {
+	return r.Answer
 }
