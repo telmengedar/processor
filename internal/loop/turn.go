@@ -596,7 +596,9 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		dispatched++
 		if exchange.Tool == ToolNote {
 			notesFiled++
-			ack, ackedText = acknowledgementOf(exchange)
+			if notesFiled == 1 {
+				ack, ackedText = acknowledgementOf(exchange)
+			}
 		}
 
 		if exchange.Refused {

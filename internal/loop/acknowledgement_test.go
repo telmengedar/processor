@@ -253,3 +253,20 @@ func TestNoteAcksAreOneEntryPerCallUnderTheirKeyAndARecordWithoutThemStillDecode
 		t.Errorf("a record without noteAcks decoded to %v, want none", archived.NoteAcks)
 	}
 }
+
+func TestASecondNoteRoundFromAModelThatIgnoresTheWithdrawnToolLeavesTheFirstAcknowledgementStanding(t *testing.T) {
+	t.Parallel()
+
+	model := &fakeModel{ignoresWithheldToolList: true, results: []JudgeResult{wantsNoteOf(ackNoteText, 0), wantsNoteOf("a second thought", 0), answeredFinal()}}
+	run := runNotes(t, baseGraph(), noteView(), &fakeNotes{}, model)
+
+	if len(run.notes.requests) != 1 {
+		t.Fatalf("%d notes were filed, want 1", len(run.notes.requests))
+	}
+	if got, want := run.record.NoteAcks, []NoteAck{NoteAckNone, NoteAckStored, NoteAckStored}; !slices.Equal(got, want) {
+		t.Errorf("noteAcks = %v, want %v", got, want)
+	}
+	if got := run.model.calls[2].Trailer; !strings.HasSuffix(got, storedLine(ackNoteText)) {
+		t.Errorf("the closing of call 3 = %q, want the stored line of the first note", got)
+	}
+}
