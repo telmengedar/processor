@@ -359,6 +359,8 @@ func TestTheSubstanceStepRunsOnAnAddressedReadOfANodeWithoutASubstance(t *testin
 	}
 }
 
+const slowCreationWait = 500 * time.Millisecond
+
 func TestACreationStillRunningAtTheWaitIsCancelledDeferredAndRenderedUnavailable(t *testing.T) {
 	t.Parallel()
 
@@ -370,7 +372,7 @@ func TestACreationStillRunningAtTheWaitIsCancelledDeferredAndRenderedUnavailable
 	turn := turnWithFill(graph, model, port)
 	turn.clock = func() time.Time { return now }
 
-	ctx, cancel := context.WithDeadline(context.Background(), now.Add(JudgementCost(turn.Floors)+50*time.Millisecond))
+	ctx, cancel := context.WithDeadline(context.Background(), now.Add(JudgementCost(turn.Floors)+slowCreationWait))
 	defer cancel()
 
 	record, _, err := turn.Run(ctx, "hello", 42)
@@ -378,6 +380,10 @@ func TestACreationStillRunningAtTheWaitIsCancelledDeferredAndRenderedUnavailable
 		t.Fatalf("Run: %v", err)
 	}
 
+	fast := outcomeFor(t, record.Fills, 92)
+	if !fast.Filled || fast.Deferred {
+		t.Fatalf("the outcome of the fast creation = %+v, want it filled within the wait", fast)
+	}
 	slow := outcomeFor(t, record.Fills, 91)
 	if slow.Filled || !slow.Deferred || slow.Reason != fillReasonWaitExpired {
 		t.Fatalf("the outcome of the slow creation = %+v, want it deferred with reason %q", slow, fillReasonWaitExpired)
