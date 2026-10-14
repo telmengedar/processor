@@ -33,7 +33,9 @@ func (answeringModel) Judge(context.Context, loop.JudgeInput) (loop.JudgeResult,
 	}, nil
 }
 
-func (answeringModel) Derive(context.Context, string, int) (string, error) { return "", nil }
+func (answeringModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+	return loop.DeriveResult{}, nil
+}
 
 type storedBody struct {
 	mu   sync.Mutex

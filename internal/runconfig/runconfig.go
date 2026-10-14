@@ -20,23 +20,25 @@ import (
 const NodeType = "processor-config"
 
 const (
-	filterKey     = "filter"
-	silenceKey    = "silence"
-	identityKey   = "identity"
-	noteKey       = "note"
-	noteTypeKey   = "type"
-	filterTypeKey = "type"
+	filterKey      = "filter"
+	silenceKey     = "silence"
+	identityKey    = "identity"
+	noteKey        = "note"
+	temperatureKey = "temperature"
+	noteTypeKey    = "type"
+	filterTypeKey  = "type"
 )
 
 // MaxIdentityBytes bounds the identity text, counted in UTF-8 bytes after JSON unescaping.
 const MaxIdentityBytes = 2048
 
-// Config is what a config node's content carries: the filter forwarded to the graph, whether the run offers the model a chosen silence, the identity text, empty for none, and the note capability, nil for none.
+// Config is what a config node's content carries: the filter forwarded to the graph, whether the run offers the model a chosen silence, the identity text, empty for none, the note capability, nil for none, and the temperature of the run's judgement calls, nil for the deployment's.
 type Config struct {
-	Filter   loop.Filter
-	Silence  bool
-	Identity string
-	Note     *loop.NoteConfig
+	Filter      loop.Filter
+	Silence     bool
+	Identity    string
+	Note        *loop.NoteConfig
+	Temperature *float64
 }
 
 var ownedKeys = []string{"query", "queries", "count", "continue", "sort", "descending", "fields", "id"}
@@ -61,7 +63,7 @@ func Decode(content string) (Config, error) {
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(top)) {
-		if name != filterKey && name != silenceKey && name != identityKey && name != noteKey {
+		if name != filterKey && name != silenceKey && name != identityKey && name != noteKey && name != temperatureKey {
 			return Config{}, fmt.Errorf("the config has the key %q, which processor does not know", name)
 		}
 	}
@@ -94,7 +96,31 @@ func Decode(content string) (Config, error) {
 			return Config{}, err
 		}
 	}
+
+	if raw, present := top[temperatureKey]; present {
+		if config.Temperature, err = temperatureOf(raw); err != nil {
+			return Config{}, err
+		}
+	}
 	return config, nil
+}
+
+func temperatureOf(raw json.RawMessage) (*float64, error) {
+	var value float64
+	if err := json.Unmarshal(raw, &value); err != nil {
+		var overflow *json.UnmarshalTypeError
+		if errors.As(err, &overflow) && overflow.Value == "number "+string(bytes.TrimSpace(raw)) {
+			return nil, fmt.Errorf("the config's %q does not fit a double", temperatureKey)
+		}
+		return nil, fmt.Errorf("the config's %q is not a JSON number", temperatureKey)
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, fmt.Errorf("the config's %q is not a JSON number", temperatureKey)
+	}
+	if value < 0 {
+		return nil, fmt.Errorf("the config's %q is %g, and a temperature cannot be negative", temperatureKey, value)
+	}
+	return &value, nil
 }
 
 func noteOf(raw json.RawMessage, filter loop.Filter) (*loop.NoteConfig, error) {

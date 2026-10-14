@@ -25,13 +25,16 @@ type NoteConfig struct {
 	Type string `json:"type"`
 }
 
-// View is the config a run was held to: the node that supplied it, the filter it forwarded, whether it offered the model a chosen silence, the identity text it put first, verbatim, and the note capability it enabled, nil for none.
+// View is the config a run was held to: the node that supplied it, the filter it forwarded, whether it offered the model a chosen silence, the identity text it put first, verbatim, the note capability it enabled, nil for none, and the temperature it asked its judgement calls to be sent with, nil where it asked none.
 type View struct {
 	Config   int64       `json:"config"`
 	Filter   Filter      `json:"filter,omitempty"`
 	Silence  bool        `json:"silence,omitempty"`
 	Identity string      `json:"identity,omitempty"`
 	Note     *NoteConfig `json:"note,omitempty"`
+
+	// Temperature is the temperature the config asked the run's judgement calls for, nil when it asked none and the deployment's applies.
+	Temperature *float64 `json:"temperature,omitempty"`
 
 	// Root is the node the config is rooted at, which the run record files itself under; zero means none.
 	Root int64 `json:"root,omitempty"`
@@ -425,7 +428,10 @@ type Record struct {
 	LastResponse *LastResponse `json:"lastResponse,omitempty"`
 	StopReason   StopReason    `json:"stopReason"`
 	Limits       Limits        `json:"limits"`
-	Sampling     Sampling      `json:"sampling"`
+	// Sampling is what the run's judgement calls were sent with.
+	Sampling Sampling `json:"sampling"`
+	// DerivationSampling is the sampling the derivation request carried, absent when no request was issued and on a record that predates the field, whose derivation used Sampling.
+	DerivationSampling *Sampling `json:"derivationSampling,omitempty"`
 
 	// Outcome is the loop's own account of what this run obtained, recomputable from the rest of this record.
 	Outcome Outcome `json:"outcome"`
@@ -483,6 +489,17 @@ type JudgeInput struct {
 
 	// Offered is the loop's names of the tools this call offers and the only ones it can dispatch; empty leaves prose as the only terminal the call can reach.
 	Offered []string
+
+	// Temperature replaces the adapter's configured temperature for this call alone, nil for the configured one; 0 is a temperature.
+	Temperature *float64
+}
+
+// DeriveResult is one query-derivation call's outcome.
+type DeriveResult struct {
+	Text string
+
+	// Sampling is the sampling the call's request carried, nil where no request was issued.
+	Sampling *Sampling
 }
 
 // JudgeResult is one judgement step's outcome.
@@ -499,8 +516,10 @@ type JudgeResult struct {
 	ToolError    string
 	ToolSource   ToolSource
 	Usage        *Usage
-	Sampling     Sampling
 	Provider     Provider
+
+	// Sampling is the sampling the call's request carried, which is the call's own temperature where it supplied one.
+	Sampling Sampling
 
 	// ReasoningBytes is how much arrived on the response channel every request suppresses and no caller reads, zero when the suppression held.
 	ReasoningBytes int

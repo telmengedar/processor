@@ -190,12 +190,12 @@ func TestOpenAICompatDeriveReturnsTheCompletionTextAloneOverTheCondenseRequest(t
 	srv, captured := condenseServer(t, condenseOK)
 	c := NewClient(srv.URL, "ai/gemma3", "", loop.Sampling{}, srv.Client())
 
-	text, err := c.Derive(context.Background(), "derive from this", 512)
+	derived, err := c.Derive(context.Background(), "derive from this", 512)
 	if err != nil {
 		t.Fatalf("Derive: %v", err)
 	}
-	if text != "the condensation" {
-		t.Fatalf("Derive returned %q, want the completion text alone", text)
+	if derived.Text != "the condensation" {
+		t.Fatalf("Derive returned %q, want the completion text alone", derived.Text)
 	}
 
 	body := sentBody(t, *captured)
@@ -219,9 +219,9 @@ func TestOpenAICompatDeriveReportsTheEndpointsOwnFailureRatherThanEmptyText(t *t
 	}))
 	t.Cleanup(srv.Close)
 
-	text, err := NewClient(srv.URL, "ai/gemma3", "", loop.Sampling{}, srv.Client()).Derive(context.Background(), "derive from this", 512)
+	derived, err := NewClient(srv.URL, "ai/gemma3", "", loop.Sampling{}, srv.Client()).Derive(context.Background(), "derive from this", 512)
 	if err == nil {
-		t.Fatalf("Derive returned %q and no error for a 503; a non-2xx read as empty text is a fallback with no cause", text)
+		t.Fatalf("Derive returned %q and no error for a 503; a non-2xx read as empty text is a fallback with no cause", derived.Text)
 	}
 	if !strings.Contains(err.Error(), "model is loading") {
 		t.Fatalf("Derive reported %q, which drops the endpoint's own sentence", err)

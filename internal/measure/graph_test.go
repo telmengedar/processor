@@ -118,11 +118,11 @@ func (m *answeringModel) Judge(_ context.Context, in loop.JudgeInput) (loop.Judg
 	}, nil
 }
 
-func (m *answeringModel) Derive(context.Context, string, int) (string, error) {
+func (m *answeringModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
 	if m.derivation != "" {
-		return m.derivation, nil
+		return loop.DeriveResult{Text: m.derivation}, nil
 	}
-	return "a second phrasing of the task?\na third phrasing of the task?", nil
+	return loop.DeriveResult{Text: "a second phrasing of the task?\na third phrasing of the task?"}, nil
 }
 
 func testLogger() *slog.Logger {
