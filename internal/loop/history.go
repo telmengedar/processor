@@ -11,6 +11,13 @@ const (
 
 const sectionConversation = "EARLIER IN THIS CONVERSATION"
 
+const (
+	// LabelUserSaid opens a history line holding what the user said.
+	LabelUserSaid = "user said:"
+	// LabelYouReplied opens a history line holding what the model replied.
+	LabelYouReplied = "you replied:"
+)
+
 // Exchange is one earlier turn of the conversation: what was said to the bot and, when it answered, what it said back.
 type Exchange struct {
 	Input string `json:"input"`
@@ -25,10 +32,10 @@ func renderConversation(exchanges []Exchange) string {
 	var b strings.Builder
 	b.WriteString("===== " + sectionConversation + " =====")
 	for _, e := range exchanges {
-		b.WriteString("\nuser: ")
+		b.WriteString("\n" + LabelUserSaid + " ")
 		b.WriteString(e.Input)
 		if e.Reply != "" {
-			b.WriteString("\nyou: ")
+			b.WriteString("\n" + LabelYouReplied + " ")
 			b.WriteString(e.Reply)
 		}
 	}

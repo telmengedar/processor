@@ -73,7 +73,7 @@ func TestTheConversationSectionSitsBetweenTheBlockAndTheClosingInputOldestFirst(
 		{Input: "rugenforth is on the ice wall again", Reply: "third try? bold."},
 		{Input: "he drops instead of holding his grip", Reply: "stamina bar as a suggestion."},
 	})
-	wantSection := historyTestBanner + "\nuser: rugenforth is on the ice wall again\nyou: third try? bold.\nuser: he drops instead of holding his grip\nyou: stamina bar as a suggestion."
+	wantSection := historyTestBanner + "\nuser said: rugenforth is on the ice wall again\nyou replied: third try? bold.\nuser said: he drops instead of holding his grip\nyou replied: stamina bar as a suggestion."
 	if section != wantSection {
 		t.Fatalf("section =\n%q\nwant\n%q", section, wantSection)
 	}
@@ -141,7 +141,7 @@ func TestAnExchangeWithoutAReplyRendersOnlyItsUserLine(t *testing.T) {
 	t.Parallel()
 
 	got := renderConversation([]Exchange{{Input: "an unanswered channel line"}, {Input: "asked", Reply: "answered"}})
-	want := historyTestBanner + "\nuser: an unanswered channel line\nuser: asked\nyou: answered"
+	want := historyTestBanner + "\nuser said: an unanswered channel line\nuser said: asked\nyou replied: answered"
 	if got != want {
 		t.Fatalf("section =\n%q\nwant\n%q", got, want)
 	}
@@ -335,7 +335,7 @@ func TestEveryJudgementCallOfATurnCarriesTheSameConversation(t *testing.T) {
 		t.Fatalf("the model was called %d times, want %d: the tool rounds and the reserved answering call", len(model.calls), MaxModelCalls)
 	}
 
-	want := historyTestBanner + "\nuser: said 1\nyou: replied 1\nuser: said 2\nyou: replied 2"
+	want := historyTestBanner + "\nuser said: said 1\nyou replied: replied 1\nuser said: said 2\nyou replied: replied 2"
 	for i, call := range model.calls {
 		if call.Conversation != want {
 			t.Errorf("call %d carries the conversation %q, want %q", i+1, call.Conversation, want)
@@ -398,8 +398,8 @@ func TestTheSummaryReportsHistoryCountsAndNoneOfItsText(t *testing.T) {
 	record, _ := runWithHistory(t, []Exchange{{Input: "dropped"}, {Input: "zebra-token first", Reply: "okapi-token second"}, {Input: "third"}, {Input: "fourth"}, {Input: "fifth"}})
 
 	summary := RenderSummary(record, historyTestInstant)
-	if !strings.Contains(summary, "\nHISTORY  4 of 5 exchanges, 125 B\n") {
-		t.Errorf("the summary carries no history line of 4 of 5 exchanges and 125 B:\n%s", summary)
+	if !strings.Contains(summary, "\nHISTORY  4 of 5 exchanges, 153 B\n") {
+		t.Errorf("the summary carries no history line of 4 of 5 exchanges and 153 B:\n%s", summary)
 	}
 	for _, token := range []string{"zebra-token", "okapi-token", "third", "fifth"} {
 		if strings.Contains(summary, token) {
@@ -421,8 +421,8 @@ func TestASectionOfExactlyTheSafetyLimitIsKeptAndOneByteMoreIsNot(t *testing.T) 
 		atLimit     string
 		oneByteOver string
 	}{
-		{"ASCII", strings.Repeat("x", 7_953), strings.Repeat("x", 7_954)},
-		{"multi-byte characters, whose byte length is not their rune count", strings.Repeat("é", 3_976) + "x", strings.Repeat("é", 3_977)},
+		{"ASCII", strings.Repeat("x", 7_948), strings.Repeat("x", 7_949)},
+		{"multi-byte characters, whose byte length is not their rune count", strings.Repeat("é", 3_974), strings.Repeat("é", 3_974) + "x"},
 	} {
 		atLimit, model := runWithHistory(t, []Exchange{{Input: tc.atLimit}})
 		if len(atLimit.History) != 1 || len(model.calls[0].Conversation) != 8_000 {
@@ -432,6 +432,25 @@ func TestASectionOfExactlyTheSafetyLimitIsKeptAndOneByteMoreIsNot(t *testing.T) 
 		over, model := runWithHistory(t, []Exchange{{Input: tc.oneByteOver}})
 		if len(over.History) != 0 || model.calls[0].Conversation != "" {
 			t.Errorf("%s: a section of 8001 bytes was kept as %d exchanges, want it cut whole", tc.name, len(over.History))
+		}
+	}
+}
+
+func TestTheHistoryLabelsReadAsWhoSaidWhatAndAreTheOnesTheRendererWrites(t *testing.T) {
+	t.Parallel()
+
+	if LabelUserSaid != "user said:" || LabelYouReplied != "you replied:" {
+		t.Fatalf("labels = %q and %q, want %q and %q", LabelUserSaid, LabelYouReplied, "user said:", "you replied:")
+	}
+
+	got := renderConversation([]Exchange{{Input: "hello", Reply: "hi"}})
+	want := historyTestBanner + "\n" + LabelUserSaid + " hello\n" + LabelYouReplied + " hi"
+	if got != want {
+		t.Fatalf("section =\n%q\nwant\n%q", got, want)
+	}
+	for _, former := range []string{"\nuser: ", "\nyou: "} {
+		if strings.Contains(got, former) {
+			t.Errorf("section carries the former label %q, which reads as the model's own voice", former)
 		}
 	}
 }

@@ -198,16 +198,15 @@ func TestTheWorkingMemoryNeverExceedsTheJudgementPromptCeiling(t *testing.T) {
 	}
 }
 
-func TestTheSearchNudgeAppearsOnlyOnCallsThatOfferRetrieval(t *testing.T) {
+func TestNoCallBlockTellsTheModelToLookFromAnotherAngle(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name   string
-		rows   []Candidate
-		nudged string
+		name string
+		rows []Candidate
 	}{
-		{"an empty memory", nil, "asking the wrong question"},
-		{"a thin memory", []Candidate{weakRowOf(7, "a")}, "knowledge is still thin"},
+		{"an empty memory", nil},
+		{"a thin memory", []Candidate{weakRowOf(7, "a")}},
 	} {
 		graph := baseGraph()
 		graph.recallQueue = []recallResponse{{Candidates: tc.rows}}
@@ -222,13 +221,12 @@ func TestTheSearchNudgeAppearsOnlyOnCallsThatOfferRetrieval(t *testing.T) {
 			t.Fatalf("%s: test setup error: %d calls, recall closed %v, want recall closed after at least 3 calls", tc.name, len(model.calls), record.RecallClosed)
 		}
 
-		for i, call := range model.calls[:len(model.calls)-1] {
-			if !strings.Contains(call.Block, tc.nudged) {
-				t.Errorf("%s: call %d offers retrieval and its block carries no %q nudge:\n%s", tc.name, i+1, tc.nudged, call.Block)
+		for i, call := range model.calls {
+			for _, former := range []string{"asking the wrong question", "knowledge is still thin", "different angle"} {
+				if strings.Contains(call.Block, former) {
+					t.Errorf("%s: call %d carries %q in its block, but the block states what was found and gives no advice:\n%s", tc.name, i+1, former, call.Block)
+				}
 			}
-		}
-		if answering := model.calls[len(model.calls)-1]; strings.Contains(answering.Block, tc.nudged) {
-			t.Errorf("%s: the answering call's block still tells the model to look from another angle, when it can look nowhere:\n%s", tc.name, answering.Block)
 		}
 	}
 }

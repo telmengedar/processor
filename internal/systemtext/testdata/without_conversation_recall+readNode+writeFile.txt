@@ -6,6 +6,7 @@ Treat the context block this way:
 - It is not a conversation transcript. It is not a complete record.
 - It may be missing information you need. It may also contain material that is not relevant.
 - Use the parts that help you. Ignore the parts that do not.
+- Its ids, headers, labels and notes are for you alone; never copy them into your answer.
 
 A recall tool is available. It searches the same memory for text you give it and returns what it finds. Use it only when the context block does not contain something you need. Do not use it to confirm what the block already says. When you use it, write the query as a short description of the information you are missing.
 

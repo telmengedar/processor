@@ -39,3 +39,23 @@ func TestTheSystemTextStatesThatEveryPartIsShownAsItsSubstanceAndWhatAnUnavailab
 		}
 	}
 }
+
+func TestTheBaseTextTellsTheModelToKeepTheBlocksOwnFramingOutOfItsAnswerRightAfterTheUsePartsBullet(t *testing.T) {
+	t.Parallel()
+
+	const (
+		usePartsBullet = "- Use the parts that help you. Ignore the parts that do not."
+		keepOutBullet  = "- Its ids, headers, labels and notes are for you alone; never copy them into your answer."
+	)
+
+	for _, offered := range [][]string{nil, {loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}} {
+		text := Compose(offered, false, false)
+
+		if strings.Count(text, keepOutBullet) != 1 {
+			t.Errorf("offering %v, the system text does not carry the bullet %q exactly once", offered, keepOutBullet)
+		}
+		if !strings.Contains(text, usePartsBullet+"\n"+keepOutBullet+"\n") {
+			t.Errorf("offering %v, the bullet does not follow the bullet %q on the very next line", offered, usePartsBullet)
+		}
+	}
+}

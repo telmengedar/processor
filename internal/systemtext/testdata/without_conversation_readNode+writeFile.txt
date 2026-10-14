@@ -6,6 +6,7 @@ Treat the context block this way:
 - It is not a conversation transcript. It is not a complete record.
 - It may be missing information you need. It may also contain material that is not relevant.
 - Use the parts that help you. Ignore the parts that do not.
+- Its ids, headers, labels and notes are for you alone; never copy them into your answer.
 
 A read tool is available. It returns one part of memory as its substance, given the id that part is printed with. Use it when a part you have been shown names an id whose own substance you need, or to retry a part marked "substance: unavailable". Do not use it for a part the context block already carries.
 

@@ -216,7 +216,7 @@ func TestNothingAboutARefusalReachesTheAnsweringCall(t *testing.T) {
 	}
 
 	if model.calls[1].Block != model.calls[0].Block {
-		t.Errorf("the answering call's block differs from the call before it, which carried no search nudge:\ncall 1: %q\ncall 2: %q", model.calls[0].Block, model.calls[1].Block)
+		t.Errorf("the answering call's block differs from the call before it:\ncall 1: %q\ncall 2: %q", model.calls[0].Block, model.calls[1].Block)
 	}
 	for name, surface := range map[string]string{"block": model.calls[1].Block, "system text": model.calls[1].System, "input": model.calls[1].Input} {
 		for _, leaked := range []string{"already been shown", "refus", "error", "readNode", "read_node"} {

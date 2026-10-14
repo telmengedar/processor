@@ -282,7 +282,7 @@ earlier exchanges, oldest first, each `{"input": "…", "reply": "…"}` with a 
 optional `reply` (an exchange without one stands for a line the bot did not answer). The service keeps no
 conversation state and has no conversation id. The turn is shown the newest **four** exchanges
 (`limits.historyExchangeLimit`) as one self-labelled section, `===== EARLIER IN THIS CONVERSATION =====`,
-of verbatim `user:` and `you:` lines, placed after the context block, directly before the request is repeated,
+of verbatim `user said:` and `you replied:` lines, placed after the context block, directly before the request is repeated,
 in the one user message of **every** judgement call of the turn, the reserved answering call included. The system text of
 those calls then also says a conversation is present; a call whose rendered section is empty gets the same system text and
 user message as a request without `history`. The section counts against the same prompt ceiling as the

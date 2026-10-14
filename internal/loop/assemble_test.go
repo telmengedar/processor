@@ -543,7 +543,7 @@ func TestDispositionSubstanceFieldsSerializeEvenAtTheZeroValue(t *testing.T) {
 	}
 }
 
-func TestAssembleEmptyCandidatesRendersAnchorAndTheKnowNothingNudge(t *testing.T) {
+func TestAssembleEmptyCandidatesRendersTheAnchorAlone(t *testing.T) {
 	t.Parallel()
 
 	anchor := Anchor{ID: 1, Type: "t", Name: "solo", Substance: "just the anchor"}
@@ -558,7 +558,7 @@ func TestAssembleEmptyCandidatesRendersAnchorAndTheKnowNothingNudge(t *testing.T
 	if dispositions == nil {
 		t.Fatal("dispositions is nil for no candidates, want a non-nil empty slice (JSON null vs [])")
 	}
-	const want = "===== ANCHOR =====\nid: 1\ntype: t\nname: solo\n\njust the anchor\n\nSeems you know nothing about this topic - or maybe you are asking the wrong question; try looking at it from a different angle.\n"
+	const want = "===== ANCHOR =====\nid: 1\ntype: t\nname: solo\n\njust the anchor\n"
 	if block != want {
 		t.Fatalf("block = %q, want %q", block, want)
 	}
@@ -663,7 +663,7 @@ func namedCandidates(n int) []Candidate {
 	return candidates
 }
 
-func TestRenderBlockNudgesKnowNothingWhenNothingWasEvenConsidered(t *testing.T) {
+func TestTheBlockOfNothingConsideredIsTheAnchorAlone(t *testing.T) {
 	t.Parallel()
 
 	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Substance: "anchor body"}
@@ -673,18 +673,13 @@ func TestRenderBlockNudgesKnowNothingWhenNothingWasEvenConsidered(t *testing.T) 
 	if len(dispositions) != 0 {
 		t.Fatalf("test setup error: got %d dispositions, want 0 admitted for this boundary", len(dispositions))
 	}
-	if !strings.HasSuffix(block, nudgeNone) {
-		t.Fatalf("block = %q, want it to end with the know-nothing nudge %q", block, nudgeNone)
-	}
-	if strings.Contains(block, "results were found") {
-		t.Fatalf("block = %q, contains the cut-reason sentence although nothing was even considered", block)
-	}
-	if strings.Contains(block, nudgeThin) {
-		t.Fatalf("block = %q, contains the thin-knowledge nudge as well as the know-nothing nudge; only one may fire", block)
+	const want = "===== ANCHOR =====\nid: 1\ntype: t\nname: anchor\n\nanchor body\n"
+	if block != want {
+		t.Fatalf("block = %q, want %q: a block that found nothing says nothing about it", block, want)
 	}
 }
 
-func TestRenderBlockComposesTheCutSentenceWithTheKnowNothingNudge(t *testing.T) {
+func TestTheBlockOfNothingIncludedEndsWithTheCutSentenceAlone(t *testing.T) {
 	t.Parallel()
 
 	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Substance: "anchor body"}
@@ -696,21 +691,38 @@ func TestRenderBlockComposesTheCutSentenceWithTheKnowNothingNudge(t *testing.T) 
 		t.Fatal("test setup error: the candidate was not cut, so this boundary is not exercised")
 	}
 
-	const composed = "\nresults were found, but none were included.\nSeems you know nothing about this topic - or maybe you are asking the wrong question; try looking at it from a different angle.\n"
-	if !strings.Contains(block, composed) {
-		t.Fatalf("block = %q, want the cut-reason sentence directly followed by the know-nothing nudge with no blank line between them: %q", block, composed)
+	const want = "===== ANCHOR =====\nid: 1\ntype: t\nname: anchor\n\nanchor body\n\nresults were found, but none were included.\n"
+	if block != want {
+		t.Fatalf("block = %q, want %q: the cut sentence is the last thing the block says", block, want)
 	}
 }
 
-func TestTheThinHintFollowsTheBestAdmittedSimilarityNotTheRowCount(t *testing.T) {
+func TestAThinBlockCarriesNoSentenceAboutItsThinness(t *testing.T) {
 	t.Parallel()
 
 	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Substance: "anchor body"}
+	candidates := []Candidate{{ID: 10, Type: "t", Name: "c", Similarity: 0.40, Substance: "body"}}
+
+	block, dispositions := Assemble(anchor, candidates, 60_000)
+
+	if len(dispositions) != 1 || !dispositions[0].Included {
+		t.Fatal("test setup error: the weak row was not admitted, so this boundary is not exercised")
+	}
+	const want = "===== ANCHOR =====\nid: 1\ntype: t\nname: anchor\n\nanchor body\n\n===== CANDIDATE =====\nid: 10\ntype: t\nname: c\nsimilarity: 0.400\n\nbody\n"
+	if block != want {
+		t.Fatalf("block = %q, want %q: a weak match is rendered like any other and the block ends with it", block, want)
+	}
+}
+
+func TestThinFollowsTheBestSimilarityNotTheRowCount(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name         string
 		similarities []float64
 		thin         bool
 	}{
+		{"no row", nil, true},
 		{"one weak row", []float64{0.40}, true},
 		{"six weak rows", []float64{0.40, 0.45, 0.50, 0.55, 0.60, 0.62}, true},
 		{"one strong row", []float64{0.90}, false},
@@ -719,23 +731,8 @@ func TestTheThinHintFollowsTheBestAdmittedSimilarityNotTheRowCount(t *testing.T)
 	}
 
 	for _, tc := range cases {
-		candidates := make([]Candidate, len(tc.similarities))
-		for i, similarity := range tc.similarities {
-			candidates[i] = Candidate{ID: int64(10 + i), Type: "t", Name: "c", Similarity: similarity, Substance: "body"}
-		}
-
-		block, dispositions := Assemble(anchor, candidates, 60_000)
-
-		for _, d := range dispositions {
-			if !d.Included {
-				t.Fatalf("%s: test setup error: row %d was cut, so the count under test is not the count that was fixed", tc.name, d.ID)
-			}
-		}
-		if got := strings.HasSuffix(block, nudgeThin); got != tc.thin {
-			t.Errorf("%s: the block carries the thin hint = %v, want %v: the hint says the best match is weak, and that is a property of the best similarity, not of how many rows there are", tc.name, got, tc.thin)
-		}
-		if strings.Contains(block, nudgeNone) {
-			t.Errorf("%s: the block carries the know-nothing nudge although rows were admitted", tc.name)
+		if got := Thin(tc.similarities); got != tc.thin {
+			t.Errorf("%s: Thin = %v, want %v: thinness is a property of the best similarity, not of how many rows there are", tc.name, got, tc.thin)
 		}
 	}
 }
