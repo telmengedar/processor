@@ -18,7 +18,16 @@ import (
 // NodeType is the graph node type a config must have; a node of any other type is no config.
 const NodeType = "processor-config"
 
-const filterKey = "filter"
+const (
+	filterKey  = "filter"
+	silenceKey = "silence"
+)
+
+// Config is what a config node's content carries: the filter forwarded to the graph and whether the run offers the model a chosen silence.
+type Config struct {
+	Filter  loop.Filter
+	Silence bool
+}
 
 var ownedKeys = []string{"query", "queries", "count", "continue", "sort", "descending", "fields", "id"}
 
@@ -34,19 +43,39 @@ func ReadFilter() loop.Filter {
 	return loop.Filter{"type": {NodeType}}
 }
 
-// Decode returns the filter the config content carries, nil when it carries none; the first violation is named in the error.
-func Decode(content string) (loop.Filter, error) {
+// Decode returns what the config content carries, the filter nil when it carries none; the first violation is named in the error.
+func Decode(content string) (Config, error) {
 	top, err := objectOf([]byte(content))
 	if err != nil {
-		return nil, fmt.Errorf("the config is not a JSON object: %w", err)
+		return Config{}, fmt.Errorf("the config is not a JSON object: %w", err)
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(top)) {
-		if name != filterKey {
-			return nil, fmt.Errorf("the config has the key %q, which processor does not know", name)
+		if name != filterKey && name != silenceKey {
+			return Config{}, fmt.Errorf("the config has the key %q, which processor does not know", name)
 		}
 	}
 
+	var config Config
+	if raw, present := top[silenceKey]; present {
+		switch string(bytes.TrimSpace(raw)) {
+		case "true":
+			config.Silence = true
+		case "false":
+		default:
+			return Config{}, fmt.Errorf("the config's %q is not a JSON boolean", silenceKey)
+		}
+	}
+
+	filter, err := filterOf(top)
+	if err != nil {
+		return Config{}, err
+	}
+	config.Filter = filter
+	return config, nil
+}
+
+func filterOf(top map[string]json.RawMessage) (loop.Filter, error) {
 	raw, present := top[filterKey]
 	if !present {
 		return nil, nil

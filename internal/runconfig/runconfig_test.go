@@ -11,7 +11,7 @@ import (
 func TestDecodeReadsGangolfsConfigIntoRepeatedValuesInOrder(t *testing.T) {
 	t.Parallel()
 
-	got, err := Decode(`{"filter": {"type": ["thought", "knowledge"]}}`)
+	got, err := decodeFilter(`{"filter": {"type": ["thought", "knowledge"]}}`)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestDecodeReadsGangolfsConfigIntoRepeatedValuesInOrder(t *testing.T) {
 func TestDecodeEncodesScalarsAsOneValueEachAndKeepsNumbersAndBooleansAsTheirJSONText(t *testing.T) {
 	t.Parallel()
 
-	got, err := Decode(`{"filter": {"status": "open", "severity": [3, 4.50], "nostatus": true, "minSimilarity": 0.40, "linkedto": 10422}}`)
+	got, err := decodeFilter(`{"filter": {"status": "open", "severity": [3, 4.50], "nostatus": true, "minSimilarity": 0.40, "linkedto": 10422}}`)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestDecodeOfAConfigWithoutAFilterIsValidAndCarriesNone(t *testing.T) {
 	t.Parallel()
 
 	for _, content := range []string{`{}`, " {}\n"} {
-		got, err := Decode(content)
+		got, err := decodeFilter(content)
 		if err != nil {
 			t.Errorf("Decode(%q): %v", content, err)
 		}
@@ -90,7 +90,7 @@ func TestDecodeAcceptsEveryListedNameWithAScalarValue(t *testing.T) {
 	t.Parallel()
 
 	for _, name := range forwardedNames {
-		got, err := Decode(`{"filter": {"` + name + `": "v"}}`)
+		got, err := decodeFilter(`{"filter": {"` + name + `": "v"}}`)
 		if err != nil {
 			t.Errorf("Decode refused the listed name %q: %v", name, err)
 			continue
@@ -177,7 +177,7 @@ func TestDecodeNamesTheFirstViolationInKeyOrderWhateverOrderTheConfigWroteThem(t
 func TestDecodeKeepsABooleanFalseAndAValueWithInnerOrOuterSpacesBecauseTheAuthorChoseThem(t *testing.T) {
 	t.Parallel()
 
-	got, err := Decode(`{"filter": {"nostatus": false, "name": " Mixed Case% "}}`)
+	got, err := decodeFilter(`{"filter": {"nostatus": false, "name": " Mixed Case% "}}`)
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
@@ -193,6 +193,46 @@ func TestDecodeRefusesABlankValueOnAnyKeyNamingIt(t *testing.T) {
 		_, err := Decode(`{"filter": {"` + name + `": ""}}`)
 		if err == nil || !strings.Contains(err.Error(), `"`+name+`"`) {
 			t.Errorf("a blank value on %q gave err = %v, want a refusal naming the key", name, err)
+		}
+	}
+}
+
+func decodeFilter(content string) (loop.Filter, error) {
+	config, err := Decode(content)
+	return config.Filter, err
+}
+
+func TestDecodeReadsTheSilenceSwitchAndLeavesTheFilterAsItWas(t *testing.T) {
+	t.Parallel()
+
+	for content, want := range map[string]Config{
+		`{"silence": true}`:  {Silence: true},
+		`{"silence": false}`: {},
+		` {"silence":true , "filter": {"type": "thought"}}`: {Silence: true, Filter: loop.Filter{"type": {"thought"}}},
+		`{"filter": {"type": "thought"}}`:                   {Filter: loop.Filter{"type": {"thought"}}},
+	} {
+		got, err := Decode(content)
+		if err != nil {
+			t.Errorf("Decode(%q): %v", content, err)
+			continue
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("Decode(%q) = %+v, want %+v", content, got, want)
+		}
+	}
+}
+
+func TestDecodeRefusesASilenceThatIsNotAJSONBooleanNamingTheKey(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{`"true"`, `"false"`, `1`, `0`, `null`, `{}`, `[]`, `[true]`, `"yes"`} {
+		_, err := Decode(`{"silence": ` + value + `}`)
+		if err == nil {
+			t.Errorf("Decode accepted the silence %s, want a refusal", value)
+			continue
+		}
+		if !strings.Contains(err.Error(), `"silence"`) {
+			t.Errorf("Decode refused the silence %s with %q, want the error to name the key", value, err)
 		}
 	}
 }

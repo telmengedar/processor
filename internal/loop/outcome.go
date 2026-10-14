@@ -8,6 +8,8 @@ type Verdict string
 const (
 	// VerdictCurtailed is a turn whose last call was reserved for answering, or which the remaining-time guard stopped, rather than one that ran to its own end.
 	VerdictCurtailed Verdict = "curtailed"
+	// VerdictSilent is a run whose model chose silence on a run that offered it, and which no tool-dispatch bound curtailed.
+	VerdictSilent Verdict = "silent"
 	// VerdictEmpty is a run no tool-dispatch bound stopped that nonetheless produced no text.
 	VerdictEmpty Verdict = "empty"
 	// VerdictUngrounded is a produced answer that no admitted row fed.
@@ -20,8 +22,11 @@ const (
 type Outcome struct {
 	Verdict Verdict `json:"verdict"`
 
-	// Produced is true when the answer carries at least one non-whitespace character.
+	// Produced is true when the answer carries at least one non-whitespace character and the run did not choose silence.
 	Produced bool `json:"produced"`
+
+	// Silent is true when silence was offered and the model chose it.
+	Silent bool `json:"silent,omitempty"`
 
 	// Grounded is true when an admitted row reached the model, from the block or from a dispatched round.
 	Grounded bool `json:"grounded"`
@@ -35,23 +40,26 @@ type Outcome struct {
 
 // ComputeOutcome derives one run's outcome from that record alone, reading nothing the record does not carry.
 func ComputeOutcome(record Record) Outcome {
-	produced := producedText(record)
+	produced := producedText(record) && !record.Silent
 	grounded := groundedInAdmittedRows(record)
 	curtailed := record.ReservedCall.State != "" || record.CapReached || record.RecallClosed || record.TimeShortfall != ""
 
 	return Outcome{
-		Verdict:   verdictFor(produced, grounded, curtailed),
+		Verdict:   verdictFor(produced, record.Silent, grounded, curtailed),
 		Produced:  produced,
+		Silent:    record.Silent,
 		Grounded:  grounded,
 		Curtailed: curtailed,
 		Acted:     actedRounds(record),
 	}
 }
 
-func verdictFor(produced, grounded, curtailed bool) Verdict {
+func verdictFor(produced, silent, grounded, curtailed bool) Verdict {
 	switch {
 	case curtailed:
 		return VerdictCurtailed
+	case silent:
+		return VerdictSilent
 	case !produced:
 		return VerdictEmpty
 	case !grounded:
@@ -59,6 +67,13 @@ func verdictFor(produced, grounded, curtailed bool) Verdict {
 	default:
 		return VerdictDelivered
 	}
+}
+
+// SilenceMarker is the text a model writes to decline a reply on a run that offered it.
+const SilenceMarker = "NOREPLY"
+
+func choseSilence(answer string) bool {
+	return strings.Contains(strings.ToUpper(answer), strings.ToUpper(SilenceMarker))
 }
 
 func producedText(record Record) bool {

@@ -343,8 +343,12 @@ func summaryRecallBound(record Record) string {
 }
 
 func renderSummaryVerdict(b *strings.Builder, outcome Outcome) {
-	fmt.Fprintf(b, "  verdict  %s (produced %s, grounded %s, curtailed %s)\n",
-		outcome.Verdict, summaryYesNo(outcome.Produced), summaryYesNo(outcome.Grounded), summaryYesNo(outcome.Curtailed))
+	silent := ""
+	if outcome.Silent {
+		silent = ", silent yes"
+	}
+	fmt.Fprintf(b, "  verdict  %s (produced %s, grounded %s, curtailed %s%s)\n",
+		outcome.Verdict, summaryYesNo(outcome.Produced), summaryYesNo(outcome.Grounded), summaryYesNo(outcome.Curtailed), silent)
 
 	if len(outcome.Acted) == 0 {
 		return
