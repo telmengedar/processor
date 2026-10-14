@@ -25,6 +25,9 @@ type View struct {
 	Config  int64  `json:"config"`
 	Filter  Filter `json:"filter,omitempty"`
 	Silence bool   `json:"silence,omitempty"`
+
+	// Root is the node the config is rooted at, which the run record files itself under; zero means none.
+	Root int64 `json:"root,omitempty"`
 }
 
 // Anchor is the subject node a run is about.
@@ -36,6 +39,9 @@ type Anchor struct {
 
 	// Substance is the node's condensed form, empty when none has been generated.
 	Substance string
+
+	// RootNodeID is the node this one is rooted at, zero when it has no root.
+	RootNodeID int64
 }
 
 // Candidate is one row recall returned, in the rank order the graph

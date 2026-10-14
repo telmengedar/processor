@@ -32,6 +32,10 @@ type configGraph struct {
 	recallErr   error
 	nodeCalls   []configNodeCall
 	recallCalls []loop.RecallRequest
+
+	configRoot  int64
+	subjectRoot int64
+	written     []loop.Record
 }
 
 func (g *configGraph) Node(_ context.Context, id int64, filter loop.Filter) (loop.Anchor, bool, error) {
@@ -46,14 +50,14 @@ func (g *configGraph) Node(_ context.Context, id int64, filter loop.Filter) (loo
 		if !onConfigType {
 			return loop.Anchor{}, false, nil
 		}
-		return loop.Anchor{ID: id, Type: "processor-config", Name: "gangolf", Content: g.content}, true, nil
+		return loop.Anchor{ID: id, Type: "processor-config", Name: "gangolf", Content: g.content, RootNodeID: g.configRoot}, true, nil
 	case wrongTypeConfigID:
 		if onConfigType {
 			return loop.Anchor{}, false, nil
 		}
 		return loop.Anchor{ID: id, Type: "documentation", Name: "not a config", Content: `{"filter": {"type": ["thought"]}}`}, true, nil
 	case configSubjectID:
-		return loop.Anchor{ID: id, Type: "knowledge", Name: "Subject", Substance: "anchor body"}, true, nil
+		return loop.Anchor{ID: id, Type: "knowledge", Name: "Subject", Substance: "anchor body", RootNodeID: g.subjectRoot}, true, nil
 	default:
 		return loop.Anchor{}, false, nil
 	}
@@ -64,7 +68,8 @@ func (g *configGraph) Recall(_ context.Context, request loop.RecallRequest) ([]l
 	return nil, g.recallErr
 }
 
-func (g *configGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt {
+func (g *configGraph) WriteRun(_ context.Context, record loop.Record) loop.WriteReceipt {
+	g.written = append(g.written, record)
 	return loop.WriteReceipt{State: loop.Stored, NodeID: 5}
 }
 
@@ -314,5 +319,47 @@ func TestAConfigThatIsNotAPositiveNodeIdIsAnInvalidRequest(t *testing.T) {
 		if !wantOK && len(graph.nodeCalls) != 0 {
 			t.Errorf("%s: the graph was read %d times, want none", body, len(graph.nodeCalls))
 		}
+	}
+}
+
+func TestARunUnderAConfigRootedAtANodeRecordsThatRootInItsPerspective(t *testing.T) {
+	t.Parallel()
+
+	graph := &configGraph{content: `{}`, configRoot: 9001, subjectRoot: 31}
+	result, _ := runWithConfig(t, graph, configPostBodyHead+`77}`)
+
+	if result.code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", result.code, result.body)
+	}
+	if len(graph.written) != 1 || graph.written[0].Perspective == nil || graph.written[0].Perspective.Root != 9001 {
+		t.Fatalf("the record handed to the write was %+v, want the perspective rooted at the config root", graph.written)
+	}
+}
+
+func TestARunWithoutAConfigWritesItsRecordUnrootedWhateverRootItsSubjectHas(t *testing.T) {
+	t.Parallel()
+
+	graph := &configGraph{subjectRoot: 31}
+	result, _ := runWithConfig(t, graph, `{"input":"hello","subject":42}`)
+
+	if result.code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", result.code, result.body)
+	}
+	if len(graph.written) != 1 || graph.written[0].Perspective != nil {
+		t.Fatalf("the record handed to the write was %+v, want no perspective and so no root", graph.written)
+	}
+}
+
+func TestARunUnderAConfigWithoutARootIgnoresTheRootOfItsSubject(t *testing.T) {
+	t.Parallel()
+
+	graph := &configGraph{content: `{}`, subjectRoot: 31}
+	result, _ := runWithConfig(t, graph, configPostBodyHead+`77}`)
+
+	if result.code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", result.code, result.body)
+	}
+	if len(graph.written) != 1 || graph.written[0].Perspective == nil || graph.written[0].Perspective.Root != 0 {
+		t.Fatalf("the record handed to the write was %+v, want a perspective with no root", graph.written)
 	}
 }

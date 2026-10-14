@@ -734,3 +734,109 @@ func TestTheWritePathsNon2xxErrorBodyBoundIsFourThousandAndNinetySixBytesMeasure
 		t.Fatalf("the write path's error carried %d bytes of a %d byte response body, want exactly 4096 — the bound the operator log and the next judgement call's prompt are held to, so an off-by-one and a doubling are both defects", carried, bodySize)
 	}
 }
+
+func createBodyKeys(t *testing.T, calls []recordedCall) map[string]json.RawMessage {
+	t.Helper()
+
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(calls[0].Body, &keys); err != nil {
+		t.Fatalf("decode create body: %v; body=%s", err, calls[0].Body)
+	}
+	return keys
+}
+
+func rootedRecord(root int64) loop.Record {
+	record := sampleRecord(42)
+	record.Perspective = &loop.View{Config: 77, Root: root}
+	return record
+}
+
+func TestWriteRunCreateBodyCarriesTheRootOfTheRecordsPerspective(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 1)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	c.WriteRun(context.Background(), rootedRecord(9001))
+
+	if got := string(createBodyKeys(t, *calls)["rootNodeId"]); got != "9001" {
+		t.Fatalf("create rootNodeId = %q, want 9001; body=%s", got, (*calls)[0].Body)
+	}
+}
+
+func TestWriteRunOfARootedRecordIssuesTheSameFourCallsInTheSameOrder(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 10525)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	c.WriteRun(context.Background(), rootedRecord(9001))
+
+	want := []string{"POST /api/nodes", "POST /api/nodes/10525/content", "PATCH /api/nodes/10525", "POST /api/nodes/10525/links"}
+	if got := methodPaths(*calls); !slices.Equal(got, want) {
+		t.Fatalf("calls = %v, want %v for a rooted record", got, want)
+	}
+}
+
+func TestWriteRunCreateBodyOfARecordWithoutAPerspectiveHasNoRootKey(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 1)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	c.WriteRun(context.Background(), sampleRecord(42))
+
+	if _, present := createBodyKeys(t, *calls)["rootNodeId"]; present {
+		t.Fatalf("create body names a rootNodeId for a record with no perspective: %s", (*calls)[0].Body)
+	}
+}
+
+func TestWriteRunCreateBodyOfAPerspectiveWithoutARootHasNoRootKey(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 1)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	c.WriteRun(context.Background(), rootedRecord(0))
+
+	if _, present := createBodyKeys(t, *calls)["rootNodeId"]; present {
+		t.Fatalf("create body names a rootNodeId for a config without a root: %s", (*calls)[0].Body)
+	}
+}
+
+func TestWriteRunCreatesTheUnlinkedNodeWithTheRootAlreadyOnIt(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 10525, legLink)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	receipt := c.WriteRun(context.Background(), rootedRecord(9001))
+
+	if receipt.State != loop.Unlinked {
+		t.Fatalf("receipt.State = %q, want %q", receipt.State, loop.Unlinked)
+	}
+	if got := string(createBodyKeys(t, *calls)["rootNodeId"]); got != "9001" {
+		t.Fatalf("create rootNodeId = %q, want 9001 on the node that never got its edge", got)
+	}
+	for _, call := range (*calls)[1:] {
+		if strings.Contains(string(call.Body), "rootNodeId") {
+			t.Fatalf("%s %s carries the root, want it on the create alone", call.Method, call.Path)
+		}
+	}
+}
+
+func TestWriteRunReportsNotStoredAndDoesNotRetryWithoutTheRootWhenTheGraphRejectsTheCreate(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 1, legCreate)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	receipt := c.WriteRun(context.Background(), rootedRecord(9001))
+
+	if receipt.State != loop.NotStored {
+		t.Fatalf("receipt.State = %q, want %q", receipt.State, loop.NotStored)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("calls = %v, want the rejected create alone, with no retry", methodPaths(*calls))
+	}
+}

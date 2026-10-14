@@ -310,7 +310,9 @@ array of them (one repeated key per element). A blank value (empty or whitespace
 `query`, `queries`, `count`, `continue`, `sort`, `descending`, `fields` and `id` itself, so a config naming one (in any
 case) is refused. The config's `excludeId` and `excludeName` are added to the service's own; a bound the config sets in
 `updatedFrom` or `updatedTo` replaces the window the run derived for that bound. A run without `config` is unchanged,
-and the record of a configured run carries `perspective`: the config id, the filter it forwarded and, when set, `silence`.
+and the record of a configured run carries `perspective`: the config id, the filter it forwarded, `silence` when set
+and, when the config node is rooted, that root. The run's node in the graph is created under the same root; a run
+without a config, or whose config has no root, is stored unrooted.
 
 **A config can let the model decline to reply.** `silence` is a JSON boolean, absent meaning false; anything else is a
 `400 invalid_config` before any model call. When it is `true`, the system text of every judgement call, the reserved
