@@ -263,10 +263,13 @@ call and cost **none**. It then asks the model once, under its own 30-second bou
 further queries derived from `input` **and for a calendar day range** — one extra output line, `DATES: YYYY-MM-DD..YYYY-MM-DD` or
 `DATES: none`, resolved against the instant the prompt states — which becomes the run's retrieval window.
 That call is not charged to the run's six-call judgement budget, and any outcome which is not a usable
-query set leaves the run asking `input` alone and records why on the record's `derivationError`. A
+query set leaves the run asking `input` alone when it is a phrase, and nothing otherwise, and records why on the record's `derivationError`. A
 `DATES` line that is absent, unrecognised or malformed yields **no window** rather than a guessed one,
 and retrieval is then unbounded, exactly as it was before the line existed.
-`input` is always the first query. All the queries go to the graph in one request, which ranks every
+A query is a phrase: at most 256 bytes of UTF-8. `input` is the first query when it is one; a longer `input` is content
+for the model and never a query, so the graph is then asked the derived phrases alone, or nothing when none were derived (the
+block is then the subject alone and the model may ask), and the turn does not fail for it. A derived line longer than a
+phrase is dropped, and a model recall query longer than one is refused without a graph call. All the queries go to the graph in one request, which ranks every
 node by the mean of its similarities to them — against the whole graph or, when the run derived a window,
 against the nodes whose last update falls inside it — and returns the top six, with the subject and every
 run record this system wrote left out before the count. That is the turn's only retrieval request: every
@@ -363,8 +366,9 @@ record is unchanged. Errors stay errors (the table below); an outage is never tu
 `invalid_request` before any run is made.
 
 With `?verbose=true`, the response (`200`) is the run record: the input, the instant the prompt stated (`now`, absent when it
-stated none), the query and the full query set the derivation produced (`queries`, with `input` always
-first) together with `derivationError` when that derivation failed, the update-time window retrieval was
+stated none), the query and the full query set the derivation produced (`queries`, with `input` first
+when it is a phrase) together with `derivationError` when that derivation failed, `inputNotPhrase` when the input was
+not a phrase and so was not sent to the graph (`query` is then empty), the update-time window retrieval was
 held to (`window`, absent when the run expressed no time constraint), the anchor summary, **every** candidate
 retrieval returned — not only the ones kept — each with its rank, similarity, size, content hash, and
 whether it was included or cut and why, the assembled block itself, the model's answer, the model id, which adapter and endpoint served the

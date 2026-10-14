@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -28,6 +29,8 @@ const (
 	errReadOfSubject        = "that id is this request's own subject, and the context block already carries it"
 	errAlreadyShownThisTurn = "that part has already been shown to you in this turn"
 	errNodeTooLargeFormat   = "that part's substance is %d bytes and one read carries at most %d, so it cannot be shown"
+	errQueryNotPhraseFormat = "that query is %d bytes and a recall query is a phrase of at most %d: nothing was looked up. Name in a few words what is missing"
+	errQueryBlank           = "that query is blank: nothing was looked up. Name in a few words what is missing"
 )
 
 type reservation string
@@ -192,6 +195,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	}
 
 	queries, window, derivationError := t.derive(ctx, input, subject, now)
+	notPhrase := inputNotPhraseNote(input)
 
 	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, window, filter, t.log())
 	if err != nil {
@@ -209,9 +213,10 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 		Input:           input,
 		Subject:         subject,
 		Now:             now,
-		Query:           input,
+		Query:           firstQuery(input),
 		Queries:         queries,
 		DerivationError: derivationError,
+		InputNotPhrase:  notPhrase,
 		Window:          window,
 		Anchor:          summarizeAnchor(anchor),
 		Candidates:      dispositions,
@@ -277,13 +282,27 @@ func (t *Turn) derive(ctx context.Context, input string, subject int64, now time
 	elapsed := time.Since(started)
 
 	if err != nil {
-		t.log().Warn("the query set fell back to the raw input alone", "subject", subject, "elapsed", elapsed, "error", err)
-		return []string{input}, UpdateWindow{}, BoundCause(err.Error())
+		t.log().Warn("the query set holds no derived query", "subject", subject, "elapsed", elapsed, "error", err)
+		return MergeQueries(input, nil), UpdateWindow{}, BoundCause(err.Error())
 	}
 
 	queries := MergeQueries(input, derived)
 	t.log().Info("queries derived", "subject", subject, "derived", len(derived), "queries", len(queries), "elapsed", elapsed)
 	return queries, window, ""
+}
+
+func firstQuery(input string) string {
+	if IsPhrase(input) {
+		return input
+	}
+	return ""
+}
+
+func inputNotPhraseNote(input string) string {
+	if IsPhrase(input) {
+		return ""
+	}
+	return fmt.Sprintf("the input is %d bytes and not a phrase, which is non-blank and at most %d: it went to the model as content and was not sent to the graph", len(input), MaxPhraseBytes)
 }
 
 func (t *Turn) failed(subject int64, started time.Time, err error) (Record, WriteReceipt, error) {
@@ -672,6 +691,9 @@ func (t *Turn) dispatchRecall(ctx context.Context, settings RunSettings, result 
 	if result.ToolError != "" {
 		return ToolExchange{Tool: ToolRecall, Error: BoundCause(result.ToolError), Dispositions: []Disposition{}, Refused: true}
 	}
+	if !IsPhrase(result.RecallQuery) {
+		return ToolExchange{Tool: ToolRecall, Error: recallQueryRefusal(result.RecallQuery), Dispositions: []Disposition{}, Refused: true}
+	}
 
 	candidates, err := t.Graph.Recall(ctx, RecallRequest{Queries: []string{result.RecallQuery}, Limit: settings.CandidateLimit, Exclude: []int64{subject}, Window: window, Filter: filter})
 	if err != nil {
@@ -689,6 +711,13 @@ func (t *Turn) dispatchRecall(ctx context.Context, settings RunSettings, result 
 
 	admitted, dispositions := admitUnheld(candidates, memory.room(settings.SupplementaryByteBudget), 0, memory.holds)
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions, Fills: fills}
+}
+
+func recallQueryRefusal(query string) string {
+	if strings.TrimSpace(query) == "" {
+		return errQueryBlank
+	}
+	return fmt.Sprintf(errQueryNotPhraseFormat, len(query), MaxPhraseBytes)
 }
 
 func (t *Turn) dispatchRead(ctx context.Context, settings RunSettings, result JudgeResult, filter Filter, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {

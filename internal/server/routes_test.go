@@ -241,6 +241,7 @@ type runRecordWire struct {
 	Query           string   `json:"query"`
 	Queries         []string `json:"queries"`
 	DerivationError string   `json:"derivationError"`
+	InputNotPhrase  string   `json:"inputNotPhrase"`
 	Anchor          struct {
 		ID          int64  `json:"id"`
 		Type        string `json:"type"`
@@ -1102,6 +1103,29 @@ func TestRunsCarriesEveryDerivedQueryOntoTheWireAndLeavesTheCauseOffWhenThereIsN
 	}
 	if got.DerivationError != "" {
 		t.Fatalf("record.derivationError = %q on a run that derived; an empty string is what a dropped field decodes to, so this is the assertion that discriminates", got.DerivationError)
+	}
+}
+
+func TestRunsNamesAnInputThatWasNotSentAsAQueryOnTheWireAndLeavesTheKeyOffWhenItWas(t *testing.T) {
+	t.Parallel()
+
+	turn := loop.NewTurn(stubGraph{anchor: loop.Anchor{ID: 42, Substance: "anchor body"}, found: true}, &stubModel{deriveErr: errors.New("down")}, nil, fixedSystem("system text"), "test-model", testLogger())
+
+	long := postRunsVerbose(t, turn, `{"input":"`+strings.Repeat("x", 300)+`","subject":42}`)
+	if long.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: a long input is content and never fails the run; body=%s", long.Code, http.StatusOK, long.Body.String())
+	}
+	var got runRecordWire
+	if err := json.Unmarshal(long.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v; body=%s", err, long.Body.String())
+	}
+	if !strings.Contains(got.InputNotPhrase, "300 bytes") {
+		t.Fatalf("record.inputNotPhrase = %q under the literal JSON tag, want it to name the input's 300 bytes", got.InputNotPhrase)
+	}
+
+	short := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
+	if strings.Contains(short.Body.String(), "inputNotPhrase") {
+		t.Fatalf("the record of a phrase input carries the key inputNotPhrase; it must be absent, not empty; body=%s", short.Body.String())
 	}
 }
 

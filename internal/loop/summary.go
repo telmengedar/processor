@@ -113,6 +113,10 @@ func renderSummaryAssembly(b *strings.Builder, record Record) {
 		fmt.Fprintf(b, "  q%d: %s\n", i, summaryTrunc(query, summaryQueryRunes))
 	}
 
+	if record.InputNotPhrase != "" {
+		fmt.Fprintf(b, "  input: %s\n", summaryTrunc(record.InputNotPhrase, summaryErrorRunes))
+	}
+
 	if record.DerivationError != "" {
 		fmt.Fprintf(b, "  derivation: %s\n", summaryTrunc(record.DerivationError, summaryErrorRunes))
 	}

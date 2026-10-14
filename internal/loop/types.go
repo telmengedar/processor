@@ -317,8 +317,10 @@ type Record struct {
 
 	Query   string   `json:"query"`
 	Queries []string `json:"queries"`
-	// DerivationError is why the query set is the raw input alone, empty when queries were derived.
+	// DerivationError is why the query set holds no derived query, empty when queries were derived.
 	DerivationError string `json:"derivationError,omitempty"`
+	// InputNotPhrase is why the input is not among the queries and why Query is empty: it was not a phrase, so it went to the model and not to the graph; absent when the input was a query.
+	InputNotPhrase string `json:"inputNotPhrase,omitempty"`
 	// Window is the update-time bound retrieval was held to, absent when the run's input expressed no time constraint.
 	Window     UpdateWindow  `json:"window,omitzero"`
 	Anchor     AnchorSummary `json:"anchor"`
