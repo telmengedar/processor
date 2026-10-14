@@ -39,6 +39,7 @@ const (
 	recallToolName    = "recall"
 	writeFileToolName = "write_file"
 	readNodeToolName  = "read_node"
+	noteToolName      = "write_note"
 )
 
 const (

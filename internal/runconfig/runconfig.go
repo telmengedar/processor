@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/telmengedar/processor/internal/divoid"
 	"github.com/telmengedar/processor/internal/loop"
 )
 
@@ -22,16 +23,19 @@ const (
 	filterKey   = "filter"
 	silenceKey  = "silence"
 	identityKey = "identity"
+	noteKey     = "note"
+	noteTypeKey = "type"
 )
 
 // MaxIdentityBytes bounds the identity text, counted in UTF-8 bytes after JSON unescaping.
 const MaxIdentityBytes = 2048
 
-// Config is what a config node's content carries: the filter forwarded to the graph, whether the run offers the model a chosen silence, and the identity text, empty for none.
+// Config is what a config node's content carries: the filter forwarded to the graph, whether the run offers the model a chosen silence, the identity text, empty for none, and the note capability, nil for none.
 type Config struct {
 	Filter   loop.Filter
 	Silence  bool
 	Identity string
+	Note     *loop.NoteConfig
 }
 
 var ownedKeys = []string{"query", "queries", "count", "continue", "sort", "descending", "fields", "id"}
@@ -56,7 +60,7 @@ func Decode(content string) (Config, error) {
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(top)) {
-		if name != filterKey && name != silenceKey && name != identityKey {
+		if name != filterKey && name != silenceKey && name != identityKey && name != noteKey {
 			return Config{}, fmt.Errorf("the config has the key %q, which processor does not know", name)
 		}
 	}
@@ -83,7 +87,48 @@ func Decode(content string) (Config, error) {
 			return Config{}, err
 		}
 	}
+
+	if raw, present := top[noteKey]; present {
+		if config.Note, err = noteOf(raw, config.Filter); err != nil {
+			return Config{}, err
+		}
+	}
 	return config, nil
+}
+
+func noteOf(raw json.RawMessage, filter loop.Filter) (*loop.NoteConfig, error) {
+	members, err := objectOf(raw)
+	if err != nil {
+		return nil, fmt.Errorf("the config's %q is not a JSON object: %w", noteKey, err)
+	}
+	for _, name := range slices.Sorted(maps.Keys(members)) {
+		if name != noteTypeKey {
+			return nil, fmt.Errorf("the config's %q has the member %q, which processor does not know", noteKey, name)
+		}
+	}
+
+	typeRaw, present := members[noteTypeKey]
+	if !present {
+		return nil, fmt.Errorf("the config's %q has no %q", noteKey, noteTypeKey)
+	}
+	var noteType string
+	if err := json.Unmarshal(typeRaw, &noteType); err != nil {
+		return nil, fmt.Errorf("the config's %q %q is not a JSON string", noteKey, noteTypeKey)
+	}
+
+	switch {
+	case strings.TrimSpace(noteType) == "":
+		return nil, fmt.Errorf("the config's %q %q is blank", noteKey, noteTypeKey)
+	case noteType != strings.TrimSpace(noteType):
+		return nil, fmt.Errorf("the config's %q %q has surrounding whitespace", noteKey, noteTypeKey)
+	case strings.EqualFold(noteType, NodeType), strings.EqualFold(noteType, divoid.RunNodeType):
+		return nil, fmt.Errorf("the config's %q %q is a type the model may never write", noteKey, noteTypeKey)
+	}
+
+	if admitted, filtered := filter[noteTypeKey]; filtered && !slices.Contains(admitted, noteType) {
+		return nil, fmt.Errorf("the config's %q %q is not among the types the config's filter admits, so a note would never be recalled", noteKey, noteTypeKey)
+	}
+	return &loop.NoteConfig{Type: noteType}, nil
 }
 
 func identityOf(raw json.RawMessage) (string, error) {

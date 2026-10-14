@@ -295,7 +295,7 @@ array, an element that is not an object, a missing, blank or non-string `input`,
 is a `400 invalid_request`. A `null` `reply` is read as absent, as a `null` `history` is.
 
 **A run can be held to a filter by a config node.** The request may also carry `config`: the id of a node of
-type `processor-config`, whose content is a JSON object with three optional keys, `filter`, `silence` and `identity`:
+type `processor-config`, whose content is a JSON object with four optional keys, `filter`, `silence`, `identity` and `note`:
 `{"filter": {"type": ["thought", "knowledge"]}, "silence": true}`. The service reads that node, filtered to its type by
 the graph, once per request and caches nothing. The filter is forwarded to the graph on every read that can put a node in front
 of the model: the first recall, the model's own recall, and the addressed read (which also sends the node's id and
@@ -311,7 +311,7 @@ array of them (one repeated key per element). A blank value (empty or whitespace
 case) is refused. The config's `excludeId` and `excludeName` are added to the service's own; a bound the config sets in
 `updatedFrom` or `updatedTo` replaces the window the run derived for that bound. A run without `config` is unchanged,
 and the record of a configured run carries `perspective`: the config id, the filter it forwarded, `silence` when set,
-the identity it used and, when the config node is rooted, that root. The run's node in the graph is created under the same
+the identity it used, the note type when notes are enabled and, when the config node is rooted, that root. The run's node in the graph is created under the same
 root; a run without a config, or whose config has no root, is stored unrooted.
 
 **A config can give the run an identity.** `identity` is a string the caller writes, of at most 2,048 bytes of UTF-8 and
@@ -326,6 +326,24 @@ record carries `silent: true`, its outcome carries `silent: true`, `produced: fa
 turn keeps the verdict `curtailed` beside `silent: true`), and the run record is filed as for any run. A blank answer is
 never a silence; it is the failure it always was. A run whose config does not set `silence` is unchanged byte for byte.
 
+**A config can let the model write one note.** `note` is an object with exactly one member, `type`: the graph node type
+every note of the run is filed as, non-blank. Absent, the tool does not exist for the run, and a
+deployment cannot switch it on; only the config does. With it, each judgement call that can still dispatch a tool also
+offers `write_note`, whose arguments are `text`, the whole note, and optionally `about`, the id of one part of memory
+the model was shown in this turn. The model chooses nothing else: processor files the note as a node of the config's
+`type`, named from the first line of the text (cut to 80 runes), rooted at the config's root, with the text as its
+content, and links it to the request's subject and, when `about` was shown this turn, to that part; an `about` that was
+not shown is dropped and the note is still filed. The text must be valid UTF-8 and non-blank, with no size limit of processor's own, and
+its derived name may not begin `processor-run`; a note that fails this is refused and nothing is filed. A turn takes at
+most one note: the tool is withdrawn for the rest of the turn after any note round, whatever became of it, because the
+model is never shown the outcome of a tool round. It is never offered on the call reserved for answering. A note that
+could not be filed does not fail the run. The types `processor-config` and `session-log` are refused as the note type,
+and when the config's `filter` has a `type` key the note type must be one of its values, so a run can recall what its
+config lets it write; either violation is a `400 invalid_config`. Every note round appears in the run record's
+`toolCalls` with its `text`, the `about` it asked for, `aboutDropped`, the `created` node id and where it landed
+(`written`: `stored`, `unlinked` or `notStored`). The system text names the tool in one neutral sentence and says
+nothing about when to write or in what voice; that belongs in the config's `identity`.
+
 The turn: fetch the subject, derive the query set and window described above, recall candidates against
 them, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
@@ -339,10 +357,11 @@ record back to the graph as one `session-log` node linked to the subject. The no
 one fenced ` ```json ` block. The record — described next — is recovered by taking the content's last
 fenced `json` block and parsing it.
 
-Up to three tools are offered on every call the loop is still willing to dispatch one from: `recall`,
-which searches the same graph, `read_node`, which returns one part of memory as its substance by id, and
-`write_file`, which writes one file into the run's working directory — the last only when a working
-directory is configured. The system text names each in one sentence and still asks for prose, so whether a
+Up to four tools are offered on every call the loop is still willing to dispatch one from: `recall`,
+which searches the same graph, `read_node`, which returns one part of memory as its substance by id,
+`write_file`, which writes one file into the run's working directory — only when a working
+directory is configured — and `write_note`, which files one note of the model's own — only when the run's
+config enables it, and once per turn. The system text names each in one sentence and still asks for prose, so whether a
 run reaches for the file tool is a property of the model and the task, not of the prompt. `recall` alone is
 urged, once, at the very end of the user message: while no search has run in the turn, a closing paragraph
 tells the model that when none of the parts above states what the request asks for it is not to say the
