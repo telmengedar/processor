@@ -279,9 +279,8 @@ func writtenYears(input string) map[int]bool {
 	return years
 }
 
-// groundWindow keeps window only when each endpoint year is the run's year or is written in input as a standalone four-digit number and the window does not begin after now, otherwise returning the zero window and the sentence naming the range and the first rule it failed; it never edits a range.
 func groundWindow(window UpdateWindow, input string, now time.Time) (UpdateWindow, string) {
-	if window.IsZero() || now.IsZero() {
+	if window.IsZero() {
 		return window, ""
 	}
 

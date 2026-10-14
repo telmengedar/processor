@@ -1,8 +1,10 @@
 package loop
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
@@ -166,13 +168,48 @@ func TestTheRunYearIsTheYearInTheZoneTheRunStates(t *testing.T) {
 	}
 }
 
-func TestARunThatStatesNoInstantKeepsTheRangeItWasGiven(t *testing.T) {
+func TestARunThatStatesNoInstantDiscardsTheRange(t *testing.T) {
 	t.Parallel()
 
 	_, window, discarded := derivedUnderGrounding(t, "what changed on 2026-09-12?", "DATES: 2026-09-12..2026-09-12", time.Time{})
 
-	if window.IsZero() || discarded != "" {
-		t.Fatalf("window = %+v, discarded = %q, want the range kept: with no instant there is nothing to ground against", window, discarded)
+	if !window.IsZero() || !strings.Contains(discarded, "begins after the run's instant") {
+		t.Fatalf("window = %+v, discarded = %q, want the range discarded: with no instant nothing can be grounded", window, discarded)
+	}
+}
+
+func TestAYearWrittenInsideADateGrounds(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		input string
+		dates string
+	}{
+		{"what happened on 2024-05-21?", "DATES: 2024-05-21..2024-05-21"},
+		{"was war am 21.05.2024?", "DATES: 2024-05-21..2024-05-21"},
+	}
+	for _, c := range cases {
+		_, window, discarded := derivedUnderGrounding(t, c.input, c.dates, groundingNow)
+
+		if want := dayWindow(time.UTC, 2024, 5, 21, 2024, 5, 21); window != want || discarded != "" {
+			t.Fatalf("input %q: window = %+v, discarded = %q, want %+v kept: a year inside a written date is a written year", c.input, window, discarded, want)
+		}
+	}
+}
+
+func TestARangeBeginningExactlyAtTheRunInstantIsKeptAndOneInstantLaterIsDiscarded(t *testing.T) {
+	t.Parallel()
+
+	from := time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC)
+
+	_, window, discarded := derivedUnderGrounding(t, "what changed today?", "DATES: 2026-10-14..2026-10-14", from)
+	if want := dayWindow(time.UTC, 2026, 10, 14, 2026, 10, 14); window != want || discarded != "" {
+		t.Fatalf("window = %+v, discarded = %q, want %+v kept: a range beginning at the run's instant is not after it", window, discarded, want)
+	}
+
+	_, window, discarded = derivedUnderGrounding(t, "what changed today?", "DATES: 2026-10-14..2026-10-14", from.Add(-time.Nanosecond))
+	if !window.IsZero() || !strings.Contains(discarded, "begins after the run's instant") {
+		t.Fatalf("window = %+v, discarded = %q, want the range discarded: it begins one instant after the run's", window, discarded)
 	}
 }
 
@@ -225,6 +262,12 @@ type groundedRun struct {
 func runGroundedTurn(t *testing.T, input, dates string) groundedRun {
 	t.Helper()
 
+	return runGroundedTurnLogged(t, input, dates, testLogger())
+}
+
+func runGroundedTurnLogged(t *testing.T, input, dates string, logger *slog.Logger) groundedRun {
+	t.Helper()
+
 	model := &fakeModel{
 		derivedText: dates + "\n" + groundingQuery,
 		results: []JudgeResult{
@@ -233,7 +276,7 @@ func runGroundedTurn(t *testing.T, input, dates string) groundedRun {
 		},
 	}
 	graph := derivingGraph()
-	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 	turn.clock = func() time.Time { return groundingNow }
 
 	record, _, err := turn.Run(context.Background(), input, 42)
@@ -324,5 +367,28 @@ func TestTheJudgeIsToldOfNoFilterWhenTheRangeWasDiscarded(t *testing.T) {
 		if strings.Contains(content, "retrieval is limited") || strings.Contains(content, "2024") {
 			t.Fatalf("judge call %d content mentions the discarded range:\n%s", i, content)
 		}
+	}
+}
+
+func TestADiscardedRangeIsLoggedAtWarnWithTheRangeAndAnAcceptedOneIsNot(t *testing.T) {
+	t.Parallel()
+
+	var discardedLog bytes.Buffer
+	runGroundedTurnLogged(t, "how was the long talk yesterday?", "DATES: 2024-05-21..2024-05-21", slog.New(slog.NewTextHandler(&discardedLog, nil)))
+
+	var warned string
+	for _, line := range strings.Split(discardedLog.String(), "\n") {
+		if strings.Contains(line, "the derived window was discarded") {
+			warned = line
+		}
+	}
+	if !strings.Contains(warned, "level=WARN") || !strings.Contains(warned, "2024-05-21..2024-05-21") {
+		t.Fatalf("discard log line = %q, want a WARN line naming the discarded range.\nlog:\n%s", warned, discardedLog.String())
+	}
+
+	var acceptedLog bytes.Buffer
+	runGroundedTurnLogged(t, "how was the long talk yesterday?", "DATES: 2026-10-13..2026-10-13", slog.New(slog.NewTextHandler(&acceptedLog, nil)))
+	if strings.Contains(acceptedLog.String(), "the derived window was discarded") {
+		t.Fatalf("an accepted range logged a discard.\nlog:\n%s", acceptedLog.String())
 	}
 }
