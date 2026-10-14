@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -1125,6 +1126,29 @@ func TestRenderSummaryAccountsACandidateByWhatTheBlockCarried(t *testing.T) {
 	}
 	if strings.Contains(summary, "admitted (3, 44.4 kB") {
 		t.Fatalf("the admitted total is the sum of the content sizes; the budget was never spent on the 43.3 kB the substance replaced.\nsummary:\n%s", summary)
+	}
+}
+
+func TestARecordWrittenBeforeTheSplitCarriesItsSingleLimitToEveryCallSiteItGoverned(t *testing.T) {
+	t.Parallel()
+
+	const archived = `{"input":"hello","limits":{"candidateLimit":20,"assemblyByteBudget":60000,"supplementaryByteBudget":20000,"maxModelCalls":6,"maxOutputTokens":4096}}`
+
+	var record Record
+	if err := json.Unmarshal([]byte(archived), &record); err != nil {
+		t.Fatalf("an archived record no longer decodes: %v", err)
+	}
+	if record.Limits.DerivationBudget != 4096 || record.Limits.JudgementBudget != 4096 || record.Limits.AnsweringBudget != 4096 {
+		t.Fatalf("limits = %+v, want the single archived limit of 4096 on derivation, judgement and answering", record.Limits)
+	}
+
+	summary := RenderSummary(record, summaryInstant())
+
+	if !strings.Contains(summary, "4096 tok derive / 4096 tok judge") {
+		t.Fatalf("the summary does not state the limit the archived run was held to.summary:%s", summary)
+	}
+	if strings.Contains(summary, "unlimited tok") {
+		t.Fatalf("a run that was limited renders as unlimited.summary:%s", summary)
 	}
 }
 

@@ -782,8 +782,8 @@ flags it.
 - **The native ollama adapter (`internal/ollama`):** pinned at the wire level against a local test
   server, from fixtures **captured off the live endpoint rather than written from a reading of the
   protocol** — the route, `stream: false` sent explicitly (omitted, the endpoint streams and the
-  single-object decode fails), sampling under `options` with nothing at the request top level, the output
-  cap spelled `num_predict`, the `Authorization` header sent only when a key is configured, a tool call
+  single-object decode fails), sampling under `options` with nothing at the request top level, no
+  `num_predict` key unless a client gave a limit (then sent verbatim), the `Authorization` header sent only when a key is configured, a tool call
   whose arguments arrive as a **JSON object** rather than a string holding encoded JSON, a call read even
   though `done_reason` says `stop`, usage read off `prompt_eval_count`/`eval_count`, and the error body
   that is a bare string rather than an object.

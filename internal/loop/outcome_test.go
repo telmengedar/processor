@@ -442,6 +442,27 @@ func TestATurnWhoseLastCallStoppedAtLengthWarnsOnceAndSaysWhetherAnyLimitWasSent
 	}
 }
 
+func TestAReservedCallThatStoppedAtLengthIsJudgedByTheAnsweringBudgetAlone(t *testing.T) {
+	t.Parallel()
+
+	settings := DefaultSettings()
+	settings.AnsweringBudget = 300
+	results := researchToTheCap()
+	results[MaxModelCalls-1] = JudgeResult{Answer: "half an ans", Reason: Truncated, RawReason: "length"}
+	turn, logged := capturingTurn(t, &fakeModel{results: results})
+
+	record, _, err := turn.RunWithOptions(context.Background(), RunOptions{Input: "hello", Subject: 42, Settings: settings})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if record.ReservedCall.State != ReservedCallCompleted || record.Limits.JudgementBudget != 0 || record.Limits.AnsweringBudget != 300 {
+		t.Fatalf("reserved call state = %q and limits = %+v, want a completed reserved call under an answering budget of 300 and no judgement budget", record.ReservedCall.State, record.Limits)
+	}
+	if !strings.Contains(logged.String(), "output limit the run carried") || strings.Contains(logged.String(), "sent no output limit") {
+		t.Fatalf("the warning claims no limit was sent for a reserved call issued 300 tokens:\n%s", logged.String())
+	}
+}
+
 func TestAnArchivedRecordWithALengthStopAndTheOldBudgetsDecodesAndRecomputesAsCurtailed(t *testing.T) {
 	t.Parallel()
 

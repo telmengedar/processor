@@ -22,10 +22,6 @@ func headroomOf(t *testing.T, name string, sites []CallSite, floors Floors) Head
 	return Headroom{}
 }
 
-func spareShare(h Headroom) float64 {
-	return float64(h.Spare) / float64(h.Allowed)
-}
-
 func loopOwnedSites() []CallSite {
 	return CallSites(5*time.Minute, 10*time.Minute)
 }

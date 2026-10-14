@@ -739,7 +739,7 @@ def transcript_output_budget(task_id, limits):
     internal/loop/turn.go's judge loop sets judged.answer from t.Model.Judge's result, and Judge is
     called with MaxOutputTokens: JudgementBudget -- so limits.judgementBudget is the bound the
     answer text actually came out of. derive.go's call only turns the input into recall queries
-    (DerivationBudget bounds that call, not the answer), so limits.derivationBudget sits right next
+    (derivation carries no bound of its own and is not the answer), so limits.derivationBudget sits right next
     to the right field in the same object and would be the wrong one to read.
 
     `limits` here is always this invocation's own fresh /runs response, never an archived graph

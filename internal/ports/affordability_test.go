@@ -179,6 +179,9 @@ func TestBootStatesTheDeclaredFloorsThemselvesAsDeclarationsRatherThanAsMeasurem
 	if !strings.Contains(lines[0], "tokensPerSecond=13") || !strings.Contains(lines[0], "promptBytesPerSecond=4400") {
 		t.Fatalf("the first boot line does not state the floors this deployment declared; line=%s", lines[0])
 	}
+	if !strings.Contains(lines[0], "priced only where a call site carries an output limit, and processor sets none") {
+		t.Fatalf("the first boot line does not say that generation goes unpriced where no output limit is carried; line=%s", lines[0])
+	}
 	if !strings.Contains(lines[0], "not measurements") {
 		t.Fatalf("the first boot line does not say that these rates are the deployment's assertions rather than readings taken from it; line=%s", lines[0])
 	}

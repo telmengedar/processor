@@ -309,6 +309,25 @@ type Limits struct {
 	HistorySafetyLimit int `json:"historySafetyLimit"`
 }
 
+// UnmarshalJSON decodes the limits of one run, reading the single output limit a record written before the per-site budgets carried as the budget of every call site it governed: derivation, judgement and the reserved answering call.
+func (l *Limits) UnmarshalJSON(data []byte) error {
+	type plain Limits
+	decoded := struct {
+		plain
+		LegacyMaxOutputTokens int `json:"maxOutputTokens"`
+	}{}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*l = Limits(decoded.plain)
+	if decoded.LegacyMaxOutputTokens > 0 && l.DerivationBudget == 0 && l.JudgementBudget == 0 && l.AnsweringBudget == 0 {
+		l.DerivationBudget = decoded.LegacyMaxOutputTokens
+		l.JudgementBudget = decoded.LegacyMaxOutputTokens
+		l.AnsweringBudget = decoded.LegacyMaxOutputTokens
+	}
+	return nil
+}
+
 // Sampling records one run's model-call sampling parameters, nil where left to the endpoint's default.
 type Sampling struct {
 	Temperature *float64 `json:"temperature,omitempty"`
