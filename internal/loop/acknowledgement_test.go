@@ -61,7 +61,7 @@ func TestTheClosingIsTheSearchParagraphThenTheAcknowledgementEachItsOwnParagraph
 		{"search", "", "search"},
 		{"", "", ""},
 	} {
-		if got := composeClosing(tc.search, tc.ack); got != tc.want {
+		if got := composeClosing(tc.search, tc.ack, ""); got != tc.want {
 			t.Errorf("composeClosing(%q, %q) = %q, want %q", tc.search, tc.ack, got, tc.want)
 		}
 	}
@@ -223,8 +223,12 @@ func TestATurnWithoutANoteRoundRecordsNoneForEveryCallAndShowsNoAcknowledgement(
 		t.Errorf("noteAcks of an unconfigured turn = %v, want %v", got, want)
 	}
 	for i, call := range model.calls {
-		if call.Trailer != configured.model.calls[i].Trailer {
-			t.Errorf("call %d: the closing differs between a configured and an unconfigured turn: %q and %q", i+1, configured.model.calls[i].Trailer, call.Trailer)
+		want := call.Trailer
+		if offersNote(configured.model.calls[i].Offered) {
+			want = composeClosing(want, "", NoteSentence)
+		}
+		if got := configured.model.calls[i].Trailer; got != want {
+			t.Errorf("call %d: the closing of a configured turn without a note round = %q, want the unconfigured closing %q and nothing else but the note sentence", i+1, got, want)
 		}
 	}
 }

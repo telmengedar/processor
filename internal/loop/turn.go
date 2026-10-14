@@ -503,7 +503,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 
 		offered := t.offeredTools(reserved != "", note.enabled && notesFiled < NotesPerTurn)
 		search, trailerKind := trailerFor(offered, searches)
-		trailer := composeClosing(search, acknowledgement(ack, ackedText))
+		trailer := composeClosing(search, acknowledgement(ack, ackedText), noteSentenceFor(offered))
 		judged.noteAcks = append(judged.noteAcks, ack)
 		judged.trailers = append(judged.trailers, trailerKind)
 		judged.offered = append(judged.offered, append([]string{}, offered...))
