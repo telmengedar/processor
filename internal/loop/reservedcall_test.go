@@ -80,6 +80,7 @@ func TestTheCallThatFollowsAClosedRecallIsIssuedWithNoToolList(t *testing.T) {
 	if got := withheldFlags(model.calls); !sameBools(got, want) {
 		t.Fatalf("the turn withheld its tool list on calls %v, want %v: a closed recall reserves the call that follows it, and reserving it means offering nothing rather than refusing afterwards", got, want)
 	}
+	assertOfferedMatchesCalls(t, record, model.calls)
 }
 
 func TestAReservedCallProducesTheAnswerACappedRunUsedToReturnEmpty(t *testing.T) {
@@ -208,6 +209,7 @@ func TestAFailedReservedCallEndsTheTurnWithTheRecordItAlreadyHoldsRatherThanFail
 	if len(record.Usage) != record.ModelCalls {
 		t.Fatalf("record.Usage has %d entries against %d model calls; the record promises one entry per call made", len(record.Usage), record.ModelCalls)
 	}
+	assertOfferedMatchesCalls(t, record, model.calls)
 }
 
 func TestAFailedReservedCallDoesNotPromoteTheProseTheModelWroteBesideAnEarlierToolRequest(t *testing.T) {

@@ -134,7 +134,8 @@ words; that document carries the argument.
   one — *retrieved* (did retrieval surface the node at all) and *admitted* (did it survive the
   byte budget) — because they fail differently and imply opposite fixes
   (DiVoid **#10926**).
-- `GET /health` — returns `200` with `Content-Type: application/json` and body `{"status":"ok"}`.
+- `GET /health` — returns `200` with `Content-Type: application/json` and body `{"status":"ok","build":"<build>"}` on a stamped binary (see "Container" below) and
+  `{"status":"ok"}` on an unstamped one, where the `build` key is omitted.
 - `POST /runs` — assembles context for one input against one subject node, judges it against the
   configured model (dispatching the recall and file-write tools as needed), writes the run record to the
   graph, and returns the reply, or the record with `?verbose=true` (see "`POST /runs`" below).
@@ -177,6 +178,8 @@ Content-Type: application/json
 
 {"status":"ok"}
 ```
+
+A binary stamped with a build (see "Container" below) adds it: `{"status":"ok","build":"<build>"}`.
 
 **Shutdown on `Ctrl+C`:** in an interactive terminal, pressing `Ctrl+C` sends `os.Interrupt`, the same
 signal exercised by the automated test described under "What is and isn't verified here" below, which
@@ -396,7 +399,7 @@ paragraph at all, because the paragraph made it search again, mostly with the sa
 brought nothing new it is told so, by the query it ran, and is not given the paragraph. The paragraph sits
 there because that is where the call-or-answer decision of the model in use is made, and the record names
 in `trailers` the search state each call was made in (`clause`, `found`, `barren`, or `none` where recall
-was not offered). **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
+was not offered) and in `offered` the tools each call offered. **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
 a system text and one user message. The system text is composed per call from the tools that call offers and from whether the turn carries a conversation section,
 so a tool the call does not offer is not mentioned in it; and no tool call, error or write
 confirmation is ever replayed to the model, the one thing it is told of a search being its query and whether it brought anything. What a retrieval round *found* joins the turn's working memory
@@ -461,7 +464,7 @@ call (`reservedCall`, absent on a run that reserved none: `state` is `unmade` wh
 issuing it, `completed` where the endpoint answered it — whatever it answered with — and `failed` where the
 call did not complete, with `error` carrying the cause on that last one alone; the three are distinguishable
 from this field alone, because a run whose reserved call never happened would otherwise read exactly like one
-whose reserved call answered with nothing), token usage as one entry per model call, in call order, named for
+whose reserved call answered with nothing), `offered`, one entry per model call in call order naming the tools that call offered, in the loop's names (`recall`, `readNode`, `writeFile`, `note`) and in offer order — an empty list for a call that offered none, as the reserved answering call does, and absent on a record that predates the member — token usage as one entry per model call, in call order, named for
 the direction of travel (`inTokens`/`outTokens` — a `null` entry means that call reported no usage object:
 either the endpoint returned none, or the call was the reserved one and failed before reaching an endpoint at
 all; absent, never zero-filled), the stop reason (both the loop's own neutral value and the endpoint's raw
@@ -568,9 +571,10 @@ from a working tree with uncommitted changes would carry a commit that does not 
 
 `PROCESSOR_BUILD` is required: the image build refuses an empty value. It is stamped into the binary
 and appears as the run record's `build` member (next to `model`, and so in the stored record and the
-`?verbose=true` response, never in the default body) and on the first line the process logs. The
-value is an opaque string. A binary built without it, such as one from `go build` or `go test`,
-records no `build` member and logs `build=unstamped`; an absent member means no build identity was
+`?verbose=true` response, never in the default body), as the `build` member of `GET /health`, and on
+the first line the process logs. The value is an opaque string. A binary built without it, such as
+one from `go build` or `go test`, records no `build` member, leaves it out of `/health`, and logs
+`build=unstamped`; an absent member means no build identity was
 known, never a default.
 
 The build stage is `golang:1.27` (matching the version pinned everywhere else in this file); the

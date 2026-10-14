@@ -422,6 +422,8 @@ type Record struct {
 	Usage []*Usage `json:"usage"`
 	// Trailers carries one entry per model call, in call order: the search state that call was made in, which decides its closing paragraph.
 	Trailers []TrailerKind `json:"trailers"`
+	// Offered carries one entry per model call, in call order: the tools that call offered, in the loop's tool names and in offer order, an empty list for a call that offered none, absent on a record that predates the field.
+	Offered [][]string `json:"offered"`
 	// LastResponse is present exactly when the turn's last judgement call returned a response; absent means either that call returned none, or the record predates this field.
 	LastResponse *LastResponse `json:"lastResponse,omitempty"`
 	StopReason   StopReason    `json:"stopReason"`

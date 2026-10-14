@@ -134,6 +134,27 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestHealthOfAStampedTurnCarriesTheBuild(t *testing.T) {
+	t.Parallel()
+
+	turn := newTestTurn(stubGraph{})
+	turn.Build = buildSentinel
+	rec := httptest.NewRecorder()
+
+	NewHandler(turn).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("Content-Type = %q, want %q", ct, "application/json")
+	}
+	want := `{"status":"ok","build":"` + buildSentinel + `"}`
+	if body := rec.Body.String(); body != want {
+		t.Fatalf("body = %q, want %q", body, want)
+	}
+}
+
 func TestHealthUnregisteredPath(t *testing.T) {
 	t.Parallel()
 
