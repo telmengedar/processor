@@ -296,12 +296,20 @@ var textualRecoverable = []textualRecovery{
 	{loop.ToolReadNode, "id"},
 }
 
-const modelCallPrefix = "call:"
+const (
+	modelCallPrefix   = "call:"
+	modelCallOpenMark = "<|tool_call>"
+)
 
 func openingToolCall(content string) (toolBinding, string, bool) {
 	text := strings.TrimLeftFunc(content, unicode.IsSpace)
+	if len(text) > len(modelCallOpenMark) && text[:len(modelCallOpenMark)] == modelCallOpenMark {
+		text = text[len(modelCallOpenMark):]
+	}
+	braceOnly := false
 	if len(text) > len(modelCallPrefix) && strings.EqualFold(text[:len(modelCallPrefix)], modelCallPrefix) {
 		text = text[len(modelCallPrefix):]
+		braceOnly = true
 	}
 
 	for _, tool := range toolTable {
@@ -310,11 +318,16 @@ func openingToolCall(content string) (toolBinding, string, bool) {
 			continue
 		}
 		switch text[end] {
-		case ':', '{':
+		case '{':
 			return tool, text[end:], true
-		case '(':
-			if strings.IndexByte(text[end:], ')') > 0 {
+		case ':':
+			if !braceOnly {
 				return tool, text[end:], true
+			}
+		case '(':
+			rest := strings.TrimRightFunc(text[end:], unicode.IsSpace)
+			if !braceOnly && len(rest) > 1 && rest[len(rest)-1] == ')' {
+				return tool, rest, true
 			}
 		}
 	}
@@ -323,8 +336,7 @@ func openingToolCall(content string) (toolBinding, string, bool) {
 
 func textualArgument(rest, parameter string) (string, bool) {
 	if rest[0] == '(' {
-		end := strings.IndexByte(rest, ')')
-		return unquoted(strings.TrimSpace(rest[1:end])), true
+		return parenArgument(rest[1:len(rest)-1], parameter)
 	}
 
 	if rest[0] == ':' {
@@ -341,6 +353,25 @@ func textualArgument(rest, parameter string) (string, bool) {
 		return "", false
 	}
 	return unquoted(strings.TrimSpace(value)), true
+}
+
+func parenArgument(body, parameter string) (string, bool) {
+	if cut := strings.IndexAny(body, "=:"); cut > 0 {
+		key := unquoted(strings.TrimSpace(body[:cut]))
+		if isIdentifier(key) {
+			if key != parameter {
+				return "", false
+			}
+			return unquoted(strings.TrimSpace(body[cut+1:])), true
+		}
+	}
+	return unquoted(strings.TrimSpace(body)), true
+}
+
+func isIdentifier(text string) bool {
+	return text != "" && !strings.ContainsFunc(text, func(r rune) bool {
+		return r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
 }
 
 func unquoted(value string) string {
