@@ -1124,6 +1124,12 @@ func TestRunsNamesAnInputThatWasNotSentAsAQueryOnTheWireAndLeavesTheKeyOffWhenIt
 	}
 
 	short := postRunsVerbose(t, turn, `{"input":"what is going on","subject":42}`)
+	if short.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: a phrase run that failed has no record to leave the key off; body=%s", short.Code, http.StatusOK, short.Body.String())
+	}
+	if !strings.Contains(short.Body.String(), `"query":"what is going on"`) {
+		t.Fatalf("the phrase run did not carry its query; body=%s", short.Body.String())
+	}
 	if strings.Contains(short.Body.String(), "inputNotPhrase") {
 		t.Fatalf("the record of a phrase input carries the key inputNotPhrase; it must be absent, not empty; body=%s", short.Body.String())
 	}

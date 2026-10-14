@@ -54,7 +54,7 @@ words; that document carries the argument.
   `loop.MergeQueries` the turn uses, call the loop's own `Retrieve`, `Assemble` — then stops before the
   model. It reads its query set from the sidecar rather than deriving one, so a full sweep costs no model
   call at all, on either arm. Without the sidecar every row is swept on its
-  own input alone; the result names the arm it ran and the sha256 of the sidecar it read, so two
+  own input alone when that input is a phrase, and on no query when it is not; the result names the arm it ran and the sha256 of the sidecar it read, so two
   readings taken minutes apart can be told apart. Writes the measurement as JSON to stdout and the
   human summary to stderr, and exits non-zero when retrieval could not be verified against the control
   stratum. A control node the byte budget merely cut exits zero under a named budget alarm — that is the
