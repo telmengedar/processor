@@ -86,9 +86,6 @@ func (f *fakeHTTPServer) Shutdown(context.Context) error {
 func TestServeCancellationBranchPropagatesGenuineServeError(t *testing.T) {
 	t.Parallel()
 
-	// A literal, test-owned error — not derived from anything the
-	// production path itself produces, so mutating the production code
-	// cannot move this expectation along with it.
 	wantErr := errors.New("fake accept failure: literal boom")
 	fake := newFakeHTTPServer(wantErr)
 

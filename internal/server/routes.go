@@ -35,7 +35,6 @@ func handleHealth(build string) http.HandlerFunc {
 	}
 }
 
-// runRequest is the POST /runs request body.
 type runRequest struct {
 	Input   string          `json:"input"`
 	Subject int64           `json:"subject"`
