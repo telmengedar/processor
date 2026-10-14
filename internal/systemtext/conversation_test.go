@@ -60,7 +60,7 @@ func TestTheSystemTextWithoutAConversationIsByteIdenticalToTheTextBeforeConversa
 		if strings.Contains(want, "\r") {
 			t.Fatalf("the fixture for the tool set %s holds a carriage return, so it was not stored with LF line endings", subset.name)
 		}
-		if got := systemtext.Compose(subset.offered, false); got != want {
+		if got := systemtext.Compose(subset.offered, false, false); got != want {
 			t.Errorf("offering %s without a conversation, the system text differs from the text before conversations existed:\n%q\nwant\n%q", subset.name, got, want)
 		}
 	}
@@ -75,7 +75,7 @@ func TestTheSystemTextOfAConversationTurnCarriesTheConversationParagraphDirectly
 
 	for _, subset := range everyToolSubset() {
 		before := textBeforeConversations(t, subset)
-		got := systemtext.Compose(subset.offered, true)
+		got := systemtext.Compose(subset.offered, true, false)
 
 		if count := strings.Count(got, conversationParagraph); count != 1 {
 			t.Errorf("offering %s, the paragraph occurs %d times, want exactly once", subset.name, count)
@@ -109,7 +109,7 @@ func TestTheAnswerParagraphNamesTheEarlierConversationOnlyWhenOneIsPresent(t *te
 			{false, basisWithoutConversation, basisWithConversation},
 			{true, basisWithConversation, basisWithoutConversation},
 		} {
-			text := systemtext.Compose(subset.offered, tc.conversation)
+			text := systemtext.Compose(subset.offered, tc.conversation, false)
 			if strings.Count(text, tc.want) != 1 {
 				t.Errorf("offering %s with conversation %v, the system text does not carry %q exactly once", subset.name, tc.conversation, tc.want)
 			}
@@ -123,7 +123,7 @@ func TestTheAnswerParagraphNamesTheEarlierConversationOnlyWhenOneIsPresent(t *te
 func TestTheAnsweringCallOfAConversationTurnNamesNoToolAndCarriesTheConversationParagraph(t *testing.T) {
 	t.Parallel()
 
-	text := systemtext.Compose(nil, true)
+	text := systemtext.Compose(nil, true, false)
 
 	if !strings.Contains(text, conversationParagraph) {
 		t.Errorf("the system text of the answering call of a conversation turn does not carry the paragraph: the section is on that call and nothing would tell the model what it is")

@@ -8,10 +8,13 @@ import (
 	"testing"
 )
 
-func offeringSystem(offered []string, conversation bool) string {
+func offeringSystem(offered []string, conversation, silence bool) string {
 	text := "offers:" + strings.Join(offered, ",")
 	if conversation {
 		text += ";conversation"
+	}
+	if silence {
+		text += ";silence"
 	}
 	return text
 }
