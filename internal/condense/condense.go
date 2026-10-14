@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -35,10 +34,7 @@ const (
 	originAbsent      = "absent"
 )
 
-const (
-	minOutputTokens = 2048
-	bytesPerToken   = 4.2
-)
+const noOutputLimit = 0
 
 const finishReasonStop = "stop"
 
@@ -251,7 +247,7 @@ func Condense(ctx context.Context, graph GraphPort, model ModelPort, target Targ
 	}
 
 	hash := contentHash(node.Content)
-	completion, err := model.Condense(ctx, Prompt(node.Name, node.Content), maxOutputTokens(node.Content))
+	completion, err := model.Condense(ctx, Prompt(node.Name, node.Content), noOutputLimit)
 	if err != nil {
 		return Condensation{Skip: &Skip{Node: target.Node, Reason: skipModelFailed, Detail: err.Error()}, Audit: audit}
 	}
@@ -321,19 +317,6 @@ func gate(node Node, opts Options) string {
 func isProse(contentType string) bool {
 	normalised := strings.ToLower(strings.TrimSpace(contentType))
 	return normalised == "" || strings.HasPrefix(normalised, "text/")
-}
-
-// OutputBudget is the output budget one condensation of contentBytes of content is issued with.
-func OutputBudget(contentBytes int) int {
-	estimate := int(math.Ceil(float64(contentBytes) / bytesPerToken))
-	if estimate < minOutputTokens {
-		return minOutputTokens
-	}
-	return estimate
-}
-
-func maxOutputTokens(content string) int {
-	return OutputBudget(len(content))
 }
 
 func ratio(substanceSize, contentSize int) float64 {

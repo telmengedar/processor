@@ -293,12 +293,12 @@ type Limits struct {
 	MaxModelCalls           int     `json:"maxModelCalls"`
 	ThinKnowledgeSimilarity float64 `json:"thinKnowledgeSimilarity"`
 
-	// DerivationBudget is the output budget the query-derivation call was issued with.
-	DerivationBudget int `json:"derivationBudget"`
-	// JudgementBudget is the output budget each judgement call was issued with.
-	JudgementBudget int `json:"judgementBudget"`
-	// AnsweringBudget is the output budget a reserved answering call is issued with.
-	AnsweringBudget int `json:"answeringBudget"`
+	// DerivationBudget is the output budget the query-derivation call was issued with; absent: no limit was sent.
+	DerivationBudget int `json:"derivationBudget,omitempty"`
+	// JudgementBudget is the output budget each judgement call was issued with; absent: no limit was sent.
+	JudgementBudget int `json:"judgementBudget,omitempty"`
+	// AnsweringBudget is the output budget a reserved answering call is issued with; absent: no limit was sent.
+	AnsweringBudget int `json:"answeringBudget,omitempty"`
 
 	// FillWait is how long one substance step waits for its creations, in nanoseconds.
 	FillWait time.Duration `json:"fillWait"`
@@ -417,7 +417,7 @@ type JudgeInput struct {
 	// Window is the update-time bound the run's supplementary recalls are held to, zero when unbounded.
 	Window UpdateWindow
 
-	// MaxOutputTokens is this call site's own output budget; an adapter refuses a call that carries none.
+	// MaxOutputTokens is the call's output limit, 0 for none; an adapter sends no limit key for 0.
 	MaxOutputTokens int
 
 	// Offered is the loop's names of the tools this call offers and the only ones it can dispatch; empty leaves prose as the only terminal the call can reach.

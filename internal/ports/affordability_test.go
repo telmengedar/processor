@@ -20,10 +20,18 @@ func declared(tokensPerSecond, promptBytesPerSecond float64) boot.FloorsConfig {
 
 func report(t *testing.T, floorsConfig boot.FloorsConfig) []string {
 	t.Helper()
+	return reportWithBudget(t, floorsConfig, 0)
+}
+
+func reportWithBudget(t *testing.T, floorsConfig boot.FloorsConfig, budget int) []string {
+	t.Helper()
 
 	floors, sites, err := Affordability(boot.ProtocolOpenAICompat, floorsConfig, reportRunBound)
 	if err != nil {
 		t.Fatalf("Affordability: %v", err)
+	}
+	for i := range sites {
+		sites[i].Budget = budget
 	}
 
 	var logged bytes.Buffer
@@ -97,7 +105,7 @@ func TestBootWarnsAboutAJudgementCallItsDeclaredFloorCannotAffordAndNamesTheRate
 
 	const declaredTokensPerSecond = 1.0
 
-	lines := report(t, declared(declaredTokensPerSecond, 3_000))
+	lines := reportWithBudget(t, declared(declaredTokensPerSecond, 3_000), 192)
 	line := lineFor(t, lines, loop.SiteJudgement)
 
 	if !strings.Contains(line, "level=WARN") {
@@ -123,11 +131,43 @@ func TestBootWarnsAboutAJudgementCallItsDeclaredFloorCannotAffordAndNamesTheRate
 func TestTheRateTheHostWouldHaveToDeliverIsComputedRatherThanEchoedBackFromTheDeclaration(t *testing.T) {
 	t.Parallel()
 
-	first := floatAttribute(t, lineFor(t, report(t, declared(1, 3_000)), loop.SiteJudgement), "requiredTokensPerSecond")
-	second := floatAttribute(t, lineFor(t, report(t, declared(2, 3_000)), loop.SiteJudgement), "requiredTokensPerSecond")
+	first := floatAttribute(t, lineFor(t, reportWithBudget(t, declared(1, 3_000), 192), loop.SiteJudgement), "requiredTokensPerSecond")
+	second := floatAttribute(t, lineFor(t, reportWithBudget(t, declared(2, 3_000), 192), loop.SiteJudgement), "requiredTokensPerSecond")
 
 	if first != second {
 		t.Fatalf("two deployments declaring different generation floors are told they need %v and %v tokens per second; the rate a budget needs is a property of the budget and the bound, not of what the operator declared", first, second)
+	}
+}
+
+func TestBootReportsAnUnlimitedSiteAsBudgetUnlimitedAndPricesNoGenerationRate(t *testing.T) {
+	t.Parallel()
+
+	lines := report(t, declared(10, 3_000))
+
+	for _, site := range []string{loop.SiteDerivation, loop.SiteJudgement, loop.SiteAnswering} {
+		line := lineFor(t, lines, site)
+		if !strings.Contains(line, "budget=unlimited") {
+			t.Fatalf("the %s site does not report budget=unlimited; line=%s", site, line)
+		}
+		if strings.Contains(line, "budget=0") || strings.Contains(line, "requiredTokensPerSecond") {
+			t.Fatalf("the %s site reports a zero budget or a generation rate it never priced; line=%s", site, line)
+		}
+	}
+}
+
+func TestAnUnlimitedSiteTheDeclaredPromptRateCannotAffordNamesThePromptRateAlone(t *testing.T) {
+	t.Parallel()
+
+	line := lineFor(t, report(t, declared(10, 100)), loop.SiteJudgement)
+
+	if !strings.Contains(line, "level=WARN") {
+		t.Fatalf("a prompt the declared prompt rate cannot afford was not warned about; line=%s", line)
+	}
+	if strings.Contains(line, "requiredTokensPerSecond") || strings.Contains(line, "declaredTokensPerSecond") {
+		t.Fatalf("the warning prices a generation rate for a site with no output limit; line=%s", line)
+	}
+	if !strings.Contains(line, "carries no output limit") || !strings.Contains(line, "process the prompt at") {
+		t.Fatalf("the warning does not say that only the prompt is priced and what rate it needs; line=%s", line)
 	}
 }
 
@@ -190,7 +230,7 @@ func TestNoAffordabilityIsClaimedForAProtocolThisBinaryHasNoAdapterFor(t *testin
 
 func judgementSentence(t *testing.T, tokensPerSecond, promptBytesPerSecond float64) string {
 	t.Helper()
-	return lineFor(t, report(t, declared(tokensPerSecond, promptBytesPerSecond)), loop.SiteJudgement)
+	return lineFor(t, reportWithBudget(t, declared(tokensPerSecond, promptBytesPerSecond), 192), loop.SiteJudgement)
 }
 
 func TestWhereBothARateAndAPromptRateWouldAffordTheSiteTheReportNamesBoth(t *testing.T) {

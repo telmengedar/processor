@@ -7,8 +7,6 @@ import (
 )
 
 const (
-	budgetStep          = 32
-	requiredSpareShare  = 0.10
 	slowFloorPerSecond  = 1.0
 	quickFloorPerSecond = 10_000.0
 )
@@ -32,46 +30,57 @@ func loopOwnedSites() []CallSite {
 	return CallSites(5*time.Minute, 10*time.Minute)
 }
 
+func limitedSites(budget int) []CallSite {
+	sites := loopOwnedSites()
+	for i := range sites {
+		sites[i].Budget = budget
+	}
+	return sites
+}
+
 func TestEveryCallSiteTheLoopOwnsIsAffordableAtTheProductsOwnDeclaredFloors(t *testing.T) {
 	t.Parallel()
 
 	for _, h := range Afford(loopOwnedSites(), Floors{}) {
 		if !h.Affordable() {
-			t.Fatalf("call site %q declares a budget of %d tokens and a prompt ceiling of %d bytes, which needs %v against the %v the safety factor leaves of its %v bound — a shipped budget must satisfy the affordability property at the product's own declaration",
+			t.Fatalf("call site %q declares a budget of %d tokens and a prompt ceiling of %d bytes, which needs %v against the %v the safety factor leaves of its %v bound — a shipped site must satisfy the affordability property at the product's own declaration",
 				h.Name, h.Budget, h.PromptCeiling, h.Generation+h.Prompt, h.Allowed, h.Bound)
 		}
 	}
 }
 
-func TestNoCallSitesBudgetCouldBeOneStepLargerAndStillLeaveItsSpareShare(t *testing.T) {
+func TestEveryCallSiteTheLoopOwnsDeclaresNoOutputBudget(t *testing.T) {
 	t.Parallel()
 
-	sites := loopOwnedSites()
-
-	for i, h := range Afford(sites, Floors{}) {
-		if got := spareShare(h); got < requiredSpareShare {
-			t.Fatalf("call site %q leaves %.3f of its allowed time spare, under the %.2f the shipped budgets were derived to keep", h.Name, got, requiredSpareShare)
+	for _, site := range loopOwnedSites() {
+		if site.Budget != 0 {
+			t.Fatalf("call site %q declares an output budget of %d tokens; processor sets no output limit on any call", site.Name, site.Budget)
 		}
-
-		if h.Name != SiteDerivation {
-			continue
-		}
-
-		sites[i].Budget += budgetStep
-		next := Afford(sites, Floors{})[i]
-		if spareShare(next) >= requiredSpareShare {
-			t.Fatalf("call site %q would still leave %.3f spare at %d tokens, so %d is not the largest budget the property affords in steps of %d — the shipped value is below its own derivation",
-				h.Name, spareShare(next), sites[i].Budget, h.Budget, budgetStep)
-		}
-		sites[i].Budget -= budgetStep
 	}
 }
 
-func TestTheShippedBudgetsAreDistinctSoNoReportCanConfuseOneCallSiteForAnother(t *testing.T) {
+func TestAnUnlimitedSiteIsAffordableExactlyWhenItsPromptFitsTheShareOfItsBoundTheSafetyFactorLeaves(t *testing.T) {
 	t.Parallel()
 
-	if DerivationBudget == JudgementBudget {
-		t.Fatalf("the derivation and judgement sites both declare %d tokens, so a report naming one is indistinguishable from a report naming the other", DerivationBudget)
+	for _, site := range loopOwnedSites() {
+		allowed := time.Duration(float64(site.Bound) * AffordabilitySafety)
+		exact := float64(site.PromptCeiling) / allowed.Seconds()
+
+		fits := headroomOf(t, site.Name, []CallSite{site}, Floors{TokensPerSecond: slowFloorPerSecond, PromptBytesPerSecond: exact * 1.001})
+		if !fits.Affordable() {
+			t.Fatalf("call site %q is reported unaffordable at a prompt rate of %.2f B/s, just above the %.2f B/s its prompt needs; generation is not priced where there is no output limit", site.Name, exact*1.001, exact)
+		}
+		if fits.Generation != 0 {
+			t.Fatalf("call site %q prices generation at %v with no output limit", site.Name, fits.Generation)
+		}
+
+		short := headroomOf(t, site.Name, []CallSite{site}, Floors{TokensPerSecond: quickFloorPerSecond, PromptBytesPerSecond: exact * 0.999})
+		if short.Affordable() {
+			t.Fatalf("call site %q is reported affordable at a prompt rate of %.2f B/s, just below the %.2f B/s its prompt needs", site.Name, exact*0.999, exact)
+		}
+		if short.RequiredTokensPerSecond != 0 {
+			t.Fatalf("call site %q names a required generation rate of %v with no output limit", site.Name, short.RequiredTokensPerSecond)
+		}
 	}
 }
 
@@ -98,7 +107,7 @@ func TestTheJudgementBoundIsTheClientBoundWhereThatIsTheTighterOfTheTwo(t *testi
 func TestAffordNamesTheGenerationRateAHostWouldHaveToDeliverForASiteItCannotAfford(t *testing.T) {
 	t.Parallel()
 
-	h := headroomOf(t, SiteJudgement, loopOwnedSites(), Floors{TokensPerSecond: slowFloorPerSecond, PromptBytesPerSecond: DefaultFloorPromptBytesPerSecond})
+	h := headroomOf(t, SiteJudgement, limitedSites(192), Floors{TokensPerSecond: slowFloorPerSecond, PromptBytesPerSecond: DefaultFloorPromptBytesPerSecond})
 
 	if h.Affordable() {
 		t.Fatalf("a judgement budget of %d tokens is reported affordable at %g tokens per second", h.Budget, slowFloorPerSecond)
@@ -164,14 +173,14 @@ func TestTheDerivationPromptCeilingLeavesRoomForARunsInputBesideItsOwnInstructio
 	}
 }
 
-func TestOneJudgementCallIsPricedAtItsOwnBudgetAndPromptCeilingTogether(t *testing.T) {
+func TestOneJudgementCallWithNoOutputLimitIsPricedAtItsPromptCeilingAlone(t *testing.T) {
 	t.Parallel()
 
 	floors := Floors{TokensPerSecond: 8, PromptBytesPerSecond: 2_000}
 
-	want := time.Duration(float64(JudgementBudget)/8*float64(time.Second)) + time.Duration(float64(JudgementPromptCeiling)/2_000*float64(time.Second))
+	want := time.Duration(float64(JudgementPromptCeiling) / 2_000 * float64(time.Second))
 
 	if got := JudgementCost(floors); got != want {
-		t.Fatalf("JudgementCost = %v, want %v — the output budget at the generation floor plus the prompt ceiling at the prompt floor", got, want)
+		t.Fatalf("JudgementCost = %v, want %v — the prompt ceiling at the prompt floor and no generation term", got, want)
 	}
 }

@@ -456,7 +456,7 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 		MaxModelCalls           int
 		DerivationBudget        int
 		JudgementBudget         int
-	}{loop.CandidateLimit, 60_000, 20_000, 6, 160, 192}
+	}{loop.CandidateLimit, 60_000, 20_000, 6, 0, 0}
 	if got.Limits.CandidateLimit != wantLimits.CandidateLimit ||
 		got.Limits.AssemblyByteBudget != wantLimits.AssemblyByteBudget ||
 		got.Limits.SupplementaryByteBudget != wantLimits.SupplementaryByteBudget ||
@@ -464,6 +464,11 @@ func TestRunsRecordWireCarriesUnitBFields(t *testing.T) {
 		got.Limits.DerivationBudget != wantLimits.DerivationBudget ||
 		got.Limits.JudgementBudget != wantLimits.JudgementBudget {
 		t.Fatalf("record.limits = %+v, want %+v", got.Limits, wantLimits)
+	}
+	for _, key := range []string{"derivationBudget", "judgementBudget", "answeringBudget"} {
+		if strings.Contains(rec.Body.String(), key) {
+			t.Fatalf("the response states %q for a run that sent no output limit; body=%s", key, rec.Body.String())
+		}
 	}
 	if got.Sampling.Temperature == nil || *got.Sampling.Temperature != 0.4 {
 		t.Fatalf("record.sampling.temperature = %v, want a pointer to 0.4", got.Sampling.Temperature)
@@ -1156,7 +1161,7 @@ func TestARunWithTooLittleTimeLeftForAJudgementCallIsNotFiledAsAModelFailure(t *
 	if !strings.Contains(message, "so none was made") {
 		t.Fatalf("error.message = %q does not say that no judgement call was attempted", message)
 	}
-	if !strings.Contains(message, "192 output tokens") {
+	if !strings.Contains(message, "80000 prompt bytes") {
 		t.Fatalf("error.message = %q drops the arithmetic the guard computed, leaving the reader with a bound and no way to recompute it", message)
 	}
 }

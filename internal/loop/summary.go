@@ -31,6 +31,7 @@ const (
 const (
 	summaryNoProvider   = "[provider not recorded]"
 	summaryAbsentField  = "—"
+	summaryUnlimited    = "unlimited"
 	summaryNoTool       = "[tool not recorded]"
 	summaryBlockOmitted = "not rendered here"
 	summaryNoFillModel  = "[model not recorded]"
@@ -93,7 +94,7 @@ func renderSummaryHistory(b *strings.Builder, record Record) {
 
 func summaryBudget(tokens int) string {
 	if tokens == 0 {
-		return summaryAbsentField
+		return summaryUnlimited
 	}
 	return strconv.Itoa(tokens)
 }

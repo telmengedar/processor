@@ -319,8 +319,8 @@ func TestTheOllamaProtocolReachesTheNativeAdapterAndSuppressesItsReasoningStream
 	if result.Provenance[0].Model != "ai/test-served" {
 		t.Fatalf("want the served model carried out of the native adapter, got %q", result.Provenance[0].Model)
 	}
-	if result.Provenance[0].Sampling.MaxTokens != 2048 {
-		t.Fatalf("want the output ceiling carried out of the native adapter, got %d", result.Provenance[0].Sampling.MaxTokens)
+	if result.Provenance[0].Sampling.MaxTokens != 0 || strings.Contains(body, "num_predict") {
+		t.Fatalf("want no output limit sent by the native adapter, got %d in %s", result.Provenance[0].Sampling.MaxTokens, body)
 	}
 }
 
@@ -347,8 +347,8 @@ func TestAnAbsentProtocolVariableStillReachesTheOpenAICompatibleAdapterAndSendsN
 	if result.Provenance[0].Model != "ai/test-served" {
 		t.Fatalf("want the served model carried out of the default adapter, got %q", result.Provenance[0].Model)
 	}
-	if result.Provenance[0].Sampling.MaxTokens != 2048 {
-		t.Fatalf("want the output ceiling carried out of the default adapter, got %d", result.Provenance[0].Sampling.MaxTokens)
+	if result.Provenance[0].Sampling.MaxTokens != 0 || strings.Contains(body, "max_tokens") {
+		t.Fatalf("want no output limit sent by the default adapter, got %d in %s", result.Provenance[0].Sampling.MaxTokens, body)
 	}
 }
 

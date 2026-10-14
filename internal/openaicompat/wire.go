@@ -14,7 +14,7 @@ const errNoNodeID = "tool arguments named no node id to read"
 type chatRequest struct {
 	Model           string        `json:"model"`
 	Messages        []wireMessage `json:"messages"`
-	MaxTokens       int           `json:"max_tokens"`
+	MaxTokens       int           `json:"max_tokens,omitempty"`
 	ReasoningEffort string        `json:"reasoning_effort,omitempty"`
 	Tools           []wireTool    `json:"tools,omitempty"`
 	Temperature     *float64      `json:"temperature,omitempty"`
