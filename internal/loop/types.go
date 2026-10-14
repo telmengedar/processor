@@ -430,7 +430,7 @@ type Record struct {
 	Limits       Limits        `json:"limits"`
 	// Sampling is what the run's judgement calls were sent with.
 	Sampling Sampling `json:"sampling"`
-	// DerivationSampling is what the derivation call was sent with, absent when no derivation request was sent and on a record that predates the field, whose derivation was sent with Sampling.
+	// DerivationSampling is the sampling the derivation request carried, absent when no request was issued and on a record that predates the field, whose derivation used Sampling.
 	DerivationSampling *Sampling `json:"derivationSampling,omitempty"`
 
 	// Outcome is the loop's own account of what this run obtained, recomputable from the rest of this record.
@@ -498,7 +498,7 @@ type JudgeInput struct {
 type DeriveResult struct {
 	Text string
 
-	// Sampling is the sampling the call's request carried, nil where no request was sent.
+	// Sampling is the sampling the call's request carried, nil where no request was issued.
 	Sampling *Sampling
 }
 

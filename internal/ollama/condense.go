@@ -117,7 +117,7 @@ func (c *Client) condense(ctx context.Context, prompt string, maxOutputTokens in
 	}, true, nil
 }
 
-// Derive runs one query-derivation call on the configured sampling, returning the completion text and the sampling the request carried, which it also returns beside an error once the request was sent.
+// Derive runs one query-derivation call on the configured sampling, returning its text and the sampling its request carried, also beside an error once the request was issued.
 func (c *Client) Derive(ctx context.Context, prompt string, maxOutputTokens int) (loop.DeriveResult, error) {
 	result, sent, err := c.condense(ctx, prompt, maxOutputTokens)
 	var derived loop.DeriveResult

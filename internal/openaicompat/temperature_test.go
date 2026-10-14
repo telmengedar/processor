@@ -162,3 +162,22 @@ func TestADerivationCallWhoseRequestNeverLeftReportsNoSampling(t *testing.T) {
 		t.Fatalf("Derive reports %+v for a request that was never sent, want none", result.Sampling)
 	}
 }
+
+func TestADerivationCallWhoseResponseCannotBeReadStillReportsTheSamplingItCarried(t *testing.T) {
+	t.Parallel()
+
+	configured := loop.Sampling{Temperature: floatPtr(0.2), TopP: floatPtr(0.9)}
+	for name, body := range map[string]string{
+		"a 200 whose body is not JSON": "this is not json",
+		"a 200 with no choices":        `{"model":"m","choices":[]}`,
+	} {
+		srv, _ := capturingServer(t, body)
+		result, err := NewClient(srv.URL, "model-x", "", configured, srv.Client()).Derive(context.Background(), "derive from this", 64)
+		if err == nil {
+			t.Fatalf("%s: Derive returned no error", name)
+		}
+		if result.Sampling == nil || !reflect.DeepEqual(*result.Sampling, configured) {
+			t.Errorf("%s: Derive reports %+v beside the error, want the %+v its request carried", name, result.Sampling, configured)
+		}
+	}
+}
