@@ -1,4 +1,4 @@
-// Package runconfig decodes the config node a run request names: a strict JSON object whose filter processor forwards to the graph unread.
+// Package runconfig decodes the config node a run request names: a strict JSON object whose filter processor forwards to the graph unread and whose identity it places first in the system text unread.
 package runconfig
 
 import (
@@ -19,14 +19,19 @@ import (
 const NodeType = "processor-config"
 
 const (
-	filterKey  = "filter"
-	silenceKey = "silence"
+	filterKey   = "filter"
+	silenceKey  = "silence"
+	identityKey = "identity"
 )
 
-// Config is what a config node's content carries: the filter forwarded to the graph and whether the run offers the model a chosen silence.
+// MaxIdentityBytes bounds the identity text, counted in UTF-8 bytes after JSON unescaping.
+const MaxIdentityBytes = 2048
+
+// Config is what a config node's content carries: the filter forwarded to the graph, whether the run offers the model a chosen silence, and the identity text, empty for none.
 type Config struct {
-	Filter  loop.Filter
-	Silence bool
+	Filter   loop.Filter
+	Silence  bool
+	Identity string
 }
 
 var ownedKeys = []string{"query", "queries", "count", "continue", "sort", "descending", "fields", "id"}
@@ -43,7 +48,7 @@ func ReadFilter() loop.Filter {
 	return loop.Filter{"type": {NodeType}}
 }
 
-// Decode returns what the config content carries, the filter nil when it carries none; the first violation is named in the error.
+// Decode returns what the config content carries, the zero Config for an empty object; the first violation is named in the error.
 func Decode(content string) (Config, error) {
 	top, err := objectOf([]byte(content))
 	if err != nil {
@@ -51,7 +56,7 @@ func Decode(content string) (Config, error) {
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(top)) {
-		if name != filterKey && name != silenceKey {
+		if name != filterKey && name != silenceKey && name != identityKey {
 			return Config{}, fmt.Errorf("the config has the key %q, which processor does not know", name)
 		}
 	}
@@ -72,7 +77,27 @@ func Decode(content string) (Config, error) {
 		return Config{}, err
 	}
 	config.Filter = filter
+
+	if raw, present := top[identityKey]; present {
+		if config.Identity, err = identityOf(raw); err != nil {
+			return Config{}, err
+		}
+	}
 	return config, nil
+}
+
+func identityOf(raw json.RawMessage) (string, error) {
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return "", fmt.Errorf("the config's %q is not a JSON string", identityKey)
+	}
+	if strings.TrimSpace(text) == "" {
+		return "", fmt.Errorf("the config's %q is blank", identityKey)
+	}
+	if len(text) > MaxIdentityBytes {
+		return "", fmt.Errorf("the config's %q is %d bytes, over the bound of %d", identityKey, len(text), MaxIdentityBytes)
+	}
+	return text, nil
 }
 
 func filterOf(top map[string]json.RawMessage) (loop.Filter, error) {

@@ -1,6 +1,7 @@
 package runconfig
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -135,7 +136,7 @@ func TestDecodeRefusesAnEmptyOrNonObjectFilterAndAnUnknownTopLevelKey(t *testing
 		"an array filter":              `{"filter": ["type"]}`,
 		"a string filter":              `{"filter": "type"}`,
 		"an unknown top-level key":     `{"filtr": {"type": ["thought"]}}`,
-		"an extra top-level key":       `{"filter": {"type": ["thought"]}, "identity": "x"}`,
+		"an extra top-level key":       `{"filter": {"type": ["thought"]}, "persona": "x"}`,
 		"the filter key in wrong case": `{"Filter": {"type": ["thought"]}}`,
 	}
 	for name, content := range cases {
@@ -222,6 +223,68 @@ func TestDecodeReadsTheSilenceSwitchAndLeavesTheFilterAsItWas(t *testing.T) {
 	}
 }
 
+func TestDecodeForwardsTheIdentityVerbatimWithItsOuterSpacesAndInnerBlankLine(t *testing.T) {
+	t.Parallel()
+
+	got, err := Decode(`{"identity":"  You are X.\n\nSecond.  "}`)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if want := "  You are X.\n\nSecond.  "; got.Identity != want {
+		t.Fatalf("Decode identity = %q, want %q: the text is the caller's and is forwarded as written", got.Identity, want)
+	}
+}
+
+func TestDecodeRefusesAnIdentityThatIsNotAStringNamingTheKey(t *testing.T) {
+	t.Parallel()
+
+	for name, value := range map[string]string{"a number": `5`, "a boolean": `true`, "null": `null`, "an array": `["a"]`, "an object": `{"a": 1}`} {
+		_, err := Decode(`{"identity": ` + value + `}`)
+		if err == nil || !strings.Contains(err.Error(), `"identity"`) {
+			t.Errorf("%s: Decode err = %v, want a refusal naming identity", name, err)
+		}
+	}
+}
+
+func TestDecodeRefusesABlankIdentityNamingTheKey(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{`""`, `"   "`, `" \n\t"`} {
+		_, err := Decode(`{"identity": ` + value + `}`)
+		if err == nil || !strings.Contains(err.Error(), `"identity"`) {
+			t.Errorf("a blank identity %s gave err = %v, want a refusal naming identity", value, err)
+		}
+	}
+}
+
+func TestDecodeBoundsTheIdentityInBytesNotCharacters(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		text    string
+		refused bool
+	}{
+		"exactly at the bound":                  {strings.Repeat("a", MaxIdentityBytes), false},
+		"one byte over":                         {strings.Repeat("a", MaxIdentityBytes+1), true},
+		"1024 two-byte characters at the bound": {strings.Repeat("é", MaxIdentityBytes/2), false},
+		"1025 two-byte characters over":         {strings.Repeat("é", MaxIdentityBytes/2+1), true},
+	}
+	for name, c := range cases {
+		encoded, err := json.Marshal(map[string]string{"identity": c.text})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		_, err = Decode(string(encoded))
+		if c.refused != (err != nil) {
+			t.Errorf("%s: Decode err = %v, want refused = %v", name, err, c.refused)
+			continue
+		}
+		if c.refused && (!strings.Contains(err.Error(), `"identity"`) || !strings.Contains(err.Error(), "2048")) {
+			t.Errorf("%s: the refusal %q must name the key and the bound", name, err)
+		}
+	}
+}
+
 func TestDecodeRefusesASilenceThatIsNotAJSONBooleanNamingTheKey(t *testing.T) {
 	t.Parallel()
 
@@ -234,5 +297,52 @@ func TestDecodeRefusesASilenceThatIsNotAJSONBooleanNamingTheKey(t *testing.T) {
 		if !strings.Contains(err.Error(), `"silence"`) {
 			t.Errorf("Decode refused the silence %s with %q, want the error to name the key", value, err)
 		}
+	}
+}
+
+func TestDecodeBoundsTheIdentityAfterJSONUnescapingNotInItsEscapedForm(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		content string
+		refused bool
+	}{
+		"a newline escape at the bound":            {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes-1) + `\n"}`, false},
+		"a unicode escape at the bound":            {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes-2) + `\u00e9"}`, false},
+		"a newline escape one byte over the bound": {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes) + `\n"}`, true},
+	}
+	for name, c := range cases {
+		got, err := Decode(c.content)
+		if c.refused != (err != nil) {
+			t.Errorf("%s: Decode err = %v, want refused = %v", name, err, c.refused)
+			continue
+		}
+		if !c.refused && len(got.Identity) != MaxIdentityBytes {
+			t.Errorf("%s: the identity is %d bytes after unescaping, want %d", name, len(got.Identity), MaxIdentityBytes)
+		}
+	}
+}
+
+func TestDecodeReadsTheIdentityBesideTheFilterAndOnItsOwnAndStillRefusesAnyOtherKey(t *testing.T) {
+	t.Parallel()
+
+	both, err := Decode(`{"identity": "You are X.", "filter": {"type": ["thought"]}}`)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if both.Identity != "You are X." || !reflect.DeepEqual(both.Filter, loop.Filter{"type": {"thought"}}) {
+		t.Errorf("Decode = %+v, want the identity and the filter both", both)
+	}
+
+	alone, err := Decode(`{"identity": "You are X."}`)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if alone.Identity != "You are X." || alone.Filter != nil {
+		t.Errorf("Decode = %+v, want the identity and no filter", alone)
+	}
+
+	if _, err := Decode(`{"identity": "You are X.", "persona": "y"}`); err == nil || !strings.Contains(err.Error(), `"persona"`) {
+		t.Errorf("Decode err = %v, want the unknown key refused by name", err)
 	}
 }

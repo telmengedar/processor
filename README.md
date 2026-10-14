@@ -295,9 +295,9 @@ array, an element that is not an object, a missing, blank or non-string `input`,
 is a `400 invalid_request`. A `null` `reply` is read as absent, as a `null` `history` is.
 
 **A run can be held to a filter by a config node.** The request may also carry `config`: the id of a node of
-type `processor-config`, whose content is a JSON object with two optional keys, `filter` and `silence`:
-`{"filter": {"type": ["thought", "knowledge"]}, "silence": true}`. The service reads that node, filtered to its type by the graph,
-once per request and caches nothing. The filter is forwarded to the graph on every read that can put a node in front
+type `processor-config`, whose content is a JSON object with three optional keys, `filter`, `silence` and `identity`:
+`{"filter": {"type": ["thought", "knowledge"]}, "silence": true}`. The service reads that node, filtered to its type by
+the graph, once per request and caches nothing. The filter is forwarded to the graph on every read that can put a node in front
 of the model: the first recall, the model's own recall, and the addressed read (which also sends the node's id and
 never `minSimilarity`, because the graph answers 400 to that without a query). The graph applies it before it counts,
 so the top six are not starved, and a node outside it reads as a missing id. The anchor is read without it: the caller
@@ -310,9 +310,13 @@ array of them (one repeated key per element). A blank value (empty or whitespace
 `query`, `queries`, `count`, `continue`, `sort`, `descending`, `fields` and `id` itself, so a config naming one (in any
 case) is refused. The config's `excludeId` and `excludeName` are added to the service's own; a bound the config sets in
 `updatedFrom` or `updatedTo` replaces the window the run derived for that bound. A run without `config` is unchanged,
-and the record of a configured run carries `perspective`: the config id, the filter it forwarded, `silence` when set
-and, when the config node is rooted, that root. The run's node in the graph is created under the same root; a run
-without a config, or whose config has no root, is stored unrooted.
+and the record of a configured run carries `perspective`: the config id, the filter it forwarded, `silence` when set,
+the identity it used and, when the config node is rooted, that root. The run's node in the graph is created under the same
+root; a run without a config, or whose config has no root, is stored unrooted.
+
+**A config can give the run an identity.** `identity` is a string the caller writes, of at most 2,048 bytes of UTF-8 and
+never blank. Processor puts it first in the system text of every judgement call, followed by a blank line, and forwards
+it as written without reading it; derivation and condensation never see it.
 
 **A config can let the model decline to reply.** `silence` is a JSON boolean, absent meaning false; anything else is a
 `400 invalid_config` before any model call. When it is `true`, the system text of every judgement call, the reserved

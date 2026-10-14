@@ -20,11 +20,12 @@ func (w UpdateWindow) IsZero() bool {
 // Filter is the graph filter a run's config carries and every read that can admit a node forwards: opaque to the loop, whose names and values belong to the graph adapter's vocabulary alone.
 type Filter map[string][]string
 
-// View is the config a run was held to: the node that supplied it, the filter it forwarded and whether it offered the model a chosen silence.
+// View is the config a run was held to: the node that supplied it, the filter it forwarded, whether it offered the model a chosen silence and the identity text it put first, verbatim.
 type View struct {
-	Config  int64  `json:"config"`
-	Filter  Filter `json:"filter,omitempty"`
-	Silence bool   `json:"silence,omitempty"`
+	Config   int64  `json:"config"`
+	Filter   Filter `json:"filter,omitempty"`
+	Silence  bool   `json:"silence,omitempty"`
+	Identity string `json:"identity,omitempty"`
 
 	// Root is the node the config is rooted at, which the run record files itself under; zero means none.
 	Root int64 `json:"root,omitempty"`

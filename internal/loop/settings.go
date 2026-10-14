@@ -79,3 +79,10 @@ func (o RunOptions) filter() Filter {
 	}
 	return o.View.Filter
 }
+
+func (o RunOptions) identity() string {
+	if o.View == nil {
+		return ""
+	}
+	return o.View.Identity
+}

@@ -173,7 +173,7 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 // RunWithOptions executes one turn as options describe it, returning the record and where it was filed.
 func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, WriteReceipt, error) {
 	input, subject, history, settings := options.Input, options.Subject, options.History, options.Settings
-	filter, silence := options.filter(), options.silence()
+	filter, silence, identity := options.filter(), options.silence(), options.identity()
 	started := time.Now()
 	ctx = withPrepaid(ctx)
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
@@ -230,8 +230,9 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 
 	memory := newWorkingMemory(settings.PromptCeiling(), anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions)
 	memory.charge(len(conversation))
+	memory.charge(len(identity))
 
-	judged, err := t.judge(ctx, settings, memory, input, conversation, subject, now, window, filter, silence, dispositions)
+	judged, err := t.judge(ctx, settings, memory, input, conversation, identity, subject, now, window, filter, silence, dispositions)
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
@@ -440,7 +441,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		settings.JudgementBudget, floors.TokensPerSecond, settings.PromptCeiling(), floors.PromptBytesPerSecond))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -474,7 +475,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		judged.trailers = append(judged.trailers, trailerKind)
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
-			System:          t.composeSystem(offered, conversation != "", silence),
+			System:          t.composeSystem(identity, offered, conversation != "", silence),
 			Block:           memory.render(offersRetrieval(offered)),
 			Input:           input,
 			Conversation:    conversation,
@@ -583,11 +584,17 @@ func (t *Turn) offeredTools(reserved bool) []string {
 	return offered
 }
 
-func (t *Turn) composeSystem(offered []string, conversation, silence bool) string {
+const paragraphBreak = "\n\n"
+
+func (t *Turn) composeSystem(identity string, offered []string, conversation, silence bool) string {
 	if t.System == nil {
-		return ""
+		return identity
 	}
-	return t.System(offered, conversation, silence)
+	product := t.System(offered, conversation, silence)
+	if identity == "" {
+		return product
+	}
+	return identity + paragraphBreak + product
 }
 
 func offersRetrieval(offered []string) bool {
