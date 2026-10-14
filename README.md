@@ -295,8 +295,8 @@ array, an element that is not an object, a missing, blank or non-string `input`,
 is a `400 invalid_request`. A `null` `reply` is read as absent, as a `null` `history` is.
 
 **A run can be held to a filter by a config node.** The request may also carry `config`: the id of a node of
-type `processor-config`, whose content is a JSON object with one optional key, `filter`:
-`{"filter": {"type": ["thought", "knowledge"]}}`. The service reads that node, filtered to its type by the graph,
+type `processor-config`, whose content is a JSON object with two optional keys, `filter` and `silence`:
+`{"filter": {"type": ["thought", "knowledge"]}, "silence": true}`. The service reads that node, filtered to its type by the graph,
 once per request and caches nothing. The filter is forwarded to the graph on every read that can put a node in front
 of the model: the first recall, the model's own recall, and the addressed read (which also sends the node's id and
 never `minSimilarity`, because the graph answers 400 to that without a query). The graph applies it before it counts,
@@ -310,9 +310,17 @@ array of them (one repeated key per element). A blank value (empty or whitespace
 `query`, `queries`, `count`, `continue`, `sort`, `descending`, `fields` and `id` itself, so a config naming one (in any
 case) is refused. The config's `excludeId` and `excludeName` are added to the service's own; a bound the config sets in
 `updatedFrom` or `updatedTo` replaces the window the run derived for that bound. A run without `config` is unchanged,
-and the record of a configured run carries `perspective`: the config id, the filter it forwarded and, when the config
-node is rooted, that root. The run's node in the graph is created under the same root; a run without a config, or whose
-config has no root, is stored unrooted.
+and the record of a configured run carries `perspective`: the config id, the filter it forwarded, `silence` when set
+and, when the config node is rooted, that root. The run's node in the graph is created under the same root; a run
+without a config, or whose config has no root, is stored unrooted.
+
+**A config can let the model decline to reply.** `silence` is a JSON boolean, absent meaning false; anything else is a
+`400 invalid_config` before any model call. When it is `true`, the system text of every judgement call, the reserved
+answering call included, tells the model it may choose not to reply by writing the marker `NOREPLY` as its whole answer.
+An answer on such a run that contains the marker, in any case and with anything around it, is a chosen silence: the
+record carries `silent: true`, its outcome carries `silent: true`, `produced: false` and the verdict `silent` (a curtailed
+turn keeps the verdict `curtailed` beside `silent: true`), and the run record is filed as for any run. A blank answer is
+never a silence; it is the failure it always was. A run whose config does not set `silence` is unchanged byte for byte.
 
 The turn: fetch the subject, derive the query set and window described above, recall candidates against
 them, assemble a byte-budgeted context block (anchor first,
@@ -362,11 +370,14 @@ Response (`200`) is chat-shaped by default:
 {"reply": "…", "written": {"state": "stored", "nodeId": 10525}}
 ```
 
-`reply` is the model's answer verbatim when the run produced one, and is never empty: when the run produced
+`reply` is the model's answer verbatim when the run produced one, and is never empty except on a chosen silence (below): when the run produced
 no answer — an empty or whitespace-only one, a reserved answering call that failed, a turn stopped for want
 of time — it is the fixed sentence `Sorry — I couldn't put an answer together for that just now. Could you
 say a bit more, or ask it another way?`, which is product text and is never sent to the model.
 Every JSON body this route sends — the `200` bodies and the error envelopes — declares `Content-Type: application/json; charset=utf-8`, because Windows PowerShell 5.1's `Invoke-RestMethod` decodes a body with no declared charset as a legacy code page and garbles the dash in that sentence.
+On a chosen silence the body is `{"reply": "", "written": {…}, "produced": false, "silent": true}`: a `200` with an empty
+`reply`, which tells a model that chose not to reply from a run that failed to produce one (`produced: false` and no
+`silent` key, with the fallback sentence); the `silent` key is present only when it is `true`.
 Whether the fallback was served is readable from the stored record's `outcome.produced`, and the stored
 record is unchanged. Errors stay errors (the table below); an outage is never turned into a reply.
 
