@@ -249,3 +249,88 @@ func TestARefusalReservedTurnIsRecordedAsCurtailedAndRaisesTheDidNotDeliverWarni
 		t.Errorf("a refusal-reserved turn raised no did-not-deliver warning naming verdict=curtailed; log:\n%s", logged.String())
 	}
 }
+
+func fieldsOfACall(call JudgeInput) map[string]string {
+	return map[string]string{
+		"system":       call.System,
+		"block":        call.Block,
+		"input":        call.Input,
+		"conversation": call.Conversation,
+		"trailer":      call.Trailer,
+		"offered":      strings.Join(call.Offered, "\n"),
+	}
+}
+
+func TestNoRefusalOrToolErrorTextReachesAnyFieldOfAFollowingCall(t *testing.T) {
+	t.Parallel()
+
+	malformed := "tool arguments could not be parsed: unexpected token"
+	withNotes := func(notes *fakeNotes, results ...JudgeResult) (Record, []JudgeInput) {
+		run := runNotes(t, noteGraph(), noteView(), notes, &fakeModel{results: results})
+		return run.record, run.model.calls
+	}
+	plain := func(graph *fakeGraph, files FilePort, subject int64, results ...JudgeResult) (Record, []JudgeInput) {
+		model := &fakeModel{results: results}
+		record, _, err := turnComposing(graph, model, files).Run(context.Background(), "hello", subject)
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		return record, model.calls
+	}
+
+	for _, tc := range []struct {
+		name string
+		run  func() (Record, []JudgeInput)
+	}{
+		{"a malformed recall", func() (Record, []JudgeInput) {
+			return plain(baseGraph(), nil, 42, JudgeResult{Reason: WantsRecall, RawReason: "tool_calls", ToolError: malformed}, answered("done"))
+		}},
+		{"a recall refused because recall is closed", func() (Record, []JudgeInput) {
+			return plain(graphReturningTheSameRowsToEveryRecall(), nil, 42, recallFor("first"), recallFor("second"), recallFor("third"), recallFor("fourth"), answered("done"))
+		}},
+		{"a read of a part already shown", func() (Record, []JudgeInput) {
+			return plain(graphHoldingAShownPart(), nil, readSubject, wantsRead(91), answered("done"))
+		}},
+		{"a read of an id the graph does not hold", func() (Record, []JudgeInput) {
+			return plain(graphHoldingNodes(), nil, readSubject, wantsRead(72), answered("done"))
+		}},
+		{"a write the files port rejected", func() (Record, []JudgeInput) {
+			files := &fakeFiles{dir: "/runs/run-1", writeErr: fmt.Errorf("%w: path must not leave the working directory", ErrWriteRejected)}
+			return plain(baseGraph(), files, 42, wantsWriteOf("../escape.html", "x"), answered("done"))
+		}},
+		{"a write that failed for an unrecognised cause", func() (Record, []JudgeInput) {
+			files := &fakeFiles{dir: "/runs/run-1", writeErr: errors.New("no space left on device")}
+			return plain(baseGraph(), files, 42, wantsWriteOf("index.html", "x"), answered("done"))
+		}},
+		{"a note that was refused", func() (Record, []JudgeInput) {
+			return withNotes(&fakeNotes{}, wantsNoteOf("   ", 0), answered("done"))
+		}},
+		{"a note the graph did not store", func() (Record, []JudgeInput) {
+			return withNotes(&fakeNotes{receipt: WriteReceipt{State: NotStored}}, wantsNoteOf("a thought", 0), answered("done"))
+		}},
+	} {
+		record, calls := tc.run()
+
+		if len(record.ToolCalls) == 0 || len(calls) != len(record.ToolCalls)+1 {
+			t.Errorf("%s: test setup error: %d calls for %d rounds, want one more call than rounds", tc.name, len(calls), len(record.ToolCalls))
+			continue
+		}
+		errored := 0
+		for round, tool := range record.ToolCalls {
+			if tool.Error == "" {
+				continue
+			}
+			errored++
+			for later := round + 1; later < len(calls); later++ {
+				for field, text := range fieldsOfACall(calls[later]) {
+					if strings.Contains(text, tool.Error) {
+						t.Errorf("%s: the %s of call %d carries round %d's error text %q, want it in no field of any later call:\n%s", tc.name, field, later+1, round+1, tool.Error, text)
+					}
+				}
+			}
+		}
+		if errored == 0 {
+			t.Errorf("%s: test setup error: no round recorded an error, so nothing was checked", tc.name)
+		}
+	}
+}

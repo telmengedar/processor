@@ -376,9 +376,11 @@ type Record struct {
 	// InputNotPhrase is why the input is not among the queries and why Query is empty: it was not a phrase, so it went to the model and not to the graph; absent when the input was a query.
 	InputNotPhrase string `json:"inputNotPhrase,omitempty"`
 	// Window is the update-time bound retrieval was held to, absent when the run's input expressed no time constraint.
-	Window     UpdateWindow  `json:"window,omitzero"`
-	Anchor     AnchorSummary `json:"anchor"`
-	Candidates []Disposition `json:"candidates"`
+	Window UpdateWindow `json:"window,omitzero"`
+	// WindowDiscarded is the range the derivation wrote and the rule it failed, absent when no range was discarded.
+	WindowDiscarded string        `json:"windowDiscarded,omitempty"`
+	Anchor          AnchorSummary `json:"anchor"`
+	Candidates      []Disposition `json:"candidates"`
 	// Fills is one entry per creation the turn attempted, in every phase: filled, or the reason it was not.
 	Fills []FillOutcome `json:"fills"`
 	Block string        `json:"block"`
