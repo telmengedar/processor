@@ -127,7 +127,7 @@ type Turn struct {
 	// Fill is the condensation behaviour that creates a missing substance; nil refuses every creation with a recorded reason.
 	Fill FillPort
 
-	// System composes the system text of one judgement call from the tools that call offers and whether the turn carries a conversation section.
+	// System composes the system text of one judgement call from the tools that call offers, whether the turn carries a conversation section, and whether the run offers silence.
 	System func(offered []string, conversation, silence bool) string
 
 	// ModelID is the model id sent with every judgement step, echoed into Record.Model.
