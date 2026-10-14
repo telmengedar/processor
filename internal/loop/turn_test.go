@@ -864,7 +864,7 @@ var instantWhoseFractionHoldsFourTwoFourTwo = time.Date(2026, 10, 14, 20, 24, 58
 func TestTurnRunRecordSerialisesWithNoKeyAboutItsOwnFiling(t *testing.T) {
 	t.Parallel()
 
-	const receiptNode = 7390518264
+	const receiptNode int64 = 7390518264
 
 	graph := baseGraph()
 	graph.writeRunReceipt = WriteReceipt{State: Stored, NodeID: receiptNode}
@@ -881,7 +881,7 @@ func TestTurnRunRecordSerialisesWithNoKeyAboutItsOwnFiling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal record: %v", err)
 	}
-	for _, absent := range []string{`"written"`, `"state"`, `"nodeId"`, strconv.Itoa(receiptNode)} {
+	for _, absent := range []string{`"written"`, `"state"`, `"nodeId"`, strconv.FormatInt(receiptNode, 10)} {
 		if strings.Contains(string(body), absent) {
 			t.Fatalf("record JSON contains %q, want a record that says nothing about its own filing; body=%s", absent, body)
 		}
