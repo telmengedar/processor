@@ -20,12 +20,18 @@ func (w UpdateWindow) IsZero() bool {
 // Filter is the graph filter a run's config carries and every read that can admit a node forwards: opaque to the loop, whose names and values belong to the graph adapter's vocabulary alone.
 type Filter map[string][]string
 
-// View is the config a run was held to: the node that supplied it, the filter it forwarded, whether it offered the model a chosen silence and the identity text it put first, verbatim.
+// NoteConfig is the note capability a config enables: the node type every note of the run is filed as.
+type NoteConfig struct {
+	Type string `json:"type"`
+}
+
+// View is the config a run was held to: the node that supplied it, the filter it forwarded, whether it offered the model a chosen silence, the identity text it put first, verbatim, and the note capability it enabled, nil for none.
 type View struct {
-	Config   int64  `json:"config"`
-	Filter   Filter `json:"filter,omitempty"`
-	Silence  bool   `json:"silence,omitempty"`
-	Identity string `json:"identity,omitempty"`
+	Config   int64       `json:"config"`
+	Filter   Filter      `json:"filter,omitempty"`
+	Silence  bool        `json:"silence,omitempty"`
+	Identity string      `json:"identity,omitempty"`
+	Note     *NoteConfig `json:"note,omitempty"`
 
 	// Root is the node the config is rooted at, which the run record files itself under; zero means none.
 	Root int64 `json:"root,omitempty"`
@@ -183,6 +189,8 @@ const (
 	WantsWrite TerminalReason = "wantsWrite"
 	// WantsRead means the model asked for the addressed-read tool.
 	WantsRead TerminalReason = "wantsRead"
+	// WantsNote means the model asked for the note tool.
+	WantsNote TerminalReason = "wantsNote"
 	// Unrecognised means the endpoint reported a terminal state outside this set.
 	Unrecognised TerminalReason = "unrecognised"
 )
@@ -194,6 +202,8 @@ const (
 	ToolWriteFile = "writeFile"
 	// ToolReadNode is the addressed-read tool's name in a run record.
 	ToolReadNode = "readNode"
+	// ToolNote is the note tool's name in a run record.
+	ToolNote = "note"
 )
 
 // ToolSource is the closed set of ways an adapter can have obtained a tool call from one response.
@@ -235,6 +245,21 @@ type ToolCallRecord struct {
 
 	// Yield is how many rows this round put in front of the model for the first time in the turn; zero on every round that was not a dispatched recall.
 	Yield int `json:"yield"`
+
+	// Text is the note as the model wrote it, absent on every round that was not a note round.
+	Text string `json:"text,omitempty"`
+
+	// About is the id a note round asked to link, absent on every round that asked for none.
+	About int64 `json:"about,omitempty"`
+
+	// AboutDropped is true when About was not linked because it had not been shown in the turn.
+	AboutDropped bool `json:"aboutDropped,omitempty"`
+
+	// Created is the id of the node a note round filed, absent when none was.
+	Created int64 `json:"created,omitempty"`
+
+	// Written is where a note round's filing ended, absent when the note never reached the graph.
+	Written WriteState `json:"written,omitempty"`
 }
 
 // ReservedCallState is the loop's closed set of fates the one judgement call a turn reserves for answering can have.
@@ -395,6 +420,13 @@ type ToolExchange struct {
 	// Yield is how many rows this round put in front of the model for the first time in the turn.
 	Yield int
 
+	// Text, About, AboutDropped, Created and Written are a note round's account of itself.
+	Text         string
+	About        int64
+	AboutDropped bool
+	Created      int64
+	Written      WriteState
+
 	// Refused is true when the loop declined a retrieval request for a reason that holds for the same request against the same memory, as opposed to a graph failure a repeat may clear.
 	Refused bool
 }
@@ -433,6 +465,8 @@ type JudgeResult struct {
 	ReadNodeID   int64
 	WritePath    string
 	WriteContent string
+	NoteText     string
+	NoteAbout    int64
 	ToolError    string
 	ToolSource   ToolSource
 	Usage        *Usage

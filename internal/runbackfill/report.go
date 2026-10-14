@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/telmengedar/processor/internal/loop"
 )
 
 // Render writes the pass result as JSON to machine and as the operator-facing report to human.
@@ -50,7 +52,7 @@ func writeProvenance(w io.Writer, result Result) {
 	for _, p := range result.Provenance {
 		fmt.Fprintf(w, "  %-8d %-24s %10d %10d %10d  %-9v %-9s %s\n",
 			p.Node, p.At.Format("2006-01-02T15:04:05Z"), p.RecordSize, p.AccountSize, p.NewContentSize,
-			p.AlreadyBackfilled, writtenState(p), truncate(p.Name, 60))
+			p.AlreadyBackfilled, writtenState(p), loop.TruncateRunes(p.Name, 60))
 	}
 	fmt.Fprintln(w)
 }
@@ -108,12 +110,4 @@ func writeAccounts(w io.Writer, result Result) {
 		fmt.Fprintln(w, p.Account)
 		fmt.Fprintln(w, strings.Repeat("=", 78))
 	}
-}
-
-func truncate(s string, limit int) string {
-	r := []rune(s)
-	if len(r) <= limit {
-		return s
-	}
-	return string(r[:limit]) + "…"
 }

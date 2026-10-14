@@ -243,6 +243,26 @@ func TestAWriteRoundIsNotARecallRound(t *testing.T) {
 	}
 }
 
+func TestANoteRoundIsNeitherADispatchedNorARefusedRecallWhateverBecameOfTheNote(t *testing.T) {
+	t.Parallel()
+
+	for name, round := range map[string]loop.ToolCallRecord{
+		"a stored note":  {Tool: loop.ToolNote, Text: "a thought", Bytes: 9, Created: 900, Written: loop.Stored},
+		"a refused note": {Tool: loop.ToolNote, Text: " ", Bytes: 1, Error: "that note is blank: nothing was stored"},
+	} {
+		record := loop.Record{Candidates: admitted(1), ToolCalls: []loop.ToolCallRecord{round}}
+
+		got := ComputeRequery(record)
+
+		if got.DispatchedRounds != 0 || got.RefusedRounds != 0 || got.BarrenRounds != 0 {
+			t.Errorf("%s: a note is not a requery, got %+v", name, got)
+		}
+		if !got.AcceptedInsufficiency {
+			t.Errorf("%s: the run asked for no more knowledge, so it accepted its insufficiency, got %+v", name, got)
+		}
+	}
+}
+
 func TestALegacyRoundWithNoToolNameButAQueryCountsAsARecall(t *testing.T) {
 	t.Parallel()
 

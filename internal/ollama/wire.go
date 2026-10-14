@@ -11,8 +11,11 @@ import (
 )
 
 const (
-	errNoNodeID               = "tool arguments named no node id to read"
-	errRecoveredCallWithoutID = "the call in the response text was missing its id argument"
+	errNoNodeID                 = "tool arguments named no node id to read"
+	errRecoveredCallWithoutID   = "the call in the response text was missing its id argument"
+	errNoNoteText               = "tool arguments carried no text to store"
+	errBadNoteAbout             = "tool arguments named an about that is not a positive integer id"
+	errRecoveredNoteWithoutText = "the call in the response text was missing its text argument"
 )
 
 type chatRequest struct {
@@ -68,6 +71,11 @@ type readNodeToolArguments struct {
 	ID int64 `json:"id"`
 }
 
+type noteToolArguments struct {
+	Text  *string         `json:"text"`
+	About json.RawMessage `json:"about"`
+}
+
 func recallTool() wireTool {
 	return wireTool{
 		Type: "function",
@@ -116,6 +124,24 @@ func readNodeTool() wireTool {
 	}
 }
 
+func noteTool() wireTool {
+	return wireTool{
+		Type: "function",
+		Function: wireFunction{
+			Name:        noteToolName,
+			Description: "Store one short text of yours in memory, where later requests can find it. Accepts one note per request. Takes two arguments: text, the note, and optionally about, the integer id of the one part of memory you have been shown that the note is about.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"text": {"type": "string"},
+					"about": {"type": "integer"}
+				},
+				"required": ["text"]
+			}`),
+		},
+	}
+}
+
 type chatResponse struct {
 	Message         wireResponseMessage `json:"message"`
 	DoneReason      string              `json:"done_reason"`
@@ -150,6 +176,7 @@ var toolTable = []toolBinding{
 	{loop.ToolRecall, recallToolName, recallTool},
 	{loop.ToolWriteFile, writeFileToolName, writeFileTool},
 	{loop.ToolReadNode, readNodeToolName, readNodeTool},
+	{loop.ToolNote, noteToolName, noteTool},
 }
 
 func declaredTools(offered []string) []wireTool {
@@ -208,6 +235,8 @@ func translate(wire chatResponse, offered []string) loop.JudgeResult {
 			return translateWrite(result, call.Function.Arguments)
 		case readNodeToolName:
 			return translateRead(result, call.Function.Arguments)
+		case noteToolName:
+			return translateNote(result, call.Function.Arguments)
 		}
 
 		result.Reason = loop.Unrecognised
@@ -239,6 +268,8 @@ func translateRecoveredCall(result loop.JudgeResult, call recoveredCall, names [
 		return recoverWrite(result, call)
 	case readNodeToolName:
 		return recoverRead(result, call)
+	case noteToolName:
+		return recoverNote(result, call)
 	}
 
 	result.Reason = loop.Unrecognised
@@ -298,6 +329,26 @@ func recoverRead(result loop.JudgeResult, call recoveredCall) loop.JudgeResult {
 	return result
 }
 
+func recoverNote(result loop.JudgeResult, call recoveredCall) loop.JudgeResult {
+	result.Reason = loop.WantsNote
+
+	text, present := call.parameters["text"]
+	if !present {
+		result.ToolError = errRecoveredNoteWithoutText
+		return result
+	}
+
+	about, err := aboutOf(json.RawMessage(strings.TrimSpace(call.parameters["about"])))
+	if err != nil {
+		result.ToolError = err.Error()
+		return result
+	}
+
+	result.NoteText = text
+	result.NoteAbout = about
+	return result
+}
+
 func translateRead(result loop.JudgeResult, arguments json.RawMessage) loop.JudgeResult {
 	result.Reason = loop.WantsRead
 
@@ -346,6 +397,43 @@ func translateWrite(result loop.JudgeResult, arguments json.RawMessage) loop.Jud
 	result.WritePath = args.Path
 	result.WriteContent = args.Content
 	return result
+}
+
+func translateNote(result loop.JudgeResult, arguments json.RawMessage) loop.JudgeResult {
+	result.Reason = loop.WantsNote
+
+	var args noteToolArguments
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		result.ToolError = fmt.Sprintf("tool arguments could not be parsed: %v", err)
+		return result
+	}
+	if args.Text == nil {
+		result.ToolError = errNoNoteText
+		return result
+	}
+
+	about, err := aboutOf(args.About)
+	if err != nil {
+		result.ToolError = err.Error()
+		return result
+	}
+
+	result.NoteText = *args.Text
+	result.NoteAbout = about
+	return result
+}
+
+func aboutOf(raw json.RawMessage) (int64, error) {
+	text := strings.TrimSpace(string(raw))
+	if text == "" || text == "null" {
+		return 0, nil
+	}
+
+	var about int64
+	if err := json.Unmarshal(raw, &about); err != nil || about <= 0 {
+		return 0, fmt.Errorf("%s: %s", errBadNoteAbout, text)
+	}
+	return about, nil
 }
 
 func mapDoneReason(reason string) loop.TerminalReason {
