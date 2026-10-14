@@ -14,7 +14,7 @@ import (
 const RunNodeType = "session-log"
 
 // RunNamePrefix opens the name of every run node the loop writes.
-const RunNamePrefix = "processor-run"
+const RunNamePrefix = loop.RunNamePrefix
 
 const (
 	runContentType = "text/markdown; charset=utf-8"
@@ -30,6 +30,7 @@ const (
 	logRepairableOrphan = "repairable orphan"
 	logUncollectedShell = "uncollected shell"
 	logSummaryNotStored = "run record stored without its summary"
+	logNoteFailed       = "note write-back failed"
 )
 
 // IsRunRecord reports whether a graph row is a run record this system wrote.
@@ -76,7 +77,7 @@ func (c *Client) WriteRun(ctx context.Context, record loop.Record) loop.WriteRec
 		c.log().Error(logSummaryNotStored, "node", id, "subject", record.Subject, "error", err)
 	}
 
-	if err := c.linkRunNode(ctx, id, record.Subject); err != nil {
+	if err := c.linkNode(ctx, id, record.Subject); err != nil {
 		c.log().Error(logRepairableOrphan, "node", id, "subject", record.Subject, "error", fmt.Errorf("divoid: link run node to subject: %w", err))
 		return loop.WriteReceipt{State: loop.Unlinked, NodeID: id}
 	}
@@ -106,16 +107,49 @@ func (c *Client) discardShell(ctx context.Context, id int64) {
 }
 
 func (c *Client) createRunNode(ctx context.Context, name string, root int64) (int64, error) {
-	reqBody, err := json.Marshal(createNodeRequest{Type: RunNodeType, Name: name, RootNodeID: root})
+	return c.createNode(ctx, RunNodeType, name, root, "run node")
+}
+
+func (c *Client) createNode(ctx context.Context, nodeType, name string, root int64, what string) (int64, error) {
+	reqBody, err := json.Marshal(createNodeRequest{Type: nodeType, Name: name, RootNodeID: root})
 	if err != nil {
-		return 0, fmt.Errorf("divoid: encode run node create: %w", err)
+		return 0, fmt.Errorf("divoid: encode %s create: %w", what, err)
 	}
 
 	var resp createNodeResponse
 	if err := c.post(ctx, "/api/nodes", "application/json", reqBody, &resp); err != nil {
-		return 0, fmt.Errorf("divoid: create run node: %w", err)
+		return 0, fmt.Errorf("divoid: create %s: %w", what, err)
 	}
 	return resp.ID, nil
+}
+
+// WriteNote files the note as one node with its text as content, linked to the subject and, when the request names one, to a second node, and reports how far it got.
+func (c *Client) WriteNote(ctx context.Context, request loop.NoteRequest) loop.WriteReceipt {
+	id, err := c.createNode(ctx, request.Type, request.Name, request.Root, "note node")
+	if err != nil {
+		c.log().Error(logNoteFailed, "subject", request.Subject, "error", err)
+		return loop.WriteReceipt{State: loop.NotStored}
+	}
+
+	if err := c.post(ctx, fmt.Sprintf("/api/nodes/%d/content", id), runContentType, []byte(request.Text), nil); err != nil {
+		c.log().Error(logNoteFailed, "subject", request.Subject, "node", id, "error", fmt.Errorf("divoid: set note node content: %w", err))
+		c.discardShell(context.WithoutCancel(ctx), id)
+		return loop.WriteReceipt{State: loop.NotStored}
+	}
+
+	targets := []int64{request.Subject}
+	if request.About > 0 {
+		targets = append(targets, request.About)
+	}
+
+	state := loop.Stored
+	for _, target := range targets[:min(len(targets), loop.MaxNoteEdges)] {
+		if err := c.linkNode(ctx, id, target); err != nil {
+			c.log().Error(logRepairableOrphan, "node", id, "target", target, "error", fmt.Errorf("divoid: link note node: %w", err))
+			state = loop.Unlinked
+		}
+	}
+	return loop.WriteReceipt{State: state, NodeID: id}
 }
 
 func runRoot(record loop.Record) int64 {
@@ -125,7 +159,7 @@ func runRoot(record loop.Record) int64 {
 	return record.Perspective.Root
 }
 
-func (c *Client) linkRunNode(ctx context.Context, id, target int64) error {
+func (c *Client) linkNode(ctx context.Context, id, target int64) error {
 	body, err := json.Marshal(target)
 	if err != nil {
 		return fmt.Errorf("divoid: encode link target: %w", err)
@@ -134,13 +168,5 @@ func (c *Client) linkRunNode(ctx context.Context, id, target int64) error {
 }
 
 func (c *Client) runName(record loop.Record, at time.Time) string {
-	return fmt.Sprintf("%s %s — %s", RunNamePrefix, at.UTC().Format(time.RFC3339), truncateRunes(record.Input, runNameInputRunes))
-}
-
-func truncateRunes(s string, limit int) string {
-	r := []rune(s)
-	if len(r) <= limit {
-		return s
-	}
-	return string(r[:limit]) + "…"
+	return fmt.Sprintf("%s %s — %s", RunNamePrefix, at.UTC().Format(time.RFC3339), loop.TruncateRunes(record.Input, runNameInputRunes))
 }

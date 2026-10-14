@@ -519,6 +519,78 @@ class ReadRoundRenderingTests(unittest.TestCase):
             self.assertNotIn("NEVER reached the graph", out)
 
 
+class NoteRoundRenderingTests(unittest.TestCase):
+    """A note round files one text of the model's own as a node. It is not a retrieval: before this
+    arm existed it reached the unrecognised arm, and the nearest renderer to it is the recall one,
+    which would have printed a whole-graph search the run never issued."""
+
+    NOTE = {
+        "tool": "note",
+        "bytes": 41,
+        "text": "a thought of the model's own, verbatim",
+        "created": 900,
+        "written": "stored",
+        "error": "",
+        "results": [],
+    }
+
+    def note_round(self, **changes):
+        round_ = dict(self.NOTE)
+        round_.update(changes)
+        return round_
+
+    def test_a_filed_note_traces_as_a_note_and_not_as_a_recall_or_a_read(self):
+        out = render(record(model_calls=2, tool_calls=[self.note_round()]))
+        self.assertIn("wants to file a note (41 B)", out)
+        self.assertIn("write_note(text=41 B)", out)
+        self.assertIn("filed as node #900, linked to the subject", out)
+        self.assertIn("a thought of the model's own, verbatim", out)
+        self.assertNotIn("wants recall", out)
+        self.assertNotIn("scope=nil", out)
+        self.assertNotIn("read_node(", out)
+        self.assertNotIn("THIS SCRIPT CANNOT NARRATE THIS ROUND", out)
+
+    def test_an_about_is_named_when_linked_and_the_drop_is_named_when_it_was_not(self):
+        linked = render(record(model_calls=2, tool_calls=[self.note_round(about=7)]))
+        self.assertIn("linked to the subject and to part #7", linked)
+        self.assertNotIn("dropped", linked)
+
+        dropped = render(record(model_calls=2, tool_calls=[self.note_round(about=7, aboutDropped=True)]))
+        self.assertIn("part #7, which had not been shown in this turn, so that link was dropped", dropped)
+        self.assertNotIn("subject and to part #7", dropped)
+
+    def test_an_unlinked_note_says_the_node_exists_and_a_link_failed(self):
+        out = render(record(model_calls=2, tool_calls=[self.note_round(written="unlinked")]))
+        self.assertIn("filed as node #900 with its text, but at least one link FAILED", out)
+        self.assertIn("repairable orphan", out)
+
+    def test_a_note_the_loop_did_not_file_prints_its_cause_verbatim_and_no_tool_call(self):
+        for cause in ("that note is blank: nothing was stored", "the note could not be stored", "tool arguments carried no text to store"):
+            out = render(record(model_calls=2, tool_calls=[self.note_round(error=cause, written="", created=None)]))
+            self.assertIn("NO NOTE WAS FILED", out)
+            self.assertIn(repr(cause), out)
+            self.assertNotIn("write_note(", out)
+            self.assertNotIn("filed as node", out)
+
+    def test_a_note_round_without_a_filed_state_is_unrecognised_rather_than_narrated_as_filed(self):
+        rec = record(model_calls=2, tool_calls=[{"tool": "note", "bytes": 3, "error": "", "results": []}])
+        out = render(rec)
+        self.assertIn("THIS SCRIPT CANNOT NARRATE THIS ROUND", out)
+        self.assertIn("the record carries no filed state and node id", out)
+        self.assertNotIn("filed as node", out)
+
+    def test_the_reserved_call_refusal_stamped_on_a_note_round_is_the_loops_own_sentence(self):
+        rec = record(model_calls=2, tool_calls=[self.note_round(error=step_trace.REFUSAL_RESERVED_CALL, written="", created=None)])
+        out = render(rec)
+        self.assertIn(step_trace.REFUSAL_RESERVED_CALL, out)
+        self.assertIn("the LOOP refused the round in its own words", out)
+
+    def test_the_record_spelling_of_the_note_tool_is_known(self):
+        self.assertEqual(step_trace.round_tool({"tool": "note"}), step_trace.TOOL_NOTE)
+        self.assertIn(step_trace.TOOL_NOTE, step_trace.KNOWN_TOOLS)
+        self.assertNotEqual(step_trace.TOOL_NOTE, "write_note")
+
+
 class CleanCapReachedTests(unittest.TestCase):
     """The one shape that legitimately IS a clean cap: error is exactly 'call cap reached' and the
     query survives (ToolError was empty on this round, per turn.go's exchange construction)."""
@@ -1465,12 +1537,13 @@ class MirroredConstantTests(unittest.TestCase):
     TOOL_CONSTANT_PREFIX = "Tool"
     NON_TOOL_CONSTANTS = ("ToolSourceNative", "ToolSourceContent")
 
-    def test_the_three_tool_names_are_the_records_own_vocabulary(self):
+    def test_the_tool_names_are_the_records_own_vocabulary(self):
         go = go_string_constants(self.TYPES)
         for mirrored, name in (
             (step_trace.TOOL_RECALL, "ToolRecall"),
             (step_trace.TOOL_WRITE_FILE, "ToolWriteFile"),
             (step_trace.TOOL_READ_NODE, "ToolReadNode"),
+            (step_trace.TOOL_NOTE, "ToolNote"),
         ):
             self.assertEqual(mirrored, go[name], f"{name} has drifted from this script's mirror")
 
@@ -1501,6 +1574,13 @@ class MirroredConstantTests(unittest.TestCase):
             f"these {self.TOOL_CONSTANT_PREFIX}-prefixed constants are declared in a shape this guard "
             f"can neither read nor honestly leave out of what it classifies: {unreadable}"
         )
+
+    def test_the_note_filing_states_are_the_loops_own_write_states(self):
+        text = (pathlib.Path(step_trace.REPO) / self.TYPES).read_text(encoding="utf-8")
+        for mirrored, name in ((step_trace.NOTE_STORED, "Stored"), (step_trace.NOTE_UNLINKED, "Unlinked")):
+            declared = re.search(r'^\s*' + name + r'\s+WriteState\s*=\s*"([^"]*)"', text, re.MULTILINE)
+            self.assertIsNotNone(declared, f"{name} is no longer declared where this mirror reads it")
+            self.assertEqual(mirrored, declared.group(1))
 
     def test_every_mirrored_refusal_sentence_is_the_loops_own(self):
         go = go_string_constants(self.TURN)

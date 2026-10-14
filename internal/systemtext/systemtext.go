@@ -24,6 +24,8 @@ const readParagraph = `A read tool is available. It returns one part of memory a
 
 const fileParagraph = `A file tool is available. It writes one file into a working directory set aside for this request. Give it a path relative to that directory and the file's complete content.`
 
+const noteParagraph = `A note tool is available. It stores one short text of yours in memory, where later requests can find it. One note per request is accepted. Give it the text and, if the note is about one part of memory you have been shown, that part's id.`
+
 const conversationParagraph = `This request continues a conversation between you and the user. The section headed "EARLIER IN THIS CONVERSATION" holds what was said before it, oldest first: a "user said:" line is what the user said, and a "you replied:" line is what you replied. You took part in that conversation, so you know what was said in it. It is not part of the context block, and the block not mentioning something said there does not make it unknown to you. Read the request in the light of those exchanges: when it refers to someone or something without naming it, it means what was being talked about there. When the request is a remark rather than a question, reply to the remark; do not answer it with a statement that information is missing.`
 
 const silenceParagraph = `You may choose not to reply. To stay silent, write ` + loop.SilenceMarker + ` as your whole answer, with nothing before or after it. Staying silent this way is a valid answer, not a failure, and nothing is shown for it.`
@@ -48,6 +50,7 @@ func Compose(offered []string, conversation, silence bool) string {
 		{loop.ToolRecall, recallParagraph},
 		{loop.ToolReadNode, readParagraph},
 		{loop.ToolWriteFile, fileParagraph},
+		{loop.ToolNote, noteParagraph},
 	} {
 		if slices.Contains(offered, tool.name) {
 			paragraphs = append(paragraphs, tool.paragraph)

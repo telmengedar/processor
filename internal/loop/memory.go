@@ -80,6 +80,11 @@ func (m *workingMemory) holds(c Candidate) bool {
 	return held.form == form && payload == heldPayload
 }
 
+func (m *workingMemory) shows(id int64) bool {
+	_, held := m.rows[id]
+	return held
+}
+
 func (m *workingMemory) render() string {
 	rows := make([]Candidate, 0, len(m.rows))
 	for _, held := range m.rows {

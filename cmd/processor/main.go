@@ -105,6 +105,7 @@ func run(human io.Writer) int {
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
 	turn := loop.NewTurn(graph, model, files, systemtext.Compose, modelCfg.ID, logger)
 	turn.Floors = floors
+	turn.Notes = graph
 
 	fillPort, err := ports.Fill(fillCfg, ports.FillGraph(graph), logger)
 	if err != nil {
