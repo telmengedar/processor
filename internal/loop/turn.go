@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 )
@@ -546,7 +547,9 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 				"adapter", result.Provider.Adapter, "unofferedToolCalls", result.UnofferedToolCalls)
 		}
 
-		judged.answer = result.Answer
+		result = referenceRead(result, offered, memory)
+
+		judged.answer = result.deliveredText()
 		lastWasToolRequest = wantsTool(result.Reason)
 		unhonoured = result.UnhonouredCall
 		judged.stop = StopReason{Reason: result.Reason, Raw: result.RawReason}
@@ -577,6 +580,11 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 			judged.reservedCall = ReservedCall{State: ReservedCallUnmade}
 			t.logReservation(settings, reserved, judged.modelCalls+1, dispatched)
 			continue
+		}
+
+		if result.ToolSource == ToolSourceReference {
+			t.log().Info("the answer was only the id of a part shown in its call: the loop reads it as a request for that part",
+				"node", result.ReadNodeID, "call", judged.modelCalls)
 		}
 
 		if result.ToolSource == ToolSourceTextual {
@@ -610,13 +618,27 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		}
 	}
 
-	judged.nonReply = classifyNonReply(judged.answer, lastWasToolRequest, unhonoured)
+	judged.nonReply = classifyNonReply(judged.answer, lastWasToolRequest, unhonoured, memory.displays)
 	if judged.nonReply != "" {
 		t.log().Warn("the final answer is not a reply and is withheld", "kind", string(judged.nonReply), "modelCalls", judged.modelCalls)
 	}
 
 	judged.toolCalls = toolCallRecords(exchanges)
 	return judged, nil
+}
+
+func referenceRead(result JudgeResult, offered []string, memory *workingMemory) JudgeResult {
+	if result.Reason != Answered || result.UnhonouredCall != "" || !slices.Contains(offered, ToolReadNode) {
+		return result
+	}
+	id, ok := partReferenceOf(result.deliveredText())
+	if !ok || !memory.displays(id) {
+		return result
+	}
+	result.Reason = WantsRead
+	result.ReadNodeID = id
+	result.ToolSource = ToolSourceReference
+	return result
 }
 
 func (t *Turn) logReservation(settings RunSettings, reserved reservation, call, dispatched int) {

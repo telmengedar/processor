@@ -2,6 +2,7 @@ package loop
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -131,6 +132,8 @@ const (
 	NonReplyToolText NonReply = "toolText"
 	// NonReplyBlockText is a final answer that opens with processor's own block or history syntax.
 	NonReplyBlockText NonReply = "blockText"
+	// NonReplyPartReference is a final answer that is only the id of a part shown in its call, on a call that offered no read to make of it.
+	NonReplyPartReference NonReply = "partReference"
 )
 
 const typePrefix = "type: "
@@ -138,9 +141,11 @@ const typePrefix = "type: "
 var (
 	frameLine = regexp.MustCompile(`^===== .+ =====$`)
 	idLine    = regexp.MustCompile(`^id: [0-9]+$`)
+
+	partReferenceAnswer = regexp.MustCompile(`^(?i:id:[ \t]*)?([0-9]+)$`)
 )
 
-func classifyNonReply(answer string, lastWasToolRequest bool, unhonoured string) NonReply {
+func classifyNonReply(answer string, lastWasToolRequest bool, unhonoured string, shown func(int64) bool) NonReply {
 	if strings.TrimSpace(answer) == "" {
 		return ""
 	}
@@ -151,9 +156,25 @@ func classifyNonReply(answer string, lastWasToolRequest bool, unhonoured string)
 		return NonReplyToolText
 	case opensWithProcessorSyntax(answer):
 		return NonReplyBlockText
+	case isPartReference(answer, shown):
+		return NonReplyPartReference
 	default:
 		return ""
 	}
+}
+
+func isPartReference(answer string, shown func(int64) bool) bool {
+	id, ok := partReferenceOf(answer)
+	return ok && shown(id)
+}
+
+func partReferenceOf(answer string) (int64, bool) {
+	match := partReferenceAnswer.FindStringSubmatch(strings.TrimSpace(answer))
+	if match == nil {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(match[1], 10, 64)
+	return id, err == nil && id > 0
 }
 
 func opensWithProcessorSyntax(answer string) bool {
