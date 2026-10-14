@@ -15,9 +15,9 @@ type systemRecorder struct {
 	derived int
 }
 
-func (m *systemRecorder) Derive(context.Context, string, int) (string, error) {
+func (m *systemRecorder) Derive(context.Context, string, int) (loop.DeriveResult, error) {
 	m.derived++
-	return "", nil
+	return loop.DeriveResult{}, nil
 }
 
 func (m *systemRecorder) Judge(_ context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {

@@ -78,8 +78,8 @@ type stubModel struct {
 	calls int
 }
 
-func (s *stubModel) Derive(context.Context, string, int) (string, error) {
-	return s.derivedText, s.deriveErr
+func (s *stubModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+	return loop.DeriveResult{Text: s.derivedText}, s.deriveErr
 }
 
 func (s *stubModel) Judge(_ context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {

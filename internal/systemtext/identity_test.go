@@ -25,7 +25,9 @@ func (bareGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt {
 
 type systemRecorder struct{ systems []string }
 
-func (m *systemRecorder) Derive(context.Context, string, int) (string, error) { return "", nil }
+func (m *systemRecorder) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+	return loop.DeriveResult{}, nil
+}
 
 func (m *systemRecorder) Judge(_ context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
 	m.systems = append(m.systems, in.System)

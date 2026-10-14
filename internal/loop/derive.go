@@ -238,29 +238,30 @@ func MergeQueries(input string, derived []string) []string {
 	return queries
 }
 
-// DeriveQueries asks model for queries and a retrieval window derived from input and now under DerivationBound, returning a cause naming which deadline fired when one did; a window the request and the instant cannot ground is returned as zero with the sentence naming it as the third result.
-func DeriveQueries(ctx context.Context, model ModelPort, input string, now time.Time) ([]string, UpdateWindow, string, error) {
+// DeriveQueries asks model for queries and a retrieval window derived from input and now under DerivationBound, returning a cause naming which deadline fired when one did; a window the request and the instant cannot ground is returned as zero with the sentence naming it as the third result, and the sampling the call carried as the fourth, nil where no call returned.
+func DeriveQueries(ctx context.Context, model ModelPort, input string, now time.Time) ([]string, UpdateWindow, string, *Sampling, error) {
 	return deriveQueries(ctx, model, input, now, DerivationBound)
 }
 
-func deriveQueries(ctx context.Context, model ModelPort, input string, now time.Time, bound time.Duration) ([]string, UpdateWindow, string, error) {
+func deriveQueries(ctx context.Context, model ModelPort, input string, now time.Time, bound time.Duration) ([]string, UpdateWindow, string, *Sampling, error) {
 	bounded, cancel := context.WithTimeoutCause(ctx, bound, errDerivationBound)
 	defer cancel()
 
 	started := time.Now()
-	text, err := model.Derive(bounded, DerivationPrompt(input, now), noOutputLimit)
+	result, err := model.Derive(bounded, DerivationPrompt(input, now), noOutputLimit)
 	elapsed := time.Since(started).Round(time.Millisecond)
 	if err != nil {
-		return nil, UpdateWindow{}, "", derivationFailure(bounded, bound, elapsed, err)
+		return nil, UpdateWindow{}, "", nil, derivationFailure(bounded, bound, elapsed, err)
 	}
 
-	derived, window := ParseDerivation(text, input, now.Location())
+	sampling := &result.Sampling
+	derived, window := ParseDerivation(result.Text, input, now.Location())
 	if len(derived) == 0 {
-		return nil, UpdateWindow{}, "", fmt.Errorf("%w after %s", errDerivationUnusable, elapsed)
+		return nil, UpdateWindow{}, "", sampling, fmt.Errorf("%w after %s", errDerivationUnusable, elapsed)
 	}
 
 	window, discarded := groundWindow(window, input, now)
-	return derived, window, discarded, nil
+	return derived, window, discarded, sampling, nil
 }
 
 var standaloneDigitRun = regexp.MustCompile(`[0-9]+`)

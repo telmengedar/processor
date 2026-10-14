@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/telmengedar/processor/internal/loop"
 	"github.com/telmengedar/processor/internal/redacturl"
 )
 
@@ -109,13 +110,16 @@ func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens in
 	return result, nil
 }
 
-// Derive runs one query-derivation call, returning the completion text alone.
-func (c *Client) Derive(ctx context.Context, prompt string, maxOutputTokens int) (string, error) {
+// Derive runs one query-derivation call on the configured sampling, returning the completion text and the sampling the request carried.
+func (c *Client) Derive(ctx context.Context, prompt string, maxOutputTokens int) (loop.DeriveResult, error) {
 	result, err := c.Condense(ctx, prompt, maxOutputTokens)
 	if err != nil {
-		return "", err
+		return loop.DeriveResult{}, err
 	}
-	return result.Text, nil
+	return loop.DeriveResult{
+		Text:     result.Text,
+		Sampling: loop.Sampling{Temperature: result.Sampling.Temperature, TopP: result.Sampling.TopP},
+	}, nil
 }
 
 func decodeSentSampling(body []byte) (SentSampling, error) {

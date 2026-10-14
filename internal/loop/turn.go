@@ -111,8 +111,8 @@ type ModelPort interface {
 	// Judge runs one judgement step. One attempt; no retry.
 	Judge(ctx context.Context, in JudgeInput) (JudgeResult, error)
 
-	// Derive runs one query-derivation call, returning the completion text alone.
-	Derive(ctx context.Context, prompt string, maxOutputTokens int) (string, error)
+	// Derive runs one query-derivation call on the deployment's sampling, which it reports; it takes no temperature, so no run's choice can reach it.
+	Derive(ctx context.Context, prompt string, maxOutputTokens int) (DeriveResult, error)
 }
 
 // Turn is one run: anchor, recall, assemble, judge, write back.
@@ -199,7 +199,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 			"subject", subject, "supplied", len(history), "used", len(used), "bytes", len(conversation), "safetyLimit", settings.HistorySafetyLimit)
 	}
 
-	queries, window, windowDiscarded, derivationError := t.derive(ctx, input, subject, now)
+	queries, window, windowDiscarded, derivationSampling, derivationError := t.derive(ctx, input, subject, now)
 	notPhrase := inputNotPhraseNote(input)
 
 	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, window, filter, t.log())
@@ -215,30 +215,31 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	block, dispositions := Assemble(anchor, candidates, settings.AssemblyByteBudget)
 
 	record := Record{
-		Input:           input,
-		Subject:         subject,
-		Now:             now,
-		Query:           firstQuery(input),
-		Queries:         queries,
-		DerivationError: derivationError,
-		InputNotPhrase:  notPhrase,
-		Window:          window,
-		WindowDiscarded: windowDiscarded,
-		Anchor:          summarizeAnchor(anchor),
-		Candidates:      dispositions,
-		Fills:           fills,
-		Block:           block,
-		History:         used,
-		HistoryCut:      len(history) - len(used),
-		Limits:          settings.Limits(),
-		Perspective:     options.View,
+		Input:              input,
+		Subject:            subject,
+		Now:                now,
+		Query:              firstQuery(input),
+		Queries:            queries,
+		DerivationError:    derivationError,
+		InputNotPhrase:     notPhrase,
+		Window:             window,
+		WindowDiscarded:    windowDiscarded,
+		Anchor:             summarizeAnchor(anchor),
+		Candidates:         dispositions,
+		Fills:              fills,
+		Block:              block,
+		History:            used,
+		HistoryCut:         len(history) - len(used),
+		Limits:             settings.Limits(),
+		Perspective:        options.View,
+		DerivationSampling: derivationSampling,
 	}
 
 	memory := newWorkingMemory(settings.PromptCeiling(), anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions)
 	memory.charge(len(conversation))
 	memory.charge(len(identity))
 
-	judged, err := t.judge(ctx, settings, memory, input, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), dispositions)
+	judged, err := t.judge(ctx, settings, memory, input, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions)
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
@@ -287,14 +288,14 @@ func (t *Turn) fillInitial(ctx context.Context, settings RunSettings, anchor Anc
 	return anchor, withCreated(candidates, created), fills
 }
 
-func (t *Turn) derive(ctx context.Context, input string, subject int64, now time.Time) ([]string, UpdateWindow, string, string) {
+func (t *Turn) derive(ctx context.Context, input string, subject int64, now time.Time) ([]string, UpdateWindow, string, *Sampling, string) {
 	started := time.Now()
-	derived, window, discarded, err := DeriveQueries(ctx, t.Model, input, now)
+	derived, window, discarded, sampling, err := DeriveQueries(ctx, t.Model, input, now)
 	elapsed := time.Since(started)
 
 	if err != nil {
 		t.log().Warn("the query set holds no derived query", "subject", subject, "elapsed", elapsed, "error", err)
-		return MergeQueries(input, nil), UpdateWindow{}, "", BoundCause(err.Error())
+		return MergeQueries(input, nil), UpdateWindow{}, "", sampling, BoundCause(err.Error())
 	}
 
 	if discarded != "" {
@@ -303,7 +304,7 @@ func (t *Turn) derive(ctx context.Context, input string, subject int64, now time
 
 	queries := MergeQueries(input, derived)
 	t.log().Info("queries derived", "subject", subject, "derived", len(derived), "queries", len(queries), "elapsed", elapsed)
-	return queries, window, discarded, ""
+	return queries, window, discarded, sampling, ""
 }
 
 func firstQuery(input string) string {
@@ -462,7 +463,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond), prompt))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, temperature *float64, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -508,6 +509,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 			Window:          window,
 			MaxOutputTokens: outputBudget(settings, reserved),
 			Offered:         offered,
+			Temperature:     temperature,
 		})
 		if jerr != nil {
 			if reserved == "" {

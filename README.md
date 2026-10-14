@@ -219,7 +219,7 @@ refuses, so a startup error names the variable that caused it:
 | `PROCESSOR_MODEL_URL` | *(none — required)* | The model endpoint's **base URL**, used verbatim; the adapter appends its own route (`/chat/completions` under `openai-compat`, `/api/chat` under `ollama`), so set the origin the route hangs off, not the route. Absent or present-but-empty is a startup error: a local runtime and a hosted gateway serve different addresses, so there is no defensible default. This variable is not validated to exclude userinfo — use `PROCESSOR_MODEL_KEY` for the credential, never a `user:pass@` prefix here. If one is present anyway, it is redacted out of the run record, its substance, and the log; it is never rejected at boot. |
 | `PROCESSOR_MODEL_ID` | *(none — required)* | The model id sent with every request, and the value recorded in the run record's `model` field. Absent or present-but-empty is a startup error. |
 | `PROCESSOR_MODEL_KEY` | *(none — optional)* | The model endpoint's bearer key, sent the same way under both protocols. **Absent means no `Authorization` header is sent at all** — the point of the ruling, not an edge of it: a local runtime commonly needs none. **Present-but-empty is still a startup error**, exactly like every required member — an empty value is a mistake, never a way to spell "no auth", and treating it as absent would be a silent auth downgrade. Never logged, never echoed in an error, never written to the graph. |
-| `PROCESSOR_MODEL_TEMPERATURE` | `0.2` | The sampling temperature sent with **every** model call. Absent means `0.2` — a little sampling range, not greedy decoding — so the sampler is a small, deliberate source of run-to-run variation. **Present-but-empty is a startup error**, and so is a non-numeric value; both name the variable. **The default is a trade, not a free win, and it costs exact run-to-run reproducibility**: the same request can now return a different completion on a retry, where at `temperature: 0` it would return the same one (approximately — GPU batching and reduction order admit some variance even at `0`; DiVoid #14154). What the trade buys is structural rather than measured: at `0`, a completion that comes back malformed for a given prompt comes back malformed *every* time that prompt is asked, because the request is otherwise a pure function of its inputs — a human re-asking gets the identical failure, and the retry fallback the service leans on elsewhere cannot cover it. At `0.2` a bad draw is no longer permanent for that prompt. **Nothing measured separates `0` from `0.2`: the bands actually sampled were `1.0`, `0.6` and `0.0`, and `0.0` and `0.6` both came back clean — `0.2` sits between them but was never itself a sampled point, so this is a decision about the *shape* a failure takes, not a demonstrated drop in how often one happens; it remains possible that `0.2` produces the same errors and they simply have not been seen yet (DiVoid #14154).** Set the variable to opt into more of the endpoint's own sampling, or back down to `0` for exact-as-possible reproducibility. |
+| `PROCESSOR_MODEL_TEMPERATURE` | `0.2` | The sampling temperature sent with every model call, unless a run config sets the temperature of that run's judgement calls (the `temperature` key of a config, below), which replaces it for those calls and no others: query derivation and the fill always send this value. Absent means `0.2` — a little sampling range, not greedy decoding — so the sampler is a small, deliberate source of run-to-run variation. **Present-but-empty is a startup error**, and so is a non-numeric value; both name the variable. **The default is a trade, not a free win, and it costs exact run-to-run reproducibility**: the same request can now return a different completion on a retry, where at `temperature: 0` it would return the same one (approximately — GPU batching and reduction order admit some variance even at `0`; DiVoid #14154). What the trade buys is structural rather than measured: at `0`, a completion that comes back malformed for a given prompt comes back malformed *every* time that prompt is asked, because the request is otherwise a pure function of its inputs — a human re-asking gets the identical failure, and the retry fallback the service leans on elsewhere cannot cover it. At `0.2` a bad draw is no longer permanent for that prompt. **Nothing measured separates `0` from `0.2`: the bands actually sampled were `1.0`, `0.6` and `0.0`, and `0.0` and `0.6` both came back clean — `0.2` sits between them but was never itself a sampled point, so this is a decision about the *shape* a failure takes, not a demonstrated drop in how often one happens; it remains possible that `0.2` produces the same errors and they simply have not been seen yet (DiVoid #14154).** Set the variable to opt into more of the endpoint's own sampling, or back down to `0` for exact-as-possible reproducibility. |
 | `PROCESSOR_WORKSPACE_DIR` | *(none — optional, every write is refused)* | The directory beneath which each run's own working directory is created. The service creates the root if it does not exist, and one fresh directory per run, lazily — a run that never asks to write a file leaves nothing behind. **Absent means the file tool is still offered and every call to it is refused**, with `no working directory is configured` recorded on the round and not fed back to the following call: the tool list does not change shape with the environment, so a trace reads the same either way and names the operator condition rather than hiding it. Present-but-empty is a startup error naming the variable. Nothing constrains what a run writes inside its own directory, so point this at a directory whose contents are disposable. |
 | `PROCESSOR_MODEL_FLOOR_TOKENS_PER_SECOND` | `10` | **What this deployment asserts its model endpoint generates at, in output tokens per second.** It is a *declaration*, not a measurement: nothing probes the endpoint, and boot says so in the line that reports it. Processor sends no output limit on any model call, so generation is priced only where a call site carries one, and boot reports such a site as `budget=unlimited`; a site that carries one is checked against the bound that will actually cut that call — `budget ÷ this floor + prompt ÷ the prompt floor < bound × 0.8`. A site the declared floors cannot afford is reported as a warning naming **the rate this host would have to deliver**, which is the number the service could never state before. Boot does not refuse on it: a pessimistic declaration is a wrong guess, not a reason to take the service down, and the substance step waits for the creations it starts at most one `FillWait` (90 s), clipped so one judgement call stays affordable. Absent means `10` — a round number below every generation rate this product has been observed at, chosen so a host that fails it is genuinely pathological rather than merely slow. Present-but-empty is a startup error, so is a non-numeric value, and so is zero or less: a rate of zero asserts an endpoint that never finishes. |
 | `PROCESSOR_MODEL_FLOOR_PROMPT_BYTES_PER_SECOND` | `3000` | **What this deployment asserts its model endpoint reads a prompt at, in bytes per second**, on the same terms as the generation floor above: a declaration, reported at boot, never probed. Each call site's prompt allowance is its own declared prompt ceiling divided by this rate — the judgement site is priced at the assembly byte budget plus one supplementary round, which is the largest prompt one call can carry. Absent means `3000`. Present-but-empty, non-numeric, zero or negative are all startup errors. |
@@ -296,7 +296,7 @@ array, an element that is not an object, a missing, blank or non-string `input`,
 is a `400 invalid_request`. A `null` `reply` is read as absent, as a `null` `history` is.
 
 **A run can be held to a filter by a config node.** The request may also carry `config`: the id of a node of
-type `processor-config`, whose content is a JSON object with four optional keys, `filter`, `silence`, `identity` and `note`:
+type `processor-config`, whose content is a JSON object with five optional keys, `filter`, `silence`, `identity`, `note` and `temperature`:
 `{"filter": {"type": ["thought", "knowledge"]}, "silence": true}`. The service reads that node, filtered to its type by
 the graph, once per request and caches nothing. The filter is forwarded to the graph on every read that can put a node in front
 of the model: the first recall, the model's own recall, and the addressed read (which also sends the node's id and
@@ -312,12 +312,27 @@ array of them (one repeated key per element). A blank value (empty or whitespace
 case) is refused. The config's `excludeId` and `excludeName` are added to the service's own; a bound the config sets in
 `updatedFrom` or `updatedTo` replaces the window the run derived for that bound. A run without `config` is unchanged,
 and the record of a configured run carries `perspective`: the config id, the filter it forwarded, `silence` when set,
-the identity it used, the note type when notes are enabled and, when the config node is rooted, that root. The run's node in the graph is created under the same
+the identity it used, the note type when notes are enabled, the `temperature` when the config asked for one and, when the config node is rooted, that root. The run's node in the graph is created under the same
 root; a run without a config, or whose config has no root, is stored unrooted.
 
 **A config can give the run an identity.** `identity` is a string the caller writes, of at most 2,048 bytes of UTF-8 and
 never blank. Processor puts it first in the system text of every judgement call, followed by a blank line, and forwards
 it as written without reading it; derivation and condensation never see it.
+
+**A config can set the temperature of the model's own calls.** `temperature` is a JSON number, finite and not
+negative, absent meaning the deployment's `PROCESSOR_MODEL_TEMPERATURE`. It is sent with every judgement call of the
+run: each call that can dispatch a tool and the reserved answering call alike, so the reply is never sampled under a
+different regime from the rounds before it. `0` is a temperature (greedy decoding, chosen) and is not the same as
+absent. Anything that is not a number (a string, a boolean, `null`, an array, an object), a negative number and a
+number that does not fit a double is a `400 invalid_config` naming `temperature`, before any model call. There is no
+upper bound: the endpoint is the authority on its own range, and one that refuses the value ends the run as
+`502 model_unavailable` carrying the endpoint's own message. A negative value is refused as a domain check, not as
+a bound: endpoints disagree on what a negative temperature means, and the record would state a value the endpoint did
+not apply. Query derivation and the fill never take the config's temperature. Derivation is processor's own step and
+keeps the recall that precedes the model's reply as stable as the deployment makes it; the fill writes a substance into
+the graph that every later run reads. Only the temperature is configurable: `top_p` stays whatever the deployment
+configured, and a `temperature` on the request body is ignored like any unknown body field. A run whose config does
+not set `temperature` is unchanged.
 
 **A config can let the model decline to reply.** `silence` is a JSON boolean, absent meaning false; anything else is a
 `400 invalid_config` before any model call. When it is `true`, the system text of every judgement call, the reserved
@@ -453,8 +468,9 @@ all; absent, never zero-filled), the stop reason (both the loop's own neutral va
 string), why the turn stopped where the run's own remaining time could not afford another judgement call
 (`timeShortfall`, absent on every run that ended any other way), the constants that governed the run
 (`limits`: candidate limit, assembly byte budget, supplementary byte budget, max model calls, and the
-output budget per model call site — `derivationBudget`, `judgementBudget` and `answeringBudget`, each key absent when no output limit was sent, which is every run unless a limit was set — and the two history bounds, `historyExchangeLimit` and `historySafetyLimit`), and the sampling the run was made with
-(`sampling`: `temperature` and `topP`, each key absent when nothing was sent for it).
+output budget per model call site — `derivationBudget`, `judgementBudget` and `answeringBudget`, each key absent when no output limit was sent, which is every run unless a limit was set — and the two history bounds, `historyExchangeLimit` and `historySafetyLimit`), and the sampling the run's judgement calls were made with
+(`sampling`: `temperature` and `topP`, each key absent when nothing was sent for it) beside the sampling its derivation call
+was made with (`derivationSampling`, the same two keys, absent on a run that issued no derivation call).
 
 **Read that as a description, not as the field list.** `Record` in `internal/loop/types.go` is the field
 list; three merges have each added a key that did not reach this paragraph until someone
@@ -471,6 +487,16 @@ cannot complete is recorded as a failed tool round with its `error`, never answe
 **`sampling` reports what was requested, as sent — not what the endpoint applied.** An endpoint that clamps
 a value, or ignores it, yields a record that is true about the request and false about the generation. The
 record can be honest about only the near side of the wire, and this is that side.
+
+**A run can state more than one temperature, and three fields say which is which.** `perspective.temperature` is what the
+config asked for, present only when it asked. `sampling` is what the run's judgement calls were sent with, read back from
+the request each adapter built, so it is the config's temperature on a run that asked for one and the deployment's
+otherwise. `derivationSampling` is what the derivation call was sent with, read back the same way, and it is always the
+deployment's. A reader who wants the temperature of the model's reply reads `sampling`; one who wants the temperature that
+produced the run's queries reads `derivationSampling`. **A record without `derivationSampling` predates the field, and its
+derivation was sent with `sampling`**, because before the field one client sent one sampling on every call. When the two
+differ the run's summary line shows both, for example `temp=0.7, derivation temp=0.2`; when they agree it shows the one, as
+it always did.
 
 The verbose response carries **two keys more than the record**: `written`, the write receipt, which says
 where the record was filed, and `reply`. Neither is a member of the record and neither reaches the stored
