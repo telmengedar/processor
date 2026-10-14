@@ -522,8 +522,8 @@ $two.reply
 
 ```sh
 BUILD=$(git rev-parse HEAD)
-rm -rf build-ctx && mkdir build-ctx && git archive "$BUILD" | tar -x -C build-ctx
-docker build --build-arg PROCESSOR_BUILD="$BUILD" -t processor build-ctx
+CTX=$(mktemp -d) && git archive "$BUILD" | tar -x -C "$CTX"
+docker build --build-arg PROCESSOR_BUILD="$BUILD" -t processor "$CTX"
 ```
 
 Build from a `git archive` of the commit you stamp, as above, so the image holds exactly what the stamp names: a build
