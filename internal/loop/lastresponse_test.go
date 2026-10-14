@@ -242,7 +242,7 @@ func TestTurnJudgeEndsTheTurnOnEveryTerminalThatWantsNoTool(t *testing.T) {
 			t.Parallel()
 
 			model := &fakeModel{results: []JudgeResult{
-				{Answer: "first call's prose", Reason: reason, RawReason: "raw", ReasoningBytes: 7, UnofferedToolCalls: 2},
+				{Answer: "first call's prose.", Reason: reason, RawReason: "raw", ReasoningBytes: 7, UnofferedToolCalls: 2},
 				{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "would be a second call"},
 			}}
 			turn := NewTurn(baseGraph(), model, nil, fixedSystem("system"), "test-model", testLogger())

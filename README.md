@@ -351,11 +351,14 @@ side-effect-free request, so processor honours it as if it were a native call, a
 No other tool is ever honoured from text. An answer that is only the id of a part shown in that call, bare or after an
 `id:` label (`71`, `id: 71`), is a request to read that part: on a call that offered `read_node` the loop reads it, with the
 round's `source` saying `reference`, so a part already shown is refused as such and the turn's last call is reserved for
-answering. A number that was not shown, or a shown id with any other text around it, is a reply. A final answer that is not a
+answering. A number that was not shown, or a shown id with any other text around it, is a reply. The description the recall clause asks for is read the same way: on a call that carried the clause, an answer that is one line and a phrase and is
+unfinished (no closing character other than a letter or a digit, at least three words), or is a run of at least two words of one input line, or is one of the turn's derived queries,
+is read as the recall the clause asked for, with the round's `source` saying `echo`; the next call answers as after any recall. A final answer that is not a
 reply is withheld: one that came from a call asking for a tool (`toolRequest`), one that opens with a tool call processor
 did not honour (`toolText`), one that opens with processor's own framing, a `===== NAME =====` line, an `id:` line followed
 by a `type:` line, or a conversation label (`blockText`), or one that is only the id of a part shown in its call on a call
-that offered no read (`partReference`). The record keeps the text verbatim and carries `nonReply` with the kind, and `produced` is `false`, so `/runs`
+that offered no read (`partReference`), or one that has the shape of a query in a turn that already read such an answer as a
+recall (`queryEcho`). The record keeps the text verbatim and carries `nonReply` with the kind, and `produced` is `false`, so `/runs`
 answers with the fallback reply. The outcome's verdict is `withheld`, except that a curtailed turn keeps `curtailed` and
 a silent one keeps `silent`. Nothing is fed back to the model and nothing is retried.
 

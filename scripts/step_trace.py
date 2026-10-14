@@ -783,7 +783,9 @@ def source_lines(tool_call):
     must not read as a working one, which is the entire reason the field exists. `textual` is the
     model writing the call as the opening of its answer text, which the adapter recovered and the loop
     dispatched because it named an offered read-only retrieval tool. `reference` is an answer that was
-    only the id of a part shown in that call, which the loop read as a request for that part. Absent
+    only the id of a part shown in that call, which the loop read as a request for that part. `echo` is
+    an answer to the recall clause that had the shape of a query rather than a reply, which the loop
+    read as the recall the clause asked for. Absent
     means the record predates the field; that is stated, not filled in.
     """
     source = (tool_call or {}).get("source")
@@ -805,6 +807,11 @@ def source_lines(tool_call):
         return [
             f"{'':<24} note: the model wrote no call. Its answer was only the id of a part shown in "
             f"that call, and the loop read it as a request for that part."
+        ]
+    if source == "echo":
+        return [
+            f"{'':<24} note: the model wrote no call. Its answer to the recall clause had the shape of a "
+            f"query rather than a reply, and the loop read it as the recall the clause asked for."
         ]
     return [
         f"{'':<24} note: this round records no call source; the record predates the field, so "

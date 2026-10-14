@@ -118,7 +118,7 @@ func TestTheNotDeliveredWarnFiresOnAProducedAnswerNoAdmittedRowFed(t *testing.T)
 
 	graph := baseGraph()
 	graph.candidates = []Candidate{{ID: 100, Type: "documentation", Name: "Big", Similarity: 0.9, Substance: strings.Repeat("x", AssemblyByteBudget+1)}}
-	model := &fakeModel{results: []JudgeResult{{Answer: "an answer from nothing this system held", Reason: Answered, RawReason: "stop"}}}
+	model := &fakeModel{results: []JudgeResult{{Answer: "an answer from nothing this system held.", Reason: Answered, RawReason: "stop"}}}
 	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", logger)
 
 	record, _, err := turn.Run(context.Background(), "hello", 42)

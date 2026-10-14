@@ -134,6 +134,8 @@ const (
 	NonReplyBlockText NonReply = "blockText"
 	// NonReplyPartReference is a final answer that is only the id of a part shown in its call, on a call that offered no read to make of it.
 	NonReplyPartReference NonReply = "partReference"
+	// NonReplyQueryEcho is a final answer with the shape of a query rather than a reply, in a turn that already recovered such an answer as a recall.
+	NonReplyQueryEcho NonReply = "queryEcho"
 )
 
 const typePrefix = "type: "
@@ -145,7 +147,7 @@ var (
 	partReferenceAnswer = regexp.MustCompile(`^(?i:id:[ \t]*)?([0-9]+)$`)
 )
 
-func classifyNonReply(answer string, lastWasToolRequest bool, unhonoured string, shown func(int64) bool) NonReply {
+func classifyNonReply(answer string, lastWasToolRequest bool, unhonoured string, shown func(int64) bool, echoed func(string) bool) NonReply {
 	if strings.TrimSpace(answer) == "" {
 		return ""
 	}
@@ -158,6 +160,8 @@ func classifyNonReply(answer string, lastWasToolRequest bool, unhonoured string,
 		return NonReplyBlockText
 	case isPartReference(answer, shown):
 		return NonReplyPartReference
+	case echoed(answer):
+		return NonReplyQueryEcho
 	default:
 		return ""
 	}

@@ -39,6 +39,7 @@ func TestTheSystemTextDescribesEveryToolTheJudgementCallOffers(t *testing.T) {
 		"ToolSourceContent":   true,
 		"ToolSourceTextual":   true,
 		"ToolSourceReference": true,
+		"ToolSourceEcho":      true,
 	}
 
 	var declared []string

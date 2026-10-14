@@ -23,7 +23,7 @@ import (
 const (
 	anchorBody    = "the anchor body this run is about"
 	candidateBody = "the candidate body recall returned"
-	modelAnswer   = "the answer the model gave"
+	modelAnswer   = "the answer the model gave."
 	taskText      = "where does the change land, and what would make it wrong"
 )
 
@@ -127,9 +127,14 @@ func testCondenseModel(t *testing.T, substance string) *httptest.Server {
 func testModel(t *testing.T) *httptest.Server {
 	t.Helper()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		content := modelAnswer
+		if strings.Contains(string(body), "===== REQUEST =====") {
+			content = "DATES: none\nwhich part of the repository changes?"
+		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"model":"ai/test-served","choices":[{"message":{"content":%q},"finish_reason":"stop"}]}`, modelAnswer)
+		fmt.Fprintf(w, `{"model":"ai/test-served","choices":[{"message":{"content":%q},"finish_reason":"stop"}]}`, content)
 	}))
 	t.Cleanup(srv.Close)
 	return srv

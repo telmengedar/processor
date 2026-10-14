@@ -70,7 +70,7 @@ func TestAnAnswerCarryingTheMarkerIsDeliveredVerbatimWhenSilenceWasNotOffered(t 
 	t.Parallel()
 
 	for name, view := range map[string]*View{"no config": nil, "config without silence": {Config: 77}} {
-		record, _ := runSilence(t, baseGraph(), view, answered("the marker is "+SilenceMarker))
+		record, _ := runSilence(t, baseGraph(), view, answered("the marker is "+SilenceMarker+"."))
 
 		if record.Silent || record.Outcome.Silent {
 			t.Errorf("%s: the run is silent, want a marker in the answer ignored when silence was not offered", name)

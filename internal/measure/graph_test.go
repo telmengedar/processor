@@ -30,7 +30,7 @@ func testSystem([]string, bool, bool) string { return "the system text" }
 
 const (
 	testModelID = "test-model-id"
-	testAnswer  = "the answer the model gave"
+	testAnswer  = "the answer the model gave."
 	testInput   = "where does the change land"
 )
 

@@ -240,7 +240,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	memory.charge(len(conversation))
 	memory.charge(len(identity))
 
-	judged, err := t.judge(ctx, settings, memory, input, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions)
+	judged, err := t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions)
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
@@ -468,7 +468,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond), prompt))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, temperature *float64, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input string, queries []string, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, temperature *float64, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -480,6 +480,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 	ack, ackedText := NoteAckNone, ""
 	lastWasToolRequest := false
 	unhonoured := ""
+	echoes := newEchoReader(input, queries)
 
 	for {
 		if shortfall := t.judgementShortfall(ctx, settings); shortfall != "" {
@@ -548,6 +549,11 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		}
 
 		result = referenceRead(result, offered, memory)
+		result, echoShape := echoes.recovered(result, trailerKind, silence)
+		if echoShape != "" {
+			t.log().Info("the answer to the recall clause was a query rather than a reply: the loop reads it as the recall the clause asked for",
+				"call", judged.modelCalls, "shape", echoShape)
+		}
 
 		judged.answer = result.deliveredText()
 		lastWasToolRequest = wantsTool(result.Reason)
@@ -618,7 +624,9 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		}
 	}
 
-	judged.nonReply = classifyNonReply(judged.answer, lastWasToolRequest, unhonoured, memory.displays)
+	hadEchoRound := slices.ContainsFunc(exchanges, func(e ToolExchange) bool { return e.ToolSource == ToolSourceEcho })
+	echoed := func(answer string) bool { return hadEchoRound && echoes.shapeOf(answer, silence) != "" }
+	judged.nonReply = classifyNonReply(judged.answer, lastWasToolRequest, unhonoured, memory.displays, echoed)
 	if judged.nonReply != "" {
 		t.log().Warn("the final answer is not a reply and is withheld", "kind", string(judged.nonReply), "modelCalls", judged.modelCalls)
 	}

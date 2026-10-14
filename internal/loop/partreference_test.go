@@ -9,6 +9,8 @@ import (
 
 const shownPartID = 71
 
+func neverAnEcho(string) bool { return false }
+
 func graphShowingAPart() *fakeGraph {
 	shown := readableNode(shownPartID, "the body the block already carries")
 	graph := graphHoldingNodes(shown)
@@ -85,7 +87,7 @@ func TestANumberThatWasNotShownIsAReplyAndNoReadIsMade(t *testing.T) {
 func TestAShownIdWithAnythingElseAroundItIsAReply(t *testing.T) {
 	t.Parallel()
 
-	for _, answer := range []string{"id: 71 is the one", "the id is 71", "#71", "node 71", "71.", "id:\n71", "71\n72", "id: 71\nid: 71", "id 71", "71 71", "-71", "+71", "id: 7 1"} {
+	for _, answer := range []string{"id: 71 is the one.", "the id is 71.", "#71", "node 71", "71.", "id:\n71", "71\n72", "id: 71\nid: 71", "id 71", "71 71", "-71", "+71", "id: 7 1."} {
 		record, model := runShowingAPart(t, answered(answer))
 
 		if len(record.ToolCalls) != 0 || len(model.calls) != 1 || record.NonReply != "" || !record.Outcome.Produced {
@@ -192,14 +194,14 @@ func TestAShownLoneIdIsNoLongerDeliveredButAnUnshownOneStillIs(t *testing.T) {
 		"id: 12 is my favourite": "",
 		"id: 12\ntype: thought":  NonReplyBlockText,
 	} {
-		if got := classifyNonReply(answer, false, "", shown); got != want {
+		if got := classifyNonReply(answer, false, "", shown, neverAnEcho); got != want {
 			t.Errorf("classifyNonReply(%q) = %q, want %q", answer, got, want)
 		}
 	}
-	if got := classifyNonReply("id: 12", true, "", shown); got != NonReplyToolRequest {
+	if got := classifyNonReply("id: 12", true, "", shown, neverAnEcho); got != NonReplyToolRequest {
 		t.Errorf("a tool request that wrote a shown id = %q, want %q: the call kinds come first", got, NonReplyToolRequest)
 	}
-	if got := classifyNonReply("12", false, ToolRecall, shown); got != NonReplyToolText {
+	if got := classifyNonReply("12", false, ToolRecall, shown, neverAnEcho); got != NonReplyToolText {
 		t.Errorf("an unhonoured call that wrote a shown id = %q, want %q", got, NonReplyToolText)
 	}
 }

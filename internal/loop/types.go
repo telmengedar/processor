@@ -221,6 +221,8 @@ const (
 	ToolSourceTextual ToolSource = "textual"
 	// ToolSourceReference is a read of a part shown in that call, taken from an answer that consisted only of that part's id.
 	ToolSourceReference ToolSource = "reference"
+	// ToolSourceEcho is a recall whose query is the whole answer of a call that carried the recall clause, taken because that answer had the shape of a query rather than a reply.
+	ToolSourceEcho ToolSource = "echo"
 )
 
 // Provider names the adapter and the endpoint that served a run's model calls.

@@ -1535,7 +1535,7 @@ class MirroredConstantTests(unittest.TestCase):
     ASSEMBLE = "internal/loop/assemble.go"
     LOOP_PACKAGE = "internal/loop"
     TOOL_CONSTANT_PREFIX = "Tool"
-    NON_TOOL_CONSTANTS = ("ToolSourceNative", "ToolSourceContent", "ToolSourceTextual", "ToolSourceReference")
+    NON_TOOL_CONSTANTS = ("ToolSourceNative", "ToolSourceContent", "ToolSourceTextual", "ToolSourceReference", "ToolSourceEcho")
 
     def test_the_tool_names_are_the_records_own_vocabulary(self):
         go = go_string_constants(self.TYPES)
@@ -1644,6 +1644,13 @@ class TextualSourceNoteTests(unittest.TestCase):
         text = " ".join(step_trace.source_lines({"tool": "readNode", "source": "reference"}))
 
         self.assertIn("only the id of a part shown", text)
+        self.assertIn("wrote no call", text)
+        self.assertNotIn("predates the field", text)
+
+    def test_an_echo_round_is_narrated_as_a_query_read_as_the_clauses_recall_and_not_as_a_record_that_predates_the_field(self):
+        text = " ".join(step_trace.source_lines({"tool": "recall", "source": "echo"}))
+
+        self.assertIn("shape of a query", text)
         self.assertIn("wrote no call", text)
         self.assertNotIn("predates the field", text)
 
