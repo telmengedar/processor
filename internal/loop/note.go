@@ -149,3 +149,10 @@ func noteSummary(call ToolCallRecord) string {
 func offersNote(offered []string) bool {
 	return slices.Contains(offered, ToolNote)
 }
+
+func acknowledgementOf(exchange ToolExchange) (NoteAck, string) {
+	if exchange.Error == "" && (exchange.Written == Stored || exchange.Written == Unlinked) {
+		return NoteAckStored, exchange.Text
+	}
+	return NoteAckNotStored, ""
+}

@@ -417,10 +417,12 @@ type Record struct {
 	ReservedCall ReservedCall `json:"reservedCall,omitzero"`
 	// Usage carries one entry per model call, in call order, nil where the endpoint reported none.
 	Usage []*Usage `json:"usage"`
-	// Trailers carries one entry per model call, in call order: the search state that call was made in, which decides its closing paragraph.
+	// Trailers carries one entry per model call, in call order: the search state that call was made in, which decides its search paragraph.
 	Trailers []TrailerKind `json:"trailers"`
 	// Offered carries one entry per model call, in call order: the tools that call offered, in the loop's tool names and in offer order, an empty list for a call that offered none, absent on a record that predates the field.
 	Offered [][]string `json:"offered"`
+	// NoteAcks carries one entry per model call, in call order: which acknowledgement of a note round that call's closing carried, absent on a record that predates the field.
+	NoteAcks []NoteAck `json:"noteAcks"`
 	// LastResponse is present exactly when the turn's last judgement call returned a response; absent means either that call returned none, or the record predates this field.
 	LastResponse *LastResponse `json:"lastResponse,omitempty"`
 	StopReason   StopReason    `json:"stopReason"`
@@ -469,7 +471,7 @@ type JudgeInput struct {
 	// Conversation is the rendered earlier exchanges, identical on every call of a turn, empty when the turn has none.
 	Conversation string
 
-	// Trailer is the closing paragraph of the user message, empty when the call carries none.
+	// Trailer is the closing of the user message: the search paragraph, then the acknowledgement of a note round, each its own paragraph, empty when the call carries neither.
 	Trailer string
 
 	// Now is the instant the prompt states, zero when the caller supplies none.

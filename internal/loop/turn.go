@@ -261,6 +261,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	record.Usage = judged.usages
 	record.Trailers = judged.trailers
 	record.Offered = judged.offered
+	record.NoteAcks = judged.noteAcks
 	record.LastResponse = judged.lastResponse
 	record.StopReason = judged.stop
 	record.Sampling = judged.sampling
@@ -432,6 +433,7 @@ type judgement struct {
 	usages       []*Usage
 	trailers     []TrailerKind
 	offered      [][]string
+	noteAcks     []NoteAck
 	lastResponse *LastResponse
 	sampling     Sampling
 	provider     Provider
@@ -473,6 +475,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 	reserved := reservation("")
 	dispatched := 0
 	notesFiled := 0
+	ack, ackedText := NoteAckNone, ""
 	lastWasToolRequest := false
 	unhonoured := ""
 
@@ -497,7 +500,9 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		judged.modelCalls++
 
 		offered := t.offeredTools(reserved != "", note.enabled && notesFiled < NotesPerTurn)
-		trailer, trailerKind := trailerFor(offered, searches)
+		search, trailerKind := trailerFor(offered, searches)
+		trailer := composeClosing(search, acknowledgement(ack, ackedText))
+		judged.noteAcks = append(judged.noteAcks, ack)
 		judged.trailers = append(judged.trailers, trailerKind)
 		judged.offered = append(judged.offered, append([]string{}, offered...))
 
@@ -591,6 +596,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		dispatched++
 		if exchange.Tool == ToolNote {
 			notesFiled++
+			ack, ackedText = acknowledgementOf(exchange)
 		}
 
 		if exchange.Refused {
