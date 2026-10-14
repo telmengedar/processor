@@ -46,10 +46,10 @@ func runWithHistory(t *testing.T, history []Exchange) (Record, *fakeModel) {
 func TestARunWithoutHistoryRendersTheSameUserContentAsBefore(t *testing.T) {
 	t.Parallel()
 
-	if got := RenderUserContent("BLOCK\n", "what about him", historyTestInstant, UpdateWindow{}, ""); got != userContentBeforeHistory {
+	if got := RenderUserContent("BLOCK\n", "what about him", historyTestInstant, UpdateWindow{}, "", ""); got != userContentBeforeHistory {
 		t.Errorf("user content with an instant =\n%q\nwant the layout from before history existed\n%q", got, userContentBeforeHistory)
 	}
-	if got := RenderUserContent("BLOCK\n", "what about him", time.Time{}, UpdateWindow{}, ""); got != datelessBeforeHistory {
+	if got := RenderUserContent("BLOCK\n", "what about him", time.Time{}, UpdateWindow{}, "", ""); got != datelessBeforeHistory {
 		t.Errorf("user content with no instant =\n%q\nwant the layout from before history existed\n%q", got, datelessBeforeHistory)
 	}
 
@@ -90,7 +90,7 @@ func TestTheConversationSectionSitsBetweenTheBlockAndTheClosingInputOldestFirst(
 		{"with a window", historyTestInstant, window, "===== INPUT =====\nwhat about him\n\n===== NOW =====\n2026-10-12T18:00:00Z\nretrieval is limited to nodes updated 2026-10-01 … 2026-10-07\n\n\nBLOCK\n\n\n" + wantSection + "\n\n===== INPUT =====\nwhat about him"},
 		{"with no instant", time.Time{}, UpdateWindow{}, "===== INPUT =====\nwhat about him\n\n\nBLOCK\n\n\n" + wantSection + "\n\n===== INPUT =====\nwhat about him"},
 	} {
-		if got := RenderUserContent("BLOCK\n", "what about him", tc.now, tc.window, section); got != tc.content {
+		if got := RenderUserContent("BLOCK\n", "what about him", tc.now, tc.window, section, ""); got != tc.content {
 			t.Errorf("%s: user content =\n%q\nwant\n%q", tc.name, got, tc.content)
 		}
 	}

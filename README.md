@@ -328,12 +328,18 @@ fenced `json` block and parsing it.
 Up to three tools are offered on every call the loop is still willing to dispatch one from: `recall`,
 which searches the same graph, `read_node`, which returns one part of memory as its substance by id, and
 `write_file`, which writes one file into the run's working directory — the last only when a working
-directory is configured. None is urged — the system text names each in one sentence and still asks for
-prose — so whether a run reaches for the file tool is a property of the model and the task, not of the
-prompt. **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
+directory is configured. The system text names each in one sentence and still asks for prose, so whether a
+run reaches for the file tool is a property of the model and the task, not of the prompt. `recall` alone is
+urged, once, at the very end of the user message: while no search has run in the turn, a closing paragraph
+tells the model that when none of the parts above states what the request asks for it is not to say the
+information is missing but to call `recall`; after a search that brought rows it is told the search happened
+and that its rows are above, then given the same paragraph; after one that brought nothing new it is told
+so, by the query it ran, and is not given the paragraph. The paragraph sits there because that is where the
+call-or-answer decision of the model in use is made, and the record names which paragraph each call carried
+in `trailers`. **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
 a system text and one user message. The system text is composed per call from the tools that call offers and from whether the turn carries a conversation section,
-so a tool the call does not offer is not mentioned in it; and no tool call, query, error or write
-confirmation is ever replayed to the model. What a retrieval round *found* joins the turn's working memory
+so a tool the call does not offer is not mentioned in it; and no tool call, error or write
+confirmation is ever replayed to the model, the one thing it is told of a search being its query and whether it brought anything. What a retrieval round *found* joins the turn's working memory
 and is rendered into the next call's context block, once per row and never beyond the prompt ceiling (the
 assembly byte budget plus one supplementary round). A row a later round returns again, unchanged, is
 recorded as included with `held: true` and charged nothing. What the model *did* stays on the run
