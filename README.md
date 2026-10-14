@@ -331,10 +331,10 @@ every note of the run is filed as, non-blank. Absent, the tool does not exist fo
 deployment cannot switch it on; only the config does. With it, each judgement call that can still dispatch a tool also
 offers `write_note`, whose arguments are `text`, the whole note, and optionally `about`, the id of one part of memory
 the model was shown in this turn. The model chooses nothing else: processor files the note as a node of the config's
-`type`, named from the first line of the text (cut to 80 runes), rooted at the config's root, with the text as its
+`type`, named from the first non-blank line of the text, its whitespace collapsed (cut to 80 runes), rooted at the config's root, with the text as its
 content, and links it to the request's subject and, when `about` was shown this turn, to that part; an `about` that was
 not shown is dropped and the note is still filed. The text must be valid UTF-8 and non-blank, with no size limit of processor's own, and
-its derived name may not begin `processor-run`; a note that fails this is refused and nothing is filed. A turn takes at
+its derived name may not begin `processor-run`, which is checked ignoring case; a note that fails this is refused and nothing is filed. A turn takes at
 most one note: the tool is withdrawn for the rest of the turn after any note round, whatever became of it, because the
 model is never shown the outcome of a tool round. It is never offered on the call reserved for answering. A note that
 could not be filed does not fail the run. The types `processor-config` and `session-log` are refused as the note type,

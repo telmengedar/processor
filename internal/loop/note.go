@@ -60,13 +60,14 @@ func noteScopeOf(view *View) noteScope {
 func NoteName(text string) string {
 	for line := range strings.SplitSeq(text, "\n") {
 		if fields := strings.Fields(line); len(fields) > 0 {
-			return truncateWithEllipsis(strings.Join(fields, " "), noteNameRunes)
+			return TruncateRunes(strings.Join(fields, " "), noteNameRunes)
 		}
 	}
 	return ""
 }
 
-func truncateWithEllipsis(s string, limit int) string {
+// TruncateRunes cuts s to at most limit runes and marks a cut with an ellipsis.
+func TruncateRunes(s string, limit int) string {
 	runes := []rune(s)
 	if len(runes) <= limit {
 		return s

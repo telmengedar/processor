@@ -162,6 +162,46 @@ func TestWriteNoteDiscardsTheShellWhenTheContentFailsAndReportsNotStored(t *test
 	}
 }
 
+func TestWriteNoteDiscardsTheShellEvenWhenTheTurnIsCancelledBetweenCreateAndContent(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	var mu sync.Mutex
+	var calls []recordedCall
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls = append(calls, recordedCall{Method: r.Method, Path: r.URL.Path})
+		mu.Unlock()
+
+		switch legOf(r) {
+		case legCreate:
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 3100})
+		case legContent:
+			cancel()
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	receipt := c.WriteNote(ctx, noteRequest())
+
+	if receipt.State != loop.NotStored || receipt.NodeID != 0 {
+		t.Errorf("receipt = %+v, want notStored with no id", receipt)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{"POST /api/nodes", "POST /api/nodes/3100/content", "DELETE /api/nodes/3100"}
+	if got := methodPaths(calls); !slices.Equal(got, want) {
+		t.Errorf("calls = %v, want %v: a cancelled turn must still remove the empty shell it created", got, want)
+	}
+}
+
 func TestWriteNoteReportsNotStoredWhenTheCreateFailsAndMakesNoFurtherCall(t *testing.T) {
 	t.Parallel()
 

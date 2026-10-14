@@ -133,7 +133,7 @@ func (c *Client) WriteNote(ctx context.Context, request loop.NoteRequest) loop.W
 
 	if err := c.post(ctx, fmt.Sprintf("/api/nodes/%d/content", id), runContentType, []byte(request.Text), nil); err != nil {
 		c.log().Error(logNoteFailed, "subject", request.Subject, "node", id, "error", fmt.Errorf("divoid: set note node content: %w", err))
-		c.discardShell(ctx, id)
+		c.discardShell(context.WithoutCancel(ctx), id)
 		return loop.WriteReceipt{State: loop.NotStored}
 	}
 
@@ -168,13 +168,5 @@ func (c *Client) linkNode(ctx context.Context, id, target int64) error {
 }
 
 func (c *Client) runName(record loop.Record, at time.Time) string {
-	return fmt.Sprintf("%s %s — %s", RunNamePrefix, at.UTC().Format(time.RFC3339), truncateRunes(record.Input, runNameInputRunes))
-}
-
-func truncateRunes(s string, limit int) string {
-	r := []rune(s)
-	if len(r) <= limit {
-		return s
-	}
-	return string(r[:limit]) + "…"
+	return fmt.Sprintf("%s %s — %s", RunNamePrefix, at.UTC().Format(time.RFC3339), loop.TruncateRunes(record.Input, runNameInputRunes))
 }

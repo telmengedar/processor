@@ -20,11 +20,12 @@ import (
 const NodeType = "processor-config"
 
 const (
-	filterKey   = "filter"
-	silenceKey  = "silence"
-	identityKey = "identity"
-	noteKey     = "note"
-	noteTypeKey = "type"
+	filterKey     = "filter"
+	silenceKey    = "silence"
+	identityKey   = "identity"
+	noteKey       = "note"
+	noteTypeKey   = "type"
+	filterTypeKey = "type"
 )
 
 // MaxIdentityBytes bounds the identity text, counted in UTF-8 bytes after JSON unescaping.
@@ -125,7 +126,7 @@ func noteOf(raw json.RawMessage, filter loop.Filter) (*loop.NoteConfig, error) {
 		return nil, fmt.Errorf("the config's %q %q is a type the model may never write", noteKey, noteTypeKey)
 	}
 
-	if admitted, filtered := filter[noteTypeKey]; filtered && !slices.Contains(admitted, noteType) {
+	if admitted, filtered := filter[filterTypeKey]; filtered && !slices.Contains(admitted, noteType) {
 		return nil, fmt.Errorf("the config's %q %q is not among the types the config's filter admits, so a note would never be recalled", noteKey, noteTypeKey)
 	}
 	return &loop.NoteConfig{Type: noteType}, nil
