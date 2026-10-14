@@ -274,8 +274,7 @@ node by the mean of its similarities to them — against the whole graph or, whe
 against the nodes whose last update falls inside it — and returns the top six, with the subject and every
 run record this system wrote left out before the count. That is the turn's only retrieval request: every
 one of the six slots goes to it, and the subject's position in the graph chooses none of them. The six rows are
-ordered by similarity, each is shown to the model with its similarity, and none is cut for being weak:
-when the best of them scores under 0.63 the block says the knowledge is still thin instead.
+ordered by similarity, each is shown to the model with its similarity, and none is cut for being weak.
 
 **A conversation is carried by the caller.** The request may also carry `history`: the conversation's
 earlier exchanges, oldest first, each `{"input": "…", "reply": "…"}` with a non-blank `input` and an
