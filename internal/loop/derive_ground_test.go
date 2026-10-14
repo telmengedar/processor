@@ -19,7 +19,7 @@ func derivedUnderGrounding(t *testing.T, input, dates string, now time.Time) ([]
 	t.Helper()
 
 	model := &deriveFake{text: dates + "\n" + groundingQuery}
-	queries, window, discarded, err := deriveQueries(context.Background(), model, input, now, time.Hour)
+	queries, window, discarded, _, err := deriveQueries(context.Background(), model, input, now, time.Hour)
 	if err != nil {
 		t.Fatalf("deriveQueries(%q, %q): %v", input, dates, err)
 	}
@@ -217,7 +217,7 @@ func TestADiscardedRangeKeepsTheDerivedQueries(t *testing.T) {
 	t.Parallel()
 
 	model := &deriveFake{text: "DATES: 2024-05-21..2024-05-21\nq1?\nq2?\nq3?\nq4?\nq5?"}
-	queries, window, discarded, err := deriveQueries(context.Background(), model, "how was the long talk yesterday?", groundingNow, time.Hour)
+	queries, window, discarded, _, err := deriveQueries(context.Background(), model, "how was the long talk yesterday?", groundingNow, time.Hour)
 	if err != nil {
 		t.Fatalf("deriveQueries: %v", err)
 	}

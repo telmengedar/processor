@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/telmengedar/processor/internal/loop"
 	"github.com/telmengedar/processor/internal/redacturl"
 )
 
@@ -56,6 +57,11 @@ type condenseResponse struct {
 
 // Condense runs one offline condensation call: a single user message, no tools, the repetition penalties pinned to zero, and the reasoning stream switched off.
 func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens int) (CondenseResult, error) {
+	result, _, err := c.condense(ctx, prompt, maxOutputTokens)
+	return result, err
+}
+
+func (c *Client) condense(ctx context.Context, prompt string, maxOutputTokens int) (CondenseResult, bool, error) {
 	body, err := json.Marshal(condenseRequest{
 		Model:    c.modelID,
 		Messages: []wireMessage{{Role: "user", Content: prompt}},
@@ -70,17 +76,17 @@ func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens in
 		},
 	})
 	if err != nil {
-		return CondenseResult{}, fmt.Errorf("ollama: encode condense request: %w", err)
+		return CondenseResult{}, false, fmt.Errorf("ollama: encode condense request: %w", err)
 	}
 
 	sampling, err := decodeSentSampling(body)
 	if err != nil {
-		return CondenseResult{}, err
+		return CondenseResult{}, false, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+chatRoute, bytes.NewReader(body))
 	if err != nil {
-		return CondenseResult{}, fmt.Errorf("ollama: build request: %w", redacturl.Error(err))
+		return CondenseResult{}, false, fmt.Errorf("ollama: build request: %w", redacturl.Error(err))
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -90,17 +96,17 @@ func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens in
 
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return CondenseResult{}, fmt.Errorf("ollama: request failed: %w", redacturl.Error(err))
+		return CondenseResult{Sampling: sampling}, true, fmt.Errorf("ollama: request failed: %w", redacturl.Error(err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return CondenseResult{}, fmt.Errorf("ollama: unexpected status %d: %s", resp.StatusCode, readUpstreamMessage(resp.Body))
+		return CondenseResult{Sampling: sampling}, true, fmt.Errorf("ollama: unexpected status %d: %s", resp.StatusCode, readUpstreamMessage(resp.Body))
 	}
 
 	var wire condenseResponse
 	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
-		return CondenseResult{}, fmt.Errorf("ollama: decode response: %w", err)
+		return CondenseResult{Sampling: sampling}, true, fmt.Errorf("ollama: decode response: %w", err)
 	}
 
 	return CondenseResult{
@@ -108,16 +114,21 @@ func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens in
 		FinishReason: wire.DoneReason,
 		Model:        wire.Model,
 		Sampling:     sampling,
-	}, nil
+	}, true, nil
 }
 
-// Derive runs one query-derivation call, returning the completion text alone.
-func (c *Client) Derive(ctx context.Context, prompt string, maxOutputTokens int) (string, error) {
-	result, err := c.Condense(ctx, prompt, maxOutputTokens)
-	if err != nil {
-		return "", err
+// Derive runs one query-derivation call on the configured sampling, returning its text and the sampling its request carried, also beside an error once the request was issued.
+func (c *Client) Derive(ctx context.Context, prompt string, maxOutputTokens int) (loop.DeriveResult, error) {
+	result, sent, err := c.condense(ctx, prompt, maxOutputTokens)
+	var derived loop.DeriveResult
+	if sent {
+		derived.Sampling = &loop.Sampling{Temperature: result.Sampling.Temperature, TopP: result.Sampling.TopP}
 	}
-	return result.Text, nil
+	if err != nil {
+		return derived, err
+	}
+	derived.Text = result.Text
+	return derived, nil
 }
 
 func decodeSentSampling(body []byte) (SentSampling, error) {

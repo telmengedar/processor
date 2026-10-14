@@ -20,7 +20,9 @@ type scriptedModel struct {
 	calls int
 }
 
-func (m *scriptedModel) Derive(context.Context, string, int) (string, error) { return "", nil }
+func (m *scriptedModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+	return loop.DeriveResult{}, nil
+}
 
 func (m *scriptedModel) Judge(context.Context, loop.JudgeInput) (loop.JudgeResult, error) {
 	m.calls++

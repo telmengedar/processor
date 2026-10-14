@@ -82,7 +82,9 @@ func (stubJudge) Judge(context.Context, loop.JudgeInput) (loop.JudgeResult, erro
 	return loop.JudgeResult{Answer: "an answer", Reason: loop.Answered, RawReason: "stop"}, nil
 }
 
-func (stubJudge) Derive(context.Context, string, int) (string, error) { return "", nil }
+func (stubJudge) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+	return loop.DeriveResult{}, nil
+}
 
 func labelledRow(id string, required ...eval.Required) eval.Row {
 	return eval.Row{ID: id, Input: "what did the split change", Subject: 100, Stratum: eval.StratumLabelled, Required: required}

@@ -24,8 +24,8 @@ type noteWritingModel struct {
 	offered [][]string
 }
 
-func (m *noteWritingModel) Derive(context.Context, string, int) (string, error) {
-	return "", nil
+func (m *noteWritingModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+	return loop.DeriveResult{}, nil
 }
 
 func (m *noteWritingModel) Judge(_ context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {

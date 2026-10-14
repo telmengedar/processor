@@ -79,6 +79,13 @@ func (o RunOptions) filter() Filter {
 	return o.View.Filter
 }
 
+func (o RunOptions) temperature() *float64 {
+	if o.View == nil {
+		return nil
+	}
+	return o.View.Temperature
+}
+
 func (o RunOptions) identity() string {
 	if o.View == nil {
 		return ""

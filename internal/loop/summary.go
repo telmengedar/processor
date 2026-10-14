@@ -76,7 +76,7 @@ func renderSummaryHeader(b *strings.Builder, record Record, at time.Time) {
 	limits := record.Limits
 	fmt.Fprintf(b, "limits   %d cands / %d B content / %d B suppl / %d calls / %s tok derive / %s tok judge%s\n",
 		limits.CandidateLimit, limits.AssemblyByteBudget, limits.SupplementaryByteBudget,
-		limits.MaxModelCalls, summaryBudget(limits.DerivationBudget), summaryBudget(limits.JudgementBudget), summarySampling(record.Sampling))
+		limits.MaxModelCalls, summaryBudget(limits.DerivationBudget), summaryBudget(limits.JudgementBudget), summarySampling(record))
 
 	if record.Workspace != "" {
 		fmt.Fprintf(b, "workdir  %s\n", record.Workspace)
@@ -497,7 +497,25 @@ func summaryRemainingAfterAnchor(limits Limits, anchorRendered int) int {
 	return remaining
 }
 
-func summarySampling(sampling Sampling) string {
+func summarySampling(record Record) string {
+	var parts []string
+	if bits := samplingBits(record.Sampling); bits != "" {
+		parts = append(parts, bits)
+	}
+	if derivation := record.DerivationSampling; derivation != nil && !sameSampling(*derivation, record.Sampling) {
+		bits := samplingBits(*derivation)
+		if bits == "" {
+			bits = "sent none"
+		}
+		parts = append(parts, "derivation "+bits)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "  " + strings.Join(parts, ", ")
+}
+
+func samplingBits(sampling Sampling) string {
 	var bits []string
 	if sampling.Temperature != nil {
 		bits = append(bits, fmt.Sprintf("temp=%g", *sampling.Temperature))
@@ -505,10 +523,18 @@ func summarySampling(sampling Sampling) string {
 	if sampling.TopP != nil {
 		bits = append(bits, fmt.Sprintf("topP=%g", *sampling.TopP))
 	}
-	if len(bits) == 0 {
-		return ""
+	return strings.Join(bits, " ")
+}
+
+func sameSampling(a, b Sampling) bool {
+	return sameNumber(a.Temperature, b.Temperature) && sameNumber(a.TopP, b.TopP)
+}
+
+func sameNumber(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
 	}
-	return "  " + strings.Join(bits, " ")
+	return *a == *b
 }
 
 func summaryPlural(n int, singular, plural string) string {

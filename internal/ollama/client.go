@@ -58,7 +58,7 @@ type Client struct {
 	httpClient *http.Client
 }
 
-// NewClient builds a Client against baseURL, requesting modelID and sampling on every call.
+// NewClient builds a Client against baseURL, requesting modelID and sampling on every call, a judgement call's own temperature replacing the sampling's for that call.
 func NewClient(baseURL, modelID, apiKey string, sampling loop.Sampling, httpClient *http.Client) *Client {
 	if httpClient == nil {
 		httpClient = defaultHTTPClient()
@@ -98,6 +98,7 @@ func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResul
 }
 
 func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string) (loop.JudgeResult, int, error) {
+	sampling := c.callSampling(in)
 	reqBody := chatRequest{
 		Model:    c.modelID,
 		Messages: buildMessages(in),
@@ -105,8 +106,8 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		Think:    thinkingOff,
 		Options: wireOptions{
 			NumPredict:  in.MaxOutputTokens,
-			Temperature: c.sampling.Temperature,
-			TopP:        c.sampling.TopP,
+			Temperature: sampling.Temperature,
+			TopP:        sampling.TopP,
 		},
 	}
 	reqBody.Tools = declaredTools(in.Offered)
@@ -142,9 +143,17 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 	}
 
 	result := translate(wire, in.Offered)
-	result.Sampling = c.sampling
+	result.Sampling = sampling
 	result.Provider = loop.Provider{Adapter: adapterName, Endpoint: redacturl.URL(endpoint)}
 	return result, len(body), nil
+}
+
+func (c *Client) callSampling(in loop.JudgeInput) loop.Sampling {
+	sampling := c.sampling
+	if in.Temperature != nil {
+		sampling.Temperature = in.Temperature
+	}
+	return sampling
 }
 
 func readUpstreamMessage(r io.Reader) string {
