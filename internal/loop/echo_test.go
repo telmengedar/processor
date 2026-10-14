@@ -185,6 +185,9 @@ func TestShortRepliesAndSentencesStayRepliesOnAClauseCall(t *testing.T) {
 		"well i guess so…",
 		"it is (probably) fine)",
 		"i said \"no way\"",
+		"i'm here",
+		"it's fine",
+		"don't care",
 	} {
 		run := runEchoing(t, chat, "", nil, graphYieldingNewRowsToEveryRecall(), answered(answer))
 		requireNoEchoRound(t, answer, run)
@@ -470,6 +473,27 @@ func TestCallSyntaxAndBlockSyntaxHeldInTheInputIsNeverRecoveredAsAnEcho(t *testi
 			if round.Source == ToolSourceEcho {
 				t.Fatalf("%q: round %+v has source echo, want call and block syntax left alone", answer, round)
 			}
+		}
+	}
+}
+
+func TestCallLikeTextWithASpaceIsRecoveredAsAnEchoRecallAndNeverDelivered(t *testing.T) {
+	t.Parallel()
+
+	for _, answer := range []string{"read_node 6840", "recall gangolf colour", "write_file notes today"} {
+		run := runEchoing(t, "hello there", "", nil, graphYieldingNewRowsToEveryRecall(), answered(answer), answered(colourReply))
+
+		round := onlyRound(t, run.record)
+		if round.Tool != ToolRecall || round.Source != ToolSourceEcho || round.Query != answer {
+			t.Fatalf("%q: round = %+v, want it recovered as an echo recall of the text", answer, round)
+		}
+		if run.record.Answer != colourReply || run.record.NonReply != "" {
+			t.Fatalf("%q: answer = %q, nonReply = %q, want the next call's reply and not the text", answer, run.record.Answer, run.record.NonReply)
+		}
+
+		again := runEchoing(t, "hello there", "", nil, graphYieldingNewRowsToEveryRecall(), answered(answer), answered(answer))
+		if again.record.NonReply != NonReplyQueryEcho || again.record.Outcome.Produced {
+			t.Fatalf("%q: written again, nonReply = %q, produced = %t, want it withheld", answer, again.record.NonReply, again.record.Outcome.Produced)
 		}
 	}
 }
