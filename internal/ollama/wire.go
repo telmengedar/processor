@@ -296,22 +296,44 @@ var textualRecoverable = []textualRecovery{
 	{loop.ToolReadNode, "id"},
 }
 
+const (
+	modelCallPrefix   = "call:"
+	modelCallOpenMark = "<|tool_call>"
+)
+
 func openingToolCall(content string) (toolBinding, string, bool) {
 	text := strings.TrimLeftFunc(content, unicode.IsSpace)
+	if len(text) > len(modelCallOpenMark) && text[:len(modelCallOpenMark)] == modelCallOpenMark {
+		text = text[len(modelCallOpenMark):]
+	}
+	if len(text) > len(modelCallPrefix) && strings.EqualFold(text[:len(modelCallPrefix)], modelCallPrefix) {
+		text = text[len(modelCallPrefix):]
+	}
 
 	for _, tool := range toolTable {
 		end := len(tool.wireName)
 		if len(text) <= end || !strings.EqualFold(text[:end], tool.wireName) {
 			continue
 		}
-		if delimiter := text[end]; delimiter == ':' || delimiter == '{' {
+		switch text[end] {
+		case '{':
 			return tool, text[end:], true
+		case ':':
+			return tool, text[end:], true
+		case '(':
+			if closer := strings.IndexByte(text[end:], ')'); closer > 0 {
+				return tool, text[end : end+closer+1], true
+			}
 		}
 	}
 	return toolBinding{}, "", false
 }
 
 func textualArgument(rest, parameter string) (string, bool) {
+	if rest[0] == '(' {
+		return parenArgument(rest[1:len(rest)-1], parameter)
+	}
+
 	if rest[0] == ':' {
 		line, _, _ := strings.Cut(rest[1:], "\n")
 		return unquoted(strings.TrimSpace(line)), true
@@ -326,6 +348,25 @@ func textualArgument(rest, parameter string) (string, bool) {
 		return "", false
 	}
 	return unquoted(strings.TrimSpace(value)), true
+}
+
+func parenArgument(body, parameter string) (string, bool) {
+	if cut := strings.IndexAny(body, "=:"); cut > 0 {
+		key := unquoted(strings.TrimSpace(body[:cut]))
+		if isIdentifier(key) {
+			if key != parameter {
+				return "", false
+			}
+			return unquoted(strings.TrimSpace(body[cut+1:])), true
+		}
+	}
+	return unquoted(strings.TrimSpace(body)), true
+}
+
+func isIdentifier(text string) bool {
+	return text != "" && !strings.ContainsFunc(text, func(r rune) bool {
+		return r != '_' && !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
 }
 
 func unquoted(value string) string {
