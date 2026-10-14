@@ -113,19 +113,25 @@ func TestABarrenRecallReplacesTheClauseWithALineNamingTheQuery(t *testing.T) {
 	}
 }
 
-func TestAFruitfulRecallPutsTheFoundLineBeforeTheClause(t *testing.T) {
+func TestTheCallAfterAFruitfulRecallCarriesNoClosingParagraphYetTheRecordNamesItFound(t *testing.T) {
 	t.Parallel()
 
 	graph := baseGraph()
 	graph.recallQueue = []recallResponse{{}, {Candidates: freshRows(1)}}
 	record, model := runRecalls(t, graph, recallOf("rugenforth when stuck"), answer())
 
-	want := `You searched memory in this request for "rugenforth when stuck"; what it found is included above.` + "\n\n" + recallClause
-	if got := model.calls[1].Trailer; got != want {
-		t.Fatalf("the call after a fruitful recall carries trailer %q, want %q", got, want)
+	if len(model.calls) != 2 {
+		t.Fatalf("the turn made %d model calls, want 2", len(model.calls))
 	}
-	if !strings.HasSuffix(userContentOf(model.calls[1]), "\n\n"+want) {
-		t.Fatal("the found line and the clause are not the closing paragraphs of the user content")
+	if got := model.calls[1].Trailer; got != "" {
+		t.Fatalf("the call after a fruitful recall carries trailer %q, want none", got)
+	}
+	content := userContentOf(model.calls[1])
+	if !strings.HasSuffix(content, "===== INPUT =====\nhello") {
+		t.Fatalf("the user content does not end with the request:\n%q", content)
+	}
+	if strings.Contains(content, recallClause) || strings.Contains(content, searchedLine) {
+		t.Fatalf("the clause or a search line is shown after a fruitful recall:\n%q", content)
 	}
 	if want := []TrailerKind{TrailerClause, TrailerFound}; !slices.Equal(record.Trailers, want) {
 		t.Fatalf("record.Trailers = %v, want %v", record.Trailers, want)
@@ -215,6 +221,22 @@ func TestTrailerForTakesItsStateFromTheLastSearchOnly(t *testing.T) {
 	for name, tc := range cases {
 		if _, kind := trailerFor(allTools, tc.searches); kind != tc.kind {
 			t.Errorf("%s: kind = %q, want %q", name, kind, tc.kind)
+		}
+	}
+}
+
+func TestTrailerForAfterAFruitfulSearchIsEmptyAndNamedFound(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string][]recallSearch{
+		"one fruitful search":             {{"a", 3}},
+		"a barren search then a fruitful": {{"a", 0}, {"b", 2}},
+		"two fruitful searches":           {{"a", 1}, {"b", 1}},
+	}
+	for name, searches := range cases {
+		text, kind := trailerFor(allTools, searches)
+		if text != "" || kind != TrailerFound {
+			t.Errorf("%s: trailerFor = (%q, %q), want an empty trailer named %q", name, text, kind, TrailerFound)
 		}
 	}
 }
