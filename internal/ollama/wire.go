@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/telmengedar/processor/internal/loop"
 )
@@ -245,16 +246,86 @@ func translate(wire chatResponse, offered []string) loop.JudgeResult {
 
 	if len(names) > 0 {
 		if call, detected := recoverCall(wire.Message.Content); detected {
-			return translateRecoveredCall(result, call, names)
+			return translateRecoveredCall(result, call, names, loop.ToolSourceContent)
 		}
 	}
 
-	result.Reason = mapDoneReason(wire.DoneReason)
-	return result
+	return translateTextualCall(result, wire.Message.Content, wire.DoneReason, names)
 }
 
-func translateRecoveredCall(result loop.JudgeResult, call recoveredCall, names []string) loop.JudgeResult {
-	result.ToolSource = loop.ToolSourceContent
+func translateTextualCall(result loop.JudgeResult, content, doneReason string, names []string) loop.JudgeResult {
+	tool, rest, opens := openingToolCall(content)
+	if !opens {
+		result.Reason = mapDoneReason(doneReason)
+		return result
+	}
+
+	recoverable := slices.IndexFunc(textualRecoverable, func(r textualRecovery) bool { return r.loopName == tool.loopName })
+	if recoverable < 0 || !slices.Contains(names, tool.wireName) {
+		result.Reason = mapDoneReason(doneReason)
+		result.UnhonouredCall = tool.loopName
+		return result
+	}
+
+	parameter := textualRecoverable[recoverable].parameter
+	call := recoveredCall{name: tool.wireName, parameters: map[string]string{}}
+	if value, present := textualArgument(rest, parameter); present {
+		call.parameters[parameter] = value
+	}
+	return translateRecoveredCall(result, call, names, loop.ToolSourceTextual)
+}
+
+type textualRecovery struct {
+	loopName  string
+	parameter string
+}
+
+var textualRecoverable = []textualRecovery{
+	{loop.ToolRecall, "query"},
+	{loop.ToolReadNode, "id"},
+}
+
+func openingToolCall(content string) (toolBinding, string, bool) {
+	text := strings.TrimLeftFunc(content, unicode.IsSpace)
+
+	for _, tool := range toolTable {
+		end := len(tool.wireName)
+		if len(text) <= end || !strings.EqualFold(text[:end], tool.wireName) {
+			continue
+		}
+		if delimiter := text[end]; delimiter == ':' || delimiter == '{' {
+			return tool, text[end:], true
+		}
+	}
+	return toolBinding{}, "", false
+}
+
+func textualArgument(rest, parameter string) (string, bool) {
+	if rest[0] == ':' {
+		line, _, _ := strings.Cut(rest[1:], "\n")
+		return unquoted(strings.TrimSpace(line)), true
+	}
+
+	end := strings.IndexByte(rest, '}')
+	if end < 0 {
+		return "", false
+	}
+	key, value, hasValue := strings.Cut(rest[1:end], ":")
+	if !hasValue || unquoted(strings.TrimSpace(key)) != parameter {
+		return "", false
+	}
+	return unquoted(strings.TrimSpace(value)), true
+}
+
+func unquoted(value string) string {
+	if len(value) >= 2 && (value[0] == '"' || value[0] == '\'') && value[len(value)-1] == value[0] {
+		return value[1 : len(value)-1]
+	}
+	return value
+}
+
+func translateRecoveredCall(result loop.JudgeResult, call recoveredCall, names []string, source loop.ToolSource) loop.JudgeResult {
+	result.ToolSource = source
 
 	if !slices.Contains(names, call.name) {
 		result.Reason = loop.Unrecognised

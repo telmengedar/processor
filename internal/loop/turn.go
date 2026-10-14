@@ -242,6 +242,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	}
 
 	record.Answer = judged.answer
+	record.NonReply = judged.nonReply
 	record.Silent = silence && choseSilence(judged.answer)
 	record.Model = t.ModelID
 	record.Provider = judged.provider
@@ -409,6 +410,7 @@ type judgement struct {
 	toolCalls     []ToolCallRecord
 	workspace     string
 	modelCalls    int
+	nonReply      NonReply
 	capReached    bool
 	recallClosed  bool
 	timeShortfall string
@@ -460,6 +462,8 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 	reserved := reservation("")
 	dispatched := 0
 	notesFiled := 0
+	lastWasToolRequest := false
+	unhonoured := ""
 
 	for {
 		if shortfall := t.judgementShortfall(ctx, settings); shortfall != "" {
@@ -524,6 +528,8 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		}
 
 		judged.answer = result.Answer
+		lastWasToolRequest = wantsTool(result.Reason)
+		unhonoured = result.UnhonouredCall
 		judged.stop = StopReason{Reason: result.Reason, Raw: result.RawReason}
 		judged.usages = append(judged.usages, result.Usage)
 		judged.lastResponse = &LastResponse{ReasoningBytes: result.ReasoningBytes, UnofferedToolCalls: result.UnofferedToolCalls}
@@ -554,6 +560,11 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 			continue
 		}
 
+		if result.ToolSource == ToolSourceTextual {
+			t.log().Info("the answer opened with a retrieval call written as text: the adapter recovered it and the loop dispatches it",
+				"adapter", result.Provider.Adapter, "tool", toolFor(result.Reason))
+		}
+
 		exchange := t.dispatch(ctx, settings, result, &judged.workspace, window, filter, subject, account, memory, note, offersNote(offered))
 		exchange.ToolSource = result.ToolSource
 		accountForYield(account, &exchange)
@@ -575,6 +586,11 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 			judged.reservedCall = ReservedCall{State: ReservedCallUnmade}
 			t.logReservation(settings, reserved, judged.modelCalls+1, dispatched)
 		}
+	}
+
+	judged.nonReply = classifyNonReply(judged.answer, lastWasToolRequest, unhonoured)
+	if judged.nonReply != "" {
+		t.log().Warn("the final answer is not a reply and is withheld", "kind", string(judged.nonReply), "modelCalls", judged.modelCalls)
 	}
 
 	judged.toolCalls = toolCallRecords(exchanges)

@@ -780,8 +780,10 @@ def source_lines(tool_call):
 
     `native` is the endpoint reporting the call in its own tool-call field. `content` is the endpoint
     reporting NONE and the adapter recovering the call from the response text -- a degraded path that
-    must not read as a working one, which is the entire reason the field exists. Absent means the
-    record predates the field; that is stated, not filled in.
+    must not read as a working one, which is the entire reason the field exists. `textual` is the
+    model writing the call as the opening of its answer text, which the adapter recovered and the loop
+    dispatched because it named an offered read-only retrieval tool. Absent means the record predates
+    the field; that is stated, not filled in.
     """
     source = (tool_call or {}).get("source")
     if source == "native":
@@ -791,6 +793,12 @@ def source_lines(tool_call):
             f"{'':<24} note: this call was NOT reported by the endpoint. It was recovered from the "
             f"response TEXT by the adapter's fallback. The run acted, but the endpoint's own tool "
             f"parsing did not fire -- read this as a degraded path, not a working one."
+        ]
+    if source == "textual":
+        return [
+            f"{'':<24} note: this call was written as the opening of the model's answer text, not "
+            f"reported by the endpoint. The adapter recovered it and the loop dispatched it because it "
+            f"named an offered read-only retrieval tool."
         ]
     return [
         f"{'':<24} note: this round records no call source; the record predates the field, so "

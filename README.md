@@ -325,6 +325,15 @@ record carries `silent: true`, its outcome carries `silent: true`, `produced: fa
 turn keeps the verdict `curtailed` beside `silent: true`), and the run record is filed as for any run. A blank answer is
 never a silence; it is the failure it always was. A run whose config does not set `silence` is unchanged byte for byte.
 
+**A reply is never processor's own syntax.** A model that writes its retrieval call as the opening of its answer
+(`recall: <phrase>`, `recall{query: <phrase>}`, `read_node: <id>`) has used the wrong channel for an unambiguous,
+side-effect-free request, so processor honours it as if it were a native call, and the record's `source` says `textual`.
+No other tool is ever honoured from text. A final answer that is not a reply is withheld: one that came from a call asking
+for a tool (`toolRequest`), one that opens with a tool call processor did not honour (`toolText`), or one that opens with
+processor's own framing, a `===== NAME =====` line, an `id:` line followed by a `type:` line, or a conversation label
+(`blockText`). The record keeps the text verbatim and carries `nonReply` with the kind, the outcome's verdict is `withheld`
+and `produced` is `false`, so `/runs` answers with the fallback reply. Nothing is fed back to the model and nothing is retried.
+
 **A config can let the model write one note.** `note` is an object with exactly one member, `type`: the graph node type
 every note of the run is filed as, non-blank. Absent, the tool does not exist for the run, and a
 deployment cannot switch it on; only the config does. With it, each judgement call that can still dispatch a tool also
@@ -419,7 +428,8 @@ the environment was set — with two protocols live a trace that cannot name its
 compared against another), every
 tool round in call order (`tool`, naming which tool it was — `recall` or `writeFile`; `source`, naming how
 the adapter obtained the call — `native` where the endpoint reported it in its own tool-call field,
-`content` where the endpoint reported none and the adapter recovered the call from the response text;
+`content` where the endpoint reported none and the adapter recovered the call from the response text,
+`textual` where the answer itself opened with the name of an offered read-only retrieval tool followed by `:` or `{`;
 absent on a round no adapter produced; for a recall round the
 query and, for every row it returned — not only the admitted ones — the same
 rank/id/type/name/similarity/size/content-hash/included/cut-reason columns the candidates carry; for a write

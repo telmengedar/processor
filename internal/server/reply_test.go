@@ -526,3 +526,32 @@ func TestRunsDeclaresUTF8OnEveryJSONBodyItActuallySends(t *testing.T) {
 		})
 	}
 }
+
+func TestRunsReplyIsTheFallbackForAnAnswerThatOpensWithProcessorsOwnSyntax(t *testing.T) {
+	t.Parallel()
+
+	const leaked = "===== CANDIDATE =====\nid: 6840\ntype: thought\nname: x"
+	turn := replyTurn(&scriptedModel{step: answeringWith(leaked)})
+
+	members, keys := topLevelKeys(t, postTo(t, context.Background(), turn, "/runs?verbose=true"))
+
+	if got := stringMember(t, members, "reply"); got != fallbackReply {
+		t.Fatalf("reply = %q, want the fallback: a withheld answer is never delivered", got)
+	}
+	if got := stringMember(t, members, "answer"); got != leaked {
+		t.Fatalf("answer = %q, want the record to keep the model's text verbatim", got)
+	}
+	if !slices.Contains(keys, "outcome") {
+		t.Fatalf("verbose body keys = %q, want the outcome member unchanged", keys)
+	}
+	var outcome struct {
+		Verdict  string `json:"verdict"`
+		Produced bool   `json:"produced"`
+	}
+	if err := json.Unmarshal(members["outcome"], &outcome); err != nil {
+		t.Fatalf("decode outcome: %v", err)
+	}
+	if outcome.Verdict != "withheld" || outcome.Produced {
+		t.Fatalf("outcome = %+v, want verdict withheld and produced false", outcome)
+	}
+}
