@@ -90,7 +90,7 @@ func (d Derivations) Unpinned(corpus Corpus) []string {
 	return unpinned
 }
 
-// QueriesFor is the row's own input followed by whatever the sidecar pinned for it, merged by the product's own rule.
+// QueriesFor is the row's own input when it is a phrase, followed by whatever the sidecar pinned for it, merged by the product's own rule.
 func (d Derivations) QueriesFor(row Row) []string {
 	return loop.MergeQueries(row.Input, d.Queries[row.ID])
 }

@@ -10,8 +10,11 @@ import (
 	"time"
 )
 
-// MaxDerivedQueries caps how many derived queries one turn adds to the raw input.
+// MaxDerivedQueries caps how many derived queries one turn issues beside the input.
 const MaxDerivedQueries = 5
+
+// MaxPhraseBytes is the longest text, in UTF-8 bytes and inclusive, that is a query: a phrase naming what a step is about.
+const MaxPhraseBytes = 256
 
 // DerivationBound is the derivation step's own deadline, well below the run bound because its failure costs only a fallback.
 const DerivationBound = 30 * time.Second
@@ -107,7 +110,12 @@ func DerivationPrompt(input string, now time.Time) string {
 	return strings.Join(append(blocks, "===== REQUEST =====\n"+input), "\n\n")
 }
 
-// ParseDerivation reads text as query lines with an optional DATES directive among them, dropping reasoning artifacts, list decoration, blanks, repeats and case-folded echoes of input, capped at MaxDerivedQueries. loc resolves the window.
+// IsPhrase reports whether text can be a graph query: non-blank, and at most MaxPhraseBytes bytes as it stands.
+func IsPhrase(text string) bool {
+	return strings.TrimSpace(text) != "" && len(text) <= MaxPhraseBytes
+}
+
+// ParseDerivation reads text as query lines with an optional DATES directive among them, dropping reasoning artifacts, list decoration, blanks, lines longer than a phrase, repeats and case-folded echoes of input, capped at MaxDerivedQueries. loc resolves the window.
 func ParseDerivation(text, input string, loc *time.Location) ([]string, UpdateWindow) {
 	lines := strings.Split(derivationThinkBlock.ReplaceAllString(text, ""), "\n")
 	window := windowFromDirectiveLines(lines, loc)
@@ -199,7 +207,7 @@ func parseQueryLines(lines []string, input string) []string {
 
 		query := reduceDerivationLine(line)
 		key := derivationKey(query)
-		if key == "" || seen[key] {
+		if key == "" || seen[key] || !IsPhrase(query) {
 			continue
 		}
 
@@ -214,9 +222,12 @@ func derivationKey(query string) string {
 	return strings.ToLower(strings.TrimSpace(query))
 }
 
-// MergeQueries is input first, then each derived query that is not already present.
+// MergeQueries is input first when input is a phrase, then each derived query that is not already present; a longer input is content for the model and is never a query.
 func MergeQueries(input string, derived []string) []string {
-	queries := []string{input}
+	queries := make([]string, 0, 1+len(derived))
+	if IsPhrase(input) {
+		queries = append(queries, input)
+	}
 	for _, query := range derived {
 		if slices.Contains(queries, query) {
 			continue
