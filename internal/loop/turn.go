@@ -23,7 +23,7 @@ const (
 const (
 	errRunTimeShort         = "the run's remaining time cannot afford another judgement call"
 	errNoWorkingDirectory   = "no working directory is configured"
-	errRecallClosedToModel  = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
+	errRecallClosed         = "recall is closed for this turn: two consecutive rounds returned nothing you had not already been shown"
 	errReservedCallRefused  = "the turn's last call was reserved for answering, so it offered no tool and dispatched none"
 	errNoSuchNode           = "no part of memory has that id"
 	errReadOfSubject        = "that id is this request's own subject, and the context block already carries it"
@@ -41,7 +41,7 @@ const (
 	reservedByRefusedRound reservation = "refusedRound"
 )
 
-// CarriedCauseRunes bounds a cause carried to a durable, shared or prompt-bearing destination.
+// CarriedCauseRunes bounds a cause carried to a durable or shared destination.
 const CarriedCauseRunes = 512
 
 // BoundCause returns cause bounded to CarriedCauseRunes, the whole of it when it already fits.
@@ -73,7 +73,7 @@ var ErrGraphRejected = errors.New("graph rejected the request")
 // ErrInvalidConfig marks a configured run whose first recall the graph answered with 400 or 414, which the config's filter may have caused.
 var ErrInvalidConfig = errors.New("invalid config")
 
-// ErrWriteRejected marks a write the working directory refused; its message is shown to the model.
+// ErrWriteRejected marks a write the working directory refused; its message is recorded on the round and not fed back to the following call.
 var ErrWriteRejected = errors.New("write rejected")
 
 // RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, Exclude ids and every run record left out, a zero Window unbounded, and Filter, nil for none, the run's config filter the graph applies before it counts.
@@ -123,6 +123,9 @@ type Turn struct {
 
 	// Files is the working directory writes go to; nil refuses every write.
 	Files FilePort
+
+	// Notes files the notes a run's model writes; nil never offers the note tool.
+	Notes NotePort
 
 	// Fill is the condensation behaviour that creates a missing substance; nil refuses every creation with a recorded reason.
 	Fill FillPort
@@ -232,7 +235,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	memory.charge(len(conversation))
 	memory.charge(len(identity))
 
-	judged, err := t.judge(ctx, settings, memory, input, conversation, identity, subject, now, window, filter, silence, dispositions)
+	judged, err := t.judge(ctx, settings, memory, input, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), dispositions)
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
@@ -449,7 +452,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond), prompt))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -457,6 +460,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 	var searches []recallSearch
 	reserved := reservation("")
 	dispatched := 0
+	notesFiled := 0
 
 	for {
 		if shortfall := t.judgementShortfall(ctx, settings); shortfall != "" {
@@ -478,7 +482,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 
 		judged.modelCalls++
 
-		offered := t.offeredTools(reserved != "")
+		offered := t.offeredTools(reserved != "", note.enabled && notesFiled < NotesPerTurn)
 		trailer, trailerKind := trailerFor(offered, searches)
 		judged.trailers = append(judged.trailers, trailerKind)
 
@@ -551,7 +555,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 			continue
 		}
 
-		exchange := t.dispatch(ctx, settings, result, &judged.workspace, window, filter, subject, account, memory)
+		exchange := t.dispatch(ctx, settings, result, &judged.workspace, window, filter, subject, account, memory, note, offersNote(offered))
 		exchange.ToolSource = result.ToolSource
 		accountForYield(account, &exchange)
 		if exchange.Tool == ToolRecall && exchange.Error == "" {
@@ -563,6 +567,9 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		exchanges = append(exchanges, exchange)
 		judged.fills = append(judged.fills, exchange.Fills...)
 		dispatched++
+		if exchange.Tool == ToolNote {
+			notesFiled++
+		}
 
 		if exchange.Refused {
 			reserved = reservedByRefusedRound
@@ -580,7 +587,7 @@ func (t *Turn) logReservation(settings RunSettings, reserved reservation, call, 
 		"condition", string(reserved), "call", call, "callCap", settings.MaxModelCalls, "dispatched", dispatched)
 }
 
-func (t *Turn) offeredTools(reserved bool) []string {
+func (t *Turn) offeredTools(reserved, noteOpen bool) []string {
 	if reserved {
 		return nil
 	}
@@ -588,6 +595,9 @@ func (t *Turn) offeredTools(reserved bool) []string {
 	offered := []string{ToolRecall, ToolReadNode}
 	if t.Files != nil {
 		offered = append(offered, ToolWriteFile)
+	}
+	if noteOpen && t.Notes != nil {
+		offered = append(offered, ToolNote)
 	}
 	return offered
 }
@@ -628,7 +638,7 @@ func outputBudget(settings RunSettings, reserved reservation) int {
 }
 
 func wantsTool(reason TerminalReason) bool {
-	return reason == WantsRecall || reason == WantsWrite || reason == WantsRead
+	return reason == WantsRecall || reason == WantsWrite || reason == WantsRead || reason == WantsNote
 }
 
 func toolFor(reason TerminalReason) string {
@@ -637,6 +647,8 @@ func toolFor(reason TerminalReason) string {
 		return ToolWriteFile
 	case WantsRead:
 		return ToolReadNode
+	case WantsNote:
+		return ToolNote
 	default:
 		return ToolRecall
 	}
@@ -646,7 +658,7 @@ func undispatchedExchange(result JudgeResult, cause string) ToolExchange {
 	if result.ToolError != "" {
 		return ToolExchange{Tool: toolFor(result.Reason), Error: BoundCause(result.ToolError)}
 	}
-	return ToolExchange{
+	exchange := ToolExchange{
 		Tool:   toolFor(result.Reason),
 		Query:  result.RecallQuery,
 		NodeID: result.ReadNodeID,
@@ -654,6 +666,12 @@ func undispatchedExchange(result JudgeResult, cause string) ToolExchange {
 		Bytes:  len(result.WriteContent),
 		Error:  cause,
 	}
+	if result.Reason == WantsNote {
+		exchange.Bytes = len(result.NoteText)
+		exchange.About = result.NoteAbout
+		exchange.Text = result.NoteText
+	}
+	return exchange
 }
 
 func accountForYield(account *yieldAccount, exchange *ToolExchange) {
@@ -668,15 +686,17 @@ func retrieves(tool string) bool {
 }
 
 func closedRecallExchange(result JudgeResult) ToolExchange {
-	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errRecallClosedToModel, Dispositions: []Disposition{}}
+	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errRecallClosed, Dispositions: []Disposition{}}
 }
 
-func (t *Turn) dispatch(ctx context.Context, settings RunSettings, result JudgeResult, workspace *string, window UpdateWindow, filter Filter, subject int64, account *yieldAccount, memory *workingMemory) ToolExchange {
+func (t *Turn) dispatch(ctx context.Context, settings RunSettings, result JudgeResult, workspace *string, window UpdateWindow, filter Filter, subject int64, account *yieldAccount, memory *workingMemory, note noteScope, noteOffered bool) ToolExchange {
 	switch result.Reason {
 	case WantsWrite:
 		return t.dispatchWrite(ctx, result, workspace)
 	case WantsRead:
 		return t.dispatchRead(ctx, settings, result, filter, subject, account, memory)
+	case WantsNote:
+		return t.dispatchNote(ctx, result, note, noteOffered, subject, memory)
 	default:
 		return t.dispatchRecall(ctx, settings, result, window, filter, subject, memory)
 	}
@@ -820,7 +840,8 @@ func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {
 		if results == nil {
 			results = []Disposition{}
 		}
-		records[i] = ToolCallRecord{Tool: e.Tool, Source: e.ToolSource, Query: e.Query, NodeID: e.NodeID, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results, Yield: e.Yield}
+		records[i] = ToolCallRecord{Tool: e.Tool, Source: e.ToolSource, Query: e.Query, NodeID: e.NodeID, Path: e.Path, Bytes: e.Bytes, Error: e.Error, Results: results, Yield: e.Yield,
+			Text: e.Text, About: e.About, AboutDropped: e.AboutDropped, Created: e.Created, Written: e.Written}
 	}
 	return records
 }

@@ -32,6 +32,7 @@ func TestTheSystemTextDescribesEveryToolTheJudgementCallOffers(t *testing.T) {
 		loop.ToolRecall:    "recall tool",
 		loop.ToolReadNode:  "read tool",
 		loop.ToolWriteFile: "file tool",
+		loop.ToolNote:      "note tool",
 	}
 	nonToolConstants := map[string]bool{
 		"ToolSourceNative":  true,
@@ -65,8 +66,9 @@ func TestTheSystemTextNamesExactlyTheOfferedTools(t *testing.T) {
 		loop.ToolRecall:    "A recall tool is available.",
 		loop.ToolReadNode:  "A read tool is available.",
 		loop.ToolWriteFile: "A file tool is available.",
+		loop.ToolNote:      "A note tool is available.",
 	}
-	every := []string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}
+	every := []string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile, loop.ToolNote}
 
 	for mask := 0; mask < 1<<len(every); mask++ {
 		var offered []string

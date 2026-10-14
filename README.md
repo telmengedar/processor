@@ -102,16 +102,16 @@ words; that document carries the argument.
   the write lands, not on how it is spelled. The normalising step is load-bearing rather than cosmetic,
   but not for safety: without it the traversal rule cannot see a `..` spelled with intermediate
   components (`site/../../../x`) or with the other platform's separator, and such a path falls through
-  to the second layer — still refused, but with a generic reason in place of the one the model can act
-  on. Second, **the write itself goes through `os.Root`** (`openat`-style
+  to the second layer — still refused, but with a generic reason in place of the specific rule.
+  Second, **the write itself goes through `os.Root`** (`openat`-style
   confinement), so anything that resolves outside the run directory is refused by construction rather
   than by a check that has to enumerate the ways out: symbolic links, **NTFS junctions** — which Go
   reports as `ModeIrregular`, not `ModeSymlink`, and which need no administrator rights to create —
   and, on Windows, reserved device names such as `NUL`, which would otherwise swallow the bytes and
   report success. Because the resolution and the write are one confined operation, there is no
   inspect-then-write window for the filesystem to change under: the code contains no separate
-  inspection step to race. A refusal is returned to the model as the tool's result so it can correct
-  itself, and never fails the run; a filesystem failure carries its own cause onto that surface too,
+  inspection step to race. A refusal is recorded on the round, is not fed back to the following
+  call, and never fails the run; a filesystem failure carries its own cause onto the round too,
   bounded, and is named in full in the operator's log. The two are still told apart structurally — a
   confinement refusal is not a `syscall.Errno` and every real filesystem failure is — so the split
   does not depend on matching an error message; what differs is which sentence each carries, not
@@ -220,7 +220,7 @@ refuses, so a startup error names the variable that caused it:
 | `PROCESSOR_MODEL_ID` | *(none — required)* | The model id sent with every request, and the value recorded in the run record's `model` field. Absent or present-but-empty is a startup error. |
 | `PROCESSOR_MODEL_KEY` | *(none — optional)* | The model endpoint's bearer key, sent the same way under both protocols. **Absent means no `Authorization` header is sent at all** — the point of the ruling, not an edge of it: a local runtime commonly needs none. **Present-but-empty is still a startup error**, exactly like every required member — an empty value is a mistake, never a way to spell "no auth", and treating it as absent would be a silent auth downgrade. Never logged, never echoed in an error, never written to the graph. |
 | `PROCESSOR_MODEL_TEMPERATURE` | `0.2` | The sampling temperature sent with **every** model call. Absent means `0.2` — a little sampling range, not greedy decoding — so the sampler is a small, deliberate source of run-to-run variation. **Present-but-empty is a startup error**, and so is a non-numeric value; both name the variable. **The default is a trade, not a free win, and it costs exact run-to-run reproducibility**: the same request can now return a different completion on a retry, where at `temperature: 0` it would return the same one (approximately — GPU batching and reduction order admit some variance even at `0`; DiVoid #14154). What the trade buys is structural rather than measured: at `0`, a completion that comes back malformed for a given prompt comes back malformed *every* time that prompt is asked, because the request is otherwise a pure function of its inputs — a human re-asking gets the identical failure, and the retry fallback the service leans on elsewhere cannot cover it. At `0.2` a bad draw is no longer permanent for that prompt. **Nothing measured separates `0` from `0.2`: the bands actually sampled were `1.0`, `0.6` and `0.0`, and `0.0` and `0.6` both came back clean — `0.2` sits between them but was never itself a sampled point, so this is a decision about the *shape* a failure takes, not a demonstrated drop in how often one happens; it remains possible that `0.2` produces the same errors and they simply have not been seen yet (DiVoid #14154).** Set the variable to opt into more of the endpoint's own sampling, or back down to `0` for exact-as-possible reproducibility. |
-| `PROCESSOR_WORKSPACE_DIR` | *(none — optional, every write is refused)* | The directory beneath which each run's own working directory is created. The service creates the root if it does not exist, and one fresh directory per run, lazily — a run that never asks to write a file leaves nothing behind. **Absent means the file tool is still offered and every call to it is refused**, with `no working directory is configured` recorded on the round and shown to the model: the tool list does not change shape with the environment, so a trace reads the same either way and names the operator condition rather than hiding it. Present-but-empty is a startup error naming the variable. Nothing constrains what a run writes inside its own directory, so point this at a directory whose contents are disposable. |
+| `PROCESSOR_WORKSPACE_DIR` | *(none — optional, every write is refused)* | The directory beneath which each run's own working directory is created. The service creates the root if it does not exist, and one fresh directory per run, lazily — a run that never asks to write a file leaves nothing behind. **Absent means the file tool is still offered and every call to it is refused**, with `no working directory is configured` recorded on the round and not fed back to the following call: the tool list does not change shape with the environment, so a trace reads the same either way and names the operator condition rather than hiding it. Present-but-empty is a startup error naming the variable. Nothing constrains what a run writes inside its own directory, so point this at a directory whose contents are disposable. |
 | `PROCESSOR_MODEL_FLOOR_TOKENS_PER_SECOND` | `10` | **What this deployment asserts its model endpoint generates at, in output tokens per second.** It is a *declaration*, not a measurement: nothing probes the endpoint, and boot says so in the line that reports it. Processor sends no output limit on any model call, so generation is priced only where a call site carries one, and boot reports such a site as `budget=unlimited`; a site that carries one is checked against the bound that will actually cut that call — `budget ÷ this floor + prompt ÷ the prompt floor < bound × 0.8`. A site the declared floors cannot afford is reported as a warning naming **the rate this host would have to deliver**, which is the number the service could never state before. Boot does not refuse on it: a pessimistic declaration is a wrong guess, not a reason to take the service down, and the substance step waits for the creations it starts at most one `FillWait` (90 s), clipped so one judgement call stays affordable. Absent means `10` — a round number below every generation rate this product has been observed at, chosen so a host that fails it is genuinely pathological rather than merely slow. Present-but-empty is a startup error, so is a non-numeric value, and so is zero or less: a rate of zero asserts an endpoint that never finishes. |
 | `PROCESSOR_MODEL_FLOOR_PROMPT_BYTES_PER_SECOND` | `3000` | **What this deployment asserts its model endpoint reads a prompt at, in bytes per second**, on the same terms as the generation floor above: a declaration, reported at boot, never probed. Each call site's prompt allowance is its own declared prompt ceiling divided by this rate — the judgement site is priced at the assembly byte budget plus one supplementary round, which is the largest prompt one call can carry. Absent means `3000`. Present-but-empty, non-numeric, zero or negative are all startup errors. |
 | `PROCESSOR_MODEL_TOP_P` | *(none — optional, nothing is sent)* | The nucleus-sampling mass sent with every model call. **Absent means the parameter is omitted from the request entirely**, not sent as `0`: `temperature: 0` is the conventional spelling of greedy decoding, but `top_p: 0` is *endpoint-dependent* — the OpenAI-compatible protocol does not specify what a runtime must do with it, and runtimes differ — so there is no value that spells "unset" and none is invented. Asserting `1.0` instead would claim knowledge of an endpoint this service deliberately does not have. Present-but-empty is a startup error, and so is a non-numeric value; both name the variable. |
@@ -295,7 +295,7 @@ array, an element that is not an object, a missing, blank or non-string `input`,
 is a `400 invalid_request`. A `null` `reply` is read as absent, as a `null` `history` is.
 
 **A run can be held to a filter by a config node.** The request may also carry `config`: the id of a node of
-type `processor-config`, whose content is a JSON object with three optional keys, `filter`, `silence` and `identity`:
+type `processor-config`, whose content is a JSON object with four optional keys, `filter`, `silence`, `identity` and `note`:
 `{"filter": {"type": ["thought", "knowledge"]}, "silence": true}`. The service reads that node, filtered to its type by
 the graph, once per request and caches nothing. The filter is forwarded to the graph on every read that can put a node in front
 of the model: the first recall, the model's own recall, and the addressed read (which also sends the node's id and
@@ -311,7 +311,7 @@ array of them (one repeated key per element). A blank value (empty or whitespace
 case) is refused. The config's `excludeId` and `excludeName` are added to the service's own; a bound the config sets in
 `updatedFrom` or `updatedTo` replaces the window the run derived for that bound. A run without `config` is unchanged,
 and the record of a configured run carries `perspective`: the config id, the filter it forwarded, `silence` when set,
-the identity it used and, when the config node is rooted, that root. The run's node in the graph is created under the same
+the identity it used, the note type when notes are enabled and, when the config node is rooted, that root. The run's node in the graph is created under the same
 root; a run without a config, or whose config has no root, is stored unrooted.
 
 **A config can give the run an identity.** `identity` is a string the caller writes, of at most 2,048 bytes of UTF-8 and
@@ -326,6 +326,24 @@ record carries `silent: true`, its outcome carries `silent: true`, `produced: fa
 turn keeps the verdict `curtailed` beside `silent: true`), and the run record is filed as for any run. A blank answer is
 never a silence; it is the failure it always was. A run whose config does not set `silence` is unchanged byte for byte.
 
+**A config can let the model write one note.** `note` is an object with exactly one member, `type`: the graph node type
+every note of the run is filed as, non-blank. Absent, the tool does not exist for the run, and a
+deployment cannot switch it on; only the config does. With it, each judgement call that can still dispatch a tool also
+offers `write_note`, whose arguments are `text`, the whole note, and optionally `about`, the id of one part of memory
+the model was shown in this turn. The model chooses nothing else: processor files the note as a node of the config's
+`type`, named from the first non-blank line of the text, its whitespace collapsed (cut to 80 runes), rooted at the config's root, with the text as its
+content, and links it to the request's subject and, when `about` was shown this turn, to that part; an `about` that was
+not shown is dropped and the note is still filed. The text must be valid UTF-8 and non-blank, with no size limit of processor's own, and
+its derived name may not begin `processor-run`, which is checked ignoring case; a note that fails this is refused and nothing is filed. A turn takes at
+most one note: the tool is withdrawn for the rest of the turn after any note round, whatever became of it, because the
+model is never shown the outcome of a tool round. It is never offered on the call reserved for answering. A note that
+could not be filed does not fail the run. The types `processor-config` and `session-log` are refused as the note type,
+and when the config's `filter` has a `type` key the note type must be one of its values, so a run can recall what its
+config lets it write; either violation is a `400 invalid_config`. Every note round appears in the run record's
+`toolCalls` with its `text`, the `about` it asked for, `aboutDropped`, the `created` node id and where it landed
+(`written`: `stored`, `unlinked` or `notStored`). The system text names the tool in one neutral sentence and says
+nothing about when to write or in what voice; that belongs in the config's `identity`.
+
 The turn: fetch the subject, derive the query set and window described above, recall candidates against
 them, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
@@ -339,10 +357,11 @@ record back to the graph as one `session-log` node linked to the subject. The no
 one fenced ` ```json ` block. The record — described next — is recovered by taking the content's last
 fenced `json` block and parsing it.
 
-Up to three tools are offered on every call the loop is still willing to dispatch one from: `recall`,
-which searches the same graph, `read_node`, which returns one part of memory as its substance by id, and
-`write_file`, which writes one file into the run's working directory — the last only when a working
-directory is configured. The system text names each in one sentence and still asks for prose, so whether a
+Up to four tools are offered on every call the loop is still willing to dispatch one from: `recall`,
+which searches the same graph, `read_node`, which returns one part of memory as its substance by id,
+`write_file`, which writes one file into the run's working directory — only when a working
+directory is configured — and `write_note`, which files one note of the model's own — only when the run's
+config enables it, and once per turn. The system text names each in one sentence and still asks for prose, so whether a
 run reaches for the file tool is a property of the model and the task, not of the prompt. `recall` alone is
 urged, once, at the very end of the user message: while no search has run in the turn, a closing paragraph
 tells the model that when none of the parts above states what the request asks for it is not to say the
@@ -364,7 +383,7 @@ barren rounds, or where the loop has just **refused** a retrieval request (a par
 request's own subject, an id the graph does not hold, a part too large for one read, or a malformed call),
 it reserves the next call for answering, declares no tool list and composes a system text that describes
 answering alone (plus the conversation paragraph when the turn carries a conversation section), so prose is the only terminal the call can reach. A graph failure, a barren served recall and
-a file write do not reserve. Nothing about a refusal is shown to the model: the loop acts on it instead. No adapter may return a
+a file write do not reserve. Nothing about a refusal is fed back to the following call: the loop acts on it instead. No adapter may return a
 tool-wanting terminal from such a call, not from a native tool field and not by recovering one from the
 response text.
 

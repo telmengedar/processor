@@ -19,10 +19,11 @@ What "one turn" actually is (internal/loop/turn.go), verified against this tree 
 fetch the anchor by id -> retrieve candidates (Retrieve -- one request over every query against the
 whole graph, or against the derived window; records filed before that change carry two recalls, see
 the RECALL RANKING notes below) -> assemble a byte-budgeted block -> call the model, looping while it asks for a tool, bounded
-by MaxModelCalls=6 -> write a run record. The model has THREE tools: the supplementary "recall";
+by MaxModelCalls=6 -> write a run record. The model has up to FOUR tools: the supplementary "recall";
 "write_file", which writes one file into a working directory the run is given (internal/workspace);
-and "read_node", which fetches ONE part of memory by the id the model names and puts it in front of
-the model as its substance. There is still no shell, no network and no repo tool, and no notion of a task
+"read_node", which fetches ONE part of memory by the id the model names and puts it in front of
+the model as its substance; and, only where the run's config enables it, "write_note", which files
+one short text of the model's own as a node. There is still no shell, no network and no repo tool, and no notion of a task
 spanning more than one HTTP call. So a task like "generate a webpage and a repo" can now get the
 webpage written and cannot get the repo -- and whether the model reaches for a tool at all,
 unprompted, is the thing this trace exists to show. What it also shows is HOW it fails when it does:
@@ -48,10 +49,10 @@ TOOL-ROUND CLASSIFICATION, and the rule it is built to keep: A NARRATION THIS SC
 IS VISIBLY ABSENT, NEVER INVENTED. A toolCalls[i] entry is read on two axes and each has an explicit
 arm for "this script does not know", because both axes have grown under it before.
 
-  THE TOOL. `tool` is one of "recall", "writeFile" or "readNode", and each has a renderer of its
-  own. A round whose `tool` key is ABSENT -- absent, not empty -- is read as a recall, correct
+  THE TOOL. `tool` is one of "recall", "writeFile", "readNode" or "note", and each has a renderer of
+  its own. A round whose `tool` key is ABSENT -- absent, not empty -- is read as a recall, correct
   because every round in a record older than the field was one. A round whose `tool` is PRESENT and
-  is none of the three is rendered as UNRECOGNISED: this script prints the record's fields verbatim
+  is none of the four is rendered as UNRECOGNISED: this script prints the record's fields verbatim
   and says it cannot narrate the round. THE EMPTY STRING IS PRESENT, not absent, and takes the
   unrecognised arm with every other unknown name. That arm is the point of the design. It was added
   after a served "readNode" -- a single Graph.Node fetched by id -- fell through into the recall
@@ -293,8 +294,13 @@ LOOP_REFUSALS = (
 TOOL_RECALL = "recall"
 TOOL_WRITE_FILE = "writeFile"
 TOOL_READ_NODE = "readNode"
+TOOL_NOTE = "note"
 
-KNOWN_TOOLS = (TOOL_RECALL, TOOL_WRITE_FILE, TOOL_READ_NODE)
+KNOWN_TOOLS = (TOOL_RECALL, TOOL_WRITE_FILE, TOOL_READ_NODE, TOOL_NOTE)
+
+# internal/loop's WriteState values a note round carries in `written`.
+NOTE_STORED = "stored"
+NOTE_UNLINKED = "unlinked"
 
 # internal/workspace's rejection prefix: a refusal by the path rules, whose reason is safe to show
 # and is shown verbatim.
@@ -433,6 +439,8 @@ def round_wanted(tool_call):
         if not path:
             return "wants to write, and the record carries no path for the round"
         return f"wants to write {path!r} ({fmt_bytes(tool_call.get('bytes', 0))})"
+    if tool == TOOL_NOTE:
+        return f"wants to file a note ({fmt_bytes(tool_call.get('bytes', 0))})"
     return f"wants the tool the record names {tool!r}"
 
 
@@ -1036,6 +1044,8 @@ def round_lines(head, tool_call, out_tok, limits, candidate_limit, supplementary
         return write_round_lines(head, tool_call, out_tok, limits)
     if tool == TOOL_READ_NODE:
         return read_round_lines(head, tool_call, out_tok, supplementary_budget)
+    if tool == TOOL_NOTE:
+        return note_round_lines(head, tool_call, out_tok)
     if tool == TOOL_RECALL:
         return recall_round_lines(head, tool_call, out_tok, limits, candidate_limit, supplementary_budget)
     return unrecognised_round_lines(tool_call, out_tok)
@@ -1053,7 +1063,7 @@ def refused_round_lines(tool_call, out_tok, refusal):
     """
     return [
         f"{'':<24} output: {round_wanted(tool_call)}, and the LOOP refused the round in its own "
-        f"words -- {refusal!r}. That sentence is what the model was shown for the call it spent, "
+        f"words -- {refusal!r}. That sentence is what the record carries for the call it spent, "
         f"and it is the whole of what the record says about the refusal. out={out_tok}",
         "",
     ]
@@ -1090,6 +1100,68 @@ def unrecognised_round_lines(tool_call, out_tok, reason=None):
         f"not guess. Read internal/loop/turn.go and teach this file the tool and the cause.",
         "",
     ]
+
+
+def note_round_lines(head, tool_call, out_tok):
+    """The model-call output line and, where a note was filed, the tool-call step for a note round.
+
+    A note round is NOT a retrieval: it carries no result rows, absorbs nothing into what the model
+    is shown and is no search, so none of the recall or read vocabulary applies to it. turn.go sets
+    `error` on a note round only where no node holds the note, so a non-empty `error` is printed as
+    the record's own cause and the round is said to have filed nothing; nothing else is claimed
+    about it. The loop's own cross-tool refusal sentences never reach here (round_lines checks them
+    first).
+    """
+    wanted = round_wanted(tool_call)
+    error = tool_call.get("error") or ""
+    if error:
+        return [
+            f"{'':<24} output: {wanted}, and NO NOTE WAS FILED -- the record's cause, verbatim: "
+            f"{error!r}. out={out_tok}",
+            "",
+        ]
+
+    written = tool_call.get("written")
+    created = tool_call.get("created")
+    if written not in (NOTE_STORED, NOTE_UNLINKED) or created is None:
+        return unrecognised_round_lines(
+            tool_call,
+            out_tok,
+            reason="the tool is the note tool but the record carries no filed state and node id for "
+            "a round with no error, and a note round cannot be narrated as filed without them",
+        )
+
+    about = tool_call.get("about")
+    if about is None:
+        link_phrase = "linked to the subject"
+    elif tool_call.get("aboutDropped"):
+        link_phrase = (
+            f"linked to the subject only: the model named part #{about}, which had not been shown "
+            f"in this turn, so that link was dropped"
+        )
+    else:
+        link_phrase = f"linked to the subject and to part #{about}"
+
+    lines = [
+        f"{'':<24} output: {wanted}. out={out_tok}",
+        "",
+        f"{head('tool call')} input: write_note(text={fmt_bytes(tool_call.get('bytes', 0))}) -- "
+        f"one note of the model's own, not a search",
+    ]
+    if written == NOTE_STORED:
+        lines.append(f"{'':<24} output: filed as node #{created}, {link_phrase}")
+    else:
+        lines.append(
+            f"{'':<24} output: filed as node #{created} with its text, but at least one link FAILED "
+            f"({link_phrase} was the intent): a repairable orphan, kept"
+        )
+    lines.append(
+        f"{'':<24} note: a note round returns no rows and adds nothing to what the model is shown; "
+        f"the loop withdraws the note tool for the rest of the turn."
+    )
+    lines.append(f"{'':<24} text: {one_line(tool_call.get('text', ''), 200)!r}")
+    lines.append("")
+    return lines
 
 
 def read_round_lines(head, tool_call, out_tok, supplementary_budget):
@@ -1249,7 +1321,7 @@ def write_round_lines(head, tool_call, out_tok, limits):
     elif category == WRITE_REFUSED:
         lines.append(
             f"{'':<24} output: REFUSED by the path rules -- {tool_call.get('error')!r}. Nothing was "
-            f"written. The model is shown this sentence and may try again."
+            f"written. The sentence is recorded on the round; the loop does not feed it back to the model."
         )
     elif category == WRITE_UNCONFIGURED:
         lines.append(

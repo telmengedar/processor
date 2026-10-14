@@ -193,12 +193,12 @@ func assertCause(t *testing.T, name, got, want string, prefix bool) {
 	}
 	if prefix {
 		if !strings.HasPrefix(got, want) {
-			t.Errorf("%s: the cause is %q, want it to begin %q. A cause is what the model acts on, so it is pinned against a literal here; the tail is the JSON decoder's and is not ours to spell", name, got, want)
+			t.Errorf("%s: the cause is %q, want it to begin %q. A cause is recorded on the round, so it is pinned against a literal here; the tail is the JSON decoder's and is not ours to spell", name, got, want)
 		}
 		return
 	}
 	if got != want {
-		t.Errorf("%s: the cause is %q, want %q verbatim. Asserted only as non-empty, one malformed read's cause can be swapped for another's — or for a sentence about a failed file write — and the model is told to fix the wrong thing", name, got, want)
+		t.Errorf("%s: the cause is %q, want %q verbatim. Asserted only as non-empty, one malformed read's cause can be swapped for another's — or for a sentence about a failed file write — and the recorded cause names the wrong failure", name, got, want)
 	}
 }
 

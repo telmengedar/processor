@@ -9,7 +9,11 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
-const errNoNodeID = "tool arguments named no node id to read"
+const (
+	errNoNodeID     = "tool arguments named no node id to read"
+	errNoNoteText   = "tool arguments carried no text to store"
+	errBadNoteAbout = "tool arguments named an about that is not a positive integer id"
+)
 
 type chatRequest struct {
 	Model           string        `json:"model"`
@@ -61,6 +65,11 @@ type readNodeToolArguments struct {
 	ID int64 `json:"id"`
 }
 
+type noteToolArguments struct {
+	Text  *string         `json:"text"`
+	About json.RawMessage `json:"about"`
+}
+
 func recallTool() wireTool {
 	return wireTool{
 		Type: "function",
@@ -104,6 +113,24 @@ func readNodeTool() wireTool {
 				"type": "object",
 				"properties": {"id": {"type": "integer"}},
 				"required": ["id"]
+			}`),
+		},
+	}
+}
+
+func noteTool() wireTool {
+	return wireTool{
+		Type: "function",
+		Function: wireFunction{
+			Name:        noteToolName,
+			Description: "Store one short text of yours in memory, where later requests can find it. Accepts one note per request. Takes two arguments: text, the note, and optionally about, the integer id of the one part of memory you have been shown that the note is about.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"text": {"type": "string"},
+					"about": {"type": "integer"}
+				},
+				"required": ["text"]
 			}`),
 		},
 	}
@@ -153,6 +180,7 @@ var toolTable = []toolBinding{
 	{loop.ToolRecall, recallToolName, recallTool},
 	{loop.ToolWriteFile, writeFileToolName, writeFileTool},
 	{loop.ToolReadNode, readNodeToolName, readNodeTool},
+	{loop.ToolNote, noteToolName, noteTool},
 }
 
 func declaredTools(offered []string) []wireTool {
@@ -217,6 +245,8 @@ func translate(wire chatResponse, offered []string) (loop.JudgeResult, error) {
 			return translateWrite(result, call.Function.Arguments), nil
 		case readNodeToolName:
 			return translateRead(result, call.Function.Arguments), nil
+		case noteToolName:
+			return translateNote(result, call.Function.Arguments), nil
 		}
 
 		result.Reason = loop.Unrecognised
@@ -276,6 +306,43 @@ func translateWrite(result loop.JudgeResult, arguments string) loop.JudgeResult 
 	result.WritePath = args.Path
 	result.WriteContent = args.Content
 	return result
+}
+
+func translateNote(result loop.JudgeResult, arguments string) loop.JudgeResult {
+	result.Reason = loop.WantsNote
+
+	var args noteToolArguments
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		result.ToolError = fmt.Sprintf("tool arguments could not be parsed: %v", err)
+		return result
+	}
+	if args.Text == nil {
+		result.ToolError = errNoNoteText
+		return result
+	}
+
+	about, err := aboutOf(args.About)
+	if err != nil {
+		result.ToolError = err.Error()
+		return result
+	}
+
+	result.NoteText = *args.Text
+	result.NoteAbout = about
+	return result
+}
+
+func aboutOf(raw json.RawMessage) (int64, error) {
+	text := strings.TrimSpace(string(raw))
+	if text == "" || text == "null" {
+		return 0, nil
+	}
+
+	var about int64
+	if err := json.Unmarshal(raw, &about); err != nil || about <= 0 {
+		return 0, fmt.Errorf("%s: %s", errBadNoteAbout, text)
+	}
+	return about, nil
 }
 
 func mapFinishReason(reason string) loop.TerminalReason {

@@ -102,10 +102,10 @@ func TestFiveRecallsDifferingOnlyByADateSuffixStopBuyingRoundsOnceTwoInARowAdded
 		t.Fatalf("the dispatched rounds recorded yields %v, want %v: the first brought rows and the rest returned what was already in front of the model", yieldsOf(record), want)
 	}
 	if len(record.ToolCalls) != 4 {
-		t.Fatalf("the record carries %d rounds, want 4: three dispatched and the refusal the model was shown; the call that followed was offered no tool and asked for nothing", len(record.ToolCalls))
+		t.Fatalf("the record carries %d rounds, want 4: three dispatched and the refusal the loop recorded; the call that followed was offered no tool and asked for nothing", len(record.ToolCalls))
 	}
-	if refused := record.ToolCalls[3]; refused.Error != errRecallClosedToModel {
-		t.Fatalf("the refused round carries error %q, want the sentence the model was shown", refused.Error)
+	if refused := record.ToolCalls[3]; refused.Error != errRecallClosed {
+		t.Fatalf("the refused round carries error %q, want the sentence the loop recorded", refused.Error)
 	}
 	if record.Outcome.Verdict != VerdictCurtailed {
 		t.Fatalf("record.Outcome = %+v, want a curtailed verdict: a tool-dispatch bound ended the turn while the model was still asking", record.Outcome)

@@ -22,11 +22,10 @@ const (
 	summaryErrorRunes  = 200
 )
 
-const (
-	summaryExactByteBound = 10000
+const summaryExactByteBound = 10000
 
-	summaryRunPrefix = "processor-run"
-)
+// RunNamePrefix opens the name of every run node the loop writes.
+const RunNamePrefix = "processor-run"
 
 const (
 	summaryNoProvider   = "[provider not recorded]"
@@ -63,7 +62,7 @@ func RenderSummary(record Record, at time.Time) string {
 }
 
 func renderSummaryHeader(b *strings.Builder, record Record, at time.Time) {
-	fmt.Fprintf(b, "%s at %s\n", summaryRunPrefix, at.UTC().Format(time.RFC3339))
+	fmt.Fprintf(b, "%s at %s\n", RunNamePrefix, at.UTC().Format(time.RFC3339))
 	fmt.Fprintf(b, "input    %s\n", summaryTrunc(record.Input, summaryInputRunes))
 	fmt.Fprintf(b, "subject  #%d %s %q (%s)\n",
 		record.Anchor.ID, record.Anchor.Type, summaryTrunc(record.Anchor.Name, summaryAnchorRunes), summaryBytes(record.Anchor.Size))
@@ -248,6 +247,8 @@ func renderSummaryTools(b *strings.Builder, record Record) {
 			renderRecallResults(b, call.Results)
 		case call.Tool == ToolReadNode:
 			fmt.Fprintf(b, "  %d %s%s  #%d\n", i+1, tool, source, call.NodeID)
+		case call.Tool == ToolNote:
+			fmt.Fprintf(b, "  %d %s%s  %s\n", i+1, tool, source, noteSummary(call))
 		case call.Tool == "" && call.Path == "":
 			fmt.Fprintf(b, "  %d %s%s\n", i+1, tool, source)
 		default:

@@ -184,6 +184,8 @@ func withoutToolRequest(result JudgeResult) JudgeResult {
 	result.ReadNodeID = 0
 	result.WritePath = ""
 	result.WriteContent = ""
+	result.NoteText = ""
+	result.NoteAbout = 0
 	result.ToolError = ""
 	result.ToolSource = ""
 	return result
