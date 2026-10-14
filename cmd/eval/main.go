@@ -95,7 +95,7 @@ func parseFlags(args []string, human io.Writer) (corpusPath, derivationsPath str
 	flags := flag.NewFlagSet("eval", flag.ContinueOnError)
 	flags.SetOutput(human)
 	corpus := flags.String("corpus", "", "path of the corpus file to sweep")
-	derivations := flags.String("derivations", "", "path of the pinned derivation sidecar to sweep with; absent, every row is swept on its own input alone")
+	derivations := flags.String("derivations", "", "path of the pinned derivation sidecar to sweep with; absent, every row is swept on its own input alone when that input is a phrase, and on no query when it is not")
 
 	if err := flags.Parse(args); err != nil {
 		return "", "", false
