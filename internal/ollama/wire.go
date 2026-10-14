@@ -306,10 +306,8 @@ func openingToolCall(content string) (toolBinding, string, bool) {
 	if len(text) > len(modelCallOpenMark) && text[:len(modelCallOpenMark)] == modelCallOpenMark {
 		text = text[len(modelCallOpenMark):]
 	}
-	braceOnly := false
 	if len(text) > len(modelCallPrefix) && strings.EqualFold(text[:len(modelCallPrefix)], modelCallPrefix) {
 		text = text[len(modelCallPrefix):]
-		braceOnly = true
 	}
 
 	for _, tool := range toolTable {
@@ -321,13 +319,10 @@ func openingToolCall(content string) (toolBinding, string, bool) {
 		case '{':
 			return tool, text[end:], true
 		case ':':
-			if !braceOnly {
-				return tool, text[end:], true
-			}
+			return tool, text[end:], true
 		case '(':
-			rest := strings.TrimRightFunc(text[end:], unicode.IsSpace)
-			if !braceOnly && len(rest) > 1 && rest[len(rest)-1] == ')' {
-				return tool, rest, true
+			if closer := strings.IndexByte(text[end:], ')'); closer > 0 {
+				return tool, text[end : end+closer+1], true
 			}
 		}
 	}

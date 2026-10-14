@@ -386,17 +386,20 @@ func TestTheModelsOpeningMarkerIsIgnoredBeforeItsCall(t *testing.T) {
 	}
 }
 
-func TestTheCallPrefixIsMatchedWithoutRegardToCaseAndTakesOnlyABrace(t *testing.T) {
+func TestTheCallPrefixIsMatchedWithoutRegardToCaseAndIsAcceptedBeforeAnyDelimiter(t *testing.T) {
 	t.Parallel()
 
 	if result := translate(answerOf("CALL:recall{query:x}"), readOnlyTools); result.Reason != loop.WantsRecall || result.RecallQuery != "x" {
 		t.Fatalf("CALL:recall{...} -> %+v, want a recall", result)
 	}
-	for _, content := range []string{"call:read_node(6840)", "CALL:RECALL: x", "call:recall: x"} {
-		result := translate(answerOf(content), everyLoopTool())
-		if result.Reason != loop.Answered || result.UnhonouredCall != "" || result.ToolSource != "" {
-			t.Fatalf("%q -> %+v, want a plain answer", content, result)
-		}
+	if result := translate(answerOf("call:read_node(6840)"), readOnlyTools); result.Reason != loop.WantsRead || result.ReadNodeID != 6840 {
+		t.Fatalf("call:read_node(6840) -> %+v, want a read", result)
+	}
+	if result := translate(answerOf("CALL:RECALL: x"), readOnlyTools); result.Reason != loop.WantsRecall || result.RecallQuery != "x" {
+		t.Fatalf("CALL:RECALL: x -> %+v, want a recall", result)
+	}
+	if result := translate(answerOf("call:read_node(6840)"), nil); result.UnhonouredCall != loop.ToolReadNode {
+		t.Fatalf("call:read_node(6840) with no tools -> %+v, want it flagged", result)
 	}
 }
 
@@ -411,16 +414,31 @@ func TestAParenthesisReadIsFlaggedOnACallThatDoesNotOfferIt(t *testing.T) {
 	}
 }
 
-func TestAParenthesisCountsOnlyWhenItsCloserEndsTheAnswer(t *testing.T) {
+func TestAParenthesisArgumentRunsToTheFirstCloserAndTheRestIsDropped(t *testing.T) {
 	t.Parallel()
+
+	for content, id := range map[string]int64{
+		"read_node(6840)\nGentleman thinks I sound like Barba.": 6840,
+		"read_node(6840) and more text":                         6840,
+		"read_node(6840).":                                      6840,
+		"read_node(6840)<tool_call|>":                           6840,
+		"read_node(7) then read_node(8) done":                   7,
+	} {
+		result := translate(answerOf(content), readOnlyTools)
+		if result.Reason != loop.WantsRead || result.ReadNodeID != id || result.ToolSource != loop.ToolSourceTextual {
+			t.Fatalf("%q -> %+v, want a textual read of %d", content, result, id)
+		}
+
+		result = translate(answerOf(content), nil)
+		if result.Reason != loop.Answered || result.UnhonouredCall != loop.ToolReadNode {
+			t.Fatalf("%q with no tools -> %+v, want it flagged", content, result)
+		}
+	}
 
 	if result := translate(answerOf("recall(query: x)  \n"), readOnlyTools); result.Reason != loop.WantsRecall || result.RecallQuery != "x" {
 		t.Fatalf("trailing whitespace -> %+v, want a recall", result)
 	}
-	for _, content := range []string{"Recall(ing) the old days (long ago)!", "recall(x) and more", "read_node(1) then read_node(2) done"} {
-		result := translate(answerOf(content), everyLoopTool())
-		if result.Reason != loop.Answered || result.UnhonouredCall != "" || result.ToolSource != "" {
-			t.Fatalf("%q -> %+v, want prose", content, result)
-		}
+	if result := translate(answerOf("recall(who is X: the king)"), readOnlyTools); result.Reason != loop.WantsRecall || result.RecallQuery != "who is X: the king" {
+		t.Fatalf("prose body -> %+v, want it positional", result)
 	}
 }
