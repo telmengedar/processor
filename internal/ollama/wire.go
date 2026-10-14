@@ -246,7 +246,11 @@ func translate(wire chatResponse, offered []string) loop.JudgeResult {
 
 	if len(names) > 0 {
 		if call, detected := recoverCall(wire.Message.Content); detected {
-			return translateRecoveredCall(result, call, names, loop.ToolSourceContent)
+			recovered := translateRecoveredCall(result, call, names, loop.ToolSourceContent)
+			if recovered.Reason == loop.Unrecognised {
+				return flagOpeningCall(recovered, wire.Message.Content)
+			}
+			return recovered
 		}
 	}
 

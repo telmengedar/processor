@@ -224,7 +224,7 @@ func TestANativeCallOutranksTextAndMarkupOutranksAnOpeningCall(t *testing.T) {
 	}
 
 	markup := "recall: from the opening\n<function=recall>\n<parameter=query>\nfrom the markup\n</parameter>\n</function>"
-	if result := translate(answerOf(markup), []string{loop.ToolRecall}); result.RecallQuery != "from the markup" || result.ToolSource != loop.ToolSourceContent {
+	if result := translate(answerOf(markup), []string{loop.ToolRecall}); result.RecallQuery != "from the markup" || result.ToolSource != loop.ToolSourceContent || result.UnhonouredCall != "" {
 		t.Fatalf("markup + opening call -> %+v, want the markup call with source %q", result, loop.ToolSourceContent)
 	}
 }
@@ -253,5 +253,15 @@ func TestARecallWithNothingAfterTheColonIsAnEmptyQueryError(t *testing.T) {
 		if result.Reason != loop.WantsRecall || result.RecallQuery != "" || !strings.Contains(result.ToolError, "empty query") {
 			t.Fatalf("%q -> %+v, want a recall request with the empty-query error", content, result)
 		}
+	}
+}
+
+func TestATextualCallIsFlaggedBesideMarkupForAToolThisCallDidNotOffer(t *testing.T) {
+	t.Parallel()
+
+	content := "recall: x\n<function=write_file><parameter=path>a</parameter></function>"
+	result := translate(answerOf(content), []string{loop.ToolRecall, loop.ToolReadNode})
+	if result.Reason != loop.Unrecognised || result.ToolSource != loop.ToolSourceContent || result.UnhonouredCall != loop.ToolRecall {
+		t.Fatalf("%+v, want it unrecognised from content and flagged %q", result, loop.ToolRecall)
 	}
 }
