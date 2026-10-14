@@ -214,6 +214,8 @@ const (
 	ToolSourceNative ToolSource = "native"
 	// ToolSourceContent is a call the adapter recovered from the response text because the endpoint reported none.
 	ToolSourceContent ToolSource = "content"
+	// ToolSourceTextual is a call the adapter recovered from an answer that opened with an offered retrieval tool's name followed by a colon or a brace, with no call markup.
+	ToolSourceTextual ToolSource = "textual"
 )
 
 // Provider names the adapter and the endpoint that served a run's model calls.
@@ -392,6 +394,8 @@ type Record struct {
 	HistoryCut int `json:"historyCut,omitempty"`
 
 	Answer string `json:"answer"`
+	// NonReply is why the answer, kept verbatim, was not delivered as a reply, absent when it was one.
+	NonReply NonReply `json:"nonReply,omitempty"`
 	// Silent is true when silence was offered and the answer carried the marker, fixed at run time so a later change of marker reclassifies no archived run.
 	Silent bool   `json:"silent,omitempty"`
 	Model  string `json:"model"`
@@ -499,4 +503,7 @@ type JudgeResult struct {
 
 	// UnofferedToolCalls is how many tool calls the endpoint reported naming a tool the request did not offer, none of which the adapter honoured.
 	UnofferedToolCalls int
+
+	// UnhonouredCall is the loop's name of the tool an answer wrote as its opening call text and the adapter did not honour, empty otherwise.
+	UnhonouredCall string
 }

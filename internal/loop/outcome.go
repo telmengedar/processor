@@ -1,6 +1,10 @@
 package loop
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+	"unicode"
+)
 
 // Verdict is the loop's closed set of accounts of what one run obtained.
 type Verdict string
@@ -10,6 +14,8 @@ const (
 	VerdictCurtailed Verdict = "curtailed"
 	// VerdictSilent is a run whose model chose silence on a run that offered it, and which no tool-dispatch bound curtailed.
 	VerdictSilent Verdict = "silent"
+	// VerdictWithheld is a run whose final answer was not a reply: tool syntax or processor's own framing written as speech.
+	VerdictWithheld Verdict = "withheld"
 	// VerdictEmpty is a run no tool-dispatch bound stopped that nonetheless produced no text.
 	VerdictEmpty Verdict = "empty"
 	// VerdictUngrounded is a produced answer that no admitted row fed.
@@ -22,7 +28,7 @@ const (
 type Outcome struct {
 	Verdict Verdict `json:"verdict"`
 
-	// Produced is true when the answer carries at least one non-whitespace character and the run did not choose silence.
+	// Produced is true when the answer carries at least one non-whitespace character, is a reply, and the run did not choose silence.
 	Produced bool `json:"produced"`
 
 	// Silent is true when silence was offered and the model chose it.
@@ -40,12 +46,12 @@ type Outcome struct {
 
 // ComputeOutcome derives one run's outcome from that record alone, reading nothing the record does not carry.
 func ComputeOutcome(record Record) Outcome {
-	produced := producedText(record) && !record.Silent
+	produced := producedText(record) && !record.Silent && record.NonReply == ""
 	grounded := groundedInAdmittedRows(record)
 	curtailed := record.ReservedCall.State != "" || record.CapReached || record.RecallClosed || record.TimeShortfall != "" || record.StopReason.Reason == Truncated
 
 	return Outcome{
-		Verdict:   verdictFor(produced, record.Silent, grounded, curtailed),
+		Verdict:   verdictFor(produced, record.Silent, record.NonReply != "", grounded, curtailed),
 		Produced:  produced,
 		Silent:    record.Silent,
 		Grounded:  grounded,
@@ -54,12 +60,14 @@ func ComputeOutcome(record Record) Outcome {
 	}
 }
 
-func verdictFor(produced, silent, grounded, curtailed bool) Verdict {
+func verdictFor(produced, silent, withheld, grounded, curtailed bool) Verdict {
 	switch {
 	case curtailed:
 		return VerdictCurtailed
 	case silent:
 		return VerdictSilent
+	case withheld:
+		return VerdictWithheld
 	case !produced:
 		return VerdictEmpty
 	case !grounded:
@@ -111,4 +119,57 @@ func actedRounds(record Record) map[string]int {
 		counts[call.Tool]++
 	}
 	return counts
+}
+
+// NonReply is the closed set of reasons a turn's final answer is not a reply.
+type NonReply string
+
+const (
+	// NonReplyToolRequest is a final answer that came from a call which asked for a tool.
+	NonReplyToolRequest NonReply = "toolRequest"
+	// NonReplyToolText is a final answer that opens with a tool call the adapter did not honour.
+	NonReplyToolText NonReply = "toolText"
+	// NonReplyBlockText is a final answer that opens with processor's own block or history syntax.
+	NonReplyBlockText NonReply = "blockText"
+)
+
+const typePrefix = "type: "
+
+var (
+	frameLine = regexp.MustCompile(`^===== .+ =====$`)
+	idLine    = regexp.MustCompile(`^id: [0-9]+$`)
+)
+
+func classifyNonReply(answer string, lastWasToolRequest bool, unhonoured string) NonReply {
+	if strings.TrimSpace(answer) == "" {
+		return ""
+	}
+	switch {
+	case lastWasToolRequest:
+		return NonReplyToolRequest
+	case unhonoured != "":
+		return NonReplyToolText
+	case opensWithProcessorSyntax(answer):
+		return NonReplyBlockText
+	default:
+		return ""
+	}
+}
+
+func opensWithProcessorSyntax(answer string) bool {
+	opening := strings.TrimLeftFunc(answer, unicode.IsSpace)
+	first, rest, _ := strings.Cut(opening, "\n")
+	first = strings.TrimRight(first, "\r")
+
+	if frameLine.MatchString(first) {
+		return true
+	}
+	if hasPrefixFold(opening, LabelUserSaid) || hasPrefixFold(opening, LabelYouReplied) {
+		return true
+	}
+	return idLine.MatchString(first) && strings.HasPrefix(rest, typePrefix)
+}
+
+func hasPrefixFold(text, prefix string) bool {
+	return len(text) >= len(prefix) && strings.EqualFold(text[:len(prefix)], prefix)
 }

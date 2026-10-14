@@ -1535,7 +1535,7 @@ class MirroredConstantTests(unittest.TestCase):
     ASSEMBLE = "internal/loop/assemble.go"
     LOOP_PACKAGE = "internal/loop"
     TOOL_CONSTANT_PREFIX = "Tool"
-    NON_TOOL_CONSTANTS = ("ToolSourceNative", "ToolSourceContent")
+    NON_TOOL_CONSTANTS = ("ToolSourceNative", "ToolSourceContent", "ToolSourceTextual")
 
     def test_the_tool_names_are_the_records_own_vocabulary(self):
         go = go_string_constants(self.TYPES)
@@ -1623,6 +1623,27 @@ class MirroredConstantTests(unittest.TestCase):
         sentinel = re.search(r'ErrWriteRejected\s*=\s*errors\.New\("([^"]*)"\)', text)
         self.assertIsNotNone(sentinel, "ErrWriteRejected is no longer declared where this mirror reads it")
         self.assertEqual(step_trace.WRITE_REJECTED_PREFIX, sentinel.group(1) + ": ")
+
+
+class TextualSourceNoteTests(unittest.TestCase):
+    """A round whose call was written as the opening of the answer text is narrated as exactly that.
+
+    Without its own branch the value falls through to the note for a record that predates the field,
+    which is false: the record names the source and this script must say what it means.
+    """
+
+    def test_a_textual_round_is_narrated_as_answer_text_and_not_as_a_record_that_predates_the_field(self):
+        lines = step_trace.source_lines({"tool": "recall", "source": "textual"})
+        text = " ".join(lines)
+
+        self.assertIn("written as the opening of the model's answer text", text)
+        self.assertIn("read-only retrieval tool", text)
+        self.assertNotIn("predates the field", text)
+
+    def test_the_other_sources_keep_their_own_notes(self):
+        self.assertEqual(step_trace.source_lines({"source": "native"}), [])
+        self.assertIn("fallback", " ".join(step_trace.source_lines({"source": "content"})))
+        self.assertIn("predates the field", " ".join(step_trace.source_lines({})))
 
 
 if __name__ == "__main__":
