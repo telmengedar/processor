@@ -19,7 +19,7 @@ derives substance for a named, bounded set of graph nodes offline; the turn itse
 OpenAI-compatible model endpoint — a local runtime works with no key and no per-token spend — and one
 `POST /runs` gives you a full turn: it asks the model what to search for, pulls context out of the graph
 mechanically, asks the model again to answer — letting it request supplementary lookups of its own —
-writes the result back to the graph as a node, and hands you the reply — or, behind `?verbose=true`, the whole record of what it retrieved, what it kept, what it cut and why. That
+hands you the reply and writes the result back to the graph as a node right after the reply has been sent — or, behind `?verbose=true`, writes it first and hands you the whole record of what it retrieved, what it kept, what it cut and why. That
 path has been run end to end against a real model, on both the plain-answer route and the tool-using
 one. There is also a second binary that scores how good the retrieval was — it builds and runs, but the
 hand-labelled answer key it scores against does not exist yet, **so today it can tell you nothing
@@ -449,21 +449,23 @@ response text.
 Response (`200`) is chat-shaped by default:
 
 ```json
-{"reply": "…", "written": {"state": "stored", "nodeId": 10525}}
+{"reply": "…", "produced": true}
 ```
+
+The reply is sent, complete and with a `Content-Length`, **before** the run is filed: you do not wait for the write-back, and a slow or failed write-back cannot change or delay this body. The default body therefore never carries `written`: a response carries `written` only when the filing it reports has finished, and the service never sends a predicted or pending fate. The fate of the filing goes to the operator's log (`run finished` with the receipt state and node id; `write-back failed`, `repairable orphan` or `uncollected shell` on failure). A shutdown drains a filing that is still running. `run finished` reports the wall clock of the reply **plus** the filing, so it is longer than what the caller waited.
 
 `reply` is the model's answer verbatim when the run produced one, and is never empty except on a chosen silence (below): when the run produced
 no answer — an empty or whitespace-only one, a reserved answering call that failed, a turn stopped for want
 of time — it is the fixed sentence `Sorry — I couldn't put an answer together for that just now. Could you
 say a bit more, or ask it another way?`, which is product text and is never sent to the model.
 Every JSON body this route sends — the `200` bodies and the error envelopes — declares `Content-Type: application/json; charset=utf-8`, because Windows PowerShell 5.1's `Invoke-RestMethod` decodes a body with no declared charset as a legacy code page and garbles the dash in that sentence.
-On a chosen silence the body is `{"reply": "", "written": {…}, "produced": false, "silent": true}`: a `200` with an empty
+On a chosen silence the body is `{"reply": "", "produced": false, "silent": true}`: a `200` with an empty
 `reply`, which tells a model that chose not to reply from a run that failed to produce one (`produced: false` and no
 `silent` key, with the fallback sentence); the `silent` key is present only when it is `true`.
 Whether the fallback was served is readable from the stored record's `outcome.produced`, and the stored
 record is unchanged. Errors stay errors (the table below); an outage is never turned into a reply.
 
-`POST /runs?verbose=true` returns the record described next, plus `reply`. A bare `?verbose` means true;
+`POST /runs?verbose=true` returns the record described next, plus `reply`, and **waits for the filing** so that it can carry the completed receipt. A bare `?verbose` means true;
 `verbose=false` or `verbose=0` is the default body; a value that is not a boolean is a `400`
 `invalid_request` before any run is made.
 
@@ -545,7 +547,7 @@ difference within the record itself.
 |---|---|---|---|
 | `stored` | present | The record is at that node, bodied and linked to the subject | nothing — the ordinary outcome |
 | `unlinked` | present | The record is at that node and complete; the edge to the subject is missing | nothing; the record is safe, the edge is repairable, and the operator's log names the node |
-| `notStored` | absent | No node holds this record — **a `?verbose=true` response is the only copy**; the default body does not carry it | request `?verbose=true` where the record matters |
+| `notStored` | absent | No node holds this record — **a `?verbose=true` response is the only copy**; the default body carries neither the record nor this receipt | request `?verbose=true` where the record matters |
 
 A write-back failure does not fail the request: the record already carries everything of value, and the
 receipt names what happened. The receipt carries no reason string — every `notStored` cause produces the
@@ -812,8 +814,8 @@ flags it.
 - **The drain is covered by an automated process-level test** (`cmd/processor/process_linux_test.go`):
   the real binary is launched against local graph and model test servers, the model endpoint is made
   slow, `SIGTERM` is sent while a run is genuinely in flight (the model server signals when it has been
-  reached), and the test asserts that the caller still receives the run's reply and its write receipt, that the graph still
-  receives the run node, and that the process exits `0` with the ordered shutdown records. **What it does
+  reached), and the test asserts that the caller still receives the run's reply, that the graph still
+  receives the run node before the process exits, and that the process exits `0` with the ordered shutdown records. **What it does
   not establish:** that the process survives `SIGKILL` (nothing can), that a container supervisor honours
   the grace (that is a deployment flag — see "Run" above), or the grace's *value* — the run it drives is
   seconds long, and the 11 min 15 s literal is pinned by the arithmetic assertion in

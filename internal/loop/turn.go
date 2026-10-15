@@ -178,6 +178,15 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 
 // RunWithOptions executes one turn as options describe it, returning the record and where it was filed.
 func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, WriteReceipt, error) {
+	record, started, err := t.Answer(ctx, options)
+	if err != nil {
+		return Record{}, WriteReceipt{}, err
+	}
+	return record, t.File(ctx, record, started), nil
+}
+
+// Answer executes one turn as options describe it up to its outcome and issues no write-back, returning the record and the instant the run started.
+func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Time, error) {
 	input, subject, history, settings := options.Input, options.Subject, options.History, options.Settings
 	settings.Form = options.form()
 	filter, silence, identity := options.filter(), options.silence(), options.identity()
@@ -270,12 +279,17 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 	record.Sampling = judged.sampling
 	record.Outcome = ComputeOutcome(record)
 
+	return record, started, nil
+}
+
+// File files the record of a run that started at started on a context its caller cannot cancel, hands its fills to the deferred worker and reports where it landed.
+func (t *Turn) File(ctx context.Context, record Record, started time.Time) WriteReceipt {
 	receipt := t.Graph.WriteRun(context.WithoutCancel(ctx), record)
 	t.deferFills(record.Fills)
 
 	t.logFinished(record, receipt, time.Since(started))
 
-	return record, receipt, nil
+	return receipt
 }
 
 func (t *Turn) fillInitial(ctx context.Context, settings RunSettings, anchor Anchor, candidates []Candidate) (Anchor, []Candidate, []FillOutcome) {
@@ -325,9 +339,9 @@ func inputNotPhraseNote(input string) string {
 	return fmt.Sprintf("the input is %d bytes and not a phrase, which is non-blank and at most %d: it went to the model as content and was not sent to the graph", len(input), MaxPhraseBytes)
 }
 
-func (t *Turn) failed(subject int64, started time.Time, err error) (Record, WriteReceipt, error) {
+func (t *Turn) failed(subject int64, started time.Time, err error) (Record, time.Time, error) {
 	t.log().Error("run failed", "subject", subject, "elapsed", time.Since(started), "error", err)
-	return Record{}, WriteReceipt{}, err
+	return Record{}, time.Time{}, err
 }
 
 func (t *Turn) logFinished(record Record, receipt WriteReceipt, elapsed time.Duration) {

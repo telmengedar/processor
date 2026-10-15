@@ -1976,3 +1976,43 @@ func TestTheTurnGivesEveryCandidateSlotToTheOneRecall(t *testing.T) {
 		t.Fatalf("the turn issued %d recalls, want 1", len(graph.recallCalls))
 	}
 }
+
+type delayedFilingGraph struct {
+	*fakeGraph
+	delay time.Duration
+}
+
+func (g delayedFilingGraph) WriteRun(ctx context.Context, record Record) WriteReceipt {
+	time.Sleep(g.delay)
+	return g.fakeGraph.WriteRun(ctx, record)
+}
+
+func TestTheRunFinishedWallClockSpansTheAnswerAndTheFiling(t *testing.T) {
+	t.Parallel()
+
+	const answerDelay, filingDelay = 150 * time.Millisecond, 150 * time.Millisecond
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	model := &fakeModel{results: []JudgeResult{{Answer: "ok", Reason: Answered, RawReason: "stop"}}}
+	model.beforeReturn = func() { time.Sleep(answerDelay) }
+	graph := delayedFilingGraph{fakeGraph: baseGraph(), delay: filingDelay}
+	turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model-id", logger)
+
+	record, started, err := turn.Answer(context.Background(), RunOptions{Input: "hello", Subject: 42, Settings: DefaultSettings()})
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	turn.File(context.Background(), record, started)
+
+	match := regexp.MustCompile(`msg="run finished".* elapsed=(\S+)`).FindStringSubmatch(logBuf.String())
+	if match == nil {
+		t.Fatalf("no run-finished record with an elapsed field; log:\n%s", logBuf.String())
+	}
+	elapsed, err := time.ParseDuration(match[1])
+	if err != nil {
+		t.Fatalf("elapsed %q is not a duration: %v", match[1], err)
+	}
+	if elapsed < answerDelay+filingDelay {
+		t.Fatalf("elapsed = %s, want at least %s: the wall clock must span the answer and the filing", elapsed, answerDelay+filingDelay)
+	}
+}
