@@ -14,10 +14,11 @@ type workingMemory struct {
 	rows       map[int64]heldRow
 	spent      int
 	ceiling    int
+	form       Form
 }
 
-func newWorkingMemory(ceiling int, anchor Anchor, considered bool, admitted []Candidate, dispositions []Disposition) *workingMemory {
-	memory := &workingMemory{anchor: anchor, considered: considered, rows: map[int64]heldRow{}, spent: len(anchor.Substance), ceiling: ceiling}
+func newWorkingMemory(ceiling int, anchor Anchor, considered bool, admitted []Candidate, dispositions []Disposition, form Form) *workingMemory {
+	memory := &workingMemory{anchor: anchor, considered: considered, rows: map[int64]heldRow{}, spent: anchorCharge(anchor, form), ceiling: ceiling, form: form}
 	memory.absorb(admitted, dispositions)
 	return memory
 }
@@ -75,8 +76,8 @@ func (m *workingMemory) holds(c Candidate) bool {
 	if !present {
 		return false
 	}
-	form, payload := renderedPayload(c)
-	_, heldPayload := renderedPayload(held.candidate)
+	form, payload := renderedPayload(m.form, c)
+	_, heldPayload := renderedPayload(m.form, held.candidate)
 	return held.form == form && payload == heldPayload
 }
 
@@ -96,5 +97,5 @@ func (m *workingMemory) render() string {
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ID < rows[j].ID })
 
-	return renderBlock(m.anchor, rows, m.considered)
+	return renderBlock(m.anchor, rows, m.considered, m.form)
 }

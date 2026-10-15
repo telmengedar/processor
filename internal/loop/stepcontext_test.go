@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func offeringSystem(offered []string, conversation, silence bool) string {
+func offeringSystem(offered []string, conversation, silence bool, _ Form) string {
 	text := "offers:" + strings.Join(offered, ",")
 	if conversation {
 		text += ";conversation"

@@ -67,8 +67,8 @@ func TestOnlyAdmissionAndThePayloadSeamReadACandidatesBody(t *testing.T) {
 	t.Parallel()
 
 	allowed := map[string][]string{
-		"Content":   {"admitUnheld", "candidateFromAnchor", "summarizeAnchor"},
-		"Substance": {"admitUnheld", "renderedPayload", "lacksSubstance", "withCreated", "candidateFromAnchor", "summarizeAnchor", "newWorkingMemory", "renderBlock", "Assemble", "dispatchRead", "fillInitial", "awaitFills"},
+		"Content":   {"admitUnheld", "renderedPayload", "candidateFromAnchor", "summarizeAnchor"},
+		"Substance": {"admitUnheld", "renderedPayload", "lacksSubstance", "withCreated", "candidateFromAnchor", "dispatchRead", "fillInitial", "awaitFills"},
 	}
 	functions := parseTheLoopSources(t)
 

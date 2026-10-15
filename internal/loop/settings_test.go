@@ -57,8 +57,8 @@ func TestDefaultSettingsNameEveryDialAtTheValueTheLoopShipsAndSetNoOutputLimit(t
 	if got := DefaultSettings(); got != want {
 		t.Fatalf("DefaultSettings() = %+v, want %+v", got, want)
 	}
-	if got := reflect.TypeOf(RunSettings{}).NumField(); got != 9 {
-		t.Fatalf("RunSettings has %d fields, want the 9 this test names: a new dial needs a default pinned here", got)
+	if got := reflect.TypeOf(RunSettings{}).NumField(); got != 10 {
+		t.Fatalf("RunSettings has %d fields, want the 10 this test names: a new dial needs a default pinned here", got)
 	}
 	if got := DefaultSettings().PromptCeiling(); got != JudgementPromptCeiling {
 		t.Fatalf("default PromptCeiling = %d, want the deployment-wide JudgementPromptCeiling %d", got, JudgementPromptCeiling)

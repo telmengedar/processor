@@ -109,7 +109,7 @@ func (t *Turn) fillWait(ctx context.Context, settings RunSettings) time.Duration
 }
 
 func (t *Turn) createSubstances(ctx context.Context, settings RunSettings, phase string, ids []int64) (map[int64]string, []FillOutcome) {
-	if len(ids) == 0 {
+	if len(ids) == 0 || settings.Form == FormContent {
 		return nil, nil
 	}
 

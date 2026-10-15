@@ -8,8 +8,8 @@ import (
 func memoryHolding(t *testing.T, anchor Anchor, candidates []Candidate) *workingMemory {
 	t.Helper()
 
-	admitted, dispositions := admit(candidates, composedTestBudget, len(anchor.Substance))
-	return newWorkingMemory(JudgementPromptCeiling, anchor, len(candidates) > 0, admitted, dispositions)
+	admitted, dispositions := admit(candidates, composedTestBudget, len(anchor.Substance), FormSubstance)
+	return newWorkingMemory(JudgementPromptCeiling, anchor, len(candidates) > 0, admitted, dispositions, FormSubstance)
 }
 
 func TestTheMemoryAndTheAssembledBlockRenderASubstanceAlike(t *testing.T) {
@@ -19,7 +19,7 @@ func TestTheMemoryAndTheAssembledBlockRenderASubstanceAlike(t *testing.T) {
 	substance := strings.Repeat("z", 300)
 	candidates := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: content, Substance: substance}}
 
-	block, dispositions := Assemble(Anchor{ID: 1}, candidates, composedTestBudget)
+	block, dispositions := Assemble(Anchor{ID: 1}, candidates, composedTestBudget, FormSubstance)
 	if dispositions[0].Form != FormSubstance {
 		t.Fatalf("test setup error: Form = %q, want %q", dispositions[0].Form, FormSubstance)
 	}
@@ -45,12 +45,12 @@ func TestTheMemoryCarriesExactlyTheBytesItsAdmissionCharged(t *testing.T) {
 		{ID: 92, Type: "documentation", Name: "Charlie", Substance: strings.Repeat("y", SupplementaryByteBudget)},
 	}
 
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0)
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, FormSubstance)
 	if len(admitted) != 1 || admitted[0].ID != 91 {
 		t.Fatalf("test setup error: admitted %d rows %v, want the first alone", len(admitted), dispositionIDs(dispositions))
 	}
 
-	memory := newWorkingMemory(JudgementPromptCeiling, Anchor{ID: 1}, true, admitted, dispositions)
+	memory := newWorkingMemory(JudgementPromptCeiling, Anchor{ID: 1}, true, admitted, dispositions, FormSubstance)
 	rendered := memory.render()
 
 	if strings.Count(rendered, substance) != 1 {
@@ -66,7 +66,7 @@ func TestTheMemoryChargesTheAnchorItsRenderedBytes(t *testing.T) {
 
 	anchor := Anchor{ID: 1, Content: strings.Repeat("x", 9_000), Substance: strings.Repeat("z", 400)}
 
-	memory := newWorkingMemory(JudgementPromptCeiling, anchor, false, nil, nil)
+	memory := newWorkingMemory(JudgementPromptCeiling, anchor, false, nil, nil, FormSubstance)
 
 	if memory.spent != 400 {
 		t.Fatalf("memory.spent = %d, want 400: the anchor is charged the substance it renders", memory.spent)
@@ -78,12 +78,12 @@ func TestTheMemoryRendersAnUnavailableRowAsItsHeaderAndTheUnavailableLineAndChar
 
 	candidates := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Content: strings.Repeat("x", 1_000)}}
 
-	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0)
+	admitted, dispositions := admit(candidates, SupplementaryByteBudget, 0, FormSubstance)
 	if dispositions[0].Form != FormUnavailable {
 		t.Fatalf("test setup error: Form = %q, want %q", dispositions[0].Form, FormUnavailable)
 	}
 
-	memory := newWorkingMemory(JudgementPromptCeiling, Anchor{ID: 1}, true, admitted, dispositions)
+	memory := newWorkingMemory(JudgementPromptCeiling, Anchor{ID: 1}, true, admitted, dispositions, FormSubstance)
 
 	want := "===== CANDIDATE =====\nid: 91\ntype: documentation\nname: Bravo\nsimilarity: 0.000\nsubstance: unavailable\n"
 	if got := memory.render(); !strings.HasSuffix(got, want) {
@@ -105,7 +105,7 @@ func TestASubstanceReplacesTheUnavailableFormOfTheSameRow(t *testing.T) {
 	}
 
 	created := []Candidate{candidateFromAnchor(Anchor{ID: 91, Type: "documentation", Name: "Bravo", Substance: substance})}
-	admitted, dispositions := admit(created, SupplementaryByteBudget, 0)
+	admitted, dispositions := admit(created, SupplementaryByteBudget, 0, FormSubstance)
 	memory.absorb(admitted, dispositions)
 
 	rendered := memory.render()
@@ -125,7 +125,7 @@ func TestAnUnavailableFormNeverReplacesTheSubstanceOfTheSameRow(t *testing.T) {
 	memory := memoryHolding(t, Anchor{ID: 1, Substance: "anchor"}, []Candidate{{ID: 91, Type: "documentation", Name: "Bravo", Substance: substance}})
 
 	unavailable := []Candidate{{ID: 91, Type: "documentation", Name: "Bravo"}}
-	admitted, dispositions := admit(unavailable, SupplementaryByteBudget, 0)
+	admitted, dispositions := admit(unavailable, SupplementaryByteBudget, 0, FormSubstance)
 	memory.absorb(admitted, dispositions)
 
 	if rendered := memory.render(); !strings.Contains(rendered, substance) || strings.Contains(rendered, "substance: unavailable") {

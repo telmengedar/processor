@@ -28,7 +28,7 @@ const (
 	errNoSuchNode           = "no part of memory has that id"
 	errReadOfSubject        = "that id is this request's own subject, and the context block already carries it"
 	errAlreadyShownThisTurn = "that part has already been shown to you in this turn"
-	errNodeTooLargeFormat   = "that part's substance is %d bytes and one read carries at most %d, so it cannot be shown"
+	errNodeTooLargeFormat   = "that part's %s is %d bytes and one read carries at most %d, so it cannot be shown"
 	errQueryNotPhraseFormat = "that query is %d bytes and a recall query is a phrase of at most %d: nothing was looked up. Name in a few words what is missing"
 	errQueryBlank           = "that query is blank: nothing was looked up. Name in a few words what is missing"
 )
@@ -130,8 +130,8 @@ type Turn struct {
 	// Fill is the condensation behaviour that creates a missing substance; nil refuses every creation with a recorded reason.
 	Fill FillPort
 
-	// System composes the system text of one judgement call from the tools that call offers, whether the turn carries a conversation section, and whether the run offers silence.
-	System func(offered []string, conversation, silence bool) string
+	// System composes the system text of one judgement call from the tools that call offers, whether the turn carries a conversation section, whether the run offers silence, and the form the run renders parts as.
+	System func(offered []string, conversation, silence bool, form Form) string
 
 	// ModelID is the model id sent with every judgement step, echoed into Record.Model.
 	ModelID string
@@ -148,7 +148,7 @@ type Turn struct {
 }
 
 // NewTurn builds a Turn over graph, model and files, judging with system and modelID.
-func NewTurn(graph GraphPort, model ModelPort, files FilePort, system func(offered []string, conversation, silence bool) string, modelID string, logger *slog.Logger) *Turn {
+func NewTurn(graph GraphPort, model ModelPort, files FilePort, system func(offered []string, conversation, silence bool, form Form) string, modelID string, logger *slog.Logger) *Turn {
 	return &Turn{Graph: graph, Model: model, Files: files, System: system, ModelID: modelID, clock: time.Now, logger: logger}
 }
 
@@ -179,6 +179,7 @@ func (t *Turn) RunWithHistory(ctx context.Context, input string, subject int64, 
 // RunWithOptions executes one turn as options describe it, returning the record and where it was filed.
 func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, WriteReceipt, error) {
 	input, subject, history, settings := options.Input, options.Subject, options.History, options.Settings
+	settings.Form = options.form()
 	filter, silence, identity := options.filter(), options.silence(), options.identity()
 	started := time.Now()
 	ctx = withPrepaid(ctx)
@@ -213,7 +214,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 
 	anchor, candidates, fills := t.fillInitial(ctx, settings, anchor, candidates)
 
-	block, dispositions := Assemble(anchor, candidates, settings.AssemblyByteBudget)
+	block, dispositions := Assemble(anchor, candidates, settings.AssemblyByteBudget, settings.Form)
 
 	record := Record{
 		Input:              input,
@@ -225,7 +226,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 		InputNotPhrase:     notPhrase,
 		Window:             window,
 		WindowDiscarded:    windowDiscarded,
-		Anchor:             summarizeAnchor(anchor),
+		Anchor:             summarizeAnchor(anchor, settings.Form),
 		Candidates:         dispositions,
 		Fills:              fills,
 		Block:              block,
@@ -236,7 +237,7 @@ func (t *Turn) RunWithOptions(ctx context.Context, options RunOptions) (Record, 
 		DerivationSampling: derivationSampling,
 	}
 
-	memory := newWorkingMemory(settings.PromptCeiling(), anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions)
+	memory := newWorkingMemory(settings.PromptCeiling(), anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions, settings.Form)
 	memory.charge(len(conversation))
 	memory.charge(len(identity))
 
@@ -510,7 +511,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		judged.offered = append(judged.offered, append([]string{}, offered...))
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
-			System:          t.composeSystem(identity, offered, conversation != "", silence),
+			System:          t.composeSystem(identity, offered, conversation != "", silence, settings.Form),
 			Block:           memory.render(),
 			Input:           input,
 			Conversation:    conversation,
@@ -671,11 +672,11 @@ func (t *Turn) offeredTools(reserved, noteOpen bool) []string {
 
 const paragraphBreak = "\n\n"
 
-func (t *Turn) composeSystem(identity string, offered []string, conversation, silence bool) string {
+func (t *Turn) composeSystem(identity string, offered []string, conversation, silence bool, form Form) string {
 	if t.System == nil {
 		return identity
 	}
-	product := t.System(offered, conversation, silence)
+	product := t.System(offered, conversation, silence, form)
 	if identity == "" {
 		return product
 	}
@@ -830,7 +831,7 @@ func (t *Turn) dispatchRecall(ctx context.Context, settings RunSettings, result 
 	created, fills := t.createSubstances(ctx, settings, phaseRecall, missingSubstances(candidates, func(c Candidate) bool { return memory.holds(c) }))
 	candidates = withCreated(candidates, created)
 
-	admitted, dispositions := admitUnheld(candidates, memory.room(settings.SupplementaryByteBudget), 0, memory.holds)
+	admitted, dispositions := admitUnheld(candidates, memory.room(settings.SupplementaryByteBudget), 0, memory.holds, settings.Form)
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Results: admitted, Dispositions: dispositions, Fills: fills}
 }
 
@@ -878,14 +879,14 @@ func (t *Turn) dispatchRead(ctx context.Context, settings RunSettings, result Ju
 	room := memory.roomToReplace(result.ReadNodeID, settings.SupplementaryByteBudget)
 	read := candidateFromAnchor(anchor)
 	read.Created = createdHere
-	admitted, dispositions := admit([]Candidate{read}, room, 0)
+	admitted, dispositions := admit([]Candidate{read}, room, 0, settings.Form)
 	if account.alreadyShown(dispositions[0]) {
 		exchange.Error = errAlreadyShownThisTurn
 		exchange.Refused = true
 		return exchange
 	}
 	if len(admitted) == 0 {
-		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, dispositions[0].RenderedSize, room)
+		exchange.Error = fmt.Sprintf(errNodeTooLargeFormat, readFormName(settings.Form), dispositions[0].RenderedSize, room)
 		exchange.Refused = true
 		return exchange
 	}
@@ -894,6 +895,13 @@ func (t *Turn) dispatchRead(ctx context.Context, settings RunSettings, result Ju
 	exchange.Results = admitted
 	exchange.Dispositions = dispositions
 	return exchange
+}
+
+func readFormName(form Form) Form {
+	if form == FormContent {
+		return FormContent
+	}
+	return FormSubstance
 }
 
 func toolCallRecords(exchanges []ToolExchange) []ToolCallRecord {

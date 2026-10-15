@@ -162,7 +162,7 @@ func TestARowWithoutASubstanceRendersItsHeaderAndTheUnavailableLineAndNoBody(t *
 	anchor := Anchor{ID: 1, Type: "documentation", Name: "Anchor", Substance: "anchor substance"}
 	candidates := []Candidate{{ID: 10, Type: "bug", Name: "Bare", Similarity: 0.5, Content: "CONTENT-SENTINEL"}}
 
-	block, dispositions := Assemble(anchor, candidates, 60_000)
+	block, dispositions := Assemble(anchor, candidates, 60_000, FormSubstance)
 
 	const want = "===== CANDIDATE =====\nid: 10\ntype: bug\nname: Bare\nsimilarity: 0.500\nsubstance: unavailable\n"
 	if !strings.Contains(block, want) {
@@ -181,7 +181,7 @@ func TestTheAnchorRendersItsSubstance(t *testing.T) {
 
 	anchor := Anchor{ID: 1, Type: "documentation", Name: "Anchor", Content: "CONTENT-SENTINEL", Substance: "anchor substance"}
 
-	block, _ := Assemble(anchor, nil, 60_000)
+	block, _ := Assemble(anchor, nil, 60_000, FormSubstance)
 
 	if !strings.HasPrefix(block, "===== ANCHOR =====\nid: 1\ntype: documentation\nname: Anchor\n\nanchor substance\n") {
 		t.Fatalf("the anchor section does not render the substance:\n%q", block)
@@ -194,7 +194,7 @@ func TestTheAnchorRendersItsSubstance(t *testing.T) {
 func TestAnAnchorWithoutASubstanceRendersTheUnavailableLine(t *testing.T) {
 	t.Parallel()
 
-	block, _ := Assemble(Anchor{ID: 1, Type: "documentation", Name: "Anchor", Content: "CONTENT-SENTINEL"}, nil, 60_000)
+	block, _ := Assemble(Anchor{ID: 1, Type: "documentation", Name: "Anchor", Content: "CONTENT-SENTINEL"}, nil, 60_000, FormSubstance)
 
 	if !strings.HasPrefix(block, "===== ANCHOR =====\nid: 1\ntype: documentation\nname: Anchor\nsubstance: unavailable\n") {
 		t.Fatalf("the anchor section does not render the unavailable line:\n%q", block)
@@ -210,13 +210,13 @@ func TestTheAnchorIsChargedItsRenderedBytesNotItsContentLength(t *testing.T) {
 	anchor := Anchor{ID: 1, Content: strings.Repeat("c", 10_000), Substance: strings.Repeat("s", 10)}
 	candidates := []Candidate{{ID: 10, Substance: strings.Repeat("t", 80)}}
 
-	_, dispositions := Assemble(anchor, candidates, 100)
+	_, dispositions := Assemble(anchor, candidates, 100, FormSubstance)
 
 	if !dispositions[0].Included {
 		t.Fatalf("the candidate was cut as %q although the anchor's 10 rendered bytes and its own 80 fit a budget of 100: the anchor was charged its content length", dispositions[0].CutReason)
 	}
 
-	memory := newWorkingMemory(JudgementPromptCeiling, anchor, true, nil, nil)
+	memory := newWorkingMemory(JudgementPromptCeiling, anchor, true, nil, nil, FormSubstance)
 	if memory.spent != 10 {
 		t.Fatalf("the memory starts charged %d bytes, want the anchor's 10 rendered bytes", memory.spent)
 	}
@@ -229,8 +229,8 @@ func TestTheFormRuleReadsNoContentLength(t *testing.T) {
 	short := []Candidate{{ID: 10, Type: "documentation", Name: "Row", Similarity: 0.9, Content: strings.Repeat("c", 100), Substance: "the same substance"}}
 	long := []Candidate{{ID: 10, Type: "documentation", Name: "Row", Similarity: 0.9, Content: strings.Repeat("c", 10_000), Substance: "the same substance"}}
 
-	blockShort, dispositionsShort := Assemble(anchor, short, 60_000)
-	blockLong, dispositionsLong := Assemble(anchor, long, 60_000)
+	blockShort, dispositionsShort := Assemble(anchor, short, 60_000, FormSubstance)
+	blockLong, dispositionsLong := Assemble(anchor, long, 60_000, FormSubstance)
 
 	if blockShort != blockLong {
 		t.Fatalf("the block changed with the content's length:\nshort=%q\nlong=%q", blockShort, blockLong)

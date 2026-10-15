@@ -10,7 +10,7 @@ import (
 func TestTheSystemTextStatesThatEveryPartIsShownAsItsSubstanceAndWhatAnUnavailableMarkingMeans(t *testing.T) {
 	t.Parallel()
 
-	text := Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}, false, false)
+	text := Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}, false, false, loop.FormSubstance)
 
 	for _, want := range []string{
 		"and is shown as its substance: a condensed form written for another model as its only source",
@@ -49,7 +49,7 @@ func TestTheBaseTextTellsTheModelToKeepTheBlocksOwnFramingOutOfItsAnswerRightAft
 	)
 
 	for _, offered := range [][]string{nil, {loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}} {
-		text := Compose(offered, false, false)
+		text := Compose(offered, false, false, loop.FormSubstance)
 
 		if strings.Count(text, keepOutBullet) != 1 {
 			t.Errorf("offering %v, the system text does not carry the bullet %q exactly once", offered, keepOutBullet)

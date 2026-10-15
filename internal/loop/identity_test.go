@@ -9,11 +9,11 @@ import (
 
 const identityText = "You are a participant named Quill.\n\nSpeak as yourself."
 
-func layeredSystem(offered []string, _, _ bool) string {
+func layeredSystem(offered []string, _, _ bool, _ Form) string {
 	return "product for " + strings.Join(offered, ",") + "\n\nsecond paragraph"
 }
 
-func runWithIdentity(t *testing.T, graph *fakeGraph, model *fakeModel, system func([]string, bool, bool) string, view *View, settings RunSettings) Record {
+func runWithIdentity(t *testing.T, graph *fakeGraph, model *fakeModel, system func([]string, bool, bool, Form) string, view *View, settings RunSettings) Record {
 	t.Helper()
 
 	turn := NewTurn(graph, model, nil, system, "test-model", testLogger())
@@ -37,7 +37,7 @@ func TestEveryJudgementCallCarriesTheIdentityThenABlankLineThenTheProductText(t 
 		t.Fatalf("the last call offered %v, want the reserved call that offers no tool", last.Offered)
 	}
 	for i, call := range model.calls {
-		want := identityText + "\n\n" + layeredSystem(call.Offered, false, false)
+		want := identityText + "\n\n" + layeredSystem(call.Offered, false, false, FormSubstance)
 		if call.System != want {
 			t.Errorf("call %d carried the system text %q, want %q", i, call.System, want)
 		}
@@ -55,7 +55,7 @@ func TestWithoutAnIdentityTheSystemTextIsTheProductTextByteForByte(t *testing.T)
 			t.Fatalf("%s: the run made %d calls, want 2", name, len(model.calls))
 		}
 		for i, call := range model.calls {
-			if want := layeredSystem(call.Offered, false, false); call.System != want {
+			if want := layeredSystem(call.Offered, false, false, FormSubstance); call.System != want {
 				t.Errorf("%s: call %d carried %q, want %q with no leading separator", name, i, call.System, want)
 			}
 		}

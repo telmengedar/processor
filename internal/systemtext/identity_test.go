@@ -44,7 +44,7 @@ func TestTheIdentityIsSeparatedFromTheRealProductTextByTheSeparatorComposeUsesBe
 		t.Fatalf("RunWithOptions: %v", err)
 	}
 
-	product := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode}, false, false)
+	product := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode}, false, false, loop.FormSubstance)
 	paragraphs := strings.Split(product, "\n\n")
 	if len(paragraphs) < 2 {
 		t.Fatalf("the product text has %d paragraphs, want several joined by one separator", len(paragraphs))
@@ -75,8 +75,8 @@ func TestARunThatCarriesBothTheIdentityAndSilenceGetsTheIdentityThenTheProductTe
 	}
 
 	offered := []string{loop.ToolRecall, loop.ToolReadNode}
-	silent := systemtext.Compose(offered, false, true)
-	if silent == systemtext.Compose(offered, false, false) {
+	silent := systemtext.Compose(offered, false, true, loop.FormSubstance)
+	if silent == systemtext.Compose(offered, false, false, loop.FormSubstance) {
 		t.Fatal("the silence paragraph does not change the product text, so this test cannot tell it present from absent")
 	}
 

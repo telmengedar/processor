@@ -193,8 +193,8 @@ func withoutToolRequest(result JudgeResult) JudgeResult {
 	return result
 }
 
-func fixedSystem(text string) func([]string, bool, bool) string {
-	return func([]string, bool, bool) string { return text }
+func fixedSystem(text string) func([]string, bool, bool, Form) string {
+	return func([]string, bool, bool, Form) string { return text }
 }
 
 var candidateSection = regexp.MustCompile(`(?m)^===== CANDIDATE =====\nid: (\d+)\n`)
@@ -1489,7 +1489,7 @@ func TestTurnRunLeavesTheRecordAndTheBlockUnchangedWhenTheTopCandidateWasDropped
 		t.Fatalf("Run: %v", err)
 	}
 
-	wantBlock, wantDispositions := Assemble(graph.node, graph.candidates, AssemblyByteBudget)
+	wantBlock, wantDispositions := Assemble(graph.node, graph.candidates, AssemblyByteBudget, FormSubstance)
 	if record.Block != wantBlock {
 		t.Fatalf("record.Block changed when the top candidate was dropped:\ngot  %q\nwant %q", record.Block, wantBlock)
 	}

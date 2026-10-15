@@ -56,7 +56,7 @@ func TestTheSystemTextDescribesEveryToolTheJudgementCallOffers(t *testing.T) {
 
 	for tool, phrase := range described {
 		offered := "A " + phrase + " is available."
-		if !strings.Contains(systemtext.Compose([]string{tool}, false, false), offered) {
+		if !strings.Contains(systemtext.Compose([]string{tool}, false, false, loop.FormSubstance), offered) {
 			t.Errorf("the system text never offers the %q tool as %q; every tool the call offers is introduced there in that one neutral register, or the model is left to infer a tool from its schema alone, or to read an emphasis between them that the call does not intend", tool, offered)
 		}
 	}
@@ -81,7 +81,7 @@ func TestTheSystemTextNamesExactlyTheOfferedTools(t *testing.T) {
 			}
 		}
 
-		text := systemtext.Compose(offered, false, false)
+		text := systemtext.Compose(offered, false, false, loop.FormSubstance)
 		for _, tool := range every {
 			if got, want := strings.Contains(text, phrases[tool]), slices.Contains(offered, tool); got != want {
 				t.Errorf("offering %v: the system text mentions %q = %v, want %v: a tool the call does not declare must not be described, and one it declares must be", offered, tool, got, want)
@@ -93,7 +93,7 @@ func TestTheSystemTextNamesExactlyTheOfferedTools(t *testing.T) {
 func TestTheSystemTextOfACallThatOffersNothingNamesNoToolAndNoToolResults(t *testing.T) {
 	t.Parallel()
 
-	text := strings.ToLower(systemtext.Compose(nil, false, false))
+	text := strings.ToLower(systemtext.Compose(nil, false, false, loop.FormSubstance))
 
 	for _, forbidden := range []string{"tool", "recall", "search process", "query"} {
 		if strings.Contains(text, forbidden) {
@@ -164,7 +164,7 @@ var bodyPromises = []string{"in full", "full text", "full content", "complete co
 func readParagraphOfTheSystemText(t *testing.T) string {
 	t.Helper()
 
-	for _, paragraph := range strings.Split(systemtext.Compose([]string{loop.ToolReadNode}, false, false), "\n\n") {
+	for _, paragraph := range strings.Split(systemtext.Compose([]string{loop.ToolReadNode}, false, false, loop.FormSubstance), "\n\n") {
 		if strings.HasPrefix(paragraph, "A read tool is available.") {
 			return paragraph
 		}
@@ -181,7 +181,7 @@ func TestNoParagraphOfTheSystemTextOtherThanTheFileWriteSpeaksOfABodyOrPromisesF
 	}
 
 	for _, conversation := range []bool{false, true} {
-		composed := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}, conversation, false)
+		composed := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}, conversation, false, loop.FormSubstance)
 
 		var kept []string
 		for _, paragraph := range strings.Split(composed, "\n\n") {
@@ -205,29 +205,25 @@ func TestNoParagraphOfTheSystemTextOtherThanTheFileWriteSpeaksOfABodyOrPromisesF
 	}
 }
 
-func TestEveryAdapterDescribesTheReadAsTheSystemTextDoesAndTheTwoAgree(t *testing.T) {
+func TestEveryAdapterDescribesTheReadWithoutNamingAFormAndTheTwoAgree(t *testing.T) {
 	t.Parallel()
-
-	const substanceVocabulary = "as its substance"
-
-	if !strings.Contains(readParagraphOfTheSystemText(t), substanceVocabulary) {
-		t.Fatalf("test setup error: the system text's read paragraph no longer says %q, so the adapters are being held to a phrase the model is not given", substanceVocabulary)
-	}
 
 	var descriptions []string
 	for _, path := range adapterWireFiles {
 		description := readToolDescription(t, path)
 		descriptions = append(descriptions, description)
 
-		if !strings.Contains(description, substanceVocabulary) {
-			t.Errorf("%s declares the read as %q, which does not say %q: the system text tells the model a read returns a part's substance and the tool schema must say the same", path, description, substanceVocabulary)
+		for _, form := range []loop.Form{loop.FormSubstance, loop.FormContent} {
+			if strings.Contains(strings.ToLower(description), string(form)) {
+				t.Errorf("%s declares the read as %q, which names the form %q: the schema is static per adapter and the system text carries the run's form", path, description, form)
+			}
 		}
 		if bodyWord.MatchString(description) {
-			t.Errorf("%s declares the read as %q, which speaks of a body: the model works with substances", path, description)
+			t.Errorf("%s declares the read as %q, which speaks of a body", path, description)
 		}
 		for _, promise := range bodyPromises {
 			if strings.Contains(strings.ToLower(description), promise) {
-				t.Errorf("%s declares the read as %q, which promises %q: a read serves a part's substance or marks it unavailable and never serves its body", path, description, promise)
+				t.Errorf("%s declares the read as %q, which promises %q", path, description, promise)
 			}
 		}
 	}

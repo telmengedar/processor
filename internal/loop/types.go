@@ -33,6 +33,9 @@ type View struct {
 	Identity string      `json:"identity,omitempty"`
 	Note     *NoteConfig `json:"note,omitempty"`
 
+	// Form is the representation the config asked every part to render as, empty when it asked none and substance applies.
+	Form Form `json:"form,omitempty"`
+
 	// Temperature is the temperature the config asked the run's judgement calls for, nil when it asked none and the deployment's applies.
 	Temperature *float64 `json:"temperature,omitempty"`
 
@@ -172,6 +175,8 @@ type Form string
 const (
 	// FormSubstance is the candidate's condensed substance.
 	FormSubstance Form = "substance"
+	// FormContent is the candidate's stored content, shown by a run whose config selects it.
+	FormContent Form = "content"
 	// FormUnavailable is a candidate whose substance could not be produced, rendered as its header alone.
 	FormUnavailable Form = "unavailable"
 )
@@ -333,6 +338,9 @@ type Limits struct {
 	JudgementBudget int `json:"judgementBudget,omitempty"`
 	// AnsweringBudget is the output budget a reserved answering call is issued with; absent: no limit was sent.
 	AnsweringBudget int `json:"answeringBudget,omitempty"`
+
+	// Form is "content" when the run rendered every part as its content, absent on a substance run.
+	Form Form `json:"form,omitempty"`
 
 	// FillWait is how long one substance step waits for its creations, in nanoseconds.
 	FillWait time.Duration `json:"fillWait"`

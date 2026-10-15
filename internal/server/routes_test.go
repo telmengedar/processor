@@ -103,8 +103,8 @@ func withoutToolRequest(result loop.JudgeResult) loop.JudgeResult {
 	return loop.JudgeResult{Answer: result.Answer, Reason: loop.Answered, RawReason: "stop", Usage: result.Usage}
 }
 
-func fixedSystem(text string) func([]string, bool, bool) string {
-	return func([]string, bool, bool) string { return text }
+func fixedSystem(text string) func([]string, bool, bool, loop.Form) string {
+	return func([]string, bool, bool, loop.Form) string { return text }
 }
 
 func newTestTurn(graph loop.GraphPort) *loop.Turn {
