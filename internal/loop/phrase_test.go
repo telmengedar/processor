@@ -179,6 +179,12 @@ func TestAModelRecallQueryOverThePhraseBoundMakesNoGraphCallAndTheRefusalStatesT
 	if !strings.Contains(call.Error, "is 257 bytes") || !strings.Contains(call.Error, "at most 256") {
 		t.Fatalf("the refusal = %q, want it to say the query is 257 bytes and the bound is at most 256, each against its own number", call.Error)
 	}
+	if strings.Index(call.Error, "257 bytes") > strings.Index(call.Error, "at most 256") {
+		t.Fatalf("the refusal = %q, want the length named before the bound", call.Error)
+	}
+	if strings.Contains(call.Error, "Name in a few words") {
+		t.Fatalf("the refusal = %q, want no instruction: the model never reads it", call.Error)
+	}
 	if call.Query != "" {
 		t.Fatalf("the refused query is recorded on the tool call (%d bytes), want it left off the record", len(call.Query))
 	}
@@ -227,6 +233,9 @@ func TestABlankModelRecallQueryIsRefusedWithoutAGraphCall(t *testing.T) {
 	}
 	if !strings.Contains(record.ToolCalls[0].Error, "blank") {
 		t.Fatalf("the refusal = %q, want it to say the query is blank", record.ToolCalls[0].Error)
+	}
+	if !strings.HasSuffix(record.ToolCalls[0].Error, "nothing was looked up") {
+		t.Fatalf("the refusal = %q, want it to end at the fact that nothing was looked up, with no instruction after it: the model never reads it", record.ToolCalls[0].Error)
 	}
 }
 
