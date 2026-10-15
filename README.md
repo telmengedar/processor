@@ -350,7 +350,7 @@ never a silence; it is the failure it always was. A run whose config does not se
 side-effect-free request, so processor honours it as if it were a native call, and the record's `source` says `textual`.
 No other tool is ever honoured from text. An answer that is only the id of a part shown in that call, bare or after an
 `id:` label (`71`, `id: 71`), is routed through the read path: on a call that offered `read_node` the loop reads it, with the
-round's `source` saying `reference`, so a part already shown with its substance is refused as such (a part held as `unavailable` is read and served) and the turn's last call is reserved for
+round's `source` saying `reference`, so a part already shown with its substance is refused as such (a part held as `unavailable` is read again and its substance retried: it is served if a substance now exists, and refused as already shown if it is still unavailable) and the turn's last call is reserved for
 answering. A number that was not shown, or a shown id with any other text around it, is a reply. The description the recall clause asks for is read the same way: on a call that carried the clause, an answer that is one line and a phrase and is
 unfinished (no closing character other than a letter or a digit, at least three words), or is a run of at least two words of one input line, or is one of the turn's derived queries,
 is read as the recall the clause asked for, with the round's `source` saying `echo`; the next call answers as after any recall. A final answer that is not a

@@ -145,16 +145,32 @@ func TestEveryEntryOfTheMarkupListWithholdsAndIsRefusedByEcho(t *testing.T) {
 
 	reader := newEchoReader("hello", nil)
 	for entry, text := range map[string]string{
-		"<tool_call":  "<tool_calls",
-		"tool_call|>": "x tool_call|>",
-		"<|tool":      "<|tool_cal",
-		"tool_call>":  "x tool_call>",
+		"<tool_call":  "tell me about <tool_calls today",
+		"tool_call|>": "tell me about x tool_call|> today",
+		"<|tool":      "tell me about <|tool_cal today",
+		"tool_call>":  "tell me about x tool_call> today",
 	} {
 		if got := classifyNonReply(text, false, "", func(int64) bool { return false }, neverAnEcho); got != NonReplyCallMarkup {
 			t.Errorf("%q (entry %q): kind = %q, want %q", text, entry, got, NonReplyCallMarkup)
 		}
 		if shape := reader.shapeOf(text, false); shape != "" {
 			t.Errorf("%q (entry %q): echo shape = %q, want none", text, entry, shape)
+		}
+
+		unmarked := strings.NewReplacer("<tool_calls", "tool calls", "tool_call|>", "tool call", "<|tool_cal", "tool cal", "tool_call>", "tool call").Replace(text)
+		if shape := reader.shapeOf(unmarked, false); shape != echoUnfinishedPhrase {
+			t.Fatalf("%q (entry %q): echo shape = %q, test setup error: want the markup-free text to be an unfinished phrase", unmarked, entry, shape)
+		}
+
+		run := runEchoing(t, colourInput, "", nil, graphYieldingNewRowsToEveryRecall(), answered(text))
+		if len(run.record.Trailers) != 1 || run.record.Trailers[0] != TrailerClause {
+			t.Fatalf("%q (entry %q): trailers = %v, test setup error: want one clause call", text, entry, run.record.Trailers)
+		}
+		requireCallMarkupWithheld(t, "entry "+entry, text, run.record)
+		for _, round := range run.record.ToolCalls {
+			if round.Source == ToolSourceEcho {
+				t.Fatalf("%q (entry %q): round %+v has source echo, want markup refused by echo", text, entry, round)
+			}
 		}
 	}
 }
