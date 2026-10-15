@@ -233,7 +233,7 @@ func TestCallSyntaxAndPartReferencesAreNeverRecoveredAsAnEchoOnAClauseCall(t *te
 	t.Parallel()
 
 	const input = "see id: 15 please 15"
-	for _, answer := range []string{"read_node(4242)", "call:recall{query:x}<tool_call|>", "id: 15", "15", "ID:15", "  15\n"} {
+	for _, answer := range []string{"read_node(4242)", "id: 15", "15", "ID:15", "  15\n"} {
 		run := runEchoing(t, input, derivedLines("15", "id: 15"), nil, graphYieldingNewRowsToEveryRecall(), answered(answer))
 		requireNoEchoRound(t, answer, run)
 	}

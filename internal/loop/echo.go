@@ -150,8 +150,6 @@ func (e echoReader) recovered(result JudgeResult, kind TrailerKind, silence bool
 
 var callNames = []string{"recall", "read_node", "write_file", "write_note", "call"}
 
-var callMarkup = []string{"<tool_call", "tool_call|>", "<|tool", "tool_call>"}
-
 func opensAsToolCall(text string) bool {
 	opening := strings.TrimLeftFunc(text, unicode.IsSpace)
 	for _, name := range callNames {
@@ -159,13 +157,7 @@ func opensAsToolCall(text string) bool {
 			return true
 		}
 	}
-	lowered := strings.ToLower(text)
-	for _, markup := range callMarkup {
-		if strings.Contains(lowered, markup) {
-			return true
-		}
-	}
-	return false
+	return carriesCallMarkup(text)
 }
 
 func containsProcessorSyntax(text string) bool {

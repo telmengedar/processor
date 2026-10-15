@@ -136,6 +136,8 @@ const (
 	NonReplyPartReference NonReply = "partReference"
 	// NonReplyQueryEcho is a final answer with the shape of a query rather than a reply, in a turn that already recovered such an answer as a recall.
 	NonReplyQueryEcho NonReply = "queryEcho"
+	// NonReplyCallMarkup is a final answer that carries the model's own tool-call markup, which the adapter did not turn into a call.
+	NonReplyCallMarkup NonReply = "callMarkup"
 )
 
 const typePrefix = "type: "
@@ -162,9 +164,23 @@ func classifyNonReply(answer string, lastWasToolRequest bool, unhonoured string,
 		return NonReplyPartReference
 	case echoed(answer):
 		return NonReplyQueryEcho
+	case carriesCallMarkup(answer):
+		return NonReplyCallMarkup
 	default:
 		return ""
 	}
+}
+
+var callMarkup = []string{"<tool_call", "tool_call|>", "<|tool", "tool_call>"}
+
+func carriesCallMarkup(text string) bool {
+	lowered := strings.ToLower(text)
+	for _, markup := range callMarkup {
+		if strings.Contains(lowered, markup) {
+			return true
+		}
+	}
+	return false
 }
 
 func isPartReference(answer string, shown func(int64) bool) bool {
