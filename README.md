@@ -390,7 +390,7 @@ most one note: the tool is withdrawn for the rest of the turn after any note rou
 No tool round is replayed to the model: what a recall or read_node round retrieved joins its working memory and appears in the
 context block, and of the rounds themselves it is told only a search's query and whether it brought anything and, after a note
 round, one acknowledgement. Every later call of the turn, the one reserved for answering included, ends with that
-acknowledgement paragraph; a search paragraph, when the call has one, sits earlier, ahead of the conversation section or, without one, ahead of the repeated request. After a note that was filed
+acknowledgement paragraph, directly after the barren-search line when the call has one; the recall paragraph, when the call carries it, sits earlier, ahead of the conversation section or, without one, ahead of the repeated request. After a note that was filed
 (`stored` or `unlinked`) it reads `You stored this note in this request: "<the note's text>". Now write your answer to the request.`;
 after any other outcome it reads `Your note in this request was not stored. Now write your answer to the request.`, which names no
 cause, quotes no text and does not name the tool. A note that fails does not by itself reserve the next call: that call is
