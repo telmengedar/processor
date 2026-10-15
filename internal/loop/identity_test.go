@@ -44,6 +44,26 @@ func TestEveryJudgementCallCarriesTheIdentityThenABlankLineThenTheProductText(t 
 	}
 }
 
+func TestALongMultibyteIdentityReachesEveryJudgementCallVerbatim(t *testing.T) {
+	t.Parallel()
+
+	identity := strings.Repeat("Du bist Überzeugt 世.\n", 700)
+	if len(identity) < 10_000 {
+		t.Fatalf("the fixture is %d bytes, want at least 10000", len(identity))
+	}
+	model := &fakeModel{results: researchToTheCap()}
+	record := runWithIdentity(t, graphYieldingNewRowsToEveryRecall(), model, layeredSystem, &View{Config: 9, Identity: identity}, DefaultSettings())
+
+	if record.Perspective == nil || record.Perspective.Identity != identity {
+		t.Errorf("the record's perspective does not carry the identity verbatim")
+	}
+	for i, call := range model.calls {
+		if want := identity + "\n\n" + layeredSystem(call.Offered, false, false, FormSubstance); call.System != want {
+			t.Errorf("call %d carried a system text of %d bytes, want the identity verbatim then the product text (%d bytes)", i, len(call.System), len(want))
+		}
+	}
+}
+
 func TestWithoutAnIdentityTheSystemTextIsTheProductTextByteForByte(t *testing.T) {
 	t.Parallel()
 
