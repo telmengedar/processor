@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -60,10 +61,9 @@ const messageInvalidHistory = "history must be an array of exchanges, each with 
 const fallbackReply = "Sorry — I couldn't put an answer together for that just now. Could you say a bit more, or ask it another way?"
 
 type chatResponse struct {
-	Reply    string            `json:"reply"`
-	Written  loop.WriteReceipt `json:"written"`
-	Produced bool              `json:"produced"`
-	Silent   bool              `json:"silent,omitempty"`
+	Reply    string `json:"reply"`
+	Produced bool   `json:"produced"`
+	Silent   bool   `json:"silent,omitempty"`
 }
 
 type verboseResponse struct {
@@ -142,7 +142,7 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			}
 		}
 
-		record, receipt, err := turn.RunWithOptions(runCtx, loop.RunOptions{Input: req.Input, Subject: req.Subject, History: req.History, Settings: loop.DefaultSettings(), View: view})
+		record, started, err := turn.Answer(runCtx, loop.RunOptions{Input: req.Input, Subject: req.Subject, History: req.History, Settings: loop.DefaultSettings(), View: view})
 		if err != nil {
 			switch {
 			case errors.Is(runCtx.Err(), context.DeadlineExceeded):
@@ -161,15 +161,28 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			return
 		}
 
-		w.Header().Set("Content-Type", jsonContentType)
-		w.WriteHeader(http.StatusOK)
 		reply := replyFor(record)
 		if verbose {
+			receipt := turn.File(runCtx, record, started)
+			w.Header().Set("Content-Type", jsonContentType)
+			w.WriteHeader(http.StatusOK)
 			_ = json.NewEncoder(w).Encode(verboseResponse{Record: record, Written: receipt, Reply: reply})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(chatResponse{Reply: reply, Written: receipt, Produced: record.Outcome.Produced, Silent: record.Outcome.Silent})
+
+		sendComplete(w, chatResponse{Reply: reply, Produced: record.Outcome.Produced, Silent: record.Outcome.Silent})
+		turn.File(runCtx, record, started)
 	}
+}
+
+func sendComplete(w http.ResponseWriter, body any) {
+	var buffer bytes.Buffer
+	_ = json.NewEncoder(&buffer).Encode(body)
+	w.Header().Set("Content-Type", jsonContentType)
+	w.Header().Set("Content-Length", strconv.Itoa(buffer.Len()))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buffer.Bytes())
+	_ = http.NewResponseController(w).Flush()
 }
 
 func resolveConfig(ctx context.Context, w http.ResponseWriter, turn *loop.Turn, id int64) (view *loop.View, failed bool) {

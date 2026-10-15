@@ -83,19 +83,16 @@ func stringMember(t *testing.T, members map[string]json.RawMessage, key string) 
 	return value
 }
 
-func TestRunsDefaultResponseCarriesOnlyTheReplyAndTheReceipt(t *testing.T) {
+func TestTheDefaultBodyCarriesNoWrittenKey(t *testing.T) {
 	t.Parallel()
 
 	turn := replyTurn(&scriptedModel{step: answeringWith("The grip drops because the hold is not set.")})
 
 	rec := postTo(t, context.Background(), turn, "/runs")
 
-	members, keys := topLevelKeys(t, rec)
-	if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
+	_, keys := topLevelKeys(t, rec)
+	if want := []string{"produced", "reply"}; !slices.Equal(keys, want) {
 		t.Fatalf("default body keys = %q, want %q", keys, want)
-	}
-	if got, want := string(members["written"]), `{"state":"stored","nodeId":10525}`; got != want {
-		t.Fatalf("written = %s, want %s", got, want)
 	}
 }
 
@@ -405,7 +402,7 @@ func TestRunsReplyIsTheFallbackWhenTheRunProducedNothing(t *testing.T) {
 			ctx, cancel = newCtx()
 			defer cancel()
 			members, keys := topLevelKeys(t, postTo(t, ctx, replyTurn(c.model()), "/runs"))
-			if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
+			if want := []string{"produced", "reply"}; !slices.Equal(keys, want) {
 				t.Fatalf("default body keys = %q, want %q", keys, want)
 			}
 			if got := stringMember(t, members, "reply"); got != fallback {
@@ -445,7 +442,7 @@ func TestRunsVerboseFalseKeepsTheDefaultBody(t *testing.T) {
 			turn := replyTurn(&scriptedModel{step: answeringWith("an answer")})
 
 			_, keys := topLevelKeys(t, postTo(t, context.Background(), turn, target))
-			if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
+			if want := []string{"produced", "reply"}; !slices.Equal(keys, want) {
 				t.Fatalf("%s body keys = %q, want %q", target, keys, want)
 			}
 		})

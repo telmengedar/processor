@@ -3,9 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -378,10 +382,29 @@ func TestSIGTERMDrainsAnInFlightRunInsteadOfDroppingIt(t *testing.T) {
 
 	stored := &storedBody{}
 	graphSrv, graphAuth := graphServer(t, stored, "")
+	const graphWriteDelay = 500 * time.Millisecond
+	upstream, err := url.Parse(graphSrv.URL)
+	if err != nil {
+		t.Fatalf("parse graph url: %v", err)
+	}
+	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	var runLinkDone atomic.Bool
+	slowGraph := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		write := r.Method != http.MethodGet
+		if write {
+			time.Sleep(graphWriteDelay)
+		}
+		proxy.ServeHTTP(w, r)
+		if r.Method == http.MethodPost && r.URL.Path == fmt.Sprintf("/api/nodes/%d/links", storedNodeID) {
+			runLinkDone.Store(true)
+		}
+	}))
+	t.Cleanup(slowGraph.Close)
 
 	const modelDelay = 6 * time.Second
 	entered := make(chan struct{}, 1)
 	modelAuth := &authRecorder{}
+	var modelCalls atomic.Int32
 	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		modelAuth.record(r)
 
@@ -390,14 +413,18 @@ func TestSIGTERMDrainsAnInFlightRunInsteadOfDroppingIt(t *testing.T) {
 		default:
 		}
 		time.Sleep(modelDelay)
+		content := "The drained answer."
+		if modelCalls.Add(1) == 1 {
+			content = "a derived query that is not the answer"
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"the drained answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":22}}`))
+		_, _ = fmt.Fprintf(w, `{"choices":[{"message":{"content":%q},"finish_reason":"stop"}],"usage":{"prompt_tokens":11,"completion_tokens":22}}`, content)
 	}))
 	t.Cleanup(modelSrv.Close)
 
 	rp := startServingProcess(t, bin, harnessEnvWith(map[string]string{
 		envHTTPAddr:  "127.0.0.1:0",
-		envDivoidURL: graphSrv.URL,
+		envDivoidURL: slowGraph.URL,
 		envModelURL:  modelSrv.URL,
 		envModelKey:  modelKeySentinel,
 	}))
@@ -442,19 +469,21 @@ func TestSIGTERMDrainsAnInFlightRunInsteadOfDroppingIt(t *testing.T) {
 	if got.status != http.StatusOK {
 		t.Fatalf("POST /runs status = %d, want %d; body=%s", got.status, http.StatusOK, got.body)
 	}
-	if !strings.Contains(string(got.body), `"reply":"the drained answer"`) {
+	if !strings.Contains(string(got.body), `"reply":"The drained answer."`) {
 		t.Fatalf("the drained response does not carry the model's answer as its reply; body=%s", got.body)
 	}
-	if !strings.Contains(string(got.body), `"written":{"state":"stored"`) {
-		t.Fatalf("the drained response does not report the record as stored; body=%s", got.body)
-	}
+
+	awaitExit(t, rp.cmd, 30*time.Second, rp.stderr)
+
 	if len(stored.get()) == 0 {
 		t.Fatalf("the graph never received the run record, so the drain delivered the answer but not the second copy; stderr:\n%s", rp.stderr.String())
 	}
 
-	assertEachEndpointReceivedItsOwnCredential(t, graphAuth, modelAuth)
+	if !runLinkDone.Load() {
+		t.Fatalf("the process exited before the run record's link write completed, so the drain did not cover the post-reply filing; stderr:\n%s", rp.stderr.String())
+	}
 
-	awaitExit(t, rp.cmd, 30*time.Second, rp.stderr)
+	assertEachEndpointReceivedItsOwnCredential(t, graphAuth, modelAuth)
 
 	if code := rp.cmd.ProcessState.ExitCode(); code != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr:\n%s", code, rp.stderr.String())

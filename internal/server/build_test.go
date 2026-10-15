@@ -21,7 +21,7 @@ func TestTheVerboseBodyCarriesTheBuildTheTurnWasStampedWith(t *testing.T) {
 	}
 }
 
-func TestTheDefaultBodyOfAStampedTurnStillCarriesOnlyReplyWrittenAndProduced(t *testing.T) {
+func TestTheDefaultBodyOfAStampedTurnStillCarriesOnlyReplyAndProduced(t *testing.T) {
 	t.Parallel()
 
 	turn := replyTurn(&scriptedModel{step: answeringWith("an answer")})
@@ -29,7 +29,7 @@ func TestTheDefaultBodyOfAStampedTurnStillCarriesOnlyReplyWrittenAndProduced(t *
 
 	_, keys := topLevelKeys(t, postTo(t, context.Background(), turn, "/runs"))
 
-	if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
+	if want := []string{"produced", "reply"}; !slices.Equal(keys, want) {
 		t.Fatalf("default body keys = %q, want %q — the build must not reach the default body", keys, want)
 	}
 }

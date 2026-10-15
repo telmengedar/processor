@@ -26,7 +26,7 @@ func TestAChosenSilenceAnswersAnEmptyReplyNotProducedAndSilent(t *testing.T) {
 	rec := postRuns(t, turn, configPostBodyHead+`77}`)
 
 	members, keys := topLevelKeys(t, rec)
-	if want := []string{"produced", "reply", "silent", "written"}; !slices.Equal(keys, want) {
+	if want := []string{"produced", "reply", "silent"}; !slices.Equal(keys, want) {
 		t.Fatalf("body keys = %q, want %q", keys, want)
 	}
 	if reply := stringMember(t, members, "reply"); reply != "" {
@@ -70,7 +70,7 @@ func TestABlankAnswerUnderSilenceKeepsTheFallbackSentenceAndCarriesNoSilentKey(t
 
 		members, keys := topLevelKeys(t, postRuns(t, turn, configPostBodyHead+`77}`))
 
-		if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
+		if want := []string{"produced", "reply"}; !slices.Equal(keys, want) {
 			t.Errorf("answer %q: body keys = %q, want %q", answer, keys, want)
 		}
 		if reply := stringMember(t, members, "reply"); reply != fallbackReply {
@@ -90,7 +90,7 @@ func TestTheMarkerIsDeliveredVerbatimWhenTheConfigDoesNotOfferSilence(t *testing
 
 		members, keys := topLevelKeys(t, postRuns(t, turn, configPostBodyHead+`77}`))
 
-		if want := []string{"produced", "reply", "written"}; !slices.Equal(keys, want) {
+		if want := []string{"produced", "reply"}; !slices.Equal(keys, want) {
 			t.Errorf("config %s: body keys = %q, want %q", content, keys, want)
 		}
 		if reply := stringMember(t, members, "reply"); reply != "say "+silenceMarker || !boolMember(t, members, "produced") {
