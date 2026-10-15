@@ -152,22 +152,112 @@ func TestABarrenServedRecallLeavesTheNextCallOfferingTools(t *testing.T) {
 	}
 }
 
-func TestAFailedWriteDoesNotReserveTheNextCall(t *testing.T) {
+func TestEveryRefusedWriteRoundReservesTheNextCallForAnswering(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		files func() *fakeFiles
+		first JudgeResult
+	}{
+		{"a path the working directory rejects", func() *fakeFiles {
+			return &fakeFiles{dir: "/runs/run-1", writeErr: fmt.Errorf("%w: path must not leave the working directory", ErrWriteRejected)}
+		}, wantsWriteOf("../escape.html", "x")},
+		{"a malformed write", func() *fakeFiles { return &fakeFiles{dir: "/runs/run-1"} },
+			JudgeResult{Reason: WantsWrite, RawReason: "tool_calls", ToolError: "tool arguments could not be parsed: unexpected token"}},
+		{"no working directory", func() *fakeFiles { return nil }, wantsWriteOf("page.html", "x")},
+	} {
+		model := &fakeModel{results: []JudgeResult{tc.first, answered("done")}}
+
+		var files FilePort
+		if f := tc.files(); f != nil {
+			files = f
+		}
+		record, _, err := turnComposing(baseGraph(), model, files).Run(context.Background(), "make a page", 42)
+		if err != nil {
+			t.Fatalf("%s: Run: %v", tc.name, err)
+		}
+
+		if len(record.ToolCalls) != 1 || record.ToolCalls[0].Error == "" {
+			t.Fatalf("%s: test setup error: record.toolCalls = %+v, want one refused write", tc.name, record.ToolCalls)
+		}
+		if len(model.calls) != 2 || len(model.calls[1].Offered) != 0 {
+			t.Errorf("%s: the model was called %d times and the last call offered %v, want 2 calls and nothing offered after the refusal", tc.name, len(model.calls), model.calls[len(model.calls)-1].Offered)
+		}
+		if record.ReservedCall.State != ReservedCallCompleted || record.CapReached {
+			t.Errorf("%s: reservedCall.state = %q, capReached = %v, want a completed reserved call and no cap", tc.name, record.ReservedCall.State, record.CapReached)
+		}
+	}
+}
+
+func TestRepeatedRejectedWritesDoNotRunTheTurnToTheCap(t *testing.T) {
 	t.Parallel()
 
 	files := &fakeFiles{dir: "/runs/run-1", writeErr: fmt.Errorf("%w: path must not leave the working directory", ErrWriteRejected)}
-	model := &fakeModel{results: []JudgeResult{wantsWriteOf("../escape.html", "x"), answered("done")}}
+	results := make([]JudgeResult, 0, MaxModelCalls+1)
+	for range MaxModelCalls + 1 {
+		results = append(results, wantsWriteOf("../escape.html", "x"))
+	}
+	model := &fakeModel{results: results}
 
 	record, _, err := turnComposing(baseGraph(), model, files).Run(context.Background(), "make a page", 42)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if len(record.ToolCalls) != 1 || record.ToolCalls[0].Error == "" {
-		t.Fatalf("test setup error: record.toolCalls = %+v, want one rejected write", record.ToolCalls)
+	if len(model.calls) != 2 || record.CapReached {
+		t.Errorf("the model was called %d times with capReached = %v, want exactly 2 calls and no cap", len(model.calls), record.CapReached)
 	}
-	if got := model.calls[1].Offered; !slices.Equal(got, []string{"recall", "readNode", "writeFile"}) {
-		t.Errorf("the call after a rejected write offers %v, want all three tools: writes are not retrieval refusals", got)
+	if len(files.writes) != 1 {
+		t.Errorf("the working directory received %d write attempts, want 1", len(files.writes))
+	}
+}
+
+func TestAFilesystemFailureOfAWriteDoesNotReserveTheNextCall(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name  string
+		files *fakeFiles
+	}{
+		{"a filesystem error on the write", &fakeFiles{dir: "/runs/run-1", writeErr: errors.New("disk full")}},
+		{"a failure opening the run directory", &fakeFiles{openErr: errors.New("permission denied")}},
+	} {
+		model := &fakeModel{results: []JudgeResult{wantsWriteOf("page.html", "x"), answered("done")}}
+
+		record, _, err := turnComposing(baseGraph(), model, tc.files).Run(context.Background(), "make a page", 42)
+		if err != nil {
+			t.Fatalf("%s: Run: %v", tc.name, err)
+		}
+
+		if len(record.ToolCalls) != 1 || record.ToolCalls[0].Error == "" {
+			t.Fatalf("%s: test setup error: record.toolCalls = %+v, want one failed write", tc.name, record.ToolCalls)
+		}
+		if got := model.calls[1].Offered; !slices.Equal(got, []string{"recall", "readNode", "writeFile"}) {
+			t.Errorf("%s: the call after a failed write offers %v, want all three tools: a repeat may succeed", tc.name, got)
+		}
+		if record.ReservedCall.State != "" {
+			t.Errorf("%s: reservedCall.state = %q, want none", tc.name, record.ReservedCall.State)
+		}
+	}
+}
+
+func TestARefusedWriteReservedTurnIsRecordedAsCurtailed(t *testing.T) {
+	t.Parallel()
+
+	files := &fakeFiles{dir: "/runs/run-1", writeErr: fmt.Errorf("%w: path must not leave the working directory", ErrWriteRejected)}
+	model := &fakeModel{results: []JudgeResult{wantsWriteOf("../escape.html", "x"), answered("the answer")}}
+
+	record, _, err := turnComposing(baseGraph(), model, files).Run(context.Background(), "make a page", 42)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if record.CapReached || record.RecallClosed || record.ReservedCall.State != ReservedCallCompleted {
+		t.Fatalf("test setup error: capReached=%v recallClosed=%v reservedCall=%q, want a turn reserved by the refusal alone", record.CapReached, record.RecallClosed, record.ReservedCall.State)
+	}
+	if record.Outcome.Verdict != VerdictCurtailed || !record.Outcome.Curtailed {
+		t.Errorf("outcome = %+v, want verdict %q and curtailed", record.Outcome, VerdictCurtailed)
 	}
 }
 
@@ -299,6 +389,10 @@ func TestNoRefusalOrToolErrorTextReachesAnyFieldOfAFollowingCall(t *testing.T) {
 		{"a write the files port rejected", func() (Record, []JudgeInput) {
 			files := &fakeFiles{dir: "/runs/run-1", writeErr: fmt.Errorf("%w: path must not leave the working directory", ErrWriteRejected)}
 			return plain(baseGraph(), files, 42, wantsWriteOf("../escape.html", "x"), answered("done"))
+		}},
+		{"a malformed write", func() (Record, []JudgeInput) {
+			files := &fakeFiles{dir: "/runs/run-1"}
+			return plain(baseGraph(), files, 42, JudgeResult{Reason: WantsWrite, RawReason: "tool_calls", ToolError: malformed}, answered("done"))
 		}},
 		{"a write that failed for an unrecognised cause", func() (Record, []JudgeInput) {
 			files := &fakeFiles{dir: "/runs/run-1", writeErr: errors.New("no space left on device")}

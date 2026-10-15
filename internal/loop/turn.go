@@ -29,8 +29,8 @@ const (
 	errReadOfSubject        = "that id is this request's own subject, and the context block already carries it"
 	errAlreadyShownThisTurn = "that part has already been shown to you in this turn"
 	errNodeTooLargeFormat   = "that part's substance is %d bytes and one read carries at most %d, so it cannot be shown"
-	errQueryNotPhraseFormat = "that query is %d bytes and a recall query is a phrase of at most %d: nothing was looked up. Name in a few words what is missing"
-	errQueryBlank           = "that query is blank: nothing was looked up. Name in a few words what is missing"
+	errQueryNotPhraseFormat = "that query is %d bytes and a recall query is a phrase of at most %d: nothing was looked up"
+	errQueryBlank           = "that query is blank: nothing was looked up"
 )
 
 type reservation string
@@ -121,7 +121,7 @@ type Turn struct {
 	Graph GraphPort
 	Model ModelPort
 
-	// Files is the working directory writes go to; nil refuses every write.
+	// Files is the working directory writes go to; nil leaves the file tool unoffered.
 	Files FilePort
 
 	// Notes files the notes a run's model writes; nil never offers the note tool.
@@ -775,10 +775,12 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 
 	if result.ToolError != "" {
 		exchange.Error = BoundCause(result.ToolError)
+		exchange.Refused = true
 		return exchange
 	}
 	if t.Files == nil {
 		exchange.Error = errNoWorkingDirectory
+		exchange.Refused = true
 		return exchange
 	}
 
@@ -796,6 +798,7 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 	if err != nil {
 		if errors.Is(err, ErrWriteRejected) {
 			exchange.Error = BoundCause(err.Error())
+			exchange.Refused = true
 			return exchange
 		}
 		t.log().Error("file write failed", "path", result.WritePath, "error", err)
