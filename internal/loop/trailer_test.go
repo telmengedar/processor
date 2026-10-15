@@ -32,18 +32,18 @@ func answer() JudgeResult {
 }
 
 func userContentOf(call JudgeInput) string {
-	return RenderUserContent(call.Block, call.Input, call.Now, call.Window, call.Conversation, call.Trailer)
+	return RenderUserContent(call.Block, call.Input, call.Now, call.Window, call.Conversation, call.Clause, call.Trailer)
 }
 
-func TestTheClauseIsTheLastParagraphOfTheUserContentWhenRecallIsOffered(t *testing.T) {
+func TestTheClauseIsTheParagraphBeforeTheFinalRequestWhenRecallIsOffered(t *testing.T) {
 	t.Parallel()
 
 	_, model := runRecalls(t, baseGraph(), answer())
 
 	content := userContentOf(model.calls[0])
-	tail := "===== INPUT =====\nhello\n\n" + recallClause
+	tail := recallClause + "\n\n===== INPUT =====\nhello"
 	if !strings.HasSuffix(content, tail) {
-		t.Fatalf("the user content does not end with the request, one blank line and the clause:\n%q", content)
+		t.Fatalf("the user content does not end with the clause, one blank line and the request:\n%q", content)
 	}
 	if strings.Count(content, recallClause) != 1 {
 		t.Fatalf("the clause appears %d times in the user content, want once", strings.Count(content, recallClause))
@@ -85,6 +85,9 @@ func TestTheReservedAnsweringCallCarriesNoTrailer(t *testing.T) {
 	}
 	if last.Trailer != "" {
 		t.Fatalf("the reserved call carries trailer %q, want none", last.Trailer)
+	}
+	if last.Clause != "" || strings.Contains(userContentOf(last), recallClause) {
+		t.Fatalf("the reserved call carries clause %q, want none: recall is not offered on it", last.Clause)
 	}
 	if got := record.Trailers[len(record.Trailers)-1]; got != TrailerNone {
 		t.Fatalf("the record names the reserved call's trailer %q, want %q", got, TrailerNone)
@@ -145,8 +148,8 @@ func TestARecallThatErroredLeavesTheClauseInPlace(t *testing.T) {
 	graph.recallQueue = []recallResponse{{}, {Err: context.DeadlineExceeded}}
 	_, model := runRecalls(t, graph, recallOf("anything"), answer())
 
-	if got := model.calls[1].Trailer; got != recallClause {
-		t.Fatalf("the call after a failed recall carries trailer %q, want the clause: nothing was searched", got)
+	if got := model.calls[1].Clause; got != recallClause || model.calls[1].Trailer != "" {
+		t.Fatalf("the call after a failed recall carries clause %q and trailer %q, want the clause alone: nothing was searched", got, model.calls[1].Trailer)
 	}
 }
 
@@ -174,8 +177,8 @@ func TestASuccessfulReadOfANodeIsNotASearchSoTheNextCallStillCarriesTheClause(t 
 	if len(record.ToolCalls) != 1 || record.ToolCalls[0].Tool != ToolReadNode || record.ToolCalls[0].Error != "" || record.ToolCalls[0].Yield == 0 {
 		t.Fatalf("test setup error: want one successful read that put a row in front of the model, got %+v", record.ToolCalls)
 	}
-	if got := model.calls[1].Trailer; got != recallClause {
-		t.Fatalf("the call after a successful read carries trailer %q, want the clause alone: nothing was searched", got)
+	if got := model.calls[1].Clause; got != recallClause || model.calls[1].Trailer != "" {
+		t.Fatalf("the call after a successful read carries clause %q and trailer %q, want the clause alone: nothing was searched", got, model.calls[1].Trailer)
 	}
 	if want := []TrailerKind{TrailerClause, TrailerClause}; !slices.Equal(record.Trailers, want) {
 		t.Fatalf("record.Trailers = %v, want %v", record.Trailers, want)
@@ -269,7 +272,7 @@ func TestRenderUserContentWithoutATrailerIsByteIdenticalToTheLayoutBeforeTheTrai
 
 	instant := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
 	for _, conversation := range []string{"", "===== EARLIER IN THIS CONVERSATION =====\nuser said: hi"} {
-		got := RenderUserContent("BLOCK\n", trailerTestRequest, instant, UpdateWindow{}, conversation, "")
+		got := RenderUserContent("BLOCK\n", trailerTestRequest, instant, UpdateWindow{}, conversation, "", "")
 
 		want := "===== INPUT =====\n" + trailerTestRequest + "\n\n===== NOW =====\n2026-03-04T05:06:07Z\n\n\nBLOCK\n"
 		if conversation != "" {
@@ -287,8 +290,8 @@ func TestRenderUserContentPutsTheTrailerAfterTheRequestAndChangesNothingBeforeIt
 	t.Parallel()
 
 	instant := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
-	plain := RenderUserContent("BLOCK\n", trailerTestRequest, instant, UpdateWindow{}, "", "")
-	got := RenderUserContent("BLOCK\n", trailerTestRequest, instant, UpdateWindow{}, "", "TRAILER")
+	plain := RenderUserContent("BLOCK\n", trailerTestRequest, instant, UpdateWindow{}, "", "", "")
+	got := RenderUserContent("BLOCK\n", trailerTestRequest, instant, UpdateWindow{}, "", "", "TRAILER")
 
 	if want := plain + "\n\nTRAILER"; got != want {
 		t.Fatalf("user content =\n%q\nwant\n%q", got, want)

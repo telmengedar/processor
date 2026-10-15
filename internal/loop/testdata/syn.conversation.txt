@@ -1,0 +1,5 @@
+===== EARLIER IN THIS CONVERSATION =====
+user said: alice: hello there
+you replied: hi, what is up?
+user said: alice: just checking in
+you replied: fine by me.

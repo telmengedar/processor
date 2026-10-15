@@ -1,0 +1,34 @@
+===== INPUT =====
+alice: is it still raining there
+
+===== NOW =====
+2026-10-15T19:21:12Z
+
+
+===== ANCHOR =====
+id: 1
+type: knowledge
+name: Narrator
+
+A plain narrator persona used only for layout tests.
+
+===== CANDIDATE =====
+id: 2
+type: thought
+name: alice on weather
+similarity: 0.612
+
+Alice often asks about the weather where others live.
+
+===== CANDIDATE =====
+id: 3
+type: thought
+name: bob on umbrellas
+similarity: 0.540
+
+Bob keeps an umbrella by the door.
+
+When none of the parts above states what this request asks for, do not say the information is missing: call the recall tool with a short description of what is missing.
+
+===== INPUT =====
+alice: is it still raining there

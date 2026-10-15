@@ -381,8 +381,11 @@ func TestANoteRoundIsNotRetrievalItAbsorbsNoRowAddsNoYieldAndLeavesTheTrailerOfT
 	if got, want := withNote.model.calls[1].Block, without.model.calls[0].Block; got != want {
 		t.Errorf("the block after a note round differs from the block of a run without one:\n%q\nwant\n%q", got, want)
 	}
-	if got, want := withNote.model.calls[1].Trailer, composeClosing(without.model.calls[0].Trailer, acknowledgement(NoteAckStored, "a thought")); got != want {
-		t.Errorf("the trailer after a note round = %q, want the search paragraph of a run without one and then the acknowledgement %q: a note is not a search", got, want)
+	if got, want := withNote.model.calls[1].Trailer, acknowledgement(NoteAckStored, "a thought"); got != want {
+		t.Errorf("the trailer after a note round = %q, want the acknowledgement alone %q", got, want)
+	}
+	if got, want := withNote.model.calls[1].Clause, without.model.calls[0].Clause; got != want {
+		t.Errorf("the clause after a note round = %q, want the clause of a run without one %q: a note is not a search", got, want)
 	}
 	if got, want := withNote.record.Trailers, []TrailerKind{TrailerClause, TrailerClause}; !slices.Equal(got, want) {
 		t.Errorf("the trailers = %v, want %v", got, want)
