@@ -217,7 +217,7 @@ const (
 	ToolSourceNative ToolSource = "native"
 	// ToolSourceContent is a call the adapter recovered from the response text because the endpoint reported none.
 	ToolSourceContent ToolSource = "content"
-	// ToolSourceTextual is a call the adapter recovered from an answer that opened with an offered retrieval tool's name followed by a colon or a brace, with no call markup.
+	// ToolSourceTextual is a call the adapter recovered from an answer that opened with an offered retrieval tool's call written as text.
 	ToolSourceTextual ToolSource = "textual"
 	// ToolSourceReference is a read of a part shown in that call, taken from an answer that consisted only of that part's id.
 	ToolSourceReference ToolSource = "reference"
