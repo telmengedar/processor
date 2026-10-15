@@ -19,6 +19,10 @@ var markupAnswers = []string{
 	"hello there <tool_call|>",
 	"I said <tool_call|> lol",
 	"call:recall{query:x}<tool_call|>",
+	"<function=write_file><parameter=path>a</parameter></function>",
+	"Sure!\n<function=write_file><parameter=path>a</parameter></function>",
+	"<function=><parameter=query>x</parameter></function>",
+	"<function=recall",
 }
 
 func requireCallMarkupWithheld(t *testing.T, label, answer string, record Record) {
@@ -69,7 +73,7 @@ func TestAFinalAnswerCarryingCallMarkupIsWithheldOnAFoundCall(t *testing.T) {
 func TestCallMarkupIsRecognisedInAnyCase(t *testing.T) {
 	t.Parallel()
 
-	for _, answer := range []string{"<|TOOL_CALL>", "<TOOL_CALL|>", "x <Tool_Call|> y"} {
+	for _, answer := range []string{"<|TOOL_CALL>", "<TOOL_CALL|>", "x <Tool_Call|> y", "<FUNCTION=write_file></FUNCTION>"} {
 		record, _ := runAnswering(t, answered(answer))
 		requireCallMarkupWithheld(t, answer, answer, record)
 	}
@@ -92,6 +96,13 @@ func TestAnAnswerThatAnEarlierArmOwnsKeepsItsKindWhateverMarkupItCarries(t *test
 	record, _ := runAnswering(t, unhonoured)
 	if record.NonReply != NonReplyToolText {
 		t.Fatalf("unhonoured call: nonReply = %q, want %q", record.NonReply, NonReplyToolText)
+	}
+
+	unhonouredFunction := answered("recall: x\n<function=write_file><parameter=path>a</parameter></function>")
+	unhonouredFunction.UnhonouredCall = ToolRecall
+	record, _ = runAnswering(t, unhonouredFunction)
+	if record.NonReply != NonReplyToolText {
+		t.Fatalf("unhonoured call before function markup: nonReply = %q, want %q", record.NonReply, NonReplyToolText)
 	}
 
 	results := researchToTheCap()
@@ -127,7 +138,7 @@ func TestPartReferenceAndQueryEchoKeepTheirKindOverTheMarkupArm(t *testing.T) {
 func TestTextThatMerelyResemblesCallMarkupOrCallNamesIsDelivered(t *testing.T) {
 	t.Parallel()
 
-	for _, answer := range []string{"call: me later", "recall: x", "the tool_call field", "<tool>", "use the tool, call me"} {
+	for _, answer := range []string{"call: me later", "recall: x", "the tool_call field", "<tool>", "use the tool, call me", "the function= sign", "a function call", "<function>", "onclick: function=go"} {
 		if got := classifyNonReply(answer, false, "", func(int64) bool { return false }, neverAnEcho); got != "" {
 			t.Errorf("classifyNonReply(%q) = %q, want none: only markup is held by the markup arm", answer, got)
 		}
@@ -136,6 +147,27 @@ func TestTextThatMerelyResemblesCallMarkupOrCallNamesIsDelivered(t *testing.T) {
 		record, _ := runAnswering(t, answered(answer))
 		if record.NonReply != "" || !record.Outcome.Produced {
 			t.Errorf("%q: nonReply = %q, produced = %t, want it delivered on an adapter that left it as an answer", answer, record.NonReply, record.Outcome.Produced)
+		}
+	}
+}
+
+func TestALookAlikeOfFunctionMarkupThatIsNotPhraseShapedIsDeliveredOnAClauseCallAndOnAFoundCall(t *testing.T) {
+	t.Parallel()
+
+	for _, answer := range []string{"Use the function= sign.", "Use <function> for that."} {
+		clause := runEchoing(t, colourInput, "", nil, graphYieldingNewRowsToEveryRecall(), answered(answer))
+		if len(clause.record.Trailers) != 1 || clause.record.Trailers[0] != TrailerClause {
+			t.Fatalf("%q: trailers = %v, test setup error: want one clause call", answer, clause.record.Trailers)
+		}
+		found := runEchoing(t, colourInput, "", nil, graphYieldingNewRowsToEveryRecall(), recallFor("a phrase"), answered(answer))
+		if got := found.record.Trailers; len(got) != 2 || got[1] != TrailerFound {
+			t.Fatalf("%q: trailers = %v, test setup error: want the answering call to be a found call", answer, got)
+		}
+
+		for label, record := range map[string]Record{"clause call": clause.record, "found call": found.record} {
+			if record.NonReply != "" || !record.Outcome.Produced || record.Answer != answer {
+				t.Errorf("%s %q: nonReply = %q, produced = %t, answer = %q, want it delivered verbatim with no nonReply", label, answer, record.NonReply, record.Outcome.Produced, record.Answer)
+			}
 		}
 	}
 }
@@ -149,6 +181,7 @@ func TestEveryEntryOfTheMarkupListWithholdsAndIsRefusedByEcho(t *testing.T) {
 		"tool_call|>": "tell me about x tool_call|> today",
 		"<|tool":      "tell me about <|tool_cal today",
 		"tool_call>":  "tell me about x tool_call> today",
+		"<function=":  "tell me about <function=x today",
 	} {
 		if got := classifyNonReply(text, false, "", func(int64) bool { return false }, neverAnEcho); got != NonReplyCallMarkup {
 			t.Errorf("%q (entry %q): kind = %q, want %q", text, entry, got, NonReplyCallMarkup)
@@ -157,7 +190,7 @@ func TestEveryEntryOfTheMarkupListWithholdsAndIsRefusedByEcho(t *testing.T) {
 			t.Errorf("%q (entry %q): echo shape = %q, want none", text, entry, shape)
 		}
 
-		unmarked := strings.NewReplacer("<tool_calls", "tool calls", "tool_call|>", "tool call", "<|tool_cal", "tool cal", "tool_call>", "tool call").Replace(text)
+		unmarked := strings.NewReplacer("<tool_calls", "tool calls", "tool_call|>", "tool call", "<|tool_cal", "tool cal", "tool_call>", "tool call", "<function=x", "function x").Replace(text)
 		if shape := reader.shapeOf(unmarked, false); shape != echoUnfinishedPhrase {
 			t.Fatalf("%q (entry %q): echo shape = %q, test setup error: want the markup-free text to be an unfinished phrase", unmarked, entry, shape)
 		}
@@ -186,6 +219,31 @@ func TestAReservedAnsweringCallThatWritesCallMarkupIsCurtailedAndCarriesTheKind(
 	if record.NonReply != NonReplyCallMarkup || record.Outcome.Verdict != VerdictCurtailed || record.Outcome.Produced {
 		t.Fatalf("nonReply = %q, outcome = %+v, want %q beside a curtailed verdict and produced false", record.NonReply, record.Outcome, NonReplyCallMarkup)
 	}
+}
+
+func TestAReservedAnsweringCallThatWritesFunctionMarkupIsCurtailedAndCarriesTheKind(t *testing.T) {
+	t.Parallel()
+
+	record, _ := runAnswering(t, researchThenAnswer("<function=recall><parameter=query>x</parameter></function>")...)
+
+	if record.ReservedCall.State != ReservedCallCompleted {
+		t.Fatalf("test setup error: reservedCall = %+v, want a completed reserved call", record.ReservedCall)
+	}
+	if record.NonReply != NonReplyCallMarkup || record.Outcome.Verdict != VerdictCurtailed || record.Outcome.Produced {
+		t.Fatalf("nonReply = %q, outcome = %+v, want %q beside a curtailed verdict and produced false", record.NonReply, record.Outcome, NonReplyCallMarkup)
+	}
+}
+
+func TestFunctionMarkupOnAResultTheAdapterLeftUnrecognisedIsWithheld(t *testing.T) {
+	t.Parallel()
+
+	answer := "<function=write_file><parameter=path>a</parameter></function>"
+	result := answered(answer)
+	result.Reason = Unrecognised
+	result.ToolSource = ToolSourceContent
+	record, _ := runAnswering(t, result)
+
+	requireCallMarkupWithheld(t, "unrecognised "+answer, answer, record)
 }
 
 func TestAMarkupAnswerOnARunThatChoseSilenceStaysSilentAndKeepsTheKind(t *testing.T) {

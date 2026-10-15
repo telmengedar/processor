@@ -476,7 +476,7 @@ type ToolExchange struct {
 	Created      int64
 	Written      WriteState
 
-	// Refused is true when the loop declined a retrieval request for a reason that holds for the same request against the same memory, as opposed to a graph failure a repeat may clear.
+	// Refused is true when the loop declined a request for a reason that holds for the same request against the same state, as opposed to a failure a repeat may clear.
 	Refused bool
 }
 
