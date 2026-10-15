@@ -257,30 +257,27 @@ func TestDecodeRefusesABlankIdentityNamingTheKey(t *testing.T) {
 	}
 }
 
-func TestDecodeBoundsTheIdentityInBytesNotCharacters(t *testing.T) {
+func TestDecodeAcceptsALongMultibyteIdentityVerbatim(t *testing.T) {
 	t.Parallel()
 
-	cases := map[string]struct {
-		text    string
-		refused bool
-	}{
-		"exactly at the bound":                  {strings.Repeat("a", MaxIdentityBytes), false},
-		"one byte over":                         {strings.Repeat("a", MaxIdentityBytes+1), true},
-		"1024 two-byte characters at the bound": {strings.Repeat("é", MaxIdentityBytes/2), false},
-		"1025 two-byte characters over":         {strings.Repeat("é", MaxIdentityBytes/2+1), true},
+	cases := map[string]string{
+		"10000 ascii bytes":          strings.Repeat("a", 10_000),
+		"5000 two-byte characters":   strings.Repeat("é", 5_000),
+		"4000 three-byte characters": strings.Repeat("世", 4_000),
+		"mixed with newlines":        strings.Repeat("Du bist Überzeugt.\n\nSprich als du selbst. ", 400),
 	}
-	for name, c := range cases {
-		encoded, err := json.Marshal(map[string]string{"identity": c.text})
+	for name, text := range cases {
+		encoded, err := json.Marshal(map[string]string{"identity": text})
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		_, err = Decode(string(encoded))
-		if c.refused != (err != nil) {
-			t.Errorf("%s: Decode err = %v, want refused = %v", name, err, c.refused)
+		got, err := Decode(string(encoded))
+		if err != nil {
+			t.Errorf("%s: Decode refused an identity of %d bytes: %v", name, len(text), err)
 			continue
 		}
-		if c.refused && (!strings.Contains(err.Error(), `"identity"`) || !strings.Contains(err.Error(), "2048")) {
-			t.Errorf("%s: the refusal %q must name the key and the bound", name, err)
+		if got.Identity != text {
+			t.Errorf("%s: the identity is %d bytes, want the %d written, verbatim", name, len(got.Identity), len(text))
 		}
 	}
 }
@@ -296,29 +293,6 @@ func TestDecodeRefusesASilenceThatIsNotAJSONBooleanNamingTheKey(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), `"silence"`) {
 			t.Errorf("Decode refused the silence %s with %q, want the error to name the key", value, err)
-		}
-	}
-}
-
-func TestDecodeBoundsTheIdentityAfterJSONUnescapingNotInItsEscapedForm(t *testing.T) {
-	t.Parallel()
-
-	cases := map[string]struct {
-		content string
-		refused bool
-	}{
-		"a newline escape at the bound":            {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes-1) + `\n"}`, false},
-		"a unicode escape at the bound":            {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes-2) + `\u00e9"}`, false},
-		"a newline escape one byte over the bound": {`{"identity": "` + strings.Repeat("a", MaxIdentityBytes) + `\n"}`, true},
-	}
-	for name, c := range cases {
-		got, err := Decode(c.content)
-		if c.refused != (err != nil) {
-			t.Errorf("%s: Decode err = %v, want refused = %v", name, err, c.refused)
-			continue
-		}
-		if !c.refused && len(got.Identity) != MaxIdentityBytes {
-			t.Errorf("%s: the identity is %d bytes after unescaping, want %d", name, len(got.Identity), MaxIdentityBytes)
 		}
 	}
 }

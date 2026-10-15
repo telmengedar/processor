@@ -9,11 +9,11 @@ import (
 type TrailerKind string
 
 const (
-	// TrailerNone is a call not offered recall, so it carries no closing paragraph.
+	// TrailerNone is a call not offered recall, so it carries no search paragraph.
 	TrailerNone TrailerKind = "none"
 	// TrailerClause is a call told to search when no part states what the request asks for.
 	TrailerClause TrailerKind = "clause"
-	// TrailerFound is a call that follows a search which brought rows, and carries no closing paragraph.
+	// TrailerFound is a call that follows a search which brought rows, and carries no search paragraph.
 	TrailerFound TrailerKind = "found"
 	// TrailerBarren is a call told its earlier search found nothing new, with no clause.
 	TrailerBarren TrailerKind = "barren"
