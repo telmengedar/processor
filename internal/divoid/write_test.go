@@ -321,6 +321,23 @@ func TestWriteRunCreateBodyCarriesTheAdapterChosenTypeAndNameNotTheCaller(t *tes
 	}
 }
 
+func TestWriteRunCreateBodyAsksTheGraphToSkipTheEmbedding(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 1)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	c.WriteRun(context.Background(), sampleRecord(42))
+
+	var created map[string]any
+	if err := json.Unmarshal((*calls)[0].Body, &created); err != nil {
+		t.Fatalf("decode create body: %v; body=%s", err, (*calls)[0].Body)
+	}
+	if got, ok := created["skipEmbedding"]; !ok || got != true {
+		t.Fatalf("create body = %s, want skipEmbedding set to the JSON boolean true", (*calls)[0].Body)
+	}
+}
+
 func TestRunNameIsDeterministicFromPrefixTimestampAndInput(t *testing.T) {
 	t.Parallel()
 

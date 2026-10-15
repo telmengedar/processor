@@ -95,6 +95,19 @@ func TestWriteNoteCreateCarriesTheRequestsTypeNameAndRootAndTheContentIsTheTextV
 	}
 }
 
+func TestWriteNoteCreateBodyLeavesTheEmbeddingOnSoRecallCanFindTheNote(t *testing.T) {
+	t.Parallel()
+
+	srv, calls := writeServer(t, 3100)
+	c := NewClient(srv.URL, "k", srv.Client(), testLogger())
+
+	c.WriteNote(context.Background(), noteRequest())
+
+	if strings.Contains(string((*calls)[0].Body), "skipEmbedding") {
+		t.Errorf("create body = %s, want no skipEmbedding member: a note is found by semantic search", (*calls)[0].Body)
+	}
+}
+
 func TestWriteNoteSendsNoRootNodeIdWhenTheRequestHasNone(t *testing.T) {
 	t.Parallel()
 
