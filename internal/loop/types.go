@@ -489,7 +489,10 @@ type JudgeInput struct {
 	// Conversation is the rendered earlier exchanges, identical on every call of a turn, empty when the turn has none.
 	Conversation string
 
-	// Trailer is the closing of the user message: the search paragraph, then the acknowledgement of a note round, each its own paragraph, empty when the call carries neither.
+	// Clause is the recall clause, placed ahead of the conversation and the final request, empty when the call is not told to search first.
+	Clause string
+
+	// Trailer is the closing of the user message: the barren-search paragraph, then the acknowledgement of a note round, each its own paragraph, empty when the call carries neither.
 	Trailer string
 
 	// Now is the instant the prompt states, zero when the caller supplies none.

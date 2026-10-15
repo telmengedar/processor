@@ -18,7 +18,7 @@ const userContentTestInstantRFC3339 = "2026-03-04T05:06:07+02:00"
 func TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy(t *testing.T) {
 	t.Parallel()
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{}, "", "")
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{}, "", "", "")
 
 	want := "===== INPUT =====\n" + userContentTestInput +
 		"\n\n===== NOW =====\n" + userContentTestInstantRFC3339 + "\n\n\n" +
@@ -33,7 +33,7 @@ func TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy(t *testing.T) {
 func TestTheAssembledPromptStatesTheInstantInTheZoneItWasRead(t *testing.T) {
 	t.Parallel()
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{}, "", "")
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{}, "", "", "")
 
 	if !strings.Contains(got, userContentTestInstantRFC3339) {
 		t.Fatalf("user content does not state %q, so a task saying \"today\" has nothing to resolve it against; content=%q",
@@ -47,7 +47,7 @@ func TestTheAssembledPromptStatesTheInstantInTheZoneItWasRead(t *testing.T) {
 func TestRenderUserContentGivenNoInstantIsByteIdenticalToTheDatelessLayout(t *testing.T) {
 	t.Parallel()
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, time.Time{}, UpdateWindow{}, "", "")
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, time.Time{}, UpdateWindow{}, "", "", "")
 
 	want := "===== INPUT =====\n" + userContentTestInput + "\n\n\n" +
 		userContentTestBlock +
@@ -61,7 +61,7 @@ func TestRenderUserContentGivenNoInstantIsByteIdenticalToTheDatelessLayout(t *te
 func TestAZeroWindowRendersTheUserContentByteIdenticallyToTheNoWindowLayout(t *testing.T) {
 	t.Parallel()
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{}, "", "")
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{}, "", "", "")
 
 	want := "===== INPUT =====\n" + userContentTestInput +
 		"\n\n===== NOW =====\n" + userContentTestInstantRFC3339 + "\n\n\n" +
@@ -81,7 +81,7 @@ func TestANonZeroWindowAddsExactlyOneLineInsideTheExistingNowSpan(t *testing.T) 
 		To:   time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC),
 	}
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, window, "", "")
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, window, "", "", "")
 
 	want := "===== INPUT =====\n" + userContentTestInput +
 		"\n\n===== NOW =====\n" + userContentTestInstantRFC3339 +
@@ -102,7 +102,7 @@ func TestRenderUserContentPlacesExactlyTwoVerbatimRequestCopiesTheFirstAtTheHead
 		input  = "Ship it.\r\n\tsecond line — 100% \"done\" <&> %s %%\n\tlast"
 	)
 
-	got := RenderUserContent(userContentTestBlock, input, userContentTestInstant, UpdateWindow{}, "", "")
+	got := RenderUserContent(userContentTestBlock, input, userContentTestInstant, UpdateWindow{}, "", "", "")
 
 	sections := strings.Split(got, marker)
 	if len(sections) != 3 {

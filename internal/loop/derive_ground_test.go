@@ -363,7 +363,7 @@ func TestTheJudgeIsToldOfNoFilterWhenTheRangeWasDiscarded(t *testing.T) {
 		t.Fatalf("the judge was never called")
 	}
 	for i, call := range run.model.calls {
-		content := RenderUserContent(call.Block, call.Input, call.Now, call.Window, call.Conversation, call.Trailer)
+		content := RenderUserContent(call.Block, call.Input, call.Now, call.Window, call.Conversation, call.Clause, call.Trailer)
 		if strings.Contains(content, "retrieval is limited") || strings.Contains(content, "2024") {
 			t.Fatalf("judge call %d content mentions the discarded range:\n%s", i, content)
 		}

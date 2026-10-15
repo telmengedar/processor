@@ -1,0 +1,22 @@
+===== ANCHOR =====
+id: 1
+type: knowledge
+name: Narrator
+
+A plain narrator persona used only for layout tests.
+
+===== CANDIDATE =====
+id: 2
+type: thought
+name: alice on weather
+similarity: 0.612
+
+Alice often asks about the weather where others live.
+
+===== CANDIDATE =====
+id: 3
+type: thought
+name: bob on umbrellas
+similarity: 0.540
+
+Bob keeps an umbrella by the door.

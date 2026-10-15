@@ -67,17 +67,20 @@ func TestTheClosingIsTheSearchParagraphThenTheAcknowledgementEachItsOwnParagraph
 	}
 }
 
-func TestACallAfterAStoredNoteEndsWithTheStoredLineQuotingTheTextAfterTheClause(t *testing.T) {
+func TestACallAfterAStoredNoteEndsWithTheStoredLineQuotingTheTextAndCarriesTheClauseAhead(t *testing.T) {
 	t.Parallel()
 
 	run := runNoteResults(t, baseGraph(), wantsNoteOf(ackNoteText, 0), answeredFinal())
 
-	want := recallClause + "\n\n" + storedLine(ackNoteText)
+	want := storedLine(ackNoteText)
 	if got := run.model.calls[1].Trailer; got != want {
 		t.Errorf("the closing of the call after a stored note = %q, want %q", got, want)
 	}
-	if got := run.userContent(1); !strings.HasSuffix(got, "\n\n"+want) {
-		t.Errorf("the user content of the call after a stored note does not end with the clause and then the acknowledgement:\n%s", got)
+	if got := run.model.calls[1].Clause; got != recallClause {
+		t.Errorf("the clause of the call after a stored note = %q, want %q", got, recallClause)
+	}
+	if got := run.userContent(1); !strings.HasSuffix(got, "\n\n"+want) || !strings.Contains(got, recallClause+"\n\n===== INPUT =====") {
+		t.Errorf("the user content of the call after a stored note does not carry the clause ahead of the request and end with the acknowledgement:\n%s", got)
 	}
 	if got := run.model.calls[0].Trailer; strings.Contains(got, "You stored") {
 		t.Errorf("the call before the note round carries %q, want no acknowledgement", got)
@@ -126,6 +129,9 @@ func TestTheReservedAnsweringCallAfterANoteCarriesTheAcknowledgementAsItsOnlyClo
 	if got, want := run.model.calls[1].Trailer, storedLine(ackNoteText); got != want {
 		t.Errorf("the closing of the reserved call = %q, want %q", got, want)
 	}
+	if got := run.model.calls[1].Clause; got != "" || strings.Contains(run.userContent(1), recallClause) {
+		t.Errorf("the reserved call after a note carries clause %q, want none: recall is not offered on it", got)
+	}
 	if got, want := run.record.NoteAcks, []NoteAck{NoteAckNone, NoteAckStored}; !slices.Equal(got, want) {
 		t.Errorf("noteAcks = %v, want %v", got, want)
 	}
@@ -138,6 +144,9 @@ func TestTheReservedCallAfterANoteThatWasNotStoredCarriesTheNotStoredLine(t *tes
 
 	if got := run.model.calls[1].Trailer; got != notStoredLine {
 		t.Errorf("the closing of the reserved call = %q, want %q", got, notStoredLine)
+	}
+	if got := run.model.calls[1].Clause; got != "" || strings.Contains(run.userContent(1), recallClause) {
+		t.Errorf("the reserved call after an unstored note carries clause %q, want none: recall is not offered on it", got)
 	}
 	if got, want := run.record.NoteAcks, []NoteAck{NoteAckNone, NoteAckNotStored}; !slices.Equal(got, want) {
 		t.Errorf("noteAcks = %v, want %v", got, want)

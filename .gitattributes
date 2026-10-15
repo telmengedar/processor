@@ -5,3 +5,4 @@
 Dockerfile text eol=lf
 .dockerignore text eol=lf
 internal/systemtext/testdata/*.txt text eol=lf
+internal/loop/testdata/*.txt text eol=lf

@@ -286,7 +286,7 @@ earlier exchanges, oldest first, each `{"input": "…", "reply": "…"}` with a 
 optional `reply` (an exchange without one stands for a line the bot did not answer). The service keeps no
 conversation state and has no conversation id. The turn is shown the newest **four** exchanges
 (`limits.historyExchangeLimit`) as one self-labelled section, `===== EARLIER IN THIS CONVERSATION =====`,
-of verbatim `user said:` and `you replied:` lines, placed after the context block, directly before the request is repeated,
+of verbatim `user said:` and `you replied:` lines, placed after the context block (and after the recall paragraph, when the call carries one), directly before the request is repeated,
 in the one user message of **every** judgement call of the turn, the reserved answering call included. The system text of
 those calls then also says a conversation is present; a call whose rendered section is empty gets the same system text and
 user message as a request without `history`. The section counts against the same prompt ceiling as the
@@ -390,7 +390,7 @@ most one note: the tool is withdrawn for the rest of the turn after any note rou
 No tool round is replayed to the model: what a recall or read_node round retrieved joins its working memory and appears in the
 context block, and of the rounds themselves it is told only a search's query and whether it brought anything and, after a note
 round, one acknowledgement. Every later call of the turn, the one reserved for answering included, ends with that
-acknowledgement paragraph, after its search paragraph if it has one. After a note that was filed
+acknowledgement paragraph, directly after the barren-search line when the call has one; the recall paragraph, when the call carries it, sits earlier, ahead of the conversation section or, without one, ahead of the repeated request. After a note that was filed
 (`stored` or `unlinked`) it reads `You stored this note in this request: "<the note's text>". Now write your answer to the request.`;
 after any other outcome it reads `Your note in this request was not stored. Now write your answer to the request.`, which names no
 cause, quotes no text and does not name the tool. A note that fails does not by itself reserve the next call: that call is
@@ -422,12 +422,14 @@ which searches the same graph, `read_node`, which returns one part of memory by 
 directory is configured — and `write_note`, which files one note of the model's own — only when the run's
 config enables it, and once per turn. The system text names each in one sentence and still asks for prose, so whether a
 run reaches for the file tool is a property of the model and the task, not of the prompt. `recall` alone is
-urged, once, at the very end of the user message: while no search has run in the turn, a closing paragraph
+urged, once, ahead of the conversation section (ahead of the repeated request when the turn has no conversation): while no search has run in the turn, a paragraph
 tells the model that when none of the parts above states what the request asks for it is not to say the
-information is missing but to call `recall`; after a search that brought rows it is given no closing
+information is missing but to call `recall`; after a search that brought rows it is given no
 paragraph at all, because the paragraph made it search again, mostly with the same query; after one that
-brought nothing new it is told so, by the query it ran, and is not given the paragraph. The paragraph sits
-there because that is where the call-or-answer decision of the model in use is made, and the record names
+brought nothing new it is told so, by the query it ran, and is not given the paragraph. The paragraph is not the last
+thing in the message because, placed last after the conversation, it made the model in use far more likely to
+repeat one of its own earlier replies instead of answering the request; moving it reduces that repetition but does
+not remove it. The barren line and the acknowledgement stay at the end. The record names
 in `trailers` the search state each call was made in (`clause`, `found`, `barren`, or `none` where recall
 was not offered), in `offered` the tools each call offered and in `noteAcks` which acknowledgement each call carried (`none`, `stored` or `notStored`). **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
 a system text and one user message. The system text is composed per call from the tools that call offers and from whether the turn carries a conversation section,

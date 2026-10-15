@@ -519,6 +519,10 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 
 		offered := t.offeredTools(reserved != "", note.enabled && notesFiled < NotesPerTurn)
 		search, trailerKind := trailerFor(offered, searches)
+		clause := ""
+		if trailerKind == TrailerClause {
+			clause, search = search, ""
+		}
 		trailer := composeClosing(search, acknowledgement(ack, ackedText))
 		judged.noteAcks = append(judged.noteAcks, ack)
 		judged.trailers = append(judged.trailers, trailerKind)
@@ -529,6 +533,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 			Block:           memory.render(),
 			Input:           input,
 			Conversation:    conversation,
+			Clause:          clause,
 			Trailer:         trailer,
 			Now:             now,
 			Window:          window,
