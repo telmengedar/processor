@@ -66,15 +66,14 @@ words; that document carries the argument.
   to the model verbatim, the model's answer verbatim, and whether the supplementary lookup was used —
   then the diff between the two turns on admitted count, rank-1 candidate and block size. **Two turns
   and not one**, because a turn writes its record into the same graph the next turn recalls from: the
-  first turn is clean by construction, so only the second can show what the first left behind. It takes
+  first turn is clean by construction, so only the second can show whether the first's record, which the
+  graph does not embed and recall leaves out by name, stays out of the candidates. It takes
   the graph credential from `PROCESSOR_DIVOID_URL`/`PROCESSOR_DIVOID_KEY` when those are set and
   otherwise from the ambient `DIVOID_URL`/`DIVOID_RAZIEL_KEY`, naming both pairs when neither is there.
   It costs **four model calls at minimum and fourteen at most** — two per turn, the query derivation and
   one judgement, and up to the loop's own judgement cap of six per turn when the model asks for
   supplementary recall — writes two run records and names
-  them on exit; it deletes nothing. Its default input and subject match no corpus row on purpose: a run
-  writes a record that outranks every real candidate for its own input, so a default matching a row
-  would poison the next sweep of that row. Exits non-zero when a turn admits zero candidates, and also
+  them on exit; it deletes nothing. Its default input and subject match no corpus row. Exits non-zero when a turn admits zero candidates, and also
   when turn 1 never stored its record, which voids the two-turn premise. Python 3, standard library
   only.
 - `scripts/chat.py` — an interactive chat with a running service: `python scripts/chat.py --subject 901`
@@ -395,7 +394,7 @@ model, dispatch a tool each time the model asks for one (up to a **judgement**-c
 tool dispatches per run — the sixth call is reserved for answering and is issued with no tool list at all,
 because the loop already knows it would not dispatch what that call asked for; the derivation call
 above is not charged to this cap, so a turn makes up to **seven** model calls in all), then write the
-record back to the graph as one `session-log` node linked to the subject. The node's content is
+record back to the graph as one `session-log` node linked to the subject, created with `skipEmbedding` so the graph never embeds it and no semantic search returns it (a listing, a path or a link still finds it; a note is not flagged). The node's content is
 `text/markdown; charset=utf-8`: the run's own account first (the same prose `RenderSummary` renders, in
 `internal/loop/summary.go`), then a blank line, a line reading exactly `---`, then the complete record as
 one fenced ` ```json ` block. The record — described next — is recovered by taking the content's last
