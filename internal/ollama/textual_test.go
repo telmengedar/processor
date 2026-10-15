@@ -442,3 +442,79 @@ func TestAParenthesisArgumentRunsToTheFirstCloserAndTheRestIsDropped(t *testing.
 		t.Fatalf("prose body -> %+v, want it positional", result)
 	}
 }
+
+func TestTheOpeningMarkerIsMatchedWithoutRegardToCaseAndAnySpaceAfterItIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"<|tool_call> call:recall{query:x}",
+		"<|TOOL_CALL>call:recall{query:x}",
+		"<|Tool_Call>  \n call:recall{query:x}<tool_call|>",
+		"<|tool_call> recall: x",
+	} {
+		result := translate(answerOf(content), readOnlyTools)
+		if result.Reason != loop.WantsRecall || result.RecallQuery != "x" || result.ToolSource != loop.ToolSourceTextual {
+			t.Fatalf("%q with tools -> %+v, want a textual recall for x", content, result)
+		}
+
+		result = translate(answerOf(content), nil)
+		if result.Reason != loop.Answered || result.UnhonouredCall != loop.ToolRecall || result.ToolSource != "" {
+			t.Fatalf("%q with no tools -> %+v, want it flagged", content, result)
+		}
+	}
+}
+
+func TestAMarkerWithNoCallAfterItStaysProse(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{"<|tool_call>", "<|tool_call> hello there", "<|TOOL_CALL>  ", "<|tool_call>call: hello"} {
+		result := translate(answerOf(content), everyLoopTool())
+		if result.Reason != loop.Answered || result.UnhonouredCall != "" || result.ToolSource != "" {
+			t.Fatalf("%q -> %+v, want it passed through as prose", content, result)
+		}
+	}
+}
+
+func TestAClosingMarkerAfterAColonArgumentIsNotPartOfTheQuery(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"call:recall: x<tool_call|>",
+		"recall: x<tool_call|>",
+		"recall: x <TOOL_CALL|>",
+		`recall: "x"<tool_call|>`,
+		"recall: x<tool_call|>\nmore text",
+	} {
+		result := translate(answerOf(content), readOnlyTools)
+		if result.Reason != loop.WantsRecall || result.RecallQuery != "x" || result.ToolError != "" {
+			t.Fatalf("%q -> %+v, want a recall for x", content, result)
+		}
+		if result = translate(answerOf(content), nil); result.UnhonouredCall != loop.ToolRecall {
+			t.Fatalf("%q with no tools -> %+v, want it flagged", content, result)
+		}
+	}
+
+	if result := translate(answerOf("read_node: 5<tool_call|>"), readOnlyTools); result.Reason != loop.WantsRead || result.ReadNodeID != 5 || result.ToolError != "" {
+		t.Fatalf("read with closer -> %+v, want a read of 5", result)
+	}
+}
+
+func TestAParameterKeyIsMatchedWithoutRegardToCase(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{"read_node(ID=5)", "read_node(Id: 5)", "read_node{ID:5}", `read_node{"Id": 5}`} {
+		result := translate(answerOf(content), readOnlyTools)
+		if result.Reason != loop.WantsRead || result.ReadNodeID != 5 || result.ToolError != "" {
+			t.Fatalf("%q -> %+v, want a read of 5", content, result)
+		}
+	}
+	for _, content := range []string{"recall(QUERY=x)", "recall{Query: x}"} {
+		result := translate(answerOf(content), readOnlyTools)
+		if result.Reason != loop.WantsRecall || result.RecallQuery != "x" || result.ToolError != "" {
+			t.Fatalf("%q -> %+v, want a recall for x", content, result)
+		}
+	}
+	if result := translate(answerOf("read_node(NODE=5)"), readOnlyTools); result.ReadNodeID != 0 || result.ToolError == "" {
+		t.Fatalf("wrong key in upper case -> %+v, want a missing argument", result)
+	}
+}

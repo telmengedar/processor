@@ -297,14 +297,15 @@ var textualRecoverable = []textualRecovery{
 }
 
 const (
-	modelCallPrefix   = "call:"
-	modelCallOpenMark = "<|tool_call>"
+	modelCallPrefix    = "call:"
+	modelCallOpenMark  = "<|tool_call>"
+	modelCallCloseMark = "<tool_call|>"
 )
 
 func openingToolCall(content string) (toolBinding, string, bool) {
 	text := strings.TrimLeftFunc(content, unicode.IsSpace)
-	if len(text) > len(modelCallOpenMark) && text[:len(modelCallOpenMark)] == modelCallOpenMark {
-		text = text[len(modelCallOpenMark):]
+	if len(text) >= len(modelCallOpenMark) && strings.EqualFold(text[:len(modelCallOpenMark)], modelCallOpenMark) {
+		text = strings.TrimLeftFunc(text[len(modelCallOpenMark):], unicode.IsSpace)
 	}
 	if len(text) > len(modelCallPrefix) && strings.EqualFold(text[:len(modelCallPrefix)], modelCallPrefix) {
 		text = text[len(modelCallPrefix):]
@@ -336,7 +337,7 @@ func textualArgument(rest, parameter string) (string, bool) {
 
 	if rest[0] == ':' {
 		line, _, _ := strings.Cut(rest[1:], "\n")
-		return unquoted(strings.TrimSpace(line)), true
+		return unquoted(withoutCloseMark(strings.TrimSpace(line))), true
 	}
 
 	end := strings.IndexByte(rest, '}')
@@ -344,17 +345,24 @@ func textualArgument(rest, parameter string) (string, bool) {
 		return "", false
 	}
 	key, value, hasValue := strings.Cut(rest[1:end], ":")
-	if !hasValue || unquoted(strings.TrimSpace(key)) != parameter {
+	if !hasValue || !strings.EqualFold(unquoted(strings.TrimSpace(key)), parameter) {
 		return "", false
 	}
 	return unquoted(strings.TrimSpace(value)), true
+}
+
+func withoutCloseMark(line string) string {
+	if len(line) >= len(modelCallCloseMark) && strings.EqualFold(line[len(line)-len(modelCallCloseMark):], modelCallCloseMark) {
+		return strings.TrimSpace(line[:len(line)-len(modelCallCloseMark)])
+	}
+	return line
 }
 
 func parenArgument(body, parameter string) (string, bool) {
 	if cut := strings.IndexAny(body, "=:"); cut > 0 {
 		key := unquoted(strings.TrimSpace(body[:cut]))
 		if isIdentifier(key) {
-			if key != parameter {
+			if !strings.EqualFold(key, parameter) {
 				return "", false
 			}
 			return unquoted(strings.TrimSpace(body[cut+1:])), true
