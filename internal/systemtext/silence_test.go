@@ -18,7 +18,7 @@ func TestComposeWithoutSilenceNamesNeitherTheMarkerNorSilence(t *testing.T) {
 
 	for _, offered := range [][]string{nil, {loop.ToolRecall}, {loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}} {
 		for _, conversation := range []bool{false, true} {
-			text := systemtext.Compose(offered, conversation, false)
+			text := systemtext.Compose(offered, conversation, false, loop.FormSubstance)
 
 			if strings.Contains(strings.ToUpper(text), loop.SilenceMarker) || strings.Contains(strings.ToLower(text), "silent") {
 				t.Errorf("offered %v, conversation %v: the system text names silence although it was not offered:\n%s", offered, conversation, text)
@@ -32,8 +32,8 @@ func TestComposeWithSilenceAddsExactlyOneParagraphLastButOneAndChangesNothingEls
 
 	for _, offered := range [][]string{nil, {loop.ToolRecall, loop.ToolReadNode}, {loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile}} {
 		for _, conversation := range []bool{false, true} {
-			without := paragraphsOf(systemtext.Compose(offered, conversation, false))
-			with := paragraphsOf(systemtext.Compose(offered, conversation, true))
+			without := paragraphsOf(systemtext.Compose(offered, conversation, false, loop.FormSubstance))
+			with := paragraphsOf(systemtext.Compose(offered, conversation, true, loop.FormSubstance))
 
 			if len(with) != len(without)+1 {
 				t.Fatalf("offered %v, conversation %v: %d paragraphs with silence and %d without, want exactly one more", offered, conversation, len(with), len(without))
@@ -56,7 +56,7 @@ func TestComposeWithSilenceAddsExactlyOneParagraphLastButOneAndChangesNothingEls
 func TestTheSilenceParagraphStatesTheMechanismAndNoPolicyOnWhenToBeSilent(t *testing.T) {
 	t.Parallel()
 
-	with := paragraphsOf(systemtext.Compose(nil, false, true))
+	with := paragraphsOf(systemtext.Compose(nil, false, true, loop.FormSubstance))
 	got := with[len(with)-2]
 
 	want := "You may choose not to reply. To stay silent, write " + loop.SilenceMarker + " as your whole answer, with nothing before or after it. Staying silent this way is a valid answer, not a failure, and nothing is shown for it."

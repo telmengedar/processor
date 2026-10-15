@@ -25,17 +25,19 @@ const (
 	identityKey    = "identity"
 	noteKey        = "note"
 	temperatureKey = "temperature"
+	formKey        = "form"
 	noteTypeKey    = "type"
 	filterTypeKey  = "type"
 )
 
-// Config is what a config node's content carries: the filter forwarded to the graph, whether the run offers the model a chosen silence, the identity text, empty for none, the note capability, nil for none, and the temperature of the run's judgement calls, nil for the deployment's.
+// Config is what a config node's content carries: the filter forwarded to the graph, whether the run offers the model a chosen silence, the identity text, empty for none, the note capability, nil for none, the temperature of the run's judgement calls, nil for the deployment's, and the form parts are rendered as, empty for the default.
 type Config struct {
 	Filter      loop.Filter
 	Silence     bool
 	Identity    string
 	Note        *loop.NoteConfig
 	Temperature *float64
+	Form        loop.Form
 }
 
 var ownedKeys = []string{"query", "queries", "count", "continue", "sort", "descending", "fields", "id"}
@@ -60,7 +62,7 @@ func Decode(content string) (Config, error) {
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(top)) {
-		if name != filterKey && name != silenceKey && name != identityKey && name != noteKey && name != temperatureKey {
+		if name != filterKey && name != silenceKey && name != identityKey && name != noteKey && name != temperatureKey && name != formKey {
 			return Config{}, fmt.Errorf("the config has the key %q, which processor does not know", name)
 		}
 	}
@@ -99,7 +101,25 @@ func Decode(content string) (Config, error) {
 			return Config{}, err
 		}
 	}
+
+	if raw, present := top[formKey]; present {
+		if config.Form, err = formOf(raw); err != nil {
+			return Config{}, err
+		}
+	}
 	return config, nil
+}
+
+func formOf(raw json.RawMessage) (loop.Form, error) {
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return "", fmt.Errorf("the config's %q is not a JSON string", formKey)
+	}
+	switch form := loop.Form(text); form {
+	case loop.FormContent, loop.FormSubstance:
+		return form, nil
+	}
+	return "", fmt.Errorf("the config's %q is %q, which is neither %q nor %q", formKey, text, loop.FormContent, loop.FormSubstance)
 }
 
 func temperatureOf(raw json.RawMessage) (*float64, error) {

@@ -15,6 +15,9 @@ type RunSettings struct {
 	FillWait             time.Duration
 	HistoryExchangeLimit int
 	HistorySafetyLimit   int
+
+	// Form is FormContent for a run that renders every part as its content; any other value selects substance.
+	Form Form
 }
 
 // DefaultSettings returns the settings a run has unless it is given others: the package constants, field for field, and no output limit.
@@ -54,7 +57,15 @@ func (s RunSettings) Limits() Limits {
 		FillWait:                s.FillWait,
 		HistoryExchangeLimit:    s.HistoryExchangeLimit,
 		HistorySafetyLimit:      s.HistorySafetyLimit,
+		Form:                    s.contentForm(),
 	}
+}
+
+func (s RunSettings) contentForm() Form {
+	if s.Form == FormContent {
+		return FormContent
+	}
+	return ""
 }
 
 // RunOptions is everything one run is given.
@@ -70,6 +81,13 @@ type RunOptions struct {
 
 func (o RunOptions) silence() bool {
 	return o.View != nil && o.View.Silence
+}
+
+func (o RunOptions) form() Form {
+	if o.View == nil {
+		return ""
+	}
+	return o.View.Form
 }
 
 func (o RunOptions) filter() Filter {

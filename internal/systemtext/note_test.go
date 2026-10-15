@@ -20,7 +20,7 @@ func TestTheNoteParagraphFollowsTheFileParagraphByteForByte(t *testing.T) {
 		t.Fatal("the fixture holds a carriage return, so it was not stored with LF line endings")
 	}
 
-	got := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile, loop.ToolNote}, false, false)
+	got := systemtext.Compose([]string{loop.ToolRecall, loop.ToolReadNode, loop.ToolWriteFile, loop.ToolNote}, false, false, loop.FormSubstance)
 	if got != string(golden) {
 		t.Errorf("the system text of a call offering every tool is\n%q\nwant\n%q", got, golden)
 	}
@@ -29,7 +29,7 @@ func TestTheNoteParagraphFollowsTheFileParagraphByteForByte(t *testing.T) {
 func TestTheNoteParagraphNamesNoVoiceAndGivesNoReasonToWrite(t *testing.T) {
 	t.Parallel()
 
-	text := strings.ToLower(systemtext.Compose([]string{loop.ToolNote}, false, false))
+	text := strings.ToLower(systemtext.Compose([]string{loop.ToolNote}, false, false, loop.FormSubstance))
 
 	for _, persona := range []string{"first person", "your voice", "in character", "you should", "always", "whenever", "remember", "feel", "thought", "important"} {
 		if strings.Contains(text, persona) {

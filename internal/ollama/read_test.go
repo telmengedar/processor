@@ -10,7 +10,7 @@ import (
 	"github.com/telmengedar/processor/internal/loop"
 )
 
-const wantReadDescription = "Read one part of memory as its substance. Takes one argument: id, the integer id that part is printed with."
+const wantReadDescription = "Read one part of memory. Takes one argument: id, the integer id that part is printed with."
 
 func offeredTools(t *testing.T, in loop.JudgeInput) []wireTool {
 	t.Helper()

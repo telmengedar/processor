@@ -262,6 +262,8 @@ func recordWithEveryLimitAt(t *testing.T, step int) string {
 			member.SetInt(int64(100*step + i))
 		case reflect.Float64:
 			member.SetFloat(float64(step) + float64(i)/10)
+		case reflect.String:
+			member.SetString(strings.Repeat("v", 100*step+i))
 		default:
 			t.Fatalf("limits member %s is a %s, which the fixture does not know how to vary", members.Type().Field(i).Name, member.Kind())
 		}

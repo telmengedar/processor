@@ -131,7 +131,7 @@ func TestSweepDispositionsEqualTheRecordDispositionsForTheSameAnchorAndCandidate
 
 	row := labelledRow("r01", eval.Required{Node: 200, Hash: "h", Why: "w"})
 
-	turn := loop.NewTurn(graph, stubJudge{}, nil, func([]string, bool, bool) string { return "system text" }, "model-id", nil)
+	turn := loop.NewTurn(graph, stubJudge{}, nil, func([]string, bool, bool, loop.Form) string { return "system text" }, "model-id", nil)
 	record, _, err := turn.Run(context.Background(), row.Input, row.Subject)
 	if err != nil {
 		t.Fatalf("Turn.Run: %v", err)

@@ -74,9 +74,9 @@ func renderSummaryHeader(b *strings.Builder, record Record, at time.Time) {
 	}
 
 	limits := record.Limits
-	fmt.Fprintf(b, "limits   %d cands / %d B content / %d B suppl / %d calls / %s tok derive / %s tok judge%s\n",
+	fmt.Fprintf(b, "limits   %d cands / %d B content / %d B suppl / %d calls / %s tok derive / %s tok judge%s%s\n",
 		limits.CandidateLimit, limits.AssemblyByteBudget, limits.SupplementaryByteBudget,
-		limits.MaxModelCalls, summaryBudget(limits.DerivationBudget), summaryBudget(limits.JudgementBudget), summarySampling(record))
+		limits.MaxModelCalls, summaryBudget(limits.DerivationBudget), summaryBudget(limits.JudgementBudget), summarySampling(record), summaryLimitsForm(limits))
 
 	if record.Workspace != "" {
 		fmt.Fprintf(b, "workdir  %s\n", record.Workspace)
@@ -480,6 +480,13 @@ func sumRenderedSizes(dispositions []Disposition) int {
 		total += d.RenderedSize
 	}
 	return total
+}
+
+func summaryLimitsForm(limits Limits) string {
+	if limits.Form != FormContent {
+		return ""
+	}
+	return " form=" + string(FormContent)
 }
 
 func summaryForm(d Disposition) string {

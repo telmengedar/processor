@@ -23,7 +23,7 @@ func TestAssembleGoldenBlock(t *testing.T) {
 		{ID: 300, Type: "task", Name: "Charlie", Similarity: 0.80, Substance: "charlie body"},
 	}
 
-	block, _ := Assemble(anchor, candidates, 60_000)
+	block, _ := Assemble(anchor, candidates, 60_000, FormSubstance)
 
 	const wantBlock = `===== ANCHOR =====
 id: 100
@@ -78,8 +78,8 @@ func TestAssembleBlockOrderIsByIDNotByInputOrder(t *testing.T) {
 		{ID: 1, Type: "t", Name: "c1", Similarity: 0.8, Substance: "cc1"},
 	}
 
-	blockA, _ := Assemble(anchor, rankOrderA, 60_000)
-	blockB, _ := Assemble(anchor, rankOrderB, 60_000)
+	blockA, _ := Assemble(anchor, rankOrderA, 60_000, FormSubstance)
+	blockB, _ := Assemble(anchor, rankOrderB, 60_000, FormSubstance)
 
 	if blockA != blockB {
 		t.Fatalf("block changed when the same scored candidate set arrived in a different input order:\nA=%q\nB=%q", blockA, blockB)
@@ -107,7 +107,7 @@ func TestAssembleCutsWhatDoesNotFitAndBackFillsASmallerCandidateBehindIt(t *test
 		t.Fatalf("test setup error: total candidate bytes %d does not exceed budget %d, so this test cannot observe a cut", total, budget)
 	}
 
-	_, dispositions := Assemble(anchor, candidates, budget)
+	_, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 	want := []struct {
 		id       int64
@@ -150,7 +150,7 @@ func TestAssembleAdmitsCandidatesBehindOneThatDoesNotFit(t *testing.T) {
 		t.Fatalf("test setup error: rank 1 is %d bytes against a budget of %d, so it does not exceed the whole budget and this test cannot discriminate", len(candidates[0].Substance), budget)
 	}
 
-	_, dispositions := Assemble(anchor, candidates, budget)
+	_, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 	if dispositions[0].Included {
 		t.Fatal("dispositions[0] (id 10) was admitted although it exceeds the whole budget")
@@ -184,7 +184,7 @@ func TestAssembleRecordsSizeAndHashForCutCandidatesToo(t *testing.T) {
 		t.Fatalf("test setup error: candidates are %d and %d bytes against budget %d; both must exceed it for the second to be cut", len(candidates[0].Substance), len(candidates[1].Substance), budget)
 	}
 
-	_, dispositions := Assemble(anchor, candidates, budget)
+	_, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 	if len(dispositions) != 2 {
 		t.Fatalf("got %d dispositions, want 2 (every candidate, including cut ones)", len(dispositions))
@@ -217,7 +217,7 @@ func TestAssembleDispositionsPreserveRankOrderNotIDOrder(t *testing.T) {
 		{ID: 200, Substance: "c"},
 	}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000)
+	_, dispositions := Assemble(anchor, candidates, 60_000, FormSubstance)
 
 	wantOrder := []int64{300, 100, 200}
 	for i, id := range wantOrder {
@@ -236,7 +236,7 @@ func TestAssembleCutReasonEmptyWhenIncluded(t *testing.T) {
 	anchor := Anchor{ID: 1}
 	candidates := []Candidate{{ID: 1, Substance: "small"}}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000)
+	_, dispositions := Assemble(anchor, candidates, 60_000, FormSubstance)
 
 	if !dispositions[0].Included {
 		t.Fatal("test setup error: candidate was cut, want it included")
@@ -254,9 +254,9 @@ func TestAssembleContentHashIsDeterministicAndDistinguishesContent(t *testing.T)
 	same2 := []Candidate{{ID: 1, Content: "same"}}
 	different := []Candidate{{ID: 1, Content: "different"}}
 
-	_, d1 := Assemble(anchor, same1, 60_000)
-	_, d2 := Assemble(anchor, same2, 60_000)
-	_, d3 := Assemble(anchor, different, 60_000)
+	_, d1 := Assemble(anchor, same1, 60_000, FormSubstance)
+	_, d2 := Assemble(anchor, same2, 60_000, FormSubstance)
+	_, d3 := Assemble(anchor, different, 60_000, FormSubstance)
 
 	if d1[0].ContentHash == "" {
 		t.Fatal("ContentHash is empty")
@@ -283,7 +283,7 @@ func TestAssembleDispositionsRecordSimilarity(t *testing.T) {
 	}
 	const budget = 20 // only candidate 10 fits; candidate 20 is cut
 
-	_, dispositions := Assemble(anchor, candidates, budget)
+	_, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 	if !dispositions[0].Included {
 		t.Fatal("test setup error: candidate 10 was cut, want it included")
@@ -311,7 +311,7 @@ func TestAssembleAdmitsACandidateThatExactlyFillsTheRemainingBudget(t *testing.T
 	}
 	const budget = 100 // exactly the candidate's size
 
-	_, dispositions := Assemble(anchor, candidates, budget)
+	_, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 	if !dispositions[0].Included {
 		t.Fatal("candidate exactly at the byte budget was cut, want it included — admission is <=, not <")
@@ -330,7 +330,7 @@ func TestAssembleChargesTheAnchorBodyAgainstTheBudgetBeforeAnyCandidate(t *testi
 	}
 	const budget = 1_000
 
-	_, dispositions := Assemble(anchor, candidates, budget)
+	_, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 	if dispositions[0].Included {
 		t.Fatal("candidate was admitted although the anchor alone already consumed the whole budget")
@@ -349,7 +349,7 @@ func TestAssembleAdmitsACandidateIntoTheRoomLeftAfterTheAnchor(t *testing.T) {
 	}
 	const budget = 100
 
-	_, dispositions := Assemble(anchor, candidates, budget)
+	_, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 	if !dispositions[0].Included {
 		t.Fatal("candidate sized to exactly the room left after the anchor was cut, want it admitted")
@@ -363,7 +363,7 @@ func TestAssembleFloorsTheCandidateBudgetAtZeroWhenTheAnchorAloneExceedsIt(t *te
 	candidates := []Candidate{{ID: 10, Substance: "x"}}
 	const budget = 50
 
-	block, dispositions := Assemble(anchor, candidates, budget)
+	block, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 	if dispositions[0].Included {
 		t.Fatal("a one-byte candidate was cut for a run where the anchor alone already exceeds the budget, want it cut, not a negative-budget panic or a stray admission")
@@ -388,8 +388,8 @@ func TestAssembleContentHashIsSha256HexOfTheBodyExactly(t *testing.T) {
 		{ID: 10, Name: "CandName", Content: "candidate body text"},
 	}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000)
-	anchorSummary := summarizeAnchor(anchor)
+	_, dispositions := Assemble(anchor, candidates, 60_000, FormSubstance)
+	anchorSummary := summarizeAnchor(anchor, FormSubstance)
 
 	wantCandidateHash := sha256Hex(candidates[0].Content)
 	if dispositions[0].ContentHash != wantCandidateHash {
@@ -416,7 +416,7 @@ func TestAssembleCutReasonHasTheExactWording(t *testing.T) {
 	candidates := []Candidate{{ID: 10, Substance: strings.Repeat("x", 200)}}
 	const budget = 10
 
-	_, dispositions := Assemble(anchor, candidates, budget)
+	_, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 	const want = "byte budget exceeded"
 	if dispositions[0].CutReason != want {
@@ -433,7 +433,7 @@ func TestAssembleRecordsSubstanceAvailableAndSizeWhenPresent(t *testing.T) {
 		{ID: 20, Content: "b body", Substance: "x"},
 	}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000)
+	_, dispositions := Assemble(anchor, candidates, 60_000, FormSubstance)
 
 	if !dispositions[0].SubstanceAvailable {
 		t.Fatal("SubstanceAvailable = false for a candidate that carried a substance, want true")
@@ -455,7 +455,7 @@ func TestAssembleRecordsSubstanceAbsentAsTheZeroValueNotAnError(t *testing.T) {
 	anchor := Anchor{ID: 1}
 	candidates := []Candidate{{ID: 10, Content: "a body"}}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000)
+	_, dispositions := Assemble(anchor, candidates, 60_000, FormSubstance)
 
 	if dispositions[0].SubstanceAvailable {
 		t.Fatal("SubstanceAvailable = true for a candidate with no Substance, want false")
@@ -475,7 +475,7 @@ func TestAssembleRecordsSubstanceForACutCandidateToo(t *testing.T) {
 	}
 	const budget = 20
 
-	_, dispositions := Assemble(anchor, candidates, budget)
+	_, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 	cut := dispositions[1]
 	if cut.Included {
@@ -499,7 +499,7 @@ func TestAssembleAdmissionChargesOnlySubstanceBytesNeverContentBytes(t *testing.
 	}
 	const budget = 100
 
-	_, dispositions := Assemble(anchor, candidates, budget)
+	_, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 	for i := range dispositions {
 		if !dispositions[i].Included {
@@ -516,8 +516,8 @@ func TestAssembleRendersIdenticalBlockRegardlessOfContent(t *testing.T) {
 	short := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: "bravo", Substance: "condensed"}}
 	long := []Candidate{{ID: 10, Type: "documentation", Name: "Bravo", Content: strings.Repeat("bravo", 5_000), Substance: "condensed"}}
 
-	blockShort, _ := Assemble(anchor, short, 60_000)
-	blockLong, _ := Assemble(anchor, long, 60_000)
+	blockShort, _ := Assemble(anchor, short, 60_000, FormSubstance)
+	blockLong, _ := Assemble(anchor, long, 60_000, FormSubstance)
 
 	if blockShort != blockLong {
 		t.Fatalf("block changed when a candidate's content changed:\nshort=%q\nlong=%q", blockShort, blockLong)
@@ -530,7 +530,7 @@ func TestDispositionSubstanceFieldsSerializeEvenAtTheZeroValue(t *testing.T) {
 	anchor := Anchor{ID: 1}
 	candidates := []Candidate{{ID: 10, Content: "a body"}}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000)
+	_, dispositions := Assemble(anchor, candidates, 60_000, FormSubstance)
 
 	encoded, err := json.Marshal(dispositions[0])
 	if err != nil {
@@ -548,7 +548,7 @@ func TestAssembleEmptyCandidatesRendersTheAnchorAlone(t *testing.T) {
 
 	anchor := Anchor{ID: 1, Type: "t", Name: "solo", Substance: "just the anchor"}
 
-	block, dispositions := Assemble(anchor, nil, 60_000)
+	block, dispositions := Assemble(anchor, nil, 60_000, FormSubstance)
 
 	if len(dispositions) != 0 {
 		t.Fatalf("got %d dispositions for no candidates, want 0", len(dispositions))
@@ -579,7 +579,7 @@ func TestTheAssembledBlockDisclosesOnlyTheAdmittedRowsAndWhetherAnythingWasWithh
 		}
 		const budget = 90
 
-		fullBlock, dispositions := Assemble(anchor, candidates, budget)
+		fullBlock, dispositions := Assemble(anchor, candidates, budget, FormSubstance)
 
 		admittedIDs := make(map[int64]bool, len(dispositions))
 		for _, d := range dispositions {
@@ -597,7 +597,7 @@ func TestTheAssembledBlockDisclosesOnlyTheAdmittedRowsAndWhetherAnythingWasWithh
 				admittedOnly = append(admittedOnly, c)
 			}
 		}
-		admittedOnlyBlock, _ := Assemble(anchor, admittedOnly, budget)
+		admittedOnlyBlock, _ := Assemble(anchor, admittedOnly, budget, FormSubstance)
 
 		if fullBlock != admittedOnlyBlock {
 			t.Fatalf("assembling the full candidate list produced a different block than assembling only the rows it admitted: full=\n%q\nadmitted-only=\n%q\nthe block must disclose nothing about a withheld row — its reason, its id, its size, or the bare fact that it exists", fullBlock, admittedOnlyBlock)
@@ -618,8 +618,8 @@ func TestTheAssembledBlockDisclosesOnlyTheAdmittedRowsAndWhetherAnythingWasWithh
 		}
 		const budget = 20
 
-		blockA, dispositionsA := Assemble(anchor, shutoutA, budget)
-		blockB, dispositionsB := Assemble(anchor, shutoutB, budget)
+		blockA, dispositionsA := Assemble(anchor, shutoutA, budget, FormSubstance)
+		blockB, dispositionsB := Assemble(anchor, shutoutB, budget, FormSubstance)
 
 		for _, d := range dispositionsA {
 			if d.Included {
@@ -644,7 +644,7 @@ func TestTheBlockStatesThatNothingWasAdmittedRatherThanRenderingTheAnchorAlone(t
 	anchor := Anchor{ID: 1, Type: "t", Name: "solo", Substance: "anchor body"}
 	candidates := []Candidate{{ID: 10, Similarity: 0.1, Substance: "small"}}
 
-	block, dispositions := Assemble(anchor, candidates, 5)
+	block, dispositions := Assemble(anchor, candidates, 5, FormSubstance)
 
 	if len(dispositions) == 0 || dispositions[0].Included {
 		t.Fatal("test setup error: the candidate was not cut, so the block has nothing to disclose")
@@ -668,7 +668,7 @@ func TestTheBlockOfNothingConsideredIsTheAnchorAlone(t *testing.T) {
 
 	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Substance: "anchor body"}
 
-	block, dispositions := Assemble(anchor, nil, 60_000)
+	block, dispositions := Assemble(anchor, nil, 60_000, FormSubstance)
 
 	if len(dispositions) != 0 {
 		t.Fatalf("test setup error: got %d dispositions, want 0 admitted for this boundary", len(dispositions))
@@ -685,7 +685,7 @@ func TestTheBlockOfNothingIncludedEndsWithTheCutSentenceAlone(t *testing.T) {
 	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Substance: "anchor body"}
 	candidates := []Candidate{{ID: 10, Similarity: 0.1, Substance: "small"}}
 
-	block, dispositions := Assemble(anchor, candidates, 5)
+	block, dispositions := Assemble(anchor, candidates, 5, FormSubstance)
 
 	if len(dispositions) == 0 || dispositions[0].Included {
 		t.Fatal("test setup error: the candidate was not cut, so this boundary is not exercised")
@@ -703,7 +703,7 @@ func TestAThinBlockCarriesNoSentenceAboutItsThinness(t *testing.T) {
 	anchor := Anchor{ID: 1, Type: "t", Name: "anchor", Substance: "anchor body"}
 	candidates := []Candidate{{ID: 10, Type: "t", Name: "c", Similarity: 0.40, Substance: "body"}}
 
-	block, dispositions := Assemble(anchor, candidates, 60_000)
+	block, dispositions := Assemble(anchor, candidates, 60_000, FormSubstance)
 
 	if len(dispositions) != 1 || !dispositions[0].Included {
 		t.Fatal("test setup error: the weak row was not admitted, so this boundary is not exercised")
@@ -747,7 +747,7 @@ func TestNoCandidateIsCutForItsSimilarity(t *testing.T) {
 		{ID: 30, Similarity: -0.10, Substance: "opposed"},
 	}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000)
+	_, dispositions := Assemble(anchor, candidates, 60_000, FormSubstance)
 
 	for _, d := range dispositions {
 		if !d.Included || d.CutReason != "" {
@@ -765,7 +765,7 @@ func TestEachCandidateSectionStatesItsSimilarityAndTheAnchorDoesNot(t *testing.T
 		{ID: 20, Type: "t", Name: "second", Similarity: 0.5, Substance: "two"},
 	}
 
-	block, _ := Assemble(anchor, candidates, 60_000)
+	block, _ := Assemble(anchor, candidates, 60_000, FormSubstance)
 
 	for _, want := range []string{"name: first\nsimilarity: 0.713\n", "name: second\nsimilarity: 0.500\n"} {
 		if !strings.Contains(block, want) {
@@ -783,7 +783,7 @@ func TestARowFetchedByIDCarriesNoSimilarityLine(t *testing.T) {
 
 	read := candidateFromAnchor(Anchor{ID: 7, Type: "t", Name: "read", Substance: "body"})
 	var b strings.Builder
-	renderSection(&b, read)
+	renderSection(&b, read, FormSubstance)
 
 	if strings.Contains(b.String(), "similarity") {
 		t.Fatalf("section = %q, want no similarity line: a row read by id was never scored", b.String())
@@ -799,7 +799,7 @@ func TestDispositionFormAndRenderedSizeSerializeForEveryCandidate(t *testing.T) 
 		{ID: 20, Content: "a body"},
 	}
 
-	_, dispositions := Assemble(anchor, candidates, 60_000)
+	_, dispositions := Assemble(anchor, candidates, 60_000, FormSubstance)
 
 	for i, want := range []string{`"form":"substance","renderedSize":300`, `"form":"unavailable","renderedSize":0`} {
 		encoded, err := json.Marshal(dispositions[i])

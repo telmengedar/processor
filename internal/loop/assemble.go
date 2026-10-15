@@ -21,19 +21,19 @@ func Thin(similarities []float64) bool {
 }
 
 // Assemble is a pure function: no I/O, no clock, no randomness.
-func Assemble(anchor Anchor, candidates []Candidate, budget int) (block string, dispositions []Disposition) {
-	admitted, dispositions := admit(candidates, budget, len(anchor.Substance))
+func Assemble(anchor Anchor, candidates []Candidate, budget int, form Form) (block string, dispositions []Disposition) {
+	admitted, dispositions := admit(candidates, budget, anchorCharge(anchor, form), form)
 
 	sort.Slice(admitted, func(i, j int) bool { return admitted[i].ID < admitted[j].ID })
 
-	return renderBlock(anchor, admitted, len(candidates) > 0), dispositions
+	return renderBlock(anchor, admitted, len(candidates) > 0, form), dispositions
 }
 
-func admit(candidates []Candidate, budget, spent int) (admitted []Candidate, dispositions []Disposition) {
-	return admitUnheld(candidates, budget, spent, nil)
+func admit(candidates []Candidate, budget, spent int, form Form) (admitted []Candidate, dispositions []Disposition) {
+	return admitUnheld(candidates, budget, spent, nil, form)
 }
 
-func admitUnheld(candidates []Candidate, budget, spent int, held func(Candidate) bool) (admitted []Candidate, dispositions []Disposition) {
+func admitUnheld(candidates []Candidate, budget, spent int, held func(Candidate) bool, runForm Form) (admitted []Candidate, dispositions []Disposition) {
 	remaining := budget - spent
 	if remaining < 0 {
 		remaining = 0
@@ -44,7 +44,7 @@ func admitUnheld(candidates []Candidate, budget, spent int, held func(Candidate)
 
 	cumulative := 0
 	for i, c := range candidates {
-		form, rendered := renderedPayload(c)
+		form, rendered := renderedPayload(runForm, c)
 		payload := len(rendered)
 
 		d := Disposition{
@@ -83,8 +83,16 @@ func admitUnheld(candidates []Candidate, budget, spent int, held func(Candidate)
 	return admitted, dispositions
 }
 
-func renderedPayload(c Candidate) (Form, string) {
+func renderedPayload(runForm Form, c Candidate) (Form, string) {
+	if runForm == FormContent {
+		return FormContent, c.Content
+	}
 	return substanceForm(c.Substance)
+}
+
+func anchorCharge(anchor Anchor, runForm Form) int {
+	_, rendered := renderedPayload(runForm, candidateFromAnchor(anchor))
+	return len(rendered)
 }
 
 func substanceForm(substance string) (Form, string) {
@@ -99,21 +107,22 @@ const (
 	unavailableLine  = "substance: unavailable\n"
 )
 
-func renderSection(b *strings.Builder, c Candidate) {
+func renderSection(b *strings.Builder, c Candidate, runForm Form) {
 	fmt.Fprintf(b, "===== %s =====\nid: %d\ntype: %s\nname: %s\n", sectionCandidate, c.ID, c.Type, c.Name)
 	if !c.Read {
 		fmt.Fprintf(b, "similarity: %.3f\n", c.Similarity)
 	}
-	form, rendered := renderedPayload(c)
+	form, rendered := renderedPayload(runForm, c)
 	writePayload(b, form, rendered)
 }
 
 func writePayload(b *strings.Builder, form Form, rendered string) {
-	if form == FormSubstance {
+	switch {
+	case form == FormUnavailable:
+		b.WriteString(unavailableLine)
+	case rendered != "":
 		fmt.Fprintf(b, "\n%s\n", rendered)
-		return
 	}
-	b.WriteString(unavailableLine)
 }
 
 // RenderUserContent composes the user message: the request, the instant it states and the window it was bounded to when one applied, the assembled block, the earlier conversation when there is one, the same request again, then the trailer when there is one.
@@ -155,17 +164,17 @@ func windowLine(w UpdateWindow) string {
 	return fmt.Sprintf("retrieval is limited to nodes updated %s … %s", from, to)
 }
 
-func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool) string {
+func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, form Form) string {
 	var b strings.Builder
 
 	b.WriteString("===== ANCHOR =====\n")
 	fmt.Fprintf(&b, "id: %d\ntype: %s\nname: %s\n", anchor.ID, anchor.Type, anchor.Name)
-	form, rendered := substanceForm(anchor.Substance)
-	writePayload(&b, form, rendered)
+	anchorForm, rendered := renderedPayload(form, candidateFromAnchor(anchor))
+	writePayload(&b, anchorForm, rendered)
 
 	for _, c := range admitted {
 		b.WriteString("\n")
-		renderSection(&b, c)
+		renderSection(&b, c, form)
 	}
 
 	if len(admitted) == 0 && consideredAny {
@@ -188,8 +197,8 @@ func candidateFromAnchor(anchor Anchor) Candidate {
 	return Candidate{ID: anchor.ID, Type: anchor.Type, Name: anchor.Name, Content: anchor.Content, Substance: anchor.Substance, Read: true}
 }
 
-func summarizeAnchor(anchor Anchor) AnchorSummary {
-	form, rendered := substanceForm(anchor.Substance)
+func summarizeAnchor(anchor Anchor, runForm Form) AnchorSummary {
+	form, rendered := renderedPayload(runForm, candidateFromAnchor(anchor))
 	return AnchorSummary{
 		ID:           anchor.ID,
 		Type:         anchor.Type,

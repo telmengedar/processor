@@ -2,7 +2,7 @@
 
 Processor is a harness whose substrate is memory, not history (see `VISION.md`). Three binaries: one
 serves the turn over HTTP, one sweeps a retrieval corpus and scores what retrieval delivered, and one
-derives substance for a named, bounded set of graph nodes offline; the turn itself renders every node as its substance and creates a missing one before it renders.
+derives substance for a named, bounded set of graph nodes offline; the turn itself renders every node as its substance and creates a missing one before it renders, unless the run's config selects the content form (below).
 
 ## Status
 
@@ -242,14 +242,14 @@ PROCESSOR_MODEL_ID=llama-3.1-8b-instruct \
 runtime with no credential, no spend, and no terms-of-service exposure. Set it when the endpoint requires
 one.
 
-**The condense model.** Condensing writes each node's substance, the only form of a node that a turn ever
-sees. The service, `cmd/measure` and the offline `cmd/condense` all configure it the same way, by a second
+**The condense model.** Condensing writes each node's substance, the form of a node that a turn sees unless
+its config selects the content form (below). The service, `cmd/measure` and the offline `cmd/condense` all configure it the same way, by a second
 set of variables, `PROCESSOR_CONDENSE_MODEL_URL`, `_ID`, `_PROTOCOL`, `_KEY`, `_TEMPERATURE` and `_TOP_P`,
 which mean what their `PROCESSOR_MODEL_*` counterparts mean. Without `PROCESSOR_CONDENSE_MODEL_URL` each of
 them condenses with the judgement model's configuration, and says so once at startup. That keeps a small
 deployment to one model, but **a capable condense model is strongly recommended**: nothing checks a
 substance mechanically, and a written substance stays until the node's content changes, so a weak one
-stands in for its node for every later reader. In one audit, `gemma4:latest` without thinking kept the
+stands in for its node for every later run on the substance form. In one audit, `gemma4:latest` without thinking kept the
 facts of short nodes but often lost their reasons and caveats, and on a 271 KB node it looped and silently
 dropped about 40% of it.
 
@@ -300,7 +300,7 @@ array, an element that is not an object, a missing, blank or non-string `input`,
 is a `400 invalid_request`. A `null` `reply` is read as absent, as a `null` `history` is.
 
 **A run can be held to a filter by a config node.** The request may also carry `config`: the id of a node of
-type `processor-config`, whose content is a JSON object with five optional keys, `filter`, `silence`, `identity`, `note` and `temperature`:
+type `processor-config`, whose content is a JSON object with six optional keys, `filter`, `silence`, `identity`, `note`, `temperature` and `form`:
 `{"filter": {"type": ["thought", "knowledge"]}, "silence": true}`. The service reads that node, filtered to its type by
 the graph, once per request and caches nothing. The filter is forwarded to the graph on every read that can put a node in front
 of the model: the first recall, the model's own recall, and the addressed read (which also sends the node's id and
@@ -316,7 +316,7 @@ array of them (one repeated key per element). A blank value (empty or whitespace
 case) is refused. The config's `excludeId` and `excludeName` are added to the service's own; a bound the config sets in
 `updatedFrom` or `updatedTo` replaces the window the run derived for that bound. A run without `config` is unchanged,
 and the record of a configured run carries `perspective`: the config id, the filter it forwarded, `silence` when set,
-the identity it used, the note type when notes are enabled, the `temperature` when the config asked for one and, when the config node is rooted, that root. The run's node in the graph is created under the same
+the identity it used, the note type when notes are enabled, the `temperature` when the config asked for one, the `form` when the config set one and, when the config node is rooted, that root. The run's node in the graph is created under the same
 root; a run without a config, or whose config has no root, is stored unrooted.
 
 **A config can give the run an identity.** `identity` is a string the caller writes, of any length and
@@ -334,7 +334,7 @@ upper bound: the endpoint is the authority on its own range, and one that refuse
 a bound: endpoints disagree on what a negative temperature means, and the record would state a value the endpoint did
 not apply. Query derivation and the fill never take the config's temperature. Derivation is processor's own step and
 keeps the recall that precedes the model's reply as stable as the deployment makes it; the fill writes a substance into
-the graph that every later run reads. Only the temperature is configurable: `top_p` stays whatever the deployment
+the graph that every later run on the substance form reads. Only the temperature is configurable: `top_p` stays whatever the deployment
 configured, and a `temperature` on the request body is ignored like any unknown body field. A run whose config does
 not set `temperature` is unchanged.
 
@@ -346,12 +346,27 @@ record carries `silent: true`, its outcome carries `silent: true`, `produced: fa
 turn keeps the verdict `curtailed` beside `silent: true`), and the run record is filed as for any run. A blank answer is
 never a silence; it is the failure it always was. A run whose config does not set `silence` is unchanged byte for byte.
 
+**A config can select the content form.** `form` is a JSON string, exactly `"content"` or `"substance"`, absent meaning
+`"substance"`; any other value (another case, blank, a number, a boolean, `null`) is a `400 invalid_config` naming `form`,
+before any model call. On a run held to `"content"` every part the model is shown (the subject, the candidates, the rows
+of a recall and the part of a read) is the node's stored content, and the run never reaches the substance step: no
+substance is created, none is waited for and none is deferred, so `fills` is empty. A part with no content is shown as
+its header alone, never as `substance: unavailable`. The byte budgets are unchanged and count the content bytes; a
+content over a budget is cut from the block, or refused on a read with its size, and is never truncated or replaced by
+its substance. The system text tells the model its parts are content, and the record carries `limits.form: "content"`
+(absent on a substance run) beside `perspective.form`; the summary's `limits` line ends in ` form=content`. A config
+that does not set `form` renders and records byte for byte as before. One that sets `"substance"` renders and records
+as a config without the key does, except that `perspective.form` echoes `"substance"`. The one change both forms
+see is the read tool's description in the model request, which no longer names a form (`Read one part of memory. Takes
+one argument: …`); the system text carries the form. Whether answers on the content form are as good as on the substance
+form is not measured.
+
 **A reply is never processor's own syntax.** A model that writes its retrieval call as the opening of its answer
 (`recall: <phrase>`, `recall{query: <phrase>}`, `read_node: <id>`) has used the wrong channel for an unambiguous,
 side-effect-free request, so processor honours it as if it were a native call, and the record's `source` says `textual`.
 No other tool is ever honoured from text. An answer that is only the id of a part shown in that call, bare or after an
 `id:` label (`71`, `id: 71`), is routed through the read path: on a call that offered `read_node` the loop reads it, with the
-round's `source` saying `reference`, so a part already shown with its substance is refused as such (a part held as `unavailable` is read again and its substance retried: it is served if a substance now exists, and refused as already shown if it is still unavailable) and the turn's last call is reserved for
+round's `source` saying `reference`, so a part already shown, as its substance or as its content, is refused as such (a part held as `unavailable` is read again and its substance retried: it is served if a substance now exists, and refused as already shown if it is still unavailable) and the turn's last call is reserved for
 answering. A number that was not shown, or a shown id with any other text around it, is a reply. The description the recall clause asks for is read the same way: on a call that carried the clause, an answer that is one line and a phrase and is
 unfinished (no closing character other than a letter or a digit, at least three words), or is a run of at least two words of one input line, or is one of the turn's derived queries,
 is read as the recall the clause asked for, with the round's `source` saying `echo`; the next call answers as after any recall. A final answer that is not a
@@ -403,7 +418,7 @@ one fenced ` ```json ` block. The record — described next — is recovered by 
 fenced `json` block and parsing it.
 
 Up to four tools are offered on every call the loop is still willing to dispatch one from: `recall`,
-which searches the same graph, `read_node`, which returns one part of memory as its substance by id,
+which searches the same graph, `read_node`, which returns one part of memory by id (as its substance, or as its content on a run whose config selects the content form),
 `write_file`, which writes one file into the run's working directory — only when a working
 directory is configured — and `write_note`, which files one note of the model's own — only when the run's
 config enables it, and once per turn. The system text names each in one sentence and still asks for prose, so whether a
