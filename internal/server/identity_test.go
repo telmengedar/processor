@@ -74,7 +74,10 @@ func TestALongMultibyteIdentityIsAcceptedAndReachesTheSystemTextVerbatim(t *test
 	if result.code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 for an identity of %d bytes; body=%.300s", result.code, len(identity), result.body)
 	}
-	if len(model.systems) != 1 || model.systems[0] != identity+"\n\n"+"system text" {
+	if len(model.systems) != 1 {
+		t.Fatalf("%d judgement calls were made, want 1", len(model.systems))
+	}
+	if model.systems[0] != identity+"\n\n"+"system text" {
 		t.Errorf("the system text is %d bytes, want the %d byte identity verbatim ahead of the product text", len(model.systems[0]), len(identity))
 	}
 }
