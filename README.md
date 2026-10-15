@@ -390,7 +390,7 @@ most one note: the tool is withdrawn for the rest of the turn after any note rou
 No tool round is replayed to the model: what a recall or read_node round retrieved joins its working memory and appears in the
 context block, and of the rounds themselves it is told only a search's query and whether it brought anything and, after a note
 round, one acknowledgement. Every later call of the turn, the one reserved for answering included, ends with that
-acknowledgement paragraph, after its search paragraph if it has one. After a note that was filed
+acknowledgement paragraph; a search paragraph, when the call has one, sits earlier, ahead of the conversation section or, without one, ahead of the repeated request. After a note that was filed
 (`stored` or `unlinked`) it reads `You stored this note in this request: "<the note's text>". Now write your answer to the request.`;
 after any other outcome it reads `Your note in this request was not stored. Now write your answer to the request.`, which names no
 cause, quotes no text and does not name the tool. A note that fails does not by itself reserve the next call: that call is
@@ -427,8 +427,9 @@ tells the model that when none of the parts above states what the request asks f
 information is missing but to call `recall`; after a search that brought rows it is given no
 paragraph at all, because the paragraph made it search again, mostly with the same query; after one that
 brought nothing new it is told so, by the query it ran, and is not given the paragraph. The paragraph is not the last
-thing in the message because, placed last, it came after the conversation and the model in use
-copied the conversation's last reply instead of answering the request; the barren line and the acknowledgement stay at the end. The record names
+thing in the message because, placed last after the conversation, it made the model in use far more likely to
+repeat one of its own earlier replies instead of answering the request; moving it reduces that repetition but does
+not remove it. The barren line and the acknowledgement stay at the end. The record names
 in `trailers` the search state each call was made in (`clause`, `found`, `barren`, or `none` where recall
 was not offered), in `offered` the tools each call offered and in `noteAcks` which acknowledgement each call carried (`none`, `stored` or `notStored`). **A call's context is memory, not a transcript.** Every judgement call sends exactly two messages:
 a system text and one user message. The system text is composed per call from the tools that call offers and from whether the turn carries a conversation section,
