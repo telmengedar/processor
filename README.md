@@ -318,7 +318,7 @@ and the record of a configured run carries `perspective`: the config id, the fil
 the identity it used, the note type when notes are enabled, the `temperature` when the config asked for one and, when the config node is rooted, that root. The run's node in the graph is created under the same
 root; a run without a config, or whose config has no root, is stored unrooted.
 
-**A config can give the run an identity.** `identity` is a string the caller writes, of at most 2,048 bytes of UTF-8 and
+**A config can give the run an identity.** `identity` is a string the caller writes, of any length and
 never blank. Processor puts it first in the system text of every judgement call, followed by a blank line, and forwards
 it as written without reading it; derivation and condensation never see it.
 

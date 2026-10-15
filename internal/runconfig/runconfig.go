@@ -29,9 +29,6 @@ const (
 	filterTypeKey  = "type"
 )
 
-// MaxIdentityBytes bounds the identity text, counted in UTF-8 bytes after JSON unescaping.
-const MaxIdentityBytes = 2048
-
 // Config is what a config node's content carries: the filter forwarded to the graph, whether the run offers the model a chosen silence, the identity text, empty for none, the note capability, nil for none, and the temperature of the run's judgement calls, nil for the deployment's.
 type Config struct {
 	Filter      loop.Filter
@@ -165,9 +162,6 @@ func identityOf(raw json.RawMessage) (string, error) {
 	}
 	if strings.TrimSpace(text) == "" {
 		return "", fmt.Errorf("the config's %q is blank", identityKey)
-	}
-	if len(text) > MaxIdentityBytes {
-		return "", fmt.Errorf("the config's %q is %d bytes, over the bound of %d", identityKey, len(text), MaxIdentityBytes)
 	}
 	return text, nil
 }

@@ -61,13 +61,30 @@ func TestAConfiguredIdentityReachesTheSystemTextAndTheRecordVerbatim(t *testing.
 	}
 }
 
+func TestALongMultibyteIdentityIsAcceptedAndReachesTheSystemTextVerbatim(t *testing.T) {
+	t.Parallel()
+
+	identity := strings.Repeat("Du bist Überzeugt 世.\n", 700)
+	encoded, err := json.Marshal(map[string]any{"identity": identity})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	result, model := runRecording(t, &configGraph{content: string(encoded)}, configPostBodyHead+`77}`)
+
+	if result.code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for an identity of %d bytes; body=%.300s", result.code, len(identity), result.body)
+	}
+	if len(model.systems) != 1 || model.systems[0] != identity+"\n\n"+"system text" {
+		t.Errorf("the system text is %d bytes, want the %d byte identity verbatim ahead of the product text", len(model.systems[0]), len(identity))
+	}
+}
+
 func TestAConfigWithAnInvalidIdentityIsAnInvalidConfigNamingTheKeyAndNothingElseRuns(t *testing.T) {
 	t.Parallel()
 
 	for name, content := range map[string]string{
 		"a number": `{"identity": 5}`,
 		"blank":    `{"identity": "  "}`,
-		"too long": `{"identity": "` + strings.Repeat("a", 2049) + `"}`,
 	} {
 		graph := &configGraph{content: content}
 		result, model := runRecording(t, graph, configPostBodyHead+`77}`)
