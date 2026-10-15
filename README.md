@@ -358,7 +358,7 @@ reply is withheld: one that came from a call asking for a tool (`toolRequest`), 
 did not honour (`toolText`), one that opens with processor's own framing, a `===== NAME =====` line, an `id:` line followed
 by a `type:` line, or a conversation label (`blockText`), or one that is only the id of a part shown in its call on a call
 that offered no read (`partReference`), or one that has the shape of a query in a turn that already read such an answer as a
-recall (`queryEcho`), or one that carries the model's own tool-call markup anywhere in it, such as `<tool_call` or `tool_call|>`, which the adapter did not turn into a call (`callMarkup`). The record keeps the text verbatim and carries `nonReply` with the kind, and `produced` is `false`, so `/runs`
+recall (`queryEcho`), or one that carries the model's own tool-call markup anywhere in it, such as `<tool_call`, `tool_call|>` or `<function=`, which the adapter did not turn into a call (`callMarkup`). The record keeps the text verbatim and carries `nonReply` with the kind, and `produced` is `false`, so `/runs`
 answers with the fallback reply. The outcome's verdict is `withheld`, except that a curtailed turn keeps `curtailed` and
 a silent one keeps `silent`. Nothing is fed back to the model and nothing is retried.
 
