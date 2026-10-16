@@ -717,9 +717,9 @@ func TestARecallCarriesNoGraphConstraintOfItsOwnWhateverTheRequestHolds(t *testi
 	if err != nil {
 		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 	}
-	for _, key := range []string{"linkedto", "path"} {
+	for _, key := range []string{"linkedto", "path", "updatedFrom", "updatedTo"} {
 		if _, present := q[key]; present {
-			t.Fatalf("the recall carried %s = %v, want the key absent: processor chooses no region of the graph for a recall, so the whole graph is ranked", key, q[key])
+			t.Fatalf("the recall carried %s = %v, want the key absent: a recall the request does not constrain carries no graph constraint of its own", key, q[key])
 		}
 	}
 }

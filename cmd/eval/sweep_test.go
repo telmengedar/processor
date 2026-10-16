@@ -196,7 +196,7 @@ func TestEvalSweepRunsWithNoFilter(t *testing.T) {
 	}
 	for _, call := range graph.recallCalls {
 		if len(call.Filter) != 0 {
-			t.Fatalf("recall %q carried filter %+v, want none: the sweep runs pinned query sidecars with no derivation call, so a future change threading a bound in must fail here rather than silently changing corpus scores", call.Queries, call.Filter)
+			t.Fatalf("recall %q carried filter %+v, want none", call.Queries, call.Filter)
 		}
 	}
 }

@@ -71,7 +71,7 @@ func TestTheDerivationPromptCarriesTheInstructionsBothExemplarsAndEndsWithTheInp
 
 	for _, exemplar := range derivationExemplars {
 		if !strings.Contains(prompt, exemplar.input) {
-			t.Fatalf("the derivation prompt drops exemplar input %q; the exemplars are how the six-line shape is taught", exemplar.input)
+			t.Fatalf("the derivation prompt drops exemplar input %q; the exemplars are how the five-line shape is taught", exemplar.input)
 		}
 		for _, query := range exemplar.queries {
 			if !strings.Contains(prompt, query) {
@@ -110,6 +110,21 @@ func TestTheDerivationPromptStatesNoInstantAndAsksForNoDatesLine(t *testing.T) {
 	for _, forbidden := range []string{"===== NOW =====", "DATES", "YYYY-MM-DD"} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("the derivation prompt carries %q: the model is asked to resolve time that nothing consumes any more", forbidden)
+		}
+	}
+}
+
+func TestTheDerivationPromptForbidsADateMonthYearOrDayWordOnAQueryLine(t *testing.T) {
+	t.Parallel()
+
+	prompt := DerivationPrompt("what did the split change")
+
+	for _, want := range []string{
+		"A query line must never contain a date, a month, a year, or a day-word.",
+		"A semantic search matches a date only where that date appears as verbatim text, which is nowhere.",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("the derivation prompt does not carry %q, so the model is free to spell a date into a query", want)
 		}
 	}
 }

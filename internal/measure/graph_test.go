@@ -276,7 +276,7 @@ func TestAMeasuredRunsReadsStillReachTheGraphAndItsBlockCarriesWhatTheyReturned(
 	}
 }
 
-func TestAMeasuredRunsRecallsCarryTheSameQueriesLimitAndFilterAnUndecoratedRunCarries(t *testing.T) {
+func TestAMeasuredRunsRecallsCarryTheSameQueriesAndLimitAnUndecoratedRunCarriesAndNoFilterOfTheirOwn(t *testing.T) {
 	const derivation = "a second phrasing of the task?"
 	measuredLive := newRecordingGraph()
 	_, runner := measuredRunnerWith(measuredLive, &answeringModel{derivation: derivation})

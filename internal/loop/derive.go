@@ -33,6 +33,7 @@ Rules:
 - Do not restate or lightly reword the input request. Each query must approach the underlying information need from a genuinely different angle than the input and from each other.
 - Do not answer the request. You are generating queries, not answers.
 - Do not invent specifics (names, numbers, node ids) that are not implied by the request itself.
+- A query line must never contain a date, a month, a year, or a day-word. A semantic search matches a date only where that date appears as verbatim text, which is nowhere.
 - Output exactly %d lines total:
   - The first %d lines are distinct, standalone questions (each ending in "?") that name a mechanism, concept, or specific terminology likely to appear in the answer.
   - The last line is a dense, keyword-style query (no question mark) combining the most salient technical terms an embedding search would key on.
