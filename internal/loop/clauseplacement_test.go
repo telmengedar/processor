@@ -33,7 +33,7 @@ func renderPlacement(t *testing.T, withHistory bool, clause, trailer string) str
 	if withHistory {
 		conversation = placementFile(t, "syn.conversation.txt")
 	}
-	return RenderUserContent(placementFile(t, "syn.block.txt"), placementInput, placementInstant, UpdateWindow{}, conversation, clause, trailer)
+	return RenderUserContent(placementFile(t, "syn.block.txt"), placementInput, placementInstant, conversation, clause, trailer)
 }
 
 func TestTheClauseIsRenderedByteForByteAsTheMeasuredArmWithHistory(t *testing.T) {

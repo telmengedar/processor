@@ -125,8 +125,8 @@ func writePayload(b *strings.Builder, form Form, rendered string) {
 	}
 }
 
-// RenderUserContent composes the user message: the request, the instant it states and the window it was bounded to when one applied, the assembled block, the recall clause when there is one, the earlier conversation when there is one, the same request again, then the trailer when there is one.
-func RenderUserContent(block, input string, now time.Time, window UpdateWindow, conversation, clause, trailer string) string {
+// RenderUserContent composes the user message: the request, the instant it states, the assembled block, the recall clause when there is one, the earlier conversation when there is one, the same request again, then the trailer when there is one.
+func RenderUserContent(block, input string, now time.Time, conversation, clause, trailer string) string {
 	request := "===== INPUT =====\n" + input
 
 	var b strings.Builder
@@ -135,10 +135,6 @@ func RenderUserContent(block, input string, now time.Time, window UpdateWindow, 
 	if !now.IsZero() {
 		b.WriteString("\n\n===== NOW =====\n")
 		b.WriteString(now.Format(time.RFC3339))
-		if !window.IsZero() {
-			b.WriteString("\n")
-			b.WriteString(windowLine(window))
-		}
 	}
 	b.WriteString("\n\n\n")
 	b.WriteString(block)
@@ -163,13 +159,6 @@ func RenderUserContent(block, input string, now time.Time, window UpdateWindow, 
 	}
 
 	return b.String()
-}
-
-func windowLine(w UpdateWindow) string {
-	const dateLayout = "2006-01-02"
-	from := w.From.Format(dateLayout)
-	to := w.To.AddDate(0, 0, -1).Format(dateLayout)
-	return fmt.Sprintf("retrieval is limited to nodes updated %s … %s", from, to)
 }
 
 func renderBlock(anchor Anchor, admitted []Candidate, consideredAny bool, form Form) string {

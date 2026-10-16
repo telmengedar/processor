@@ -87,8 +87,8 @@ words; that document carries the argument.
 - `internal/server` — the HTTP route table and the serve/drain lifecycle
   (DiVoid **#10437**).
 - `internal/loop` — the turn: mechanical context assembly (`Assemble`, a pure function — no I/O, no
-  clock, no randomness) and its sequencing (`Turn.Run`): fetch the subject, derive the query set and the
-  retrieval window from the input, retrieve, assemble, judge — dispatching the two tools as the model
+  clock, no randomness) and its sequencing (`Turn.Run`): fetch the subject, derive the query set
+  from the input, retrieve, assemble, judge — dispatching the two tools as the model
   asks for them, up to a call cap — then write the record back. The tools are
   supplementary recall and one file write; both go through the same round, so a run record carries them
   in one `toolCalls` list, each entry naming which tool it was. See
@@ -263,20 +263,15 @@ Request:
 `input` must be non-empty; `subject` is the id of the node the run is about. The turn fetches that
 subject first — so an unreachable graph and a subject that resolves to nothing both fail before any model
 call and cost **none**. It then asks the model once, under its own 30-second bound, for up to five
-further queries derived from `input` **and for a calendar day range** — one extra output line, `DATES: YYYY-MM-DD..YYYY-MM-DD` or
-`DATES: none`, resolved against the instant the prompt states — which becomes the run's retrieval window.
+further queries derived from `input`.
 That call is not charged to the run's six-call judgement budget, and any outcome which is not a usable
 query set leaves the run asking `input` alone when it is a phrase, and nothing otherwise, and records why on the record's `derivationError`. A
-`DATES` line that is absent, unrecognised or malformed yields **no window** rather than a guessed one,
-and retrieval is then unbounded, exactly as it was before the line existed. So does a well-formed range the request cannot
-support: one whose start or end year is neither the run's year nor written in the request, or that begins after the run's
-instant. Its queries are kept, and the record's `windowDiscarded` (and the summary) names the range and the rule it failed.
+derived line that starts with `DATES:` is dropped and never becomes a query; the run derives no time bound of its own.
 A query is a phrase: at most 256 bytes of UTF-8. `input` is the first query when it is one; a longer `input` is content
 for the model and never a query, so the graph is then asked the derived phrases alone, or nothing when none were derived (the
 block is then the subject alone and the model may ask), and the turn does not fail for it. A derived line longer than a
 phrase is dropped, and a model recall query longer than one is refused without a graph call. All the queries go to the graph in one request, which ranks every
-node by the mean of its similarities to them — against the whole graph or, when the run derived a window,
-against the nodes whose last update falls inside it — and returns the top six, with the subject and every
+node by the mean of its similarities to them — against the whole graph, or against the nodes the run's config filter admits — and returns the top six, with the subject and every
 run record this system wrote left out before the count. That is the turn's only retrieval request: every
 one of the six slots goes to it, and the subject's position in the graph chooses none of them. The six rows are
 ordered by similarity, each is shown to the model with its similarity, and none is cut for being weak.
@@ -313,7 +308,7 @@ and a misspelt one would silently show the whole graph. A value is a string, a n
 array of them (one repeated key per element). A blank value (empty or whitespace only, scalar or element) is refused, because the graph ignores `type=` and the run would silently see the whole graph; the service checks no other value, the graph does. The service sets
 `query`, `queries`, `count`, `continue`, `sort`, `descending`, `fields` and `id` itself, so a config naming one (in any
 case) is refused. The config's `excludeId` and `excludeName` are added to the service's own; a bound the config sets in
-`updatedFrom` or `updatedTo` replaces the window the run derived for that bound. A run without `config` is unchanged,
+`updatedFrom` or `updatedTo` bounds the nodes by their last update on every read the filter reaches, as the config wrote it. A run without `config` is unchanged,
 and the record of a configured run carries `perspective`: the config id, the filter it forwarded, `silence` when set,
 the identity it used, the note type when notes are enabled, the `temperature` when the config asked for one, the `form` when the config set one and, when the config node is rooted, that root. The run's node in the graph is created under the same
 root; a run without a config, or whose config has no root, is stored unrooted.
@@ -403,7 +398,7 @@ config lets it write; either violation is a `400 invalid_config`. Every note rou
 (`written`: `stored`, `unlinked` or `notStored`). The system text names the tool in one neutral sentence and says
 nothing about when to write or in what voice; that belongs in the config's `identity`.
 
-The turn: fetch the subject, derive the query set and window described above, recall candidates against
+The turn: fetch the subject, derive the query set described above, recall candidates against
 them, assemble a byte-budgeted context block (anchor first,
 then admitted candidates sorted by node id ascending, never by score), judge it against the configured
 model, dispatch a tool each time the model asks for one (up to a **judgement**-call cap of 6, so at most 5
@@ -474,8 +469,7 @@ record is unchanged. Errors stay errors (the table below); an outage is never tu
 With `?verbose=true`, the response (`200`) is the run record: the input, the instant the prompt stated (`now`, absent when it
 stated none), the query and the full query set the derivation produced (`queries`, with `input` first
 when it is a phrase) together with `derivationError` when that derivation failed, `inputNotPhrase` when the input was
-not a phrase and so was not sent to the graph (`query` is then empty), the update-time window retrieval was
-held to (`window`, absent when the run expressed no time constraint), the anchor summary, **every** candidate
+not a phrase and so was not sent to the graph (`query` is then empty), the anchor summary, **every** candidate
 retrieval returned — not only the ones kept — each with its rank, similarity, size, content hash, and
 whether it was included or cut and why, the assembled block itself, the model's answer, the model id, the `build` the binary was
 stamped with (absent for an unstamped binary), which adapter and endpoint served the
@@ -849,10 +843,9 @@ flags it.
   discrimination (a missing subject is a `200` with an empty result, never a `404`). **Since verified live** against
   `divoid.mamgo.io`: every decode assumption held, including that the `fields` projection populates
   `content` inline rather than needing a second fetch, and that `Recall` must not re-sort what the graph
-  already returned in rank order (**#10883**). The retrieval window is pinned at the same wire level: a
-  non-zero window sends `updatedFrom`/`updatedTo` as RFC 3339, and a **zero** window sends an encoded
-  query string byte-identical to one from before the parameter existed, so an un-windowed run cannot
-  silently acquire a filter. The wire spelling is established **both** by the suite and by a
+  already returned in rank order (**#10883**). A config's `updatedFrom`/`updatedTo` are pinned at the same wire level:
+  they are sent as the config wrote them, and a recall with no filter sends an encoded query string
+  with neither, so an unfiltered run cannot silently acquire a bound. The wire spelling is established **both** by the suite and by a
   filtered-versus-unfiltered control run against `divoid.mamgo.io`, recorded in **PR #77's body**. That
   control exists because **#13721** measured the hazard it guards against: of nine parameter names probed
   on 2026-09-12, **five were silently ignored**, each returning rows and a `total` identical to the

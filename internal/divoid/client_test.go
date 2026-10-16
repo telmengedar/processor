@@ -184,7 +184,7 @@ func TestRecallSendsTheQueryTextVerbatimWithCountAndFieldsAndNoOtherKey(t *testi
 	}
 }
 
-func TestAZeroWindowSendsTheSameQueryStringAsBeforeTheWindowExisted(t *testing.T) {
+func TestARecallWithoutAFilterSendsNoUpdatedBound(t *testing.T) {
 	t.Parallel()
 
 	c, rec := recordingClient(t)
@@ -194,35 +194,7 @@ func TestAZeroWindowSendsTheSameQueryStringAsBeforeTheWindowExisted(t *testing.T
 
 	want := url.Values{"query": {"q"}, "count": {"6"}, "fields": {candidateFields}, "excludeName": {"processor-run%"}}.Encode()
 	if rec.query != want {
-		t.Fatalf("a zero window sent %q, want the encoded query string byte-identical to %q: a zero window must not acquire updatedFrom, updatedTo, an empty string, or any sentinel value", rec.query, want)
-	}
-}
-
-func TestANonZeroWindowSendsBothUpdatedFromAndUpdatedTo(t *testing.T) {
-	t.Parallel()
-
-	window := loop.UpdateWindow{
-		From: time.Date(2026, 9, 12, 0, 0, 0, 0, time.FixedZone("test+02", 2*60*60)),
-		To:   time.Date(2026, 9, 13, 0, 0, 0, 0, time.FixedZone("test+02", 2*60*60)),
-	}
-
-	c, rec := recordingClient(t)
-	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6, Window: window}); err != nil {
-		t.Fatalf("Recall: %v", err)
-	}
-
-	q, err := url.ParseQuery(rec.query)
-	if err != nil {
-		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
-	}
-
-	wantFrom := window.From.Format(time.RFC3339)
-	wantTo := window.To.Format(time.RFC3339)
-	if q.Get("updatedFrom") != wantFrom {
-		t.Fatalf("updatedFrom = %q, want %q", q.Get("updatedFrom"), wantFrom)
-	}
-	if q.Get("updatedTo") != wantTo {
-		t.Fatalf("updatedTo = %q, want %q", q.Get("updatedTo"), wantTo)
+		t.Fatalf("a recall without a filter sent %q, want the encoded query string byte-identical to %q: it must not acquire updatedFrom, updatedTo, an empty string, or any sentinel value", rec.query, want)
 	}
 }
 
@@ -736,7 +708,6 @@ func TestARecallCarriesNoGraphConstraintOfItsOwnWhateverTheRequestHolds(t *testi
 		Queries: []string{"the input", "a derived phrasing"},
 		Limit:   6,
 		Exclude: []int64{42},
-		Window:  loop.UpdateWindow{From: time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC)},
 	}
 	if _, err := c.Recall(context.Background(), request); err != nil {
 		t.Fatalf("Recall: %v", err)
@@ -746,9 +717,9 @@ func TestARecallCarriesNoGraphConstraintOfItsOwnWhateverTheRequestHolds(t *testi
 	if err != nil {
 		t.Fatalf("ParseQuery(%q): %v", rec.query, err)
 	}
-	for _, key := range []string{"linkedto", "path"} {
+	for _, key := range []string{"linkedto", "path", "updatedFrom", "updatedTo"} {
 		if _, present := q[key]; present {
-			t.Fatalf("the recall carried %s = %v, want the key absent: processor chooses no region of the graph for a recall, so the whole graph is ranked", key, q[key])
+			t.Fatalf("the recall carried %s = %v, want the key absent: a recall the request does not constrain carries no graph constraint of its own", key, q[key])
 		}
 	}
 }

@@ -6,17 +6,6 @@ import (
 	"time"
 )
 
-// UpdateWindow is a closed instant range over the graph's last-update field, resolved in the run's own zone; both bounds zero means unbounded.
-type UpdateWindow struct {
-	From time.Time `json:"from"`
-	To   time.Time `json:"to"`
-}
-
-// IsZero reports whether the window is unbounded.
-func (w UpdateWindow) IsZero() bool {
-	return w.From.IsZero() && w.To.IsZero()
-}
-
 // Filter is the graph filter a run's config carries and every read that can admit a node forwards: opaque to the loop, whose names and values belong to the graph adapter's vocabulary alone.
 type Filter map[string][]string
 
@@ -389,13 +378,9 @@ type Record struct {
 	// DerivationError is why the query set holds no derived query, empty when queries were derived.
 	DerivationError string `json:"derivationError,omitempty"`
 	// InputNotPhrase is why the input is not among the queries and why Query is empty: it was not a phrase, so it went to the model and not to the graph; absent when the input was a query.
-	InputNotPhrase string `json:"inputNotPhrase,omitempty"`
-	// Window is the update-time bound retrieval was held to, absent when the run's input expressed no time constraint.
-	Window UpdateWindow `json:"window,omitzero"`
-	// WindowDiscarded is the range the derivation wrote and the rule it failed, absent when no range was discarded.
-	WindowDiscarded string        `json:"windowDiscarded,omitempty"`
-	Anchor          AnchorSummary `json:"anchor"`
-	Candidates      []Disposition `json:"candidates"`
+	InputNotPhrase string        `json:"inputNotPhrase,omitempty"`
+	Anchor         AnchorSummary `json:"anchor"`
+	Candidates     []Disposition `json:"candidates"`
 	// Fills is one entry per creation the turn attempted, in every phase: filled, or the reason it was not.
 	Fills []FillOutcome `json:"fills"`
 	Block string        `json:"block"`
@@ -497,9 +482,6 @@ type JudgeInput struct {
 
 	// Now is the instant the prompt states, zero when the caller supplies none.
 	Now time.Time
-
-	// Window is the update-time bound the run's supplementary recalls are held to, zero when unbounded.
-	Window UpdateWindow
 
 	// MaxOutputTokens is the call's output limit, 0 for none; an adapter sends no limit key for 0.
 	MaxOutputTokens int

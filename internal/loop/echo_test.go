@@ -16,7 +16,7 @@ const (
 )
 
 func derivedLines(queries ...string) string {
-	return "DATES: none\n" + strings.Join(queries, "\n")
+	return strings.Join(queries, "\n")
 }
 
 type echoRun struct {
