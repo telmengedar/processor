@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -43,7 +44,6 @@ type fakeGraph struct {
 
 	recallQueries []string
 	recallLimit   int
-	recallWindow  UpdateWindow
 
 	writeRunCalled  bool
 	writeRunRecord  Record
@@ -90,7 +90,6 @@ func (f *fakeGraph) Node(_ context.Context, id int64, _ Filter) (Anchor, bool, e
 func (f *fakeGraph) Recall(_ context.Context, request RecallRequest) ([]Candidate, error) {
 	f.recallQueries = request.Queries
 	f.recallLimit = request.Limit
-	f.recallWindow = request.Window
 	f.recallCalls = append(f.recallCalls, request)
 
 	var rows []Candidate
@@ -1688,7 +1687,7 @@ func TestTheSupplementaryRecallSendsTheModelsOwnQueryAsExactlyOneCall(t *testing
 	}
 }
 
-func TestTheSupplementaryRecallCarriesTheRunsWindow(t *testing.T) {
+func TestADatesLineInTheDerivationReachesNeitherAQueryNorAnyRecall(t *testing.T) {
 	t.Parallel()
 
 	graph := &fakeGraph{nodeFound: true, node: Anchor{ID: 7, Type: "documentation", Name: "S", Substance: "anchor"}}
@@ -1705,16 +1704,45 @@ func TestTheSupplementaryRecallCarriesTheRunsWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if record.Window.IsZero() {
-		t.Fatalf("test setup error: record.Window is zero, so this run derived no window to check the supplementary recall against")
+
+	if want := []string{"the input", "the derived question?"}; !slices.Equal(record.Queries, want) {
+		t.Fatalf("record.Queries = %q, want %q: a DATES line is never a query", record.Queries, want)
+	}
+	if len(graph.recallCalls) != 2 {
+		t.Fatalf("the run issued %d recalls, want the first and the model's own", len(graph.recallCalls))
+	}
+	for i, call := range graph.recallCalls {
+		if len(call.Filter) != 0 {
+			t.Fatalf("recall %d carried filter %+v, want none: the run's config holds no filter, so a bound here came from the derivation", i, call.Filter)
+		}
+	}
+}
+
+func TestAConfigsUpdatedBoundsReachTheFirstRecallAndTheModelsOwn(t *testing.T) {
+	t.Parallel()
+
+	graph := &fakeGraph{nodeFound: true, node: Anchor{ID: 7, Type: "documentation", Name: "S", Substance: "anchor"}}
+	model := &fakeModel{
+		derivedText: "the derived question?",
+		results: []JudgeResult{
+			{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: "the query the model composed"},
+			{Answer: "done", Reason: Answered, RawReason: "stop"},
+		},
+	}
+	turn := NewTurn(graph, model, nil, fixedSystem("system text"), "test-model", testLogger())
+
+	filter := Filter{"updatedFrom": {"2026-01-01T00:00:00Z"}, "updatedTo": {"2026-02-01T00:00:00Z"}}
+	if _, _, err := turn.RunWithOptions(context.Background(), RunOptions{Input: "the input", Subject: 7, Settings: DefaultSettings(), View: &View{Config: 9, Filter: filter}}); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 
-	supplementary := graph.recallCalls[len(graph.recallCalls)-1]
-	if !slices.Equal(supplementary.Queries, []string{"the query the model composed"}) {
-		t.Fatalf("supplementary recall queries = %q, want the model's own text verbatim", supplementary.Queries)
+	if len(graph.recallCalls) != 2 {
+		t.Fatalf("the run issued %d recalls, want the first and the model's own", len(graph.recallCalls))
 	}
-	if supplementary.Window != record.Window {
-		t.Fatalf("supplementary recall window = %+v, want the run's own %+v: the model supplies only a query string, so a window observed here can only have come from the turn", supplementary.Window, record.Window)
+	for i, call := range graph.recallCalls {
+		if !reflect.DeepEqual(call.Filter, filter) {
+			t.Fatalf("recall %d carried filter %+v, want the config's %+v: a config's own bounds are the one time window left", i, call.Filter, filter)
+		}
 	}
 }
 

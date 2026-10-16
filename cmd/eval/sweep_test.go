@@ -182,7 +182,7 @@ func TestSweepRecallsWithTheRawInputVerbatimAtTheCountRetrievalIssuesRatherThanO
 	}
 }
 
-func TestEvalSweepRunsWithNoWindow(t *testing.T) {
+func TestEvalSweepRunsWithNoFilter(t *testing.T) {
 	t.Parallel()
 
 	graph := newFakeGraph(t)
@@ -192,11 +192,11 @@ func TestEvalSweepRunsWithNoWindow(t *testing.T) {
 	mustSweep(t, graph, corpusOf(row))
 
 	if len(graph.recallCalls) == 0 {
-		t.Fatal("the sweep issued no recall, so there is no window to inspect")
+		t.Fatal("the sweep issued no recall, so there is no filter to inspect")
 	}
 	for _, call := range graph.recallCalls {
-		if !call.Window.IsZero() {
-			t.Fatalf("recall %q carried window %+v, want zero: the sweep runs pinned query sidecars with no derivation call, so a future change threading one in must fail here rather than silently changing corpus scores", call.Queries, call.Window)
+		if len(call.Filter) != 0 {
+			t.Fatalf("recall %q carried filter %+v, want none: the sweep runs pinned query sidecars with no derivation call, so a future change threading a bound in must fail here rather than silently changing corpus scores", call.Queries, call.Filter)
 		}
 	}
 }
@@ -205,7 +205,7 @@ func fetchCountRetrievalIssues(t *testing.T) int {
 	t.Helper()
 
 	graph := newFakeGraph(t)
-	if _, err := loop.Retrieve(context.Background(), graph, loop.Anchor{ID: 100}, []string{"a probe query"}, loop.CandidateLimit, loop.UpdateWindow{}, nil, nil); err != nil {
+	if _, err := loop.Retrieve(context.Background(), graph, loop.Anchor{ID: 100}, []string{"a probe query"}, loop.CandidateLimit, nil, nil); err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
 	if len(graph.recallCalls) == 0 {

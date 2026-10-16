@@ -76,12 +76,11 @@ var ErrInvalidConfig = errors.New("invalid config")
 // ErrWriteRejected marks a write the working directory refused; its message is recorded on the round and not fed back to the following call.
 var ErrWriteRejected = errors.New("write rejected")
 
-// RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, Exclude ids and every run record left out, a zero Window unbounded, and Filter, nil for none, the run's config filter the graph applies before it counts.
+// RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, Exclude ids and every run record left out, and Filter, nil for none, the run's config filter the graph applies before it counts.
 type RecallRequest struct {
 	Queries []string
 	Limit   int
 	Exclude []int64
-	Window  UpdateWindow
 	Filter  Filter
 }
 
@@ -210,10 +209,10 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 			"subject", subject, "supplied", len(history), "used", len(used), "bytes", len(conversation), "safetyLimit", settings.HistorySafetyLimit)
 	}
 
-	queries, window, windowDiscarded, derivationSampling, derivationError := t.derive(ctx, input, subject, now)
+	queries, derivationSampling, derivationError := t.derive(ctx, input, subject)
 	notPhrase := inputNotPhraseNote(input)
 
-	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, window, filter, t.log())
+	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, filter, t.log())
 	if err != nil {
 		if len(filter) > 0 && errors.Is(err, ErrGraphRejected) {
 			return t.failed(subject, started, fmt.Errorf("%w: %v", ErrInvalidConfig, err))
@@ -233,8 +232,6 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 		Queries:            queries,
 		DerivationError:    derivationError,
 		InputNotPhrase:     notPhrase,
-		Window:             window,
-		WindowDiscarded:    windowDiscarded,
 		Anchor:             summarizeAnchor(anchor, settings.Form),
 		Candidates:         dispositions,
 		Fills:              fills,
@@ -250,7 +247,7 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	memory.charge(len(conversation))
 	memory.charge(len(identity))
 
-	judged, err := t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions)
+	judged, err := t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions)
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
@@ -306,23 +303,19 @@ func (t *Turn) fillInitial(ctx context.Context, settings RunSettings, anchor Anc
 	return anchor, withCreated(candidates, created), fills
 }
 
-func (t *Turn) derive(ctx context.Context, input string, subject int64, now time.Time) ([]string, UpdateWindow, string, *Sampling, string) {
+func (t *Turn) derive(ctx context.Context, input string, subject int64) ([]string, *Sampling, string) {
 	started := time.Now()
-	derived, window, discarded, sampling, err := DeriveQueries(ctx, t.Model, input, now)
+	derived, sampling, err := DeriveQueries(ctx, t.Model, input)
 	elapsed := time.Since(started)
 
 	if err != nil {
 		t.log().Warn("the query set holds no derived query", "subject", subject, "elapsed", elapsed, "error", err)
-		return MergeQueries(input, nil), UpdateWindow{}, "", sampling, BoundCause(err.Error())
-	}
-
-	if discarded != "" {
-		t.log().Warn("the derived window was discarded and the run is unbounded", "subject", subject, "discarded", discarded)
+		return MergeQueries(input, nil), sampling, BoundCause(err.Error())
 	}
 
 	queries := MergeQueries(input, derived)
 	t.log().Info("queries derived", "subject", subject, "derived", len(derived), "queries", len(queries), "elapsed", elapsed)
-	return queries, window, discarded, sampling, ""
+	return queries, sampling, ""
 }
 
 func firstQuery(input string) string {
@@ -483,7 +476,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond), prompt))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input string, queries []string, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, temperature *float64, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input string, queries []string, conversation, identity string, subject int64, now time.Time, filter Filter, silence bool, note noteScope, temperature *float64, admitted []Disposition) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -536,7 +529,6 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 			Clause:          clause,
 			Trailer:         trailer,
 			Now:             now,
-			Window:          window,
 			MaxOutputTokens: outputBudget(settings, reserved),
 			Offered:         offered,
 			Temperature:     temperature,
@@ -618,7 +610,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 				"adapter", result.Provider.Adapter, "tool", toolFor(result.Reason))
 		}
 
-		exchange := t.dispatch(ctx, settings, result, &judged.workspace, window, filter, subject, account, memory, note, offersNote(offered))
+		exchange := t.dispatch(ctx, settings, result, &judged.workspace, filter, subject, account, memory, note, offersNote(offered))
 		exchange.ToolSource = result.ToolSource
 		accountForYield(account, &exchange)
 		if exchange.Tool == ToolRecall && exchange.Error == "" {
@@ -772,7 +764,7 @@ func closedRecallExchange(result JudgeResult) ToolExchange {
 	return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: errRecallClosed, Dispositions: []Disposition{}}
 }
 
-func (t *Turn) dispatch(ctx context.Context, settings RunSettings, result JudgeResult, workspace *string, window UpdateWindow, filter Filter, subject int64, account *yieldAccount, memory *workingMemory, note noteScope, noteOffered bool) ToolExchange {
+func (t *Turn) dispatch(ctx context.Context, settings RunSettings, result JudgeResult, workspace *string, filter Filter, subject int64, account *yieldAccount, memory *workingMemory, note noteScope, noteOffered bool) ToolExchange {
 	switch result.Reason {
 	case WantsWrite:
 		return t.dispatchWrite(ctx, result, workspace)
@@ -781,7 +773,7 @@ func (t *Turn) dispatch(ctx context.Context, settings RunSettings, result JudgeR
 	case WantsNote:
 		return t.dispatchNote(ctx, result, note, noteOffered, subject, memory)
 	default:
-		return t.dispatchRecall(ctx, settings, result, window, filter, subject, memory)
+		return t.dispatchRecall(ctx, settings, result, filter, subject, memory)
 	}
 }
 
@@ -831,7 +823,7 @@ func (t *Turn) dispatchWrite(ctx context.Context, result JudgeResult, workspace 
 	return exchange
 }
 
-func (t *Turn) dispatchRecall(ctx context.Context, settings RunSettings, result JudgeResult, window UpdateWindow, filter Filter, subject int64, memory *workingMemory) ToolExchange {
+func (t *Turn) dispatchRecall(ctx context.Context, settings RunSettings, result JudgeResult, filter Filter, subject int64, memory *workingMemory) ToolExchange {
 	if result.ToolError != "" {
 		return ToolExchange{Tool: ToolRecall, Error: BoundCause(result.ToolError), Dispositions: []Disposition{}, Refused: true}
 	}
@@ -839,7 +831,7 @@ func (t *Turn) dispatchRecall(ctx context.Context, settings RunSettings, result 
 		return ToolExchange{Tool: ToolRecall, Error: recallQueryRefusal(result.RecallQuery), Dispositions: []Disposition{}, Refused: true}
 	}
 
-	candidates, err := t.Graph.Recall(ctx, RecallRequest{Queries: []string{result.RecallQuery}, Limit: settings.CandidateLimit, Exclude: []int64{subject}, Window: window, Filter: filter})
+	candidates, err := t.Graph.Recall(ctx, RecallRequest{Queries: []string{result.RecallQuery}, Limit: settings.CandidateLimit, Exclude: []int64{subject}, Filter: filter})
 	if err != nil {
 		t.log().Error("supplementary recall failed", "query", result.RecallQuery, "error", err)
 		return ToolExchange{Tool: ToolRecall, Query: result.RecallQuery, Error: BoundCause(err.Error()), Dispositions: []Disposition{}}

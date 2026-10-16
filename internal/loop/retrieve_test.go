@@ -6,10 +6,10 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 )
 
 func candidateIDs(candidates []Candidate) []int64 {
@@ -69,7 +69,7 @@ func ranked(ids ...int64) []Candidate {
 func mustRetrieveCandidates(t *testing.T, graph GraphPort, queries []string, limit int) []Candidate {
 	t.Helper()
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, limit, UpdateWindow{}, nil, quietLogger())
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, limit, nil, quietLogger())
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -92,17 +92,14 @@ func sortedIDs(candidates []Candidate) []int64 {
 	return ids
 }
 
-func TestRetrieveIssuesExactlyOneRecallCarryingEveryQueryTheWindowAndTheFullLimit(t *testing.T) {
+func TestRetrieveIssuesExactlyOneRecallCarryingEveryQueryTheFilterAndTheFullLimit(t *testing.T) {
 	t.Parallel()
 
 	graph := &rankedGraph{global: ranked(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)}
 	queries := []string{"the input", "derived one", "derived two"}
-	window := UpdateWindow{
-		From: time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC),
-		To:   time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC),
-	}
+	filter := Filter{"updatedFrom": {"2026-09-12T00:00:00Z"}, "updatedTo": {"2026-09-13T00:00:00Z"}}
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, 6, window, nil, quietLogger())
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, queries, 6, filter, quietLogger())
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -117,8 +114,8 @@ func TestRetrieveIssuesExactlyOneRecallCarryingEveryQueryTheWindowAndTheFullLimi
 	if call.Limit != 6 {
 		t.Fatalf("the recall asked for %d rows, want the whole limit 6: no slot is held back for another list", call.Limit)
 	}
-	if call.Window != window {
-		t.Fatalf("the recall carried window %+v, want the run's own %+v", call.Window, window)
+	if !reflect.DeepEqual(call.Filter, filter) {
+		t.Fatalf("the recall carried filter %+v, want the config's own %+v, bounds included", call.Filter, filter)
 	}
 	if len(got) != 6 {
 		t.Fatalf("Retrieve returned %d candidates, want 6", len(got))
@@ -166,7 +163,7 @@ func TestARowTheGraphWasToldToExcludeIsDroppedAndReported(t *testing.T) {
 	var logged strings.Builder
 	logger := slog.New(slog.NewTextHandler(&logged, nil))
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, UpdateWindow{}, nil, logger)
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, nil, logger)
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -185,7 +182,7 @@ func TestARecallThatLeaksNothingLogsNoLeak(t *testing.T) {
 	graph := &rankedGraph{global: ranked(11, 12)}
 	var logged strings.Builder
 
-	if _, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, UpdateWindow{}, nil, slog.New(slog.NewTextHandler(&logged, nil))); err != nil {
+	if _, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, nil, slog.New(slog.NewTextHandler(&logged, nil))); err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
 
@@ -258,7 +255,7 @@ func TestRetrieveReadsTheGraphNotAtAllWhenThereIsNoQueryToIssue(t *testing.T) {
 
 	graph := &rankedGraph{global: ranked(810)}
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, nil, 6, UpdateWindow{}, nil, quietLogger())
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, nil, 6, nil, quietLogger())
 	if err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
@@ -276,7 +273,7 @@ func TestRetrieveReportsAGraphFailureRatherThanAnEmptyAperture(t *testing.T) {
 	failure := errors.New("literal: 500 from graph")
 	graph := &rankedGraph{err: failure}
 
-	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, UpdateWindow{}, nil, quietLogger())
+	got, err := Retrieve(context.Background(), graph, Anchor{ID: 42}, []string{"q"}, 6, nil, quietLogger())
 
 	if !errors.Is(err, failure) {
 		t.Fatalf("Retrieve returned error %v, want the graph's own %v", err, failure)

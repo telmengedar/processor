@@ -105,14 +105,6 @@ func renderSummaryAssembly(b *strings.Builder, record Record) {
 		summaryPlural(len(record.Queries), "query", "queries"),
 		len(record.Candidates), len(admitted), len(record.Candidates)-len(admitted))
 
-	if !record.Window.IsZero() {
-		fmt.Fprintf(b, "  %s\n", windowLine(record.Window))
-	}
-
-	if record.WindowDiscarded != "" {
-		fmt.Fprintf(b, "  window: %s\n", summaryTrunc(record.WindowDiscarded, summaryErrorRunes))
-	}
-
 	for i, query := range record.Queries {
 		fmt.Fprintf(b, "  q%d: %s\n", i, summaryTrunc(query, summaryQueryRunes))
 	}

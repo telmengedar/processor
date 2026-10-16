@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/telmengedar/processor/internal/loop"
 )
@@ -128,53 +127,26 @@ func TestAConfigsExclusionsAreAppendedToTheSubjectAndTheRunRecordsNeverReplacing
 	}
 }
 
-func TestABoundTheConfigSetsReplacesTheDerivedOneAndTheOtherBoundStaysDerived(t *testing.T) {
+func TestBothUpdatedBoundsTheConfigSetsAreSentAsWritten(t *testing.T) {
 	t.Parallel()
 
-	window := loop.UpdateWindow{
-		From: time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC),
-		To:   time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC),
-	}
-	filter := loop.Filter{"updatedFrom": {"2026-01-01T00:00:00Z"}}
+	filter := loop.Filter{"updatedFrom": {"2026-01-01T00:00:00Z"}, "updatedTo": {"2026-02-02T00:00:00Z"}}
 
 	c, rec := recordingClient(t)
-	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6, Window: window, Filter: filter}); err != nil {
+	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6, Filter: filter}); err != nil {
 		t.Fatalf("Recall: %v", err)
 	}
 
 	q := queryOf(t, rec.query)
 	if got, want := q["updatedFrom"], []string{"2026-01-01T00:00:00Z"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("the recall sent updatedFrom=%q, want exactly the config's %q: a derived bound that replaced it would widen the view, and both would be two values", got, want)
+		t.Errorf("the recall sent updatedFrom=%q, want exactly the config's %q", got, want)
 	}
-	if got, want := q["updatedTo"], []string{window.To.Format(time.RFC3339)}; !reflect.DeepEqual(got, want) {
-		t.Errorf("the recall sent updatedTo=%q, want the derived %q: a bound the config leaves unset is still the window's", got, want)
-	}
-}
-
-func TestAnUpdatedToTheConfigSetsReplacesTheDerivedOneAndUpdatedFromStaysDerived(t *testing.T) {
-	t.Parallel()
-
-	window := loop.UpdateWindow{
-		From: time.Date(2026, 9, 12, 0, 0, 0, 0, time.UTC),
-		To:   time.Date(2026, 9, 13, 0, 0, 0, 0, time.UTC),
-	}
-	filter := loop.Filter{"updatedTo": {"2026-02-02T00:00:00Z"}}
-
-	c, rec := recordingClient(t)
-	if _, err := c.Recall(context.Background(), loop.RecallRequest{Queries: []string{"q"}, Limit: 6, Window: window, Filter: filter}); err != nil {
-		t.Fatalf("Recall: %v", err)
-	}
-
-	q := queryOf(t, rec.query)
 	if got, want := q["updatedTo"], []string{"2026-02-02T00:00:00Z"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("the recall sent updatedTo=%q, want exactly the config's %q: the derived bound would widen the view past it", got, want)
-	}
-	if got, want := q["updatedFrom"], []string{window.From.Format(time.RFC3339)}; !reflect.DeepEqual(got, want) {
-		t.Errorf("the recall sent updatedFrom=%q, want the derived %q", got, want)
+		t.Errorf("the recall sent updatedTo=%q, want exactly the config's %q", got, want)
 	}
 }
 
-func TestAConfigBoundWithoutADerivedWindowIsSentAsItIs(t *testing.T) {
+func TestAConfigBoundWithoutItsPartnerIsSentAsItIs(t *testing.T) {
 	t.Parallel()
 
 	c, rec := recordingClient(t)
@@ -188,7 +160,7 @@ func TestAConfigBoundWithoutADerivedWindowIsSentAsItIs(t *testing.T) {
 		t.Errorf("the recall sent updatedTo=%q, want the config's", got)
 	}
 	if _, sent := q["updatedFrom"]; sent {
-		t.Errorf("the recall sent updatedFrom=%q though neither the config nor a window set it", q["updatedFrom"])
+		t.Errorf("the recall sent updatedFrom=%q though the config did not set it", q["updatedFrom"])
 	}
 }
 

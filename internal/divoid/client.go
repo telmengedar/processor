@@ -194,7 +194,7 @@ func (c *Client) Node(ctx context.Context, id int64, filter loop.Filter) (loop.A
 
 // Recall returns the graph's top candidates for the request in its own rank order, never re-sorted; several queries are one request ranked by their mean similarity, and a request without a query or a positive limit fails before any request is sent.
 func (c *Client) Recall(ctx context.Context, request loop.RecallRequest) ([]loop.Candidate, error) {
-	queries, window := request.Queries, request.Window
+	queries := request.Queries
 	if len(queries) == 0 {
 		return nil, errNoQuery
 	}
@@ -215,14 +215,6 @@ func (c *Client) Recall(ctx context.Context, request loop.RecallRequest) ([]loop
 	}
 	q.Set(excludeNameParam, RunNamePrefix+"%")
 	appendFilter(q, request.Filter, true)
-	if !window.IsZero() {
-		if _, set := q[updatedFromParam]; !set {
-			q.Set(updatedFromParam, window.From.Format(time.RFC3339))
-		}
-		if _, set := q[updatedToParam]; !set {
-			q.Set(updatedToParam, window.To.Format(time.RFC3339))
-		}
-	}
 
 	var resp listingResponse
 	if err := c.get(ctx, nodesPath, q, &resp); err != nil {
