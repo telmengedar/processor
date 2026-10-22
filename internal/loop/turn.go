@@ -210,7 +210,7 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 			"subject", subject, "supplied", len(history), "used", len(used), "bytes", len(conversation), "safetyLimit", settings.HistorySafetyLimit)
 	}
 
-	queries, window, windowDiscarded, derivationSampling, derivationError := t.derive(ctx, input, subject, now)
+	queries, window, windowDiscarded, derivationSampling, derivationError := t.derive(ctx, input, subject, now, conversation)
 	notPhrase := inputNotPhraseNote(input)
 
 	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, window, filter, t.log())
@@ -306,9 +306,9 @@ func (t *Turn) fillInitial(ctx context.Context, settings RunSettings, anchor Anc
 	return anchor, withCreated(candidates, created), fills
 }
 
-func (t *Turn) derive(ctx context.Context, input string, subject int64, now time.Time) ([]string, UpdateWindow, string, *Sampling, string) {
+func (t *Turn) derive(ctx context.Context, input string, subject int64, now time.Time, conversation string) ([]string, UpdateWindow, string, *Sampling, string) {
 	started := time.Now()
-	derived, window, discarded, sampling, err := DeriveQueries(ctx, t.Model, input, now)
+	derived, window, discarded, sampling, err := deriveQueriesWithConversation(ctx, t.Model, input, now, conversation, DerivationBound)
 	elapsed := time.Since(started)
 
 	if err != nil {
