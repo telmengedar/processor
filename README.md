@@ -263,7 +263,7 @@ Request:
 `input` must be non-empty; `subject` is the id of the node the run is about. The turn fetches that
 subject first — so an unreachable graph and a subject that resolves to nothing both fail before any model
 call and cost **none**. It then asks the model once, under its own 30-second bound, for up to five
-further queries derived from `input` **and for a calendar day range** — one extra output line, `DATES: YYYY-MM-DD..YYYY-MM-DD` or
+further queries derived from `input` with the selected conversation as context **and for a calendar day range** — one extra output line, `DATES: YYYY-MM-DD..YYYY-MM-DD` or
 `DATES: none`, resolved against the instant the prompt states — which becomes the run's retrieval window.
 That call is not charged to the run's six-call judgement budget, and any outcome which is not a usable
 query set leaves the run asking `input` alone when it is a phrase, and nothing otherwise, and records why on the record's `derivationError`. A
@@ -294,7 +294,7 @@ working memory, so it never grows a call past it. Only a safety limit of 8,000 b
 (`limits.historySafetyLimit`) can cut further: it drops the oldest whole exchanges, never truncates one,
 and logs a warning. The record keeps the exchanges the turn used (`history`) and how many it did not
 (`historyCut`); both are absent when there is nothing to report, and a request without `history` produces
-the same prompts as before. Query derivation does not yet see the section. A malformed `history` — not an
+the same prompts as before. Query derivation receives the same selected section before its final request, with guidance to resolve references while prioritizing explicit current topics and deriving dates only from the current request. The transcript is model context, never mechanically appended to graph queries. A malformed `history` — not an
 array, an element that is not an object, a missing, blank or non-string `input`, a `reply` that is neither a string nor `null` —
 is a `400 invalid_request`. A `null` `reply` is read as absent, as a `null` `history` is.
 

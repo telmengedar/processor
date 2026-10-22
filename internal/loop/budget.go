@@ -3,8 +3,8 @@ package loop
 import "time"
 
 const (
-	// DerivationPromptCeiling bounds the bytes one derivation call sends: its instructions and exemplars, plus the run's input.
-	DerivationPromptCeiling = 12_000
+	// DerivationPromptCeiling declares the bytes charged for one derivation call: its instructions and exemplars, an input allowance, and the default selected conversation with its guidance.
+	DerivationPromptCeiling = 12_000 + HistorySafetyLimit + len(derivationConversationGuidance) + len("\n\n\n\n")
 	// JudgementPromptCeiling bounds the bytes one judgement call sends: the working memory, which is the assembled block plus one supplementary round and never more.
 	JudgementPromptCeiling = AssemblyByteBudget + SupplementaryByteBudget
 )
