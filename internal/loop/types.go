@@ -23,7 +23,11 @@ type Filter map[string][]string
 // NoteConfig is the note capability a config enables: the node type every note of the run is filed as.
 type NoteConfig struct {
 	Type string `json:"type"`
+	Mode string `json:"mode,omitempty"`
 }
+
+// NoteModeDecision selects a private one-call write-or-skip decision.
+const NoteModeDecision = "decision"
 
 // ResponseMode selects an opt-in judgement response contract; empty retains native tools and prose.
 type ResponseMode string
@@ -447,6 +451,8 @@ type Record struct {
 	Offered [][]string `json:"offered"`
 	// StructuredAllowedActions records the permitted JSON actions per call, absent for native response mode.
 	StructuredAllowedActions [][]string `json:"structuredAllowedActions,omitempty"`
+	// NoteDecision is the private decision receipt, absent on ordinary chat runs.
+	NoteDecision *NoteDecision `json:"noteDecision,omitempty"`
 	// NoteAcks carries one entry per model call, in call order: which acknowledgement of a note round that call's closing carried, absent on a record that predates the field.
 	NoteAcks []NoteAck `json:"noteAcks"`
 	// LastResponse is present exactly when the turn's last judgement call returned a response; absent means either that call returned none, or the record predates this field.
@@ -520,6 +526,9 @@ type JudgeInput struct {
 
 	// StructuredAllowedActions is the permitted structured action domain, nil for a native response.
 	StructuredAllowedActions []string
+
+	// NoteDecisionOutput requests the private write-or-skip JSON contract, without native tools.
+	NoteDecisionOutput bool
 
 	// Temperature replaces the adapter's configured temperature for this call alone, nil for the configured one; 0 is a temperature.
 	Temperature *float64

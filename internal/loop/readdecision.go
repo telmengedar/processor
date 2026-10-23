@@ -127,6 +127,9 @@ func decodeReadDecision(result JudgeResult, allowed []string) (JudgeResult, erro
 }
 
 func validateResponseMode(view *View) error {
+	if view != nil && view.Note != nil && view.Note.Mode != "" && view.Note.Mode != NoteModeDecision {
+		return fmt.Errorf("%w: unsupported note mode", ErrInvalidConfig)
+	}
 	if view == nil || view.ResponseMode == "" {
 		return nil
 	}

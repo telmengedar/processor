@@ -111,7 +111,9 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 			TopP:        sampling.TopP,
 		},
 	}
-	if in.StructuredAllowedActions != nil {
+	if in.NoteDecisionOutput {
+		reqBody.Format = loop.NoteDecisionSchema()
+	} else if in.StructuredAllowedActions != nil {
 		reqBody.Format = loop.StructuredReadSchema(in.StructuredAllowedActions)
 	} else {
 		reqBody.Tools = declaredTools(in.Offered)
@@ -143,7 +145,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 	}
 
 	var wire chatResponse
-	if in.StructuredAllowedActions != nil {
+	if in.NoteDecisionOutput || in.StructuredAllowedActions != nil {
 		raw, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return loop.JudgeResult{}, len(body), fmt.Errorf("read structured response: %w", err)
@@ -159,7 +161,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 	}
 
 	var result loop.JudgeResult
-	if in.StructuredAllowedActions != nil {
+	if in.NoteDecisionOutput || in.StructuredAllowedActions != nil {
 		result = loop.JudgeResult{Answer: wire.Message.Content, RawReason: wire.DoneReason, Reason: loop.Answered, ReasoningBytes: len(wire.Message.Thinking), Usage: translateUsage(wire.PromptEvalCount, wire.EvalCount), UnofferedToolCalls: len(wire.Message.ToolCalls)}
 	} else {
 		result = translate(wire, in.Offered)

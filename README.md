@@ -379,7 +379,9 @@ recall (`queryEcho`), or one that carries the model's own tool-call markup anywh
 answers with the fallback reply. The outcome's verdict is `withheld`, except that a curtailed turn keeps `curtailed` and
 a silent one keeps `silent`. Nothing is fed back to the model and nothing is retried.
 
-**A config can let the model write one note.** `note` is an object with exactly one member, `type`: the graph node type
+**A config can request a private note decision.** Set `"note":{"type":"thought","mode":"decision"}` for one private write-or-skip judgement through `/runs`. The response always has an empty `reply`, `produced:false`, and `noteDecision` with `state` (`abstained`, `stored`, `unlinked`, `notStored`, or `rejected`). Only `stored` and `unlinked` carry a positive `created` ID; `unlinked` means content persisted but placement is incomplete. Verbose responses also include the usual run evidence. No native tools or follow-up answering call are offered. The caller owns selection policy and evidence; valid JSON or a receipt does not establish useful learning. Model or transport failure remains an error, not an abstention. This mode cannot be combined with `responseMode:"structuredRead"`. Omit `mode` for the native behavior below; other values are rejected.
+
+**A config can let the model write one note.** `note` is an object with required member `type` and optional `mode`: the graph node type
 every note of the run is filed as, non-blank. Absent, the tool does not exist for the run, and a
 deployment cannot switch it on; only the config does. With it, each judgement call that can still dispatch a tool also
 offers `write_note`, whose arguments are `text`, the whole note, and optionally `about`, the id of one part of memory

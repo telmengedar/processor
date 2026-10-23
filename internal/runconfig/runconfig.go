@@ -158,7 +158,7 @@ func noteOf(raw json.RawMessage, filter loop.Filter) (*loop.NoteConfig, error) {
 		return nil, fmt.Errorf("the config's %q is not a JSON object: %w", noteKey, err)
 	}
 	for _, name := range slices.Sorted(maps.Keys(members)) {
-		if name != noteTypeKey {
+		if name != noteTypeKey && name != "mode" {
 			return nil, fmt.Errorf("the config's %q has the member %q, which processor does not know", noteKey, name)
 		}
 	}
@@ -184,7 +184,13 @@ func noteOf(raw json.RawMessage, filter loop.Filter) (*loop.NoteConfig, error) {
 	if admitted, filtered := filter[filterTypeKey]; filtered && !slices.Contains(admitted, noteType) {
 		return nil, fmt.Errorf("the config's %q %q is not among the types the config's filter admits, so a note would never be recalled", noteKey, noteTypeKey)
 	}
-	return &loop.NoteConfig{Type: noteType}, nil
+	mode := ""
+	if raw, present := members["mode"]; present {
+		if json.Unmarshal(raw, &mode) != nil || mode != loop.NoteModeDecision {
+			return nil, fmt.Errorf("the config's note mode must be %q", loop.NoteModeDecision)
+		}
+	}
+	return &loop.NoteConfig{Type: noteType, Mode: mode}, nil
 }
 
 func identityOf(raw json.RawMessage) (string, error) {

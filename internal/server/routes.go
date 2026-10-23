@@ -61,19 +61,21 @@ const messageInvalidHistory = "history must be an array of exchanges, each with 
 const fallbackReply = "Sorry — I couldn't put an answer together for that just now. Could you say a bit more, or ask it another way?"
 
 type chatResponse struct {
-	Reply    string `json:"reply"`
-	Produced bool   `json:"produced"`
-	Silent   bool   `json:"silent,omitempty"`
+	Reply        string             `json:"reply"`
+	Produced     bool               `json:"produced"`
+	Silent       bool               `json:"silent,omitempty"`
+	NoteDecision *loop.NoteDecision `json:"noteDecision,omitempty"`
 }
 
 type verboseResponse struct {
 	loop.Record
-	Written loop.WriteReceipt `json:"written"`
-	Reply   string            `json:"reply"`
+	Written  loop.WriteReceipt `json:"written"`
+	Reply    string            `json:"reply"`
+	Produced *bool             `json:"produced,omitempty"`
 }
 
 func replyFor(record loop.Record) string {
-	if record.Outcome.Silent {
+	if record.NoteDecision != nil || record.Outcome.Silent {
 		return ""
 	}
 	if record.Outcome.Produced {
@@ -166,11 +168,15 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			receipt := turn.File(runCtx, record, started)
 			w.Header().Set("Content-Type", jsonContentType)
 			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(verboseResponse{Record: record, Written: receipt, Reply: reply})
+			response := verboseResponse{Record: record, Written: receipt, Reply: reply}
+			if record.NoteDecision != nil {
+				response.Produced = new(bool)
+			}
+			_ = json.NewEncoder(w).Encode(response)
 			return
 		}
 
-		sendComplete(w, chatResponse{Reply: reply, Produced: record.Outcome.Produced, Silent: record.Outcome.Silent})
+		sendComplete(w, chatResponse{Reply: reply, Produced: record.Outcome.Produced, Silent: record.Outcome.Silent, NoteDecision: record.NoteDecision})
 		turn.File(runCtx, record, started)
 	}
 }
