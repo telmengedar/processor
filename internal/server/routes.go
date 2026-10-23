@@ -37,9 +37,10 @@ func handleHealth(build string) http.HandlerFunc {
 }
 
 type runRequest struct {
-	Input   string          `json:"input"`
-	Subject int64           `json:"subject"`
-	History []loop.Exchange `json:"history"`
+	NoteSource json.RawMessage `json:"noteSource"`
+	Input      string          `json:"input"`
+	Subject    int64           `json:"subject"`
+	History    []loop.Exchange `json:"history"`
 
 	Config *int64 `json:"config"`
 }
@@ -144,11 +145,22 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			}
 		}
 
-		record, started, err := turn.Answer(runCtx, loop.RunOptions{Input: req.Input, Subject: req.Subject, History: req.History, Settings: loop.DefaultSettings(), View: view})
+		var source *loop.NoteSource
+		if len(req.NoteSource) > 0 {
+			source = &loop.NoteSource{}
+			if json.Unmarshal(req.NoteSource, source) != nil {
+				writeError(w, http.StatusBadRequest, codeInvalidRequest, "noteSource must contain a Unicode speaker and text")
+				return
+			}
+		}
+
+		record, started, err := turn.Answer(runCtx, loop.RunOptions{NoteSource: source, Input: req.Input, Subject: req.Subject, History: req.History, Settings: loop.DefaultSettings(), View: view})
 		if err != nil {
 			switch {
 			case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 				writeError(w, http.StatusGatewayTimeout, codeRunDeadlineExceeded, "the run did not produce an answer within the service's time limit")
+			case errors.Is(err, loop.ErrInvalidNoteSource):
+				writeError(w, http.StatusBadRequest, codeInvalidRequest, err.Error())
 			case errors.Is(err, loop.ErrSubjectNotFound):
 				writeError(w, http.StatusNotFound, codeSubjectNotFound, "the subject node was not found")
 			case errors.Is(err, loop.ErrRunTimeExhausted):

@@ -71,10 +71,11 @@ func (s RunSettings) contentForm() Form {
 
 // RunOptions is everything one run is given.
 type RunOptions struct {
-	Input    string
-	Subject  int64
-	History  []Exchange
-	Settings RunSettings
+	NoteSource *NoteSource
+	Input      string
+	Subject    int64
+	History    []Exchange
+	Settings   RunSettings
 
 	// View is the config the run is held to, nil for a run that has none.
 	View *View
