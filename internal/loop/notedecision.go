@@ -116,6 +116,10 @@ func (t *Turn) judgeNoteDecision(ctx context.Context, settings RunSettings, memo
 	if !scope.enabled || t.Notes == nil {
 		return judged, nil
 	}
+	if memory.exactAboutCopy(decision, scope, subject) {
+		judged.toolCalls = toolCallRecords([]ToolExchange{{Tool: ToolNote, Text: decision.NoteText, About: decision.NoteAbout, Bytes: len(decision.NoteText), Dispositions: []Disposition{}, ToolSource: ToolSourceStructured, Error: "that exact note is already supplied for this subject: nothing was stored"}})
+		return judged, nil
+	}
 	exchange := t.writeNote(ctx, decision, scope, subject, memory)
 	exchange.ToolSource = ToolSourceStructured
 	judged.toolCalls = toolCallRecords([]ToolExchange{exchange})

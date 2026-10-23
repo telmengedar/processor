@@ -210,6 +210,11 @@ func (c *Client) Recall(ctx context.Context, request loop.RecallRequest) ([]loop
 	}
 	q.Set("count", strconv.Itoa(request.Limit))
 	q.Set("fields", candidateFields)
+	directSubject := int64(0)
+	if values := request.Filter["linkedto"]; request.NoteContextSubject > 0 && len(values) == 1 && values[0] == strconv.FormatInt(request.NoteContextSubject, 10) {
+		directSubject = request.NoteContextSubject
+		q.Set("fields", candidateFields+",rootNodeId")
+	}
 	for _, id := range request.Exclude {
 		q.Add(excludeIDParam, strconv.FormatInt(id, 10))
 	}
@@ -239,6 +244,12 @@ func (c *Client) Recall(ctx context.Context, request loop.RecallRequest) ([]loop
 			Content:      r.Content,
 			Substance:    r.Substance,
 			SelfProduced: IsRunRecord(r.Type, r.Name),
+		}
+		if directSubject > 0 {
+			candidates[i].DirectSubjectID = directSubject
+			if r.RootNodeID != nil {
+				candidates[i].RootNodeID = *r.RootNodeID
+			}
 		}
 	}
 	return candidates, nil

@@ -99,3 +99,9 @@ func (m *workingMemory) render() string {
 
 	return renderBlock(m.anchor, rows, m.considered, m.form)
 }
+
+func (m *workingMemory) exactAboutCopy(decision JudgeResult, scope noteScope, subject int64) bool {
+	held, present := m.rows[decision.NoteAbout]
+	_, content := renderedPayload(FormContent, held.candidate)
+	return decision.NoteAbout > 0 && present && held.form == FormContent && content == decision.NoteText && held.candidate.Type == scope.nodeType && scope.root > 0 && held.candidate.RootNodeID == scope.root && subject > 0 && held.candidate.DirectSubjectID == subject
+}

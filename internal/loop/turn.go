@@ -78,11 +78,12 @@ var ErrWriteRejected = errors.New("write rejected")
 
 // RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, Exclude ids and every run record left out, a zero Window unbounded, and Filter, nil for none, the run's config filter the graph applies before it counts.
 type RecallRequest struct {
-	Queries []string
-	Limit   int
-	Exclude []int64
-	Window  UpdateWindow
-	Filter  Filter
+	NoteContextSubject int64
+	Queries            []string
+	Limit              int
+	Exclude            []int64
+	Window             UpdateWindow
+	Filter             Filter
 }
 
 // GraphPort is the seam between the loop and the graph. Declared here,
@@ -226,7 +227,11 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	queries, window, windowDiscarded, derivationSampling, derivationError := t.derive(ctx, input, subject, now, conversation)
 	notPhrase := inputNotPhraseNote(input)
 
-	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, window, filter, t.log())
+	noteContextSubject := int64(0)
+	if noteDecisionMode(options.View) {
+		noteContextSubject = subject
+	}
+	candidates, err := retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, window, filter, t.log(), noteContextSubject)
 	if err != nil {
 		if len(filter) > 0 && errors.Is(err, ErrGraphRejected) {
 			return t.failed(subject, started, fmt.Errorf("%w: %v", ErrInvalidConfig, err))
