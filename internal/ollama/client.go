@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/telmengedar/processor/internal/loop"
 	"github.com/telmengedar/processor/internal/redacturl"
@@ -110,7 +111,11 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 			TopP:        sampling.TopP,
 		},
 	}
-	reqBody.Tools = declaredTools(in.Offered)
+	if in.StructuredAllowedActions != nil {
+		reqBody.Format = loop.StructuredReadSchema(in.StructuredAllowedActions)
+	} else {
+		reqBody.Tools = declaredTools(in.Offered)
+	}
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -138,11 +143,27 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 	}
 
 	var wire chatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
+	if in.StructuredAllowedActions != nil {
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return loop.JudgeResult{}, len(body), fmt.Errorf("read structured response: %w", err)
+		}
+		if !utf8.Valid(raw) {
+			return loop.JudgeResult{}, len(body), fmt.Errorf("structured response is not UTF-8")
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			return loop.JudgeResult{}, len(body), fmt.Errorf("decode response: %w", err)
+		}
+	} else if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
 		return loop.JudgeResult{}, len(body), fmt.Errorf("decode response: %w", err)
 	}
 
-	result := translate(wire, in.Offered)
+	var result loop.JudgeResult
+	if in.StructuredAllowedActions != nil {
+		result = loop.JudgeResult{Answer: wire.Message.Content, RawReason: wire.DoneReason, Reason: loop.Answered, ReasoningBytes: len(wire.Message.Thinking), Usage: translateUsage(wire.PromptEvalCount, wire.EvalCount), UnofferedToolCalls: len(wire.Message.ToolCalls)}
+	} else {
+		result = translate(wire, in.Offered)
+	}
 	result.Sampling = sampling
 	result.Provider = loop.Provider{Adapter: adapterName, Endpoint: redacturl.URL(endpoint)}
 	return result, len(body), nil

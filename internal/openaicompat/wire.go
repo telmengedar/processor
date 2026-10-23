@@ -16,13 +16,25 @@ const (
 )
 
 type chatRequest struct {
-	Model           string        `json:"model"`
-	Messages        []wireMessage `json:"messages"`
-	MaxTokens       int           `json:"max_tokens,omitempty"`
-	ReasoningEffort string        `json:"reasoning_effort,omitempty"`
-	Tools           []wireTool    `json:"tools,omitempty"`
-	Temperature     *float64      `json:"temperature,omitempty"`
-	TopP            *float64      `json:"top_p,omitempty"`
+	Model           string              `json:"model"`
+	Messages        []wireMessage       `json:"messages"`
+	MaxTokens       int                 `json:"max_tokens,omitempty"`
+	ReasoningEffort string              `json:"reasoning_effort,omitempty"`
+	Tools           []wireTool          `json:"tools,omitempty"`
+	Temperature     *float64            `json:"temperature,omitempty"`
+	TopP            *float64            `json:"top_p,omitempty"`
+	ResponseFormat  *wireResponseFormat `json:"response_format,omitempty"`
+}
+
+type wireResponseFormat struct {
+	Type       string         `json:"type"`
+	JSONSchema wireJSONSchema `json:"json_schema"`
+}
+
+type wireJSONSchema struct {
+	Name   string          `json:"name"`
+	Strict bool            `json:"strict"`
+	Schema json.RawMessage `json:"schema"`
 }
 
 type wireMessage struct {

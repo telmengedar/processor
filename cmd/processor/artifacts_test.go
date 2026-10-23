@@ -120,7 +120,7 @@ func runOneTurn(t *testing.T, failing string) (*httptest.ResponseRecorder, []byt
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	graph := divoid.NewClient(graphSrv.URL, "k", graphSrv.Client(), logger)
-	turn := loop.NewTurn(graph, answeringModel{}, nil, systemtext.Compose, "test-model-id", logger)
+	turn := loop.NewTurn(graph, answeringModel{}, nil, systemtext.ComposeForMode, "test-model-id", logger)
 	turn.Build = buildSentinel
 
 	rec := httptest.NewRecorder()

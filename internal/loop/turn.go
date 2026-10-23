@@ -131,7 +131,7 @@ type Turn struct {
 	Fill FillPort
 
 	// System composes the system text of one judgement call from the tools that call offers, whether the turn carries a conversation section, whether the run offers silence, and the form the run renders parts as.
-	System func(offered []string, conversation, silence bool, form Form) string
+	System func(offered []string, conversation, silence bool, form Form, mode ResponseMode) string
 
 	// ModelID is the model id sent with every judgement step, echoed into Record.Model.
 	ModelID string
@@ -148,7 +148,7 @@ type Turn struct {
 }
 
 // NewTurn builds a Turn over graph, model and files, judging with system and modelID.
-func NewTurn(graph GraphPort, model ModelPort, files FilePort, system func(offered []string, conversation, silence bool, form Form) string, modelID string, logger *slog.Logger) *Turn {
+func NewTurn(graph GraphPort, model ModelPort, files FilePort, system func(offered []string, conversation, silence bool, form Form, mode ResponseMode) string, modelID string, logger *slog.Logger) *Turn {
 	return &Turn{Graph: graph, Model: model, Files: files, System: system, ModelID: modelID, clock: time.Now, logger: logger}
 }
 
@@ -190,8 +190,18 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	input, subject, history, settings := options.Input, options.Subject, options.History, options.Settings
 	settings.Form = options.form()
 	filter, silence, identity := options.filter(), options.silence(), options.identity()
+	mode := ResponseMode("")
+	if options.View != nil {
+		mode = options.View.ResponseMode
+	}
 	started := time.Now()
 	ctx = withPrepaid(ctx)
+	if err := validateResponseMode(options.View); err != nil {
+		return t.failed(subject, started, err)
+	}
+	if mode == ResponseStructuredRead && t.System == nil {
+		return t.failed(subject, started, fmt.Errorf("%w: structuredRead requires a system composer", ErrInvalidConfig))
+	}
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
 
 	anchor, found, err := t.Graph.Node(ctx, subject, nil)
@@ -249,8 +259,11 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	memory := newWorkingMemory(settings.PromptCeiling(), anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions, settings.Form)
 	memory.charge(len(conversation))
 	memory.charge(len(identity))
+	if mode == ResponseStructuredRead {
+		memory.charge(t.structuredReadCharge(conversation != "", silence, settings.Form))
+	}
 
-	judged, err := t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions)
+	judged, err := t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions, mode)
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
@@ -273,6 +286,7 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	record.Usage = judged.usages
 	record.Trailers = judged.trailers
 	record.Offered = judged.offered
+	record.StructuredAllowedActions = judged.structuredAllowedActions
 	record.NoteAcks = judged.noteAcks
 	record.LastResponse = judged.lastResponse
 	record.StopReason = judged.stop
@@ -447,13 +461,14 @@ type judgement struct {
 
 	reservedCall ReservedCall
 
-	usages       []*Usage
-	trailers     []TrailerKind
-	offered      [][]string
-	noteAcks     []NoteAck
-	lastResponse *LastResponse
-	sampling     Sampling
-	provider     Provider
+	usages                   []*Usage
+	trailers                 []TrailerKind
+	offered                  [][]string
+	structuredAllowedActions [][]string
+	noteAcks                 []NoteAck
+	lastResponse             *LastResponse
+	sampling                 Sampling
+	provider                 Provider
 }
 
 func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) string {
@@ -483,7 +498,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond), prompt))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input string, queries []string, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, temperature *float64, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input string, queries []string, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, temperature *float64, admitted []Disposition, mode ResponseMode) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -518,10 +533,21 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		judged.modelCalls++
 
 		offered := t.offeredTools(reserved != "", note.enabled && notesFiled < NotesPerTurn)
-		search, trailerKind := trailerFor(offered, searches)
+		logical := offered
+		var allowed []string
+		if mode == ResponseStructuredRead {
+			logical = structuredReadTools(offered, account.closed())
+			allowed = StructuredReadActions(logical)
+			offered = []string{}
+			judged.structuredAllowedActions = append(judged.structuredAllowedActions, append([]string{}, allowed...))
+		}
+		search, trailerKind := trailerFor(logical, searches)
 		clause := ""
 		if trailerKind == TrailerClause {
 			clause, search = search, ""
+			if mode == ResponseStructuredRead {
+				clause = structuredRecallClause
+			}
 		}
 		trailer := composeClosing(search, acknowledgement(ack, ackedText))
 		judged.noteAcks = append(judged.noteAcks, ack)
@@ -529,18 +555,22 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		judged.offered = append(judged.offered, append([]string{}, offered...))
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
-			System:          t.composeSystem(identity, offered, conversation != "", silence, settings.Form),
-			Block:           memory.render(),
-			Input:           input,
-			Conversation:    conversation,
-			Clause:          clause,
-			Trailer:         trailer,
-			Now:             now,
-			Window:          window,
-			MaxOutputTokens: outputBudget(settings, reserved),
-			Offered:         offered,
-			Temperature:     temperature,
+			System:                   t.composeSystem(identity, logical, conversation != "", silence, settings.Form, mode),
+			Block:                    memory.render(),
+			Input:                    input,
+			Conversation:             conversation,
+			Clause:                   clause,
+			Trailer:                  trailer,
+			Now:                      now,
+			Window:                   window,
+			MaxOutputTokens:          outputBudget(settings, reserved),
+			Offered:                  offered,
+			StructuredAllowedActions: allowed,
+			Temperature:              temperature,
 		})
+		if jerr == nil && mode == ResponseStructuredRead {
+			result, jerr = decodeReadDecision(result, allowed)
+		}
 		if jerr != nil {
 			if reserved == "" {
 				return judgement{fills: judged.fills}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
@@ -568,8 +598,11 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 				"adapter", result.Provider.Adapter, "unofferedToolCalls", result.UnofferedToolCalls)
 		}
 
-		result = referenceRead(result, offered, memory)
-		result, echoShape := echoes.recovered(result, trailerKind, silence)
+		echoShape := ""
+		if mode != ResponseStructuredRead {
+			result = referenceRead(result, offered, memory)
+			result, echoShape = echoes.recovered(result, trailerKind, silence)
+		}
 		if echoShape != "" {
 			t.log().Info("the answer to the recall clause was a query rather than a reply: the loop reads it as the recall the clause asked for",
 				"call", judged.modelCalls, "shape", echoShape)
@@ -691,11 +724,11 @@ func (t *Turn) offeredTools(reserved, noteOpen bool) []string {
 
 const paragraphBreak = "\n\n"
 
-func (t *Turn) composeSystem(identity string, offered []string, conversation, silence bool, form Form) string {
+func (t *Turn) composeSystem(identity string, offered []string, conversation, silence bool, form Form, mode ResponseMode) string {
 	if t.System == nil {
 		return identity
 	}
-	product := t.System(offered, conversation, silence, form)
+	product := t.System(offered, conversation, silence, form, mode)
 	if identity == "" {
 		return product
 	}
