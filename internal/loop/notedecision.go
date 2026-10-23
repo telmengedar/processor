@@ -92,7 +92,7 @@ func decodeNoteDecision(result JudgeResult) (JudgeResult, bool, error) {
 	}
 }
 
-func (t *Turn) judgeNoteDecision(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, scope noteScope, temperature *float64) (judgement, error) {
+func (t *Turn) judgeNoteDecision(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, scope noteScope, temperature *float64, source *NoteSource) (judgement, error) {
 	if shortfall := t.judgementShortfall(ctx, settings); shortfall != "" {
 		return judgement{}, fmt.Errorf("%w: %s", ErrRunTimeExhausted, shortfall)
 	}
@@ -120,6 +120,16 @@ func (t *Turn) judgeNoteDecision(ctx context.Context, settings RunSettings, memo
 		judged.toolCalls = toolCallRecords([]ToolExchange{{Tool: ToolNote, Text: decision.NoteText, About: decision.NoteAbout, Bytes: len(decision.NoteText), Dispositions: []Disposition{}, ToolSource: ToolSourceStructured, Error: "that exact note is already supplied for this subject: nothing was stored"}})
 		return judged, nil
 	}
+	final, fits := source.compose(decision.NoteText)
+	if !fits {
+		return judged, nil
+	}
+	decision.NoteText = final
+	if memory.exactAboutCopy(decision, scope, subject) {
+		judged.toolCalls = toolCallRecords([]ToolExchange{{Tool: ToolNote, Text: decision.NoteText, About: decision.NoteAbout, Bytes: len(decision.NoteText), Dispositions: []Disposition{}, ToolSource: ToolSourceStructured, Error: "that exact note is already supplied for this subject: nothing was stored"}})
+		return judged, nil
+	}
+
 	exchange := t.writeNote(ctx, decision, scope, subject, memory)
 	exchange.ToolSource = ToolSourceStructured
 	judged.toolCalls = toolCallRecords([]ToolExchange{exchange})

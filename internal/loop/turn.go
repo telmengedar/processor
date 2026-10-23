@@ -197,6 +197,9 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	}
 	started := time.Now()
 	ctx = withPrepaid(ctx)
+	if err := options.NoteSource.validate(options.View); err != nil {
+		return t.failed(subject, started, err)
+	}
 	if err := validateResponseMode(options.View); err != nil {
 		return t.failed(subject, started, err)
 	}
@@ -273,7 +276,7 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 
 	var judged judgement
 	if noteDecisionMode(options.View) {
-		judged, err = t.judgeNoteDecision(ctx, settings, memory, input, conversation, identity, subject, now, window, noteScopeOf(options.View), options.temperature())
+		judged, err = t.judgeNoteDecision(ctx, settings, memory, input, conversation, identity, subject, now, window, noteScopeOf(options.View), options.temperature(), options.NoteSource)
 	} else {
 		judged, err = t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions, mode)
 	}
