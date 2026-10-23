@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 )
 
-// NoteSource is the caller's attributed original utterance retained with a selected private note.
+// NoteSource is the caller's attributed reported evidence retained with a selected private note.
 type NoteSource struct {
 	Speaker string `json:"speaker"`
 	Text    string `json:"text"`
