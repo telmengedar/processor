@@ -99,6 +99,11 @@ func (t *Turn) dispatchNote(ctx context.Context, result JudgeResult, scope noteS
 		return exchange
 	}
 
+	return t.writeNote(ctx, result, scope, subject, memory)
+}
+
+func (t *Turn) writeNote(ctx context.Context, result JudgeResult, scope noteScope, subject int64, memory *workingMemory) ToolExchange {
+	exchange := ToolExchange{Tool: ToolNote, Text: result.NoteText, About: result.NoteAbout, Bytes: len(result.NoteText), Dispositions: []Disposition{}}
 	name := NoteName(result.NoteText)
 	if refusal := refuseNote(result.NoteText, name); refusal != "" {
 		exchange.Error = refusal

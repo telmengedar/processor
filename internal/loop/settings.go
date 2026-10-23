@@ -4,10 +4,11 @@ import "time"
 
 // RunSettings is the tuning one run is held to; start from DefaultSettings, because the zero value budgets nothing.
 type RunSettings struct {
-	CandidateLimit          int
-	AssemblyByteBudget      int
-	SupplementaryByteBudget int
-	MaxModelCalls           int
+	judgementExtraPromptBytes int
+	CandidateLimit            int
+	AssemblyByteBudget        int
+	SupplementaryByteBudget   int
+	MaxModelCalls             int
 	// JudgementBudget is the output limit of each judgement call; 0 sends none.
 	JudgementBudget int
 	// AnsweringBudget is the output limit of the reserved answering call; 0 sends none.
@@ -41,7 +42,7 @@ func (s RunSettings) PromptCeiling() int {
 // JudgementCost is what one judgement call of this run is declared to need at floors: its output limit, where it has one, plus its prompt ceiling.
 func (s RunSettings) JudgementCost(floors Floors) time.Duration {
 	resolved := floors.Resolved()
-	return rateSeconds(float64(s.JudgementBudget), resolved.TokensPerSecond) + rateSeconds(float64(s.PromptCeiling()), resolved.PromptBytesPerSecond)
+	return rateSeconds(float64(s.JudgementBudget), resolved.TokensPerSecond) + rateSeconds(float64(s.PromptCeiling()+s.judgementExtraPromptBytes), resolved.PromptBytesPerSecond)
 }
 
 // Limits is what a run's record states governed it: these settings plus the constants no run can change.

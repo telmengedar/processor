@@ -100,7 +100,9 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		Temperature:     sampling.Temperature,
 		TopP:            sampling.TopP,
 	}
-	if in.StructuredAllowedActions != nil {
+	if in.NoteDecisionOutput {
+		reqBody.ResponseFormat = &wireResponseFormat{Type: "json_schema", JSONSchema: wireJSONSchema{Name: "note_decision", Strict: true, Schema: loop.NoteDecisionSchema()}}
+	} else if in.StructuredAllowedActions != nil {
 		reqBody.ResponseFormat = &wireResponseFormat{Type: "json_schema", JSONSchema: wireJSONSchema{Name: "structured_read", Strict: true, Schema: loop.StructuredReadSchema(in.StructuredAllowedActions)}}
 	} else {
 		reqBody.Tools = declaredTools(in.Offered)
@@ -132,7 +134,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 	}
 
 	var wire chatResponse
-	if in.StructuredAllowedActions != nil {
+	if in.NoteDecisionOutput || in.StructuredAllowedActions != nil {
 		raw, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return loop.JudgeResult{}, len(body), fmt.Errorf("read structured response: %w", err)
@@ -148,7 +150,7 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 	}
 
 	var result loop.JudgeResult
-	if in.StructuredAllowedActions != nil {
+	if in.NoteDecisionOutput || in.StructuredAllowedActions != nil {
 		if len(wire.Choices) == 0 {
 			return loop.JudgeResult{}, len(body), fmt.Errorf("response has no choices")
 		}

@@ -202,6 +202,9 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	if mode == ResponseStructuredRead && t.System == nil {
 		return t.failed(subject, started, fmt.Errorf("%w: structuredRead requires a system composer", ErrInvalidConfig))
 	}
+	if noteDecisionMode(options.View) {
+		settings.judgementExtraPromptBytes = len(noteDecisionInstructions) + len(NoteDecisionSchema())
+	}
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
 
 	anchor, found, err := t.Graph.Node(ctx, subject, nil)
@@ -263,13 +266,19 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 		memory.charge(t.structuredReadCharge(conversation != "", silence, settings.Form))
 	}
 
-	judged, err := t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions, mode)
+	var judged judgement
+	if noteDecisionMode(options.View) {
+		judged, err = t.judgeNoteDecision(ctx, settings, memory, input, conversation, identity, subject, now, window, noteScopeOf(options.View), options.temperature())
+	} else {
+		judged, err = t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions, mode)
+	}
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
 		return t.failed(subject, started, err)
 	}
 
+	record.NoteDecision = judged.noteDecision
 	record.Answer = judged.answer
 	record.NonReply = judged.nonReply
 	record.Silent = silence && choseSilence(judged.answer)
@@ -447,6 +456,7 @@ func summarizeUsage(usages []*Usage) (reports, inTokens, outTokens int) {
 }
 
 type judgement struct {
+	noteDecision  *NoteDecision
 	answer        string
 	stop          StopReason
 	toolCalls     []ToolCallRecord
@@ -490,7 +500,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		return ""
 	}
 
-	prompt := fmt.Sprintf("%d prompt bytes at the declared floor of %g bytes per second", settings.PromptCeiling(), floors.PromptBytesPerSecond)
+	prompt := fmt.Sprintf("%d prompt bytes at the declared floor of %g bytes per second", settings.PromptCeiling()+settings.judgementExtraPromptBytes, floors.PromptBytesPerSecond)
 	if settings.JudgementBudget > 0 {
 		prompt = fmt.Sprintf("%d output tokens at the declared floor of %g tokens per second, plus %s", settings.JudgementBudget, floors.TokensPerSecond, prompt)
 	}
