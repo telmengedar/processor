@@ -20,12 +20,13 @@ const (
 )
 
 type chatRequest struct {
-	Model    string        `json:"model"`
-	Messages []wireMessage `json:"messages"`
-	Stream   bool          `json:"stream"`
-	Think    bool          `json:"think"`
-	Tools    []wireTool    `json:"tools,omitempty"`
-	Options  wireOptions   `json:"options"`
+	Model    string          `json:"model"`
+	Messages []wireMessage   `json:"messages"`
+	Stream   bool            `json:"stream"`
+	Think    bool            `json:"think"`
+	Tools    []wireTool      `json:"tools,omitempty"`
+	Options  wireOptions     `json:"options"`
+	Format   json.RawMessage `json:"format,omitempty"`
 }
 
 type wireOptions struct {

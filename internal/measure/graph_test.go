@@ -26,7 +26,7 @@ const (
 	eventTurnCompleted = "turnCompleted"
 )
 
-func testSystem([]string, bool, bool, loop.Form) string { return "the system text" }
+func testSystem([]string, bool, bool, loop.Form, loop.ResponseMode) string { return "the system text" }
 
 const (
 	testModelID = "test-model-id"

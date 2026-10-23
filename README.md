@@ -299,7 +299,7 @@ array, an element that is not an object, a missing, blank or non-string `input`,
 is a `400 invalid_request`. A `null` `reply` is read as absent, as a `null` `history` is.
 
 **A run can be held to a filter by a config node.** The request may also carry `config`: the id of a node of
-type `processor-config`, whose content is a JSON object with six optional keys, `filter`, `silence`, `identity`, `note`, `temperature` and `form`:
+type `processor-config`, whose content is a JSON object with seven optional keys, `filter`, `silence`, `identity`, `note`, `temperature`, `form` and `responseMode`:
 `{"filter": {"type": ["thought", "knowledge"]}, "silence": true}`. The service reads that node, filtered to its type by
 the graph, once per request and caches nothing. The filter is forwarded to the graph on every read that can put a node in front
 of the model: the first recall, the model's own recall, and the addressed read (which also sends the node's id and
@@ -317,6 +317,8 @@ case) is refused. The config's `excludeId` and `excludeName` are added to the se
 and the record of a configured run carries `perspective`: the config id, the filter it forwarded, `silence` when set,
 the identity it used, the note type when notes are enabled, the `temperature` when the config asked for one, the `form` when the config set one and, when the config node is rooted, that root. The run's node in the graph is created under the same
 root; a run without a config, or whose config has no root, is stored unrooted.
+
+**A config can opt into structured reads.** `"responseMode":"structuredRead"` requests one strict JSON decision from each existing judgement call: `answer`, `read` or `recall`. The loop dispatches retrieval through the existing filters, working memory and limits, and returns only decoded `answer.text` to the caller. Native tools are not offered in this mode. Recall is withdrawn after its existing yield bound closes it; a reserved final call permits only `answer`. Invalid decisions fail through the existing model-error path without dispatching a tool. The mode cannot be combined with `note`. Omit `responseMode` to retain native behavior; other values are rejected. Caller identity is preserved verbatim. Structured framework and schema overhead count within the existing 80,000-byte working-memory ceiling. See [the design](docs/architecture/structured-read-decisions.md) for the exact contract.
 
 **A config can give the run an identity.** `identity` is a string the caller writes, of any length and
 never blank. Processor puts it first in the system text of every judgement call, followed by a blank line, and forwards

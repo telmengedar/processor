@@ -39,7 +39,7 @@ func TestTheIdentityIsSeparatedFromTheRealProductTextByTheSeparatorComposeUsesBe
 
 	const identity = "You are a participant named Quill."
 	model := &systemRecorder{}
-	turn := loop.NewTurn(bareGraph{}, model, nil, systemtext.Compose, "test-model", nil)
+	turn := loop.NewTurn(bareGraph{}, model, nil, systemtext.ComposeForMode, "test-model", nil)
 	if _, _, err := turn.RunWithOptions(context.Background(), loop.RunOptions{Input: "hello", Subject: 42, Settings: loop.DefaultSettings(), View: &loop.View{Config: 9, Identity: identity}}); err != nil {
 		t.Fatalf("RunWithOptions: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestARunThatCarriesBothTheIdentityAndSilenceGetsTheIdentityThenTheProductTe
 
 	const identity = "You are a participant named Quill."
 	model := &systemRecorder{}
-	turn := loop.NewTurn(bareGraph{}, model, nil, systemtext.Compose, "test-model", nil)
+	turn := loop.NewTurn(bareGraph{}, model, nil, systemtext.ComposeForMode, "test-model", nil)
 	view := &loop.View{Config: 9, Silence: true, Identity: identity}
 	if _, _, err := turn.RunWithOptions(context.Background(), loop.RunOptions{Input: "hello", Subject: 42, Settings: loop.DefaultSettings(), View: view}); err != nil {
 		t.Fatalf("RunWithOptions: %v", err)

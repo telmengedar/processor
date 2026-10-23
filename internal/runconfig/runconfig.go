@@ -20,24 +20,26 @@ import (
 const NodeType = "processor-config"
 
 const (
-	filterKey      = "filter"
-	silenceKey     = "silence"
-	identityKey    = "identity"
-	noteKey        = "note"
-	temperatureKey = "temperature"
-	formKey        = "form"
-	noteTypeKey    = "type"
-	filterTypeKey  = "type"
+	filterKey       = "filter"
+	silenceKey      = "silence"
+	identityKey     = "identity"
+	noteKey         = "note"
+	temperatureKey  = "temperature"
+	formKey         = "form"
+	responseModeKey = "responseMode"
+	noteTypeKey     = "type"
+	filterTypeKey   = "type"
 )
 
 // Config is what a config node's content carries: the filter forwarded to the graph, whether the run offers the model a chosen silence, the identity text, empty for none, the note capability, nil for none, the temperature of the run's judgement calls, nil for the deployment's, and the form parts are rendered as, empty for the default.
 type Config struct {
-	Filter      loop.Filter
-	Silence     bool
-	Identity    string
-	Note        *loop.NoteConfig
-	Temperature *float64
-	Form        loop.Form
+	Filter       loop.Filter
+	Silence      bool
+	Identity     string
+	Note         *loop.NoteConfig
+	Temperature  *float64
+	Form         loop.Form
+	ResponseMode loop.ResponseMode
 }
 
 var ownedKeys = []string{"query", "queries", "count", "continue", "sort", "descending", "fields", "id"}
@@ -62,7 +64,7 @@ func Decode(content string) (Config, error) {
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(top)) {
-		if name != filterKey && name != silenceKey && name != identityKey && name != noteKey && name != temperatureKey && name != formKey {
+		if name != filterKey && name != silenceKey && name != identityKey && name != noteKey && name != temperatureKey && name != formKey && name != responseModeKey {
 			return Config{}, fmt.Errorf("the config has the key %q, which processor does not know", name)
 		}
 	}
@@ -105,6 +107,16 @@ func Decode(content string) (Config, error) {
 	if raw, present := top[formKey]; present {
 		if config.Form, err = formOf(raw); err != nil {
 			return Config{}, err
+		}
+	}
+	if raw, present := top[responseModeKey]; present {
+		var mode string
+		if err := json.Unmarshal(raw, &mode); err != nil || mode != string(loop.ResponseStructuredRead) {
+			return Config{}, fmt.Errorf("the config's %q must be %q", responseModeKey, loop.ResponseStructuredRead)
+		}
+		config.ResponseMode = loop.ResponseStructuredRead
+		if config.Note != nil {
+			return Config{}, fmt.Errorf("the config's %q cannot be combined with %q", responseModeKey, noteKey)
 		}
 	}
 	return config, nil

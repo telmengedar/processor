@@ -108,7 +108,7 @@ func run(human io.Writer) int {
 	}
 
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
-	turn := loop.NewTurn(graph, model, files, systemtext.Compose, modelCfg.ID, logger)
+	turn := loop.NewTurn(graph, model, files, systemtext.ComposeForMode, modelCfg.ID, logger)
 	turn.Build = build
 	turn.Floors = floors
 	turn.Notes = graph
