@@ -97,7 +97,7 @@ func TestSourceRawAndComposedExactCopiesKeepScopedRefusal(t *testing.T) {
 
 func TestDirectSourceValidationPrecedesAllGraphAndModelWork(t *testing.T) {
 	t.Parallel()
-	for _, source := range []*NoteSource{{Speaker: "", Text: "x"}, {Speaker: "Sora", Text: "\xff"}, {Speaker: strings.Repeat("x", 257), Text: "x"}, {Speaker: "Sora", Text: strings.Repeat("x", 8193)}, {Speaker: "Sora", Text: "x"}} {
+	for _, source := range []*NoteSource{{Speaker: "\xff", Text: "x"}, {Speaker: "", Text: "x"}, {Speaker: "Sora", Text: "\xff"}, {Speaker: strings.Repeat("x", 257), Text: "x"}, {Speaker: "Sora", Text: strings.Repeat("x", 8193)}, {Speaker: "Sora", Text: "x"}} {
 		for _, view := range []*View{nil, noteView(), decisionView()} {
 			if view != nil && view.Note.Mode == NoteModeDecision && source.Speaker == "Sora" && source.Text == "x" {
 				continue
