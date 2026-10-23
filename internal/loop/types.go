@@ -71,11 +71,13 @@ type Anchor struct {
 // Candidate is one row recall returned, in the rank order the graph
 // reported it — before assembly has decided whether it fits the budget.
 type Candidate struct {
-	ID         int64
-	Type       string
-	Name       string
-	Similarity float64
-	Content    string
+	RootNodeID      int64
+	DirectSubjectID int64
+	ID              int64
+	Type            string
+	Name            string
+	Similarity      float64
+	Content         string
 
 	// Substance is the node's condensed form, empty when none has been generated.
 	Substance string

@@ -11,6 +11,10 @@ const logLeakedRows = "the graph returned rows the recall asked it to exclude"
 
 // Retrieve returns at most limit candidates: the graph's top rows for all queries together, ordered by similarity; window bounds the recall and filter, nil for none, is forwarded to the graph with it.
 func Retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []string, limit int, window UpdateWindow, filter Filter, log *slog.Logger) ([]Candidate, error) {
+	return retrieve(ctx, graph, anchor, queries, limit, window, filter, log, 0)
+}
+
+func retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []string, limit int, window UpdateWindow, filter Filter, log *slog.Logger, noteContextSubject int64) ([]Candidate, error) {
 	if len(queries) == 0 {
 		return nil, nil
 	}
@@ -18,7 +22,7 @@ func Retrieve(ctx context.Context, graph GraphPort, anchor Anchor, queries []str
 		log = slog.Default()
 	}
 
-	rows, err := graph.Recall(ctx, RecallRequest{Queries: queries, Limit: limit, Exclude: []int64{anchor.ID}, Window: window, Filter: filter})
+	rows, err := graph.Recall(ctx, RecallRequest{NoteContextSubject: noteContextSubject, Queries: queries, Limit: limit, Exclude: []int64{anchor.ID}, Window: window, Filter: filter})
 	if err != nil {
 		return nil, err
 	}
