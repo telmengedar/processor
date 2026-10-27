@@ -202,3 +202,117 @@ func TestMemoryOutcomeCoversDuplicateUnavailableAndEarlyFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestMemoryReservedNoteRefusalIsInvalidAndPreservesConfirmedStorage(t *testing.T) {
+	for _, scenario := range []string{"enabled", "disabled", "stored", "unlinked"} {
+		t.Run(scenario, func(t *testing.T) {
+			const private = "PRIVATE_RESERVED_NOTE_SENTINEL"
+			var logs bytes.Buffer
+			view := noteView()
+			settings := DefaultSettings()
+			settings.MaxModelCalls = 1
+			result := wantsNoteOf(private, 0)
+			results := []JudgeResult{result}
+			notes := &fakeNotes{}
+			wantOutcome, wantStatus := "invalid", "not_offered"
+			if scenario == "disabled" {
+				view = &View{Config: 11}
+			}
+			if scenario == "stored" || scenario == "unlinked" {
+				settings.MaxModelCalls = 2
+				results = append(results, result)
+				notes.receipt = WriteReceipt{State: WriteState(scenario), NodeID: 905}
+				wantOutcome, wantStatus = "write", scenario
+			}
+			model := &fakeModel{results: results, ignoresWithheldToolList: true}
+			turn := NewTurn(noteGraph(), model, nil, fixedSystem("system"), "test", slog.New(slog.NewJSONHandler(&logs, nil)))
+			turn.Notes = notes
+			record, _, err := turn.Answer(t.Context(), RunOptions{Input: "review", Subject: noteSubject, Settings: settings, View: view})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(model.calls) != settings.MaxModelCalls || len(model.calls[len(model.calls)-1].Offered) != 0 || len(record.ToolCalls) != settings.MaxModelCalls || record.ToolCalls[len(record.ToolCalls)-1].Error != errReservedCallRefused {
+				t.Fatalf("reserved refusal not reached: calls=%+v rounds=%+v", model.calls, record.ToolCalls)
+			}
+			if len(notes.requests) != settings.MaxModelCalls-1 {
+				t.Fatalf("writes=%d", len(notes.requests))
+			}
+			var outcome map[string]any
+			decoder := json.NewDecoder(&logs)
+			for decoder.More() {
+				var event map[string]any
+				if err := decoder.Decode(&event); err != nil {
+					t.Fatal(err)
+				}
+				if event["msg"] == "run memory outcome" {
+					outcome = event
+				}
+			}
+			if outcome["outcome"] != wantOutcome || outcome["status"] != wantStatus {
+				t.Fatalf("outcome=%v want=%s/%s", outcome, wantOutcome, wantStatus)
+			}
+			if settings.MaxModelCalls == 2 {
+				if outcome["node"] != float64(905) {
+					t.Fatalf("lost storage receipt: %v", outcome)
+				}
+			} else if _, exists := outcome["node"]; exists {
+				t.Fatalf("false storage receipt: %v", outcome)
+			}
+			if strings.Contains(logs.String(), private) {
+				t.Fatal("private note leaked")
+			}
+		})
+	}
+}
+
+func TestMemoryFailedStorageSurvivesLaterUnofferedNoteRequests(t *testing.T) {
+	for _, reserved := range []bool{false, true} {
+		t.Run(map[bool]string{false: "unoffered", true: "reserved"}[reserved], func(t *testing.T) {
+			const private = "PRIVATE_FAILED_NOTE_SENTINEL"
+			var logs bytes.Buffer
+			settings := DefaultSettings()
+			if reserved {
+				settings.MaxModelCalls = 2
+			}
+			result := wantsNoteOf(private, 0)
+			model := &fakeModel{results: []JudgeResult{result, result, answeredFinal()}, ignoresWithheldToolList: true}
+			notes := &fakeNotes{receipt: WriteReceipt{State: NotStored}}
+			turn := NewTurn(noteGraph(), model, nil, fixedSystem("system"), "test", slog.New(slog.NewJSONHandler(&logs, nil)))
+			turn.Notes = notes
+			record, _, err := turn.Answer(t.Context(), RunOptions{Input: "review", Subject: noteSubject, Settings: settings, View: noteView()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(notes.requests) != 1 || len(record.ToolCalls) != 2 || record.ToolCalls[0].Written != NotStored || record.ToolCalls[0].Error != errNoteNotStored {
+				t.Fatalf("failed storage scenario not reached: writes=%d rounds=%+v", len(notes.requests), record.ToolCalls)
+			}
+			wantRefusal := errNoteNotOffered
+			if reserved {
+				wantRefusal = errReservedCallRefused
+			}
+			if offersNote(model.calls[1].Offered) || record.ToolCalls[1].Error != wantRefusal {
+				t.Fatalf("second note not refused: calls=%+v rounds=%+v", model.calls, record.ToolCalls)
+			}
+			var outcome map[string]any
+			decoder := json.NewDecoder(&logs)
+			for decoder.More() {
+				var event map[string]any
+				if err := decoder.Decode(&event); err != nil {
+					t.Fatal(err)
+				}
+				if event["msg"] == "run memory outcome" {
+					outcome = event
+				}
+			}
+			if outcome["outcome"] != "error" || outcome["status"] != "notStored" {
+				t.Fatalf("failed storage overwritten: %v", outcome)
+			}
+			if _, exists := outcome["node"]; exists {
+				t.Fatalf("false receipt: %v", outcome)
+			}
+			if strings.Contains(logs.String(), private) {
+				t.Fatal("private note leaked")
+			}
+		})
+	}
+}

@@ -9,7 +9,7 @@ type memoryOutcome struct {
 }
 
 func (t *Turn) setMemoryOutcome(outcome, status string, nodeID int64) {
-	if t.memoryOutcome == nil || t.memoryOutcome.nodeID > 0 {
+	if t.memoryOutcome == nil || t.memoryOutcome.nodeID > 0 || (t.memoryOutcome.status == "notStored" && nodeID == 0) {
 		return
 	}
 	t.memoryOutcome.outcome = outcome

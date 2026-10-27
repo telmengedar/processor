@@ -662,6 +662,9 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 
 		if reserved != "" {
 			if wantsTool(result.Reason) {
+				if result.Reason == WantsNote {
+					t.setMemoryOutcome("invalid", "not_offered", 0)
+				}
 				refused := undispatchedExchange(result, errReservedCallRefused)
 				refused.ToolSource = result.ToolSource
 				exchanges = append(exchanges, refused)
