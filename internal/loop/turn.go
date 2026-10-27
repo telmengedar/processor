@@ -210,6 +210,16 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 		settings.judgementExtraPromptBytes = len(noteDecisionInstructions) + len(NoteDecisionSchema())
 	}
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
+	scope := noteScopeOf(options.View)
+	memoryAttrs := []any{
+		"memoryEnabled", scope.enabled,
+		"noteType", scope.nodeType,
+		"filterTypes", append([]string{}, filter["type"]...),
+	}
+	if options.View != nil && options.View.Config > 0 {
+		memoryAttrs = append(memoryAttrs, "config", options.View.Config)
+	}
+	t.log().Info("run memory policy", memoryAttrs...)
 
 	anchor, found, err := t.Graph.Node(ctx, subject, nil)
 	if err != nil {
