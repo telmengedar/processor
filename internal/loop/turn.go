@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -145,6 +146,8 @@ type Turn struct {
 
 	clock func() time.Time
 
+	memoryOutcome *memoryOutcome
+
 	logger *slog.Logger
 }
 
@@ -196,6 +199,21 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 		mode = options.View.ResponseMode
 	}
 	started := time.Now()
+	run := *t
+	t = &run
+	t.memoryOutcome = &memoryOutcome{runID: rand.Text(), outcome: "error", status: "run_failed", nodeType: noteScopeOf(options.View).nodeType}
+	defer t.logMemoryOutcome()
+	scope := noteScopeOf(options.View)
+	memoryAttrs := []any{
+		"runID", t.memoryOutcome.runID,
+		"memoryEnabled", scope.enabled,
+		"noteType", scope.nodeType,
+		"filterTypes", append([]string{}, filter["type"]...),
+	}
+	if options.View != nil && options.View.Config > 0 {
+		memoryAttrs = append(memoryAttrs, "config", options.View.Config)
+	}
+	t.log().Info("run memory policy", memoryAttrs...)
 	ctx = withPrepaid(ctx)
 	if err := options.NoteSource.validate(options.View); err != nil {
 		return t.failed(subject, started, err)
@@ -210,16 +228,6 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 		settings.judgementExtraPromptBytes = len(noteDecisionInstructions) + len(NoteDecisionSchema())
 	}
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
-	scope := noteScopeOf(options.View)
-	memoryAttrs := []any{
-		"memoryEnabled", scope.enabled,
-		"noteType", scope.nodeType,
-		"filterTypes", append([]string{}, filter["type"]...),
-	}
-	if options.View != nil && options.View.Config > 0 {
-		memoryAttrs = append(memoryAttrs, "config", options.View.Config)
-	}
-	t.log().Info("run memory policy", memoryAttrs...)
 
 	anchor, found, err := t.Graph.Node(ctx, subject, nil)
 	if err != nil {
@@ -319,6 +327,13 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	record.StopReason = judged.stop
 	record.Sampling = judged.sampling
 	record.Outcome = ComputeOutcome(record)
+	if t.memoryOutcome.status == "run_failed" {
+		status := "not_requested"
+		if !scope.enabled {
+			status = "disabled"
+		}
+		t.setMemoryOutcome("skip", status, 0)
+	}
 
 	return record, started, nil
 }

@@ -90,11 +90,13 @@ func refuseNote(text, name string) string {
 func (t *Turn) dispatchNote(ctx context.Context, result JudgeResult, scope noteScope, offered bool, subject int64, memory *workingMemory) ToolExchange {
 	exchange := ToolExchange{Tool: ToolNote, Text: result.NoteText, About: result.NoteAbout, Bytes: len(result.NoteText), Dispositions: []Disposition{}}
 
+	t.setMemoryOutcome("invalid", "rejected", 0)
 	if result.ToolError != "" {
 		exchange.Error = BoundCause(result.ToolError)
 		return exchange
 	}
 	if !offered || !scope.enabled || t.Notes == nil {
+		t.setMemoryOutcome("invalid", "not_offered", 0)
 		exchange.Error = errNoteNotOffered
 		return exchange
 	}
@@ -104,6 +106,7 @@ func (t *Turn) dispatchNote(ctx context.Context, result JudgeResult, scope noteS
 
 func (t *Turn) writeNote(ctx context.Context, result JudgeResult, scope noteScope, subject int64, memory *workingMemory) ToolExchange {
 	exchange := ToolExchange{Tool: ToolNote, Text: result.NoteText, About: result.NoteAbout, Bytes: len(result.NoteText), Dispositions: []Disposition{}}
+	t.setMemoryOutcome("invalid", "rejected", 0)
 	name := NoteName(result.NoteText)
 	if refusal := refuseNote(result.NoteText, name); refusal != "" {
 		exchange.Error = refusal
@@ -127,6 +130,14 @@ func (t *Turn) writeNote(ctx context.Context, result JudgeResult, scope noteScop
 		Subject: subject,
 		About:   about,
 	})
+	switch {
+	case receipt.State == Stored && receipt.NodeID > 0:
+		t.setMemoryOutcome("write", "stored", receipt.NodeID)
+	case receipt.State == Unlinked && receipt.NodeID > 0:
+		t.setMemoryOutcome("write", "unlinked", receipt.NodeID)
+	default:
+		t.setMemoryOutcome("error", "notStored", 0)
+	}
 	exchange.Written = receipt.State
 	exchange.Created = receipt.NodeID
 	if receipt.State == NotStored {
@@ -135,7 +146,6 @@ func (t *Turn) writeNote(ctx context.Context, result JudgeResult, scope noteScop
 		return exchange
 	}
 
-	t.log().Info("note written", "node", receipt.NodeID, "state", string(receipt.State), "bytes", len(result.NoteText))
 	return exchange
 }
 

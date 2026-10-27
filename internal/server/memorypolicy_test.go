@@ -81,11 +81,21 @@ func TestAnswer_ResolvedRequestConfig_LogsOnlyEffectiveMemoryMetadata(t *testing
 				t.Fatalf("config was not read first: %+v", graph.nodeCalls)
 			}
 			markers := 0
+			outcomeMarkers := 0
+			policyID, outcomeID := "", ""
 			decoder := json.NewDecoder(&logged)
 			for decoder.More() {
 				var entry map[string]any
 				if err := decoder.Decode(&entry); err != nil {
 					t.Fatal(err)
+				}
+				if entry["msg"] == "run memory outcome" {
+					outcomeMarkers++
+					outcomeID, _ = entry["runID"].(string)
+					encoded, _ := json.Marshal(entry)
+					if strings.Contains(string(encoded), "secret-") || strings.Contains(string(encoded), "anchor body") {
+						t.Fatalf("outcome contains private content: %s", encoded)
+					}
 				}
 				if entry["msg"] != "run memory policy" {
 					continue
@@ -95,6 +105,11 @@ func TestAnswer_ResolvedRequestConfig_LogsOnlyEffectiveMemoryMetadata(t *testing
 				if strings.Contains(string(encoded), "secret-") || strings.Contains(string(encoded), "anchor body") {
 					t.Fatalf("marker contains private content: %s", encoded)
 				}
+				policyID, _ = entry["runID"].(string)
+				if len(policyID) < 20 {
+					t.Fatalf("missing opaque run ID: %v", entry)
+				}
+				delete(entry, "runID")
 				delete(entry, "time")
 				delete(entry, "level")
 				delete(entry, "msg")
@@ -108,6 +123,9 @@ func TestAnswer_ResolvedRequestConfig_LogsOnlyEffectiveMemoryMetadata(t *testing
 				if model.calls != 0 {
 					t.Fatalf("unresolved config reached model: %d calls", model.calls)
 				}
+			}
+			if outcomeMarkers != wantMarkers || (wantMarkers == 1 && policyID != outcomeID) {
+				t.Fatalf("policyID=%q outcomeID=%q outcomes=%d want=%d", policyID, outcomeID, outcomeMarkers, wantMarkers)
 			}
 			if markers != wantMarkers {
 				t.Fatalf("markers=%d, want %d", markers, wantMarkers)
