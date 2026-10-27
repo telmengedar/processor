@@ -265,6 +265,49 @@ func TestMemoryReservedNoteRefusalIsInvalidAndPreservesConfirmedStorage(t *testi
 	}
 }
 
+func TestAnswer_ReservedRecallRefused_ReportsNoNoteRequested(t *testing.T) {
+	const private = "PRIVATE_RESERVED_RECALL_SENTINEL"
+	var logs bytes.Buffer
+	notes := &fakeNotes{}
+	model := &fakeModel{ignoresWithheldToolList: true, results: []JudgeResult{{Reason: WantsRecall, RawReason: "tool_calls", RecallQuery: private}}}
+	turn := NewTurn(noteGraph(), model, nil, fixedSystem("system"), "test", slog.New(slog.NewJSONHandler(&logs, nil)))
+	turn.Notes = notes
+	settings := DefaultSettings()
+	settings.MaxModelCalls = 1
+	record, _, err := turn.Answer(t.Context(), RunOptions{Input: "review", Subject: noteSubject, Settings: settings, View: noteView()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(model.calls) != 1 || len(model.calls[0].Offered) != 0 || len(record.ToolCalls) != 1 || record.ToolCalls[0].Tool != ToolRecall || record.ToolCalls[0].Error != errReservedCallRefused {
+		t.Fatalf("reserved recall refusal not reached: calls=%+v rounds=%+v", model.calls, record.ToolCalls)
+	}
+	if len(notes.requests) != 0 {
+		t.Fatalf("writes=%d", len(notes.requests))
+	}
+	var outcome map[string]any
+	count := 0
+	decoder := json.NewDecoder(&logs)
+	for decoder.More() {
+		var event map[string]any
+		if err := decoder.Decode(&event); err != nil {
+			t.Fatal(err)
+		}
+		if event["msg"] == "run memory outcome" {
+			outcome = event
+			count++
+		}
+	}
+	if count != 1 || outcome["outcome"] != "skip" || outcome["status"] != "not_requested" {
+		t.Fatalf("outcome=%v count=%d", outcome, count)
+	}
+	if _, exists := outcome["node"]; exists {
+		t.Fatalf("false storage receipt: %v", outcome)
+	}
+	if strings.Contains(logs.String(), private) {
+		t.Fatal("private recall query leaked")
+	}
+}
+
 func TestMemoryFailedStorageSurvivesLaterUnofferedNoteRequests(t *testing.T) {
 	for _, reserved := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unoffered", true: "reserved"}[reserved], func(t *testing.T) {
