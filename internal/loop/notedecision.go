@@ -105,18 +105,22 @@ func (t *Turn) judgeNoteDecision(ctx context.Context, settings RunSettings, memo
 		return judgement{}, fmt.Errorf("%w: %v", ErrModelUnavailable, err)
 	}
 	judged := judgement{modelCalls: 1, offered: [][]string{{}}, usages: []*Usage{result.Usage}, sampling: result.Sampling, provider: result.Provider, stop: StopReason{Reason: result.Reason, Raw: result.RawReason}, lastResponse: &LastResponse{ReasoningBytes: result.ReasoningBytes, UnofferedToolCalls: result.UnofferedToolCalls}, noteDecision: &NoteDecision{State: "rejected"}}
+	t.setMemoryOutcome("invalid", "rejected", 0)
 	decision, write, err := decodeNoteDecision(result)
 	if err != nil {
 		return judged, nil
 	}
 	if !write {
 		judged.noteDecision.State = "abstained"
+		t.setMemoryOutcome("skip", "abstained", 0)
 		return judged, nil
 	}
 	if !scope.enabled || t.Notes == nil {
+		t.setMemoryOutcome("error", "unavailable", 0)
 		return judged, nil
 	}
 	if memory.exactAboutCopy(decision, scope, subject) {
+		t.setMemoryOutcome("skip", "duplicate", 0)
 		judged.toolCalls = toolCallRecords([]ToolExchange{{Tool: ToolNote, Text: decision.NoteText, About: decision.NoteAbout, Bytes: len(decision.NoteText), Dispositions: []Disposition{}, ToolSource: ToolSourceStructured, Error: "that exact note is already supplied for this subject: nothing was stored"}})
 		return judged, nil
 	}
@@ -126,6 +130,7 @@ func (t *Turn) judgeNoteDecision(ctx context.Context, settings RunSettings, memo
 	}
 	decision.NoteText = final
 	if memory.exactAboutCopy(decision, scope, subject) {
+		t.setMemoryOutcome("skip", "duplicate", 0)
 		judged.toolCalls = toolCallRecords([]ToolExchange{{Tool: ToolNote, Text: decision.NoteText, About: decision.NoteAbout, Bytes: len(decision.NoteText), Dispositions: []Disposition{}, ToolSource: ToolSourceStructured, Error: "that exact note is already supplied for this subject: nothing was stored"}})
 		return judged, nil
 	}
