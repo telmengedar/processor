@@ -92,7 +92,7 @@ func decodeNoteDecision(result JudgeResult) (JudgeResult, bool, error) {
 	}
 }
 
-func (t *Turn) judgeNoteDecision(ctx context.Context, settings RunSettings, memory *workingMemory, input, conversation, identity string, subject int64, now time.Time, window UpdateWindow, scope noteScope, temperature *float64, source *NoteSource) (judgement, error) {
+func (t *Turn) judgeNoteDecision(ctx context.Context, settings RunSettings, memory *workingMemory, input string, history []Exchange, identity string, subject int64, now time.Time, window UpdateWindow, scope noteScope, temperature *float64, source *NoteSource) (judgement, error) {
 	if shortfall := t.judgementShortfall(ctx, settings); shortfall != "" {
 		return judgement{}, fmt.Errorf("%w: %s", ErrRunTimeExhausted, shortfall)
 	}
@@ -100,7 +100,7 @@ func (t *Turn) judgeNoteDecision(ctx context.Context, settings RunSettings, memo
 	if identity != "" {
 		system = identity + paragraphBreak + system
 	}
-	result, err := t.Model.Judge(ctx, JudgeInput{System: system, Block: memory.render(), Input: input, Conversation: conversation, Now: now, Window: window, MaxOutputTokens: settings.JudgementBudget, Offered: []string{}, NoteDecisionOutput: true, Temperature: temperature})
+	result, err := t.Model.Judge(ctx, JudgeInput{System: system, Block: memory.render(), Input: input, History: history, Now: now, Window: window, MaxOutputTokens: settings.JudgementBudget, Offered: []string{}, NoteDecisionOutput: true, Temperature: temperature})
 	if err != nil {
 		return judgement{}, fmt.Errorf("%w: %v", ErrModelUnavailable, err)
 	}

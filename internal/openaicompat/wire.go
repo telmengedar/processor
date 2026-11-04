@@ -176,10 +176,14 @@ type wireError struct {
 }
 
 func buildMessages(in loop.JudgeInput) []wireMessage {
-	return []wireMessage{
-		{Role: "system", Content: in.System},
-		{Role: "user", Content: loop.RenderUserContent(in.Block, in.Input, in.Now, in.Window, in.Conversation, in.Clause, in.Trailer)},
+	messages := []wireMessage{{Role: "system", Content: in.System}}
+	for _, exchange := range in.History {
+		messages = append(messages, wireMessage{Role: "user", Content: exchange.Input})
+		if exchange.Reply != "" {
+			messages = append(messages, wireMessage{Role: "assistant", Content: exchange.Reply})
+		}
 	}
+	return append(messages, wireMessage{Role: "user", Content: loop.RenderUserContent(in.Block, in.Input, in.Now, in.Window, "", in.Clause, in.Trailer)})
 }
 
 type toolBinding struct {

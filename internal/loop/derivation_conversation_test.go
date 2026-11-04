@@ -87,8 +87,8 @@ func TestDerivationUsesOnlyTheSelectedConversationAndNeverMechanicallySearchesIt
 				t.Fatalf("judgement calls = %d, graph recall calls = %d, want exactly one each", len(model.calls), len(graph.recallCalls))
 			}
 			for _, call := range model.calls {
-				if call.Conversation != section {
-					t.Errorf("judge conversation = %q, want selected %q", call.Conversation, section)
+				if renderConversation(call.History) != section {
+					t.Errorf("judge conversation = %q, want selected %q", renderConversation(call.History), section)
 				}
 			}
 			if !slices.Equal(record.History, tc.want) {

@@ -505,10 +505,10 @@ type JudgeInput struct {
 	Block  string
 	Input  string
 
-	// Conversation is the rendered earlier exchanges, identical on every call of a turn, empty when the turn has none.
-	Conversation string
+	// History holds the selected earlier exchanges, oldest first.
+	History []Exchange
 
-	// Clause is the recall clause, placed ahead of the conversation and the final request, empty when the call is not told to search first.
+	// Clause is the recall guidance in the final user context, empty when the call is not told to search first.
 	Clause string
 
 	// Trailer is the closing of the user message: the barren-search paragraph, then the acknowledgement of a note round, each its own paragraph, empty when the call carries neither.
