@@ -286,7 +286,7 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	}
 
 	memory := newWorkingMemory(settings.PromptCeiling(), anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions, settings.Form)
-	memory.charge(len(conversation))
+	memory.charge(max(len(conversation), judgementHistoryBytes(used)))
 	memory.charge(len(identity))
 	if mode == ResponseStructuredRead {
 		memory.charge(t.structuredReadCharge(conversation != "", silence, settings.Form))
@@ -294,9 +294,9 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 
 	var judged judgement
 	if noteDecisionMode(options.View) {
-		judged, err = t.judgeNoteDecision(ctx, settings, memory, input, conversation, identity, subject, now, window, noteScopeOf(options.View), options.temperature(), options.NoteSource)
+		judged, err = t.judgeNoteDecision(ctx, settings, memory, input, used, identity, subject, now, window, noteScopeOf(options.View), options.temperature(), options.NoteSource)
 	} else {
-		judged, err = t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions, mode)
+		judged, err = t.judge(ctx, settings, memory, input, queries, used, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions, mode)
 	}
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
@@ -541,7 +541,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond), prompt))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input string, queries []string, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, temperature *float64, admitted []Disposition, mode ResponseMode) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input string, queries []string, history []Exchange, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, temperature *float64, admitted []Disposition, mode ResponseMode) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -598,10 +598,10 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		judged.offered = append(judged.offered, append([]string{}, offered...))
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
-			System:                   t.composeSystem(identity, logical, conversation != "", silence, settings.Form, mode),
+			System:                   t.composeSystem(identity, logical, len(history) != 0, silence, settings.Form, mode),
 			Block:                    memory.render(),
 			Input:                    input,
-			Conversation:             conversation,
+			History:                  history,
 			Clause:                   clause,
 			Trailer:                  trailer,
 			Now:                      now,

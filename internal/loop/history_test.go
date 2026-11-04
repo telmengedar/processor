@@ -56,8 +56,8 @@ func TestARunWithoutHistoryRendersTheSameUserContentAsBefore(t *testing.T) {
 	for name, history := range map[string][]Exchange{"absent": nil, "empty": {}} {
 		record, model := runWithHistory(t, history)
 		for i, call := range model.calls {
-			if call.Conversation != "" {
-				t.Errorf("%s history: call %d carries the conversation %q, want none", name, i+1, call.Conversation)
+			if renderConversation(call.History) != "" {
+				t.Errorf("%s history: call %d carries the conversation %q, want none", name, i+1, renderConversation(call.History))
 			}
 		}
 		if len(record.History) != 0 || record.HistoryCut != 0 {
@@ -156,7 +156,7 @@ func TestTheConversationKeepsTheNewestExchangesUpToTheLimit(t *testing.T) {
 	if !slices.Equal(record.History, supplied[2:]) {
 		t.Fatalf("the record holds %v, want the newest four exchanges %v oldest first", record.History, supplied[2:])
 	}
-	section := model.calls[0].Conversation
+	section := renderConversation(model.calls[0].History)
 	for _, kept := range []string{"said 3", "said 4", "said 5", "said 6"} {
 		if !strings.Contains(section, kept) {
 			t.Errorf("the section lacks %q:\n%s", kept, section)
@@ -180,7 +180,7 @@ func TestSmallExchangesBeyondTheLimitAreCutWhileFarBelowTheSafetyLimit(t *testin
 	if len(record.History) != 4 || record.HistoryCut != 3 {
 		t.Fatalf("the record holds %d exchanges and cut %d, want 4 held and 3 cut", len(record.History), record.HistoryCut)
 	}
-	if size := len(model.calls[0].Conversation); size*10 > 8_000 {
+	if size := len(renderConversation(model.calls[0].History)); size*10 > 8_000 {
 		t.Fatalf("the section is %d bytes, not far below the 8000 safety limit, so the count was not what cut", size)
 	}
 }
@@ -207,7 +207,7 @@ func TestTheSafetyLimitDropsTheOldestWholeExchangesAndNeverLeavesAGap(t *testing
 		if !slices.Equal(got, tc.want) {
 			t.Errorf("%s: the turn kept %v, want %v", tc.name, got, tc.want)
 		}
-		if size := len(model.calls[0].Conversation); size > 8_000 {
+		if size := len(renderConversation(model.calls[0].History)); size > 8_000 {
 			t.Errorf("%s: the section is %d bytes, over the 8000 safety limit", tc.name, size)
 		}
 		if record.HistoryCut != len(tc.supplied)-len(tc.want) {
@@ -266,7 +266,7 @@ func TestAnOversizeNewestExchangeLeavesNoHistoryAndCutsAll(t *testing.T) {
 	if len(record.History) != 0 || record.HistoryCut != 2 {
 		t.Fatalf("the record holds %d exchanges and cut %d, want none held and both cut", len(record.History), record.HistoryCut)
 	}
-	if got := model.calls[0].Conversation; got != "" {
+	if got := renderConversation(model.calls[0].History); got != "" {
 		t.Fatalf("the section is %d bytes, want none: an exchange is never truncated to fit", len(got))
 	}
 }
@@ -283,7 +283,7 @@ func TestTheHistoryIsChargedToTheWorkingMemory(t *testing.T) {
 		{Input: strings.Repeat("c", 1_500), Reply: strings.Repeat("d", 1_500)},
 	}
 	section := renderConversation(history)
-	room := 80_000 - (anchorBytes + 4*rowBytes + len(section))
+	room := 80_000 - (anchorBytes + 4*rowBytes + max(len(section), judgementHistoryBytes(history)))
 	if room <= 0 || room >= 20_000 {
 		t.Fatalf("test setup error: the first round's room is %d, want it between the section's charge and the supplementary budget", room)
 	}
@@ -337,8 +337,8 @@ func TestEveryJudgementCallOfATurnCarriesTheSameConversation(t *testing.T) {
 
 	want := historyTestBanner + "\nuser said: said 1\nyou replied: replied 1\nuser said: said 2\nyou replied: replied 2"
 	for i, call := range model.calls {
-		if call.Conversation != want {
-			t.Errorf("call %d carries the conversation %q, want %q", i+1, call.Conversation, want)
+		if !slices.Equal(call.History, history) || renderConversation(call.History) != want {
+			t.Errorf("call %d carries the conversation %q, want %q", i+1, renderConversation(call.History), want)
 		}
 	}
 }
@@ -425,12 +425,12 @@ func TestASectionOfExactlyTheSafetyLimitIsKeptAndOneByteMoreIsNot(t *testing.T) 
 		{"multi-byte characters, whose byte length is not their rune count", strings.Repeat("é", 3_974), strings.Repeat("é", 3_974) + "x"},
 	} {
 		atLimit, model := runWithHistory(t, []Exchange{{Input: tc.atLimit}})
-		if len(atLimit.History) != 1 || len(model.calls[0].Conversation) != 8_000 {
-			t.Errorf("%s: a section of exactly 8000 bytes was kept as %d exchanges of %d bytes, want 1 exchange of 8000", tc.name, len(atLimit.History), len(model.calls[0].Conversation))
+		if len(atLimit.History) != 1 || len(renderConversation(model.calls[0].History)) != 8_000 {
+			t.Errorf("%s: a section of exactly 8000 bytes was kept as %d exchanges of %d bytes, want 1 exchange of 8000", tc.name, len(atLimit.History), len(renderConversation(model.calls[0].History)))
 		}
 
 		over, model := runWithHistory(t, []Exchange{{Input: tc.oneByteOver}})
-		if len(over.History) != 0 || model.calls[0].Conversation != "" {
+		if len(over.History) != 0 || renderConversation(model.calls[0].History) != "" {
 			t.Errorf("%s: a section of 8001 bytes was kept as %d exchanges, want it cut whole", tc.name, len(over.History))
 		}
 	}
@@ -452,5 +452,16 @@ func TestTheHistoryLabelsReadAsWhoSaidWhatAndAreTheOnesTheRendererWrites(t *test
 		if strings.Contains(got, former) {
 			t.Errorf("section carries the former label %q, which reads as the model's own voice", former)
 		}
+	}
+}
+
+func TestJudgementHistoryAccountsForNativeRoleFraming(t *testing.T) {
+	t.Parallel()
+	history := []Exchange{{Input: "a", Reply: "bb"}, {Input: "ccc"}}
+	if got := judgementHistoryBytes(history); got != 98 {
+		t.Fatalf("history charge = %d, want 98 bytes including each role envelope", got)
+	}
+	if rendered := len(renderConversation(history)); rendered >= 98 {
+		t.Fatalf("fixture rendered charge = %d, must be smaller than native framing", rendered)
 	}
 }

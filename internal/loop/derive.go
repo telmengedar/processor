@@ -26,9 +26,9 @@ var errDerivationUnusable = errors.New("the model returned no usable query")
 
 const derivationInstructions = `You generate alternate search queries for a semantic retrieval system.
 
-You are given the current instant and ONE user request. Your job is to produce %d additional queries that a semantic (embedding-based) search engine could use to surface the specific documentation that answers that request, and to name any time constraint the request expresses. The request itself is already one query the search runs; your job is to add angles that request does not cover.
+You are given the current instant and ONE user request, with quoted earlier exchanges when supplied. Produce %d additional queries that could retrieve stored facts or documentation relevant to this request, and name any time constraint it expresses. The eligible raw request is already searched; the additional queries should make its actual referents and useful information need easier to find.
 
-Think about what actually helps a semantic search here: the request is often phrased the way a confused or informal user would phrase it, while the documentation that answers it is phrased the way an author states a ruling, a mechanism, or a design decision. A good derived query bridges that gap -- it surfaces the underlying mechanism, the specific technical terms, the named concept, or the class of problem the request is really an instance of, using vocabulary closer to how documentation states things.
+Keep literal names, unfamiliar expressions and other distinctive referents from the request or its supplied context. For conversation, seek relevant facts about the named participants, expressions, preferences, plans or corrections involved in the current act. For a technical request, seek the documentation or mechanism it actually asks about. Do not turn an unfamiliar expression into an unrelated dictionary meaning or turn an ordinary conversational act into a generic question about how conversation works.
 
 The DATES line, first:
 - Read the request once looking only for time. You are scanning its words for an explicit date, a month name, a year, a weekday, a season, or a relative expression such as today, yesterday, this morning, last week, last month, recently, or since some named event.
@@ -39,14 +39,14 @@ The DATES line, first:
 - The examples below show the format of a reply. They do not show the range of requests this rule covers: every request that names a time gets a range, whatever its subject, wording or shape.
 
 Rules:
-- Do not restate or lightly reword the input request. Each query must approach the underlying information need from a genuinely different angle than the input and from each other.
+- Write distinct, short factual search phrases about the same resolved topic. Topical paraphrases are useful when they preserve its literal referents; do not invent unrelated angles merely to make the queries different.
 - Do not answer the request. You are generating queries, not answers.
 - Do not invent specifics (names, numbers, node ids) that are not implied by the request itself.
 - A query line must never contain a date, a month, a year, or a day-word. A semantic search matches a date only where that date appears as verbatim text, which is nowhere. Time constraints go on the DATES line and nowhere else.
 - Output exactly %d lines total:
   - The first line is the DATES line described above.
-  - The next %d lines are distinct, standalone questions (each ending in "?") that name a mechanism, concept, or specific terminology likely to appear in the answer.
-  - The last line is a dense, keyword-style query (no question mark) combining the most salient technical terms an embedding search would key on.
+  - The next %d lines are distinct, standalone search phrases naming relevant facts and their literal referents.
+  - The last line is a dense, keyword-style query (no question mark) retaining the most distinctive literal referents and relevant factual terms.
 - Output ONLY those %d lines: the DATES line, then the queries. No numbering, no bullets, no quotes, no preamble, no commentary, no blank lines between them.
 
 Examples of the desired shape (unrelated to the request you will be given):`

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestNoteDecisionRetainsReviewedTranscriptAndMatchesDirectOptions(t *testing
 	}
 	judged := model.inputs[0]
 	var reviewed loop.NoteSource
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(judged.Input, instruction)), &reviewed); err != nil || reviewed != captured.Source || judged.Input != captured.Input || judged.Conversation != "" || !judged.NoteDecisionOutput || strings.Contains(judged.System, "locally adapted seeds") || strings.Contains(judged.System, "Conversation transcript") {
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(judged.Input, instruction)), &reviewed); err != nil || reviewed != captured.Source || judged.Input != captured.Input || len(judged.History) != 0 || !judged.NoteDecisionOutput || strings.Contains(judged.System, "locally adapted seeds") || strings.Contains(judged.System, "Conversation transcript") {
 		t.Fatalf("review evidence differs: reviewed=%+v input=%+v err=%v", reviewed, judged, err)
 	}
 	if response.Code != http.StatusOK || model.calls != 1 || len(notes.requests) != 1 {
@@ -100,7 +101,7 @@ func TestNoteDecisionRetainsReviewedTranscriptAndMatchesDirectOptions(t *testing
 	model.results = []loop.JudgeResult{{Answer: string(raw), Reason: loop.Answered}}
 	notes.requests = nil
 	direct, _, err := turn.Answer(t.Context(), loop.RunOptions{Input: input, Subject: 42, Settings: loop.DefaultSettings(), View: &loop.View{Root: 8800, Note: &loop.NoteConfig{Type: "thought", Mode: loop.NoteModeDecision}}, NoteSource: &source})
-	if err != nil || len(notes.requests) != 1 || notes.requests[0] != request || len(direct.ToolCalls) != 1 || direct.NoteDecision.State != "stored" || direct.NoteDecision.Created != 6100 || direct.ToolCalls[0].Text != want || direct.ToolCalls[0].Bytes != len(want) || len(model.inputs) != 2 || model.inputs[1].Input != input || model.inputs[1].Conversation != "" {
+	if err != nil || len(notes.requests) != 1 || notes.requests[0] != request || len(direct.ToolCalls) != 1 || direct.NoteDecision.State != "stored" || direct.NoteDecision.Created != 6100 || direct.ToolCalls[0].Text != want || direct.ToolCalls[0].Bytes != len(want) || len(model.inputs) != 2 || model.inputs[1].Input != input || len(model.inputs[1].History) != 0 {
 		t.Fatalf("direct disagreement: err=%v notes=%+v record=%+v", err, notes.requests, direct)
 	}
 }
@@ -164,7 +165,7 @@ func TestRunsRetainsSourceOnlyInStoredAndRecordedNoteWithoutPromotingItToJudgeIn
 			baseline = in
 			continue
 		}
-		if in.System != baseline.System || in.Input != baseline.Input || in.Block != baseline.Block || in.Conversation != baseline.Conversation || in.Clause != baseline.Clause || in.Trailer != baseline.Trailer {
+		if in.System != baseline.System || in.Input != baseline.Input || in.Block != baseline.Block || !slices.Equal(in.History, baseline.History) || in.Clause != baseline.Clause || in.Trailer != baseline.Trailer {
 			t.Fatalf("source carrier changed judge instructions or context: before=%+v after=%+v", baseline, in)
 		}
 		wire, _ := json.Marshal(in)

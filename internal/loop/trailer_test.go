@@ -32,7 +32,7 @@ func answer() JudgeResult {
 }
 
 func userContentOf(call JudgeInput) string {
-	return RenderUserContent(call.Block, call.Input, call.Now, call.Window, call.Conversation, call.Clause, call.Trailer)
+	return RenderUserContent(call.Block, call.Input, call.Now, call.Window, "", call.Clause, call.Trailer)
 }
 
 func TestTheClauseIsTheParagraphBeforeTheFinalRequestWhenRecallIsOffered(t *testing.T) {

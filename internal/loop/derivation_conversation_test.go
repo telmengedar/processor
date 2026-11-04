@@ -10,21 +10,21 @@ import (
 	"time"
 )
 
-func TestDerivationWithoutConversationKeepsThePreviousPromptBytes(t *testing.T) {
+func TestDerivationWithoutConversationUsesTheFrozenFactualSearchPrompt(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		now    time.Time
 		digest string
 	}{
-		{time.Time{}, "b706e04471350f0c1950965428340b9586e636c52d2402ca3d422a7c855ea582"},
-		{derivationPromptTestNow, "5e5975102162ae0180ba8b3aa49cfc19854577fa4727bc63d81092d6bfd039f1"},
+		{time.Time{}, "bd16e3f1666c472bd3370d2c7082da238d942f3e99cc79f3849893fe1973802b"},
+		{derivationPromptTestNow, "fea0da46d118f3cda5049ab072a3dd3230cdd5cc042e9274e3102e6839c6d999"},
 	} {
 		model := &deriveFake{text: "resolved phrase"}
 		if _, _, _, _, err := DeriveQueries(context.Background(), model, "and what about that?", tc.now); err != nil {
 			t.Fatal(err)
 		}
 		if got := fmt.Sprintf("%x", sha256.Sum256([]byte(model.prompts[0]))); got != tc.digest {
-			t.Fatalf("no-history prompt digest = %s, want legacy %s", got, tc.digest)
+			t.Fatalf("no-history prompt digest = %s, want frozen %s", got, tc.digest)
 		}
 	}
 }
@@ -87,8 +87,8 @@ func TestDerivationUsesOnlyTheSelectedConversationAndNeverMechanicallySearchesIt
 				t.Fatalf("judgement calls = %d, graph recall calls = %d, want exactly one each", len(model.calls), len(graph.recallCalls))
 			}
 			for _, call := range model.calls {
-				if call.Conversation != section {
-					t.Errorf("judge conversation = %q, want selected %q", call.Conversation, section)
+				if renderConversation(call.History) != section {
+					t.Errorf("judge conversation = %q, want selected %q", renderConversation(call.History), section)
 				}
 			}
 			if !slices.Equal(record.History, tc.want) {

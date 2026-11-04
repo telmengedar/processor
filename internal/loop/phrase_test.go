@@ -260,7 +260,7 @@ func TestNoEarlierUserLineReachesAnyGraphQueryOnTheFirstLookupOrTheSupplementary
 			t.Fatalf("a graph query carries the earlier user line: %q", query)
 		}
 	}
-	if len(record.History) != 1 || !strings.Contains(model.calls[0].Conversation, historyToken) {
+	if len(record.History) != 1 || !strings.Contains(renderConversation(model.calls[0].History), historyToken) {
 		t.Fatalf("test setup error: the history did not reach the model, so the absence above proves nothing")
 	}
 }

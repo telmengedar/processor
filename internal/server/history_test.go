@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 )
 
 type conversationRecordingModel struct {
-	conversations []string
+	histories [][]loop.Exchange
 }
 
 func (m *conversationRecordingModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
@@ -19,7 +20,7 @@ func (m *conversationRecordingModel) Derive(context.Context, string, int) (loop.
 }
 
 func (m *conversationRecordingModel) Judge(_ context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
-	m.conversations = append(m.conversations, in.Conversation)
+	m.histories = append(m.histories, in.History)
 	return loop.JudgeResult{Answer: "ok", Reason: loop.Answered, RawReason: "stop"}, nil
 }
 
@@ -42,11 +43,12 @@ func TestRunsPassesTheHistoryToTheTurnOldestFirst(t *testing.T) {
 	if len(history) != 3 || history[0].Input != "first said" || history[0].Reply != "first answered" || history[1].Input != "second said" || history[1].Reply != "" || history[2].Input != "third said" {
 		t.Fatalf("record history = %+v, want the three sent exchanges oldest first", history)
 	}
-	if len(model.conversations) != 1 {
-		t.Fatalf("the model was called %d times, want 1", len(model.conversations))
+	if len(model.histories) != 1 {
+		t.Fatalf("the model was called %d times, want 1", len(model.histories))
 	}
-	if want := "===== EARLIER IN THIS CONVERSATION =====\nuser said: first said\nyou replied: first answered\nuser said: second said\nuser said: third said\nyou replied: third answered"; model.conversations[0] != want {
-		t.Fatalf("the model saw the conversation %q, want %q", model.conversations[0], want)
+	want := []loop.Exchange{{Input: "first said", Reply: "first answered"}, {Input: "second said"}, {Input: "third said", Reply: "third answered"}}
+	if !slices.Equal(model.histories[0], want) {
+		t.Fatalf("model history = %v, want %v", model.histories[0], want)
 	}
 }
 
@@ -98,8 +100,8 @@ func TestRunsTreatsAnAbsentNullOrEmptyHistoryAsNoHistory(t *testing.T) {
 				t.Errorf("history %q: the record carries %q, keys=%v", history, key, keys)
 			}
 		}
-		if len(model.conversations) != 1 || model.conversations[0] != "" {
-			t.Errorf("history %q: the model saw the conversations %q, want one empty", history, model.conversations)
+		if len(model.histories) != 1 || len(model.histories[0]) != 0 {
+			t.Errorf("history %q: the model saw the conversations %q, want one empty", history, model.histories)
 		}
 	}
 }
@@ -114,7 +116,8 @@ func TestRunsTreatsANullReplyAsNoReply(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if want := "===== EARLIER IN THIS CONVERSATION =====\nuser said: said"; len(model.conversations) != 1 || model.conversations[0] != want {
-		t.Fatalf("the model saw the conversations %q, want one reading %q", model.conversations, want)
+	want := []loop.Exchange{{Input: "said"}}
+	if len(model.histories) != 1 || !slices.Equal(model.histories[0], want) {
+		t.Fatalf("model histories = %v, want one holding %v", model.histories, want)
 	}
 }

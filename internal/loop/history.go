@@ -53,3 +53,14 @@ func selectExchanges(supplied []Exchange, settings RunSettings) (used []Exchange
 	}
 	return used, section, counted - len(used)
 }
+
+func judgementHistoryBytes(history []Exchange) int {
+	bytes := 0
+	for _, exchange := range history {
+		bytes += len(exchange.Input) + len(`{"role":"user","content":""},`)
+		if exchange.Reply != "" {
+			bytes += len(exchange.Reply) + len(`{"role":"assistant","content":""},`)
+		}
+	}
+	return bytes
+}
