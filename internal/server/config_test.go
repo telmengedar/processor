@@ -89,7 +89,7 @@ type countingModel struct {
 
 func (m *countingModel) calls() int { return m.judged + m.derived }
 
-func (m *countingModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (m *countingModel) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	m.derived++
 	return loop.DeriveResult{}, nil
 }

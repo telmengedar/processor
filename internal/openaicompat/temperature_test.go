@@ -103,7 +103,7 @@ func TestADerivationCallSendsAndReportsTheConfiguredSamplingWhateverTheJudgement
 	srv, captured := capturingServer(t, condenseOK)
 	c := NewClient(srv.URL, "model-x", "", loop.Sampling{Temperature: floatPtr(0.2), TopP: floatPtr(0.9)}, srv.Client())
 
-	result, err := c.Derive(context.Background(), "derive from this", 64)
+	result, err := c.Derive(context.Background(), "derive from this", 64, false)
 	if err != nil {
 		t.Fatalf("Derive: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestADerivationCallThatFailedAfterItsRequestWasSentStillReportsTheSamplingI
 		"a connection that fails": NewClient(goneURL, "model-x", "", configured, goneClient),
 	}
 	for name, c := range cases {
-		result, err := c.Derive(context.Background(), "derive from this", 64)
+		result, err := c.Derive(context.Background(), "derive from this", 64, false)
 		if err == nil {
 			t.Fatalf("%s: Derive returned no error", name)
 		}
@@ -154,7 +154,7 @@ func TestADerivationCallWhoseRequestNeverLeftReportsNoSampling(t *testing.T) {
 
 	c := NewClient("http://[::1", "model-x", "", loop.Sampling{Temperature: floatPtr(0.2)}, nil)
 
-	result, err := c.Derive(context.Background(), "derive from this", 64)
+	result, err := c.Derive(context.Background(), "derive from this", 64, false)
 	if err == nil {
 		t.Fatal("Derive returned no error for a base URL no request can be built against")
 	}
@@ -172,7 +172,7 @@ func TestADerivationCallWhoseResponseCannotBeReadStillReportsTheSamplingItCarrie
 		"a 200 with no choices":        `{"model":"m","choices":[]}`,
 	} {
 		srv, _ := capturingServer(t, body)
-		result, err := NewClient(srv.URL, "model-x", "", configured, srv.Client()).Derive(context.Background(), "derive from this", 64)
+		result, err := NewClient(srv.URL, "model-x", "", configured, srv.Client()).Derive(context.Background(), "derive from this", 64, false)
 		if err == nil {
 			t.Fatalf("%s: Derive returned no error", name)
 		}

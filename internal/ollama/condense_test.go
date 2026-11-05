@@ -277,7 +277,7 @@ func TestTheNativeDerivationCallReturnsTheCompletionTextAloneOverTheCondenseRequ
 	srv, captured := capturingServer(t, nativeCondenseOK)
 	c := NewClient(srv.URL, "ai/gemma4", "", loop.Sampling{}, srv.Client())
 
-	derived, err := c.Derive(context.Background(), "derive from this", 512)
+	derived, err := c.Derive(context.Background(), "derive from this", 512, false)
 	if err != nil {
 		t.Fatalf("Derive: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestTheNativeDerivationCallReportsTheEndpointsOwnFailureRatherThanEmptyText
 	}))
 	t.Cleanup(srv.Close)
 
-	derived, err := NewClient(srv.URL, "ai/gemma4", "", loop.Sampling{}, srv.Client()).Derive(context.Background(), "derive from this", 512)
+	derived, err := NewClient(srv.URL, "ai/gemma4", "", loop.Sampling{}, srv.Client()).Derive(context.Background(), "derive from this", 512, false)
 	if err == nil {
 		t.Fatalf("Derive returned %q and no error for a 503; a non-2xx read as empty text is a fallback with no cause", derived.Text)
 	}

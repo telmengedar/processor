@@ -24,6 +24,7 @@ const (
 	silenceKey      = "silence"
 	identityKey     = "identity"
 	noteKey         = "note"
+	thinkingKey     = "thinking"
 	temperatureKey  = "temperature"
 	formKey         = "form"
 	responseModeKey = "responseMode"
@@ -35,6 +36,7 @@ const (
 type Config struct {
 	Filter       loop.Filter
 	Silence      bool
+	Thinking     bool
 	Identity     string
 	Note         *loop.NoteConfig
 	Temperature  *float64
@@ -64,19 +66,21 @@ func Decode(content string) (Config, error) {
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(top)) {
-		if name != filterKey && name != silenceKey && name != identityKey && name != noteKey && name != temperatureKey && name != formKey && name != responseModeKey {
+		if name != thinkingKey && name != filterKey && name != silenceKey && name != identityKey && name != noteKey && name != temperatureKey && name != formKey && name != responseModeKey {
 			return Config{}, fmt.Errorf("the config has the key %q, which processor does not know", name)
 		}
 	}
 
 	var config Config
-	if raw, present := top[silenceKey]; present {
-		switch string(bytes.TrimSpace(raw)) {
-		case "true":
-			config.Silence = true
-		case "false":
-		default:
-			return Config{}, fmt.Errorf("the config's %q is not a JSON boolean", silenceKey)
+	for key, target := range map[string]*bool{silenceKey: &config.Silence, thinkingKey: &config.Thinking} {
+		if raw, present := top[key]; present {
+			switch string(bytes.TrimSpace(raw)) {
+			case "true":
+				*target = true
+			case "false":
+			default:
+				return Config{}, fmt.Errorf("the config's %q is not a JSON boolean", key)
+			}
 		}
 	}
 

@@ -78,6 +78,9 @@ func (c *Client) client() *http.Client {
 
 // Judge runs one judgement step against the endpoint.
 func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
+	if in.Thinking {
+		return loop.JudgeResult{}, fmt.Errorf("openaicompat: thinking=true is unsupported")
+	}
 	started := time.Now()
 	endpoint := c.baseURL + chatCompletionsRoute
 

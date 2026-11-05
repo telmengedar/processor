@@ -114,8 +114,8 @@ type ModelPort interface {
 	// Judge runs one judgement step. One attempt; no retry.
 	Judge(ctx context.Context, in JudgeInput) (JudgeResult, error)
 
-	// Derive runs one query-derivation call on the deployment's sampling, which it reports; it takes no temperature, so no run's choice can reach it.
-	Derive(ctx context.Context, prompt string, maxOutputTokens int) (DeriveResult, error)
+	// Derive runs query derivation with per-call thinking and deployment sampling, which it reports.
+	Derive(ctx context.Context, prompt string, maxOutputTokens int, thinking bool) (DeriveResult, error)
 }
 
 // Turn is one run: anchor, recall, assemble, judge, write back.
@@ -245,7 +245,7 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 			"subject", subject, "supplied", len(history), "used", len(used), "bytes", len(conversation), "safetyLimit", settings.HistorySafetyLimit)
 	}
 
-	queries, window, windowDiscarded, derivationSampling, derivationError := t.derive(ctx, input, subject, now, conversation)
+	queries, window, windowDiscarded, derivationSampling, derivationError := t.derive(ctx, input, subject, now, conversation, options.thinking())
 	notPhrase := inputNotPhraseNote(input)
 
 	noteContextSubject := int64(0)
@@ -294,9 +294,9 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 
 	var judged judgement
 	if noteDecisionMode(options.View) {
-		judged, err = t.judgeNoteDecision(ctx, settings, memory, input, conversation, identity, subject, now, window, noteScopeOf(options.View), options.temperature(), options.NoteSource)
+		judged, err = t.judgeNoteDecision(ctx, settings, memory, input, conversation, identity, subject, now, window, noteScopeOf(options.View), options.temperature(), options.thinking(), options.NoteSource)
 	} else {
-		judged, err = t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions, mode)
+		judged, err = t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, window, filter, silence, noteScopeOf(options.View), options.temperature(), options.thinking(), dispositions, mode)
 	}
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
@@ -362,9 +362,9 @@ func (t *Turn) fillInitial(ctx context.Context, settings RunSettings, anchor Anc
 	return anchor, withCreated(candidates, created), fills
 }
 
-func (t *Turn) derive(ctx context.Context, input string, subject int64, now time.Time, conversation string) ([]string, UpdateWindow, string, *Sampling, string) {
+func (t *Turn) derive(ctx context.Context, input string, subject int64, now time.Time, conversation string, thinking bool) ([]string, UpdateWindow, string, *Sampling, string) {
 	started := time.Now()
-	derived, window, discarded, sampling, err := deriveQueriesWithConversation(ctx, t.Model, input, now, conversation, DerivationBound)
+	derived, window, discarded, sampling, err := deriveQueriesWithConversation(ctx, t.Model, input, now, conversation, DerivationBound, thinking)
 	elapsed := time.Since(started)
 
 	if err != nil {
@@ -541,7 +541,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond), prompt))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input string, queries []string, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, temperature *float64, admitted []Disposition, mode ResponseMode) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input string, queries []string, conversation, identity string, subject int64, now time.Time, window UpdateWindow, filter Filter, silence bool, note noteScope, temperature *float64, thinking bool, admitted []Disposition, mode ResponseMode) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -610,6 +610,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 			Offered:                  offered,
 			StructuredAllowedActions: allowed,
 			Temperature:              temperature,
+			Thinking:                 thinking,
 		})
 		if jerr == nil && mode == ResponseStructuredRead {
 			result, jerr = decodeReadDecision(result, allowed)
@@ -631,7 +632,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 			judged.reservedCall.State = ReservedCallCompleted
 		}
 
-		if result.ReasoningBytes > 0 {
+		if result.ReasoningBytes > 0 && !thinking {
 			t.log().Warn("the response carried reasoning on a request that suppressed it: the endpoint took the control and ignored it",
 				"adapter", result.Provider.Adapter, "reasoningBytes", result.ReasoningBytes)
 		}

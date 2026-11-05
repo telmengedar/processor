@@ -20,7 +20,7 @@ type scriptedModel struct {
 	calls int
 }
 
-func (m *scriptedModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (m *scriptedModel) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	return loop.DeriveResult{}, nil
 }
 

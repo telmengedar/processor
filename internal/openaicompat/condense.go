@@ -116,7 +116,10 @@ func (c *Client) condense(ctx context.Context, prompt string, maxOutputTokens in
 }
 
 // Derive runs one query-derivation call on the configured sampling, returning its text and the sampling its request carried, also beside an error once the request was issued.
-func (c *Client) Derive(ctx context.Context, prompt string, maxOutputTokens int) (loop.DeriveResult, error) {
+func (c *Client) Derive(ctx context.Context, prompt string, maxOutputTokens int, thinking bool) (loop.DeriveResult, error) {
+	if thinking {
+		return loop.DeriveResult{}, fmt.Errorf("openaicompat: thinking=true is unsupported")
+	}
 	result, sent, err := c.condense(ctx, prompt, maxOutputTokens)
 	var derived loop.DeriveResult
 	if sent {

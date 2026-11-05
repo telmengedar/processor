@@ -15,7 +15,7 @@ type systemRecorder struct {
 	derived int
 }
 
-func (m *systemRecorder) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (m *systemRecorder) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	m.derived++
 	return loop.DeriveResult{}, nil
 }

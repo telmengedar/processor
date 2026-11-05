@@ -39,7 +39,7 @@ func (d *deriveFake) Judge(context.Context, JudgeInput) (JudgeResult, error) {
 	return JudgeResult{Reason: Answered, RawReason: "stop"}, nil
 }
 
-func (d *deriveFake) Derive(ctx context.Context, prompt string, maxOutputTokens int) (DeriveResult, error) {
+func (d *deriveFake) Derive(ctx context.Context, prompt string, maxOutputTokens int, thinking bool) (DeriveResult, error) {
 	d.prompts = append(d.prompts, prompt)
 	d.tokens = append(d.tokens, maxOutputTokens)
 	d.deadline, _ = ctx.Deadline()
