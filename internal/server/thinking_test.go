@@ -70,6 +70,21 @@ func TestConfiguredThinkingReachesDerivationAndEveryJudgement(t *testing.T) {
 			if response.Code != http.StatusOK {
 				t.Fatalf("%d %s", response.Code, response.Body.String())
 			}
+			var document map[string]json.RawMessage
+			if err := json.Unmarshal(response.Body.Bytes(), &document); err != nil {
+				t.Fatal(err)
+			}
+			var perspective map[string]json.RawMessage
+			if err := json.Unmarshal(document["perspective"], &perspective); err != nil {
+				t.Fatal(err)
+			}
+			thinking, present := perspective["thinking"]
+			if want && (!present || string(thinking) != "true") {
+				t.Fatalf("perspective.thinking = %s, present=%v; want true", thinking, present)
+			}
+			if !want && present {
+				t.Fatalf("perspective.thinking = %s; want omitted default", thinking)
+			}
 			var record loop.Record
 			if err := json.Unmarshal(response.Body.Bytes(), &record); err != nil {
 				t.Fatal(err)
