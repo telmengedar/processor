@@ -37,6 +37,7 @@ const ResponseStructuredRead ResponseMode = "structuredRead"
 
 // View is the config a run was held to: the node that supplied it, the filter it forwarded, whether it offered the model a chosen silence, the identity text it put first, verbatim, the note capability it enabled, nil for none, and the temperature it asked its judgement calls to be sent with, nil where it asked none.
 type View struct {
+	Thinking     bool         `json:"thinking,omitempty"`
 	Config       int64        `json:"config"`
 	Filter       Filter       `json:"filter,omitempty"`
 	Silence      bool         `json:"silence,omitempty"`
@@ -501,9 +502,10 @@ type ToolExchange struct {
 
 // JudgeInput is everything one judgement step needs.
 type JudgeInput struct {
-	System string
-	Block  string
-	Input  string
+	Thinking bool
+	System   string
+	Block    string
+	Input    string
 
 	// Conversation is the rendered earlier exchanges, identical on every call of a turn, empty when the turn has none.
 	Conversation string

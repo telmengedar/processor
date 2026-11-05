@@ -83,8 +83,8 @@ func TestTheModelPortOffersDerivationNoWayToReceiveATemperature(t *testing.T) {
 	if !ok {
 		t.Fatal("the model port has no Derive")
 	}
-	if got := method.Type.NumIn(); got != 3 {
-		t.Fatalf("Derive takes %d parameters, want the context, the prompt and the output limit alone", got)
+	if got := method.Type.NumIn(); got != 4 || method.Type.In(3).Kind() != reflect.Bool {
+		t.Fatalf("Derive takes %d parameters, want the context, prompt, output limit and thinking boolean", got)
 	}
 }
 

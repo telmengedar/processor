@@ -33,7 +33,7 @@ func (answeringModel) Judge(context.Context, loop.JudgeInput) (loop.JudgeResult,
 	}, nil
 }
 
-func (answeringModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (answeringModel) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	return loop.DeriveResult{}, nil
 }
 

@@ -219,7 +219,7 @@ func resolveConfig(ctx context.Context, w http.ResponseWriter, turn *loop.Turn, 
 		writeError(w, http.StatusBadRequest, codeInvalidConfig, loop.BoundCause(err.Error()))
 		return nil, true
 	}
-	return &loop.View{Config: id, Filter: config.Filter, Silence: config.Silence, Identity: config.Identity, Note: config.Note, Temperature: config.Temperature, Form: config.Form, Root: node.RootNodeID, ResponseMode: config.ResponseMode}, false
+	return &loop.View{Config: id, Thinking: config.Thinking, Filter: config.Filter, Silence: config.Silence, Identity: config.Identity, Note: config.Note, Temperature: config.Temperature, Form: config.Form, Root: node.RootNodeID, ResponseMode: config.ResponseMode}, false
 }
 
 type errorEnvelope struct {

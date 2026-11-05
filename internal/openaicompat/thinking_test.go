@@ -1,6 +1,7 @@
 package openaicompat
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -141,4 +142,20 @@ func TestTheAdapterReportsNoReasoningWhenTheResponseCarriesNoneAndStillReturnsTh
 	if result.Answer != "the answer" || result.Reason != loop.Answered {
 		t.Fatalf("result = %+v, want the ordinary answered outcome: suppression in force must not disturb a normal call", result)
 	}
+}
+
+func TestCompatibleThinkingOnFailsExplicitly(t *testing.T) {
+	srv, captured := capturingServer(t, compatReasonedResponse)
+	client := NewClient(srv.URL, "gemma4:latest", "", loop.Sampling{}, srv.Client())
+	if _, err := client.Judge(context.Background(), loop.JudgeInput{Thinking: true}); err == nil || !strings.Contains(err.Error(), "thinking=true is unsupported") {
+		t.Fatalf("Judge: %v", err)
+	}
+	if _, err := client.Derive(context.Background(), "derive", 0, true); err == nil || !strings.Contains(err.Error(), "thinking=true is unsupported") {
+		t.Fatalf("Derive: %v", err)
+	}
+	if len(captured.Body) != 0 {
+		t.Fatalf("unsupported thinking sent a request: %s", captured.Body)
+	}
+	judgeOnce(t, client)
+	assertReasoningEffortNone(t, captured.Body)
 }

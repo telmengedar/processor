@@ -112,3 +112,7 @@ func (o RunOptions) identity() string {
 	}
 	return o.View.Identity
 }
+
+func (o RunOptions) thinking() bool {
+	return o.View != nil && o.View.Thinking
+}

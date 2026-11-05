@@ -82,7 +82,7 @@ func (stubJudge) Judge(context.Context, loop.JudgeInput) (loop.JudgeResult, erro
 	return loop.JudgeResult{Answer: "an answer", Reason: loop.Answered, RawReason: "stop"}, nil
 }
 
-func (stubJudge) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (stubJudge) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	return loop.DeriveResult{}, nil
 }
 
