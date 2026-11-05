@@ -73,6 +73,13 @@ func NewClient(baseURL, modelID, apiKey string, sampling loop.Sampling, httpClie
 	}
 }
 
+// WithModel returns a client requesting modelID with the same endpoint, credentials and sampling.
+func (c *Client) WithModel(modelID string) loop.ModelPort {
+	selected := *c
+	selected.modelID = modelID
+	return &selected
+}
+
 func defaultHTTPClient() *http.Client {
 	return &http.Client{Timeout: DefaultTimeout}
 }

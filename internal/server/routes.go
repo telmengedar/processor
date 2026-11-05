@@ -42,7 +42,8 @@ type runRequest struct {
 	Subject    int64           `json:"subject"`
 	History    []loop.Exchange `json:"history"`
 
-	Config *int64 `json:"config"`
+	Config *int64  `json:"config"`
+	Model  *string `json:"model"`
 }
 
 const jsonContentType = "application/json; charset=utf-8"
@@ -134,6 +135,40 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			return
 		}
 
+		runTurn := turn
+		if req.Model != nil {
+			if strings.TrimSpace(*req.Model) == "" {
+				writeError(w, http.StatusBadRequest, codeInvalidRequest, "model must not be empty")
+				return
+			}
+			selector, ok := turn.Model.(interface {
+				WithModel(string) loop.ModelPort
+			})
+			if !ok {
+				writeError(w, http.StatusBadRequest, codeInvalidRequest, "the configured model adapter does not support per-run model selection")
+				return
+			}
+			selected := *turn
+			selected.Model = selector.WithModel(*req.Model)
+			selected.ModelID = *req.Model
+			if turn.Fill != nil {
+				fillSelector, ok := turn.Fill.(interface {
+					WithModel(string) (loop.FillPort, error)
+				})
+				if !ok {
+					writeError(w, http.StatusBadRequest, codeInvalidRequest, "the configured fill adapter does not support per-run model selection")
+					return
+				}
+				var err error
+				selected.Fill, err = fillSelector.WithModel(*req.Model)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, codeInvalidRequest, err.Error())
+					return
+				}
+			}
+			runTurn = &selected
+		}
+
 		runCtx, cancel := context.WithTimeout(r.Context(), RunBound)
 		defer cancel()
 
@@ -154,7 +189,7 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			}
 		}
 
-		record, started, err := turn.Answer(runCtx, loop.RunOptions{NoteSource: source, Input: req.Input, Subject: req.Subject, History: req.History, Settings: loop.DefaultSettings(), View: view})
+		record, started, err := runTurn.Answer(runCtx, loop.RunOptions{NoteSource: source, Input: req.Input, Subject: req.Subject, History: req.History, Settings: loop.DefaultSettings(), View: view})
 		if err != nil {
 			switch {
 			case errors.Is(runCtx.Err(), context.DeadlineExceeded):
@@ -177,7 +212,7 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 
 		reply := replyFor(record)
 		if verbose {
-			receipt := turn.File(runCtx, record, started)
+			receipt := runTurn.File(runCtx, record, started)
 			w.Header().Set("Content-Type", jsonContentType)
 			w.WriteHeader(http.StatusOK)
 			response := verboseResponse{Record: record, Written: receipt, Reply: reply}
@@ -189,7 +224,7 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 		}
 
 		sendComplete(w, chatResponse{Reply: reply, Produced: record.Outcome.Produced, Silent: record.Outcome.Silent, NoteDecision: record.NoteDecision})
-		turn.File(runCtx, record, started)
+		runTurn.File(runCtx, record, started)
 	}
 }
 
