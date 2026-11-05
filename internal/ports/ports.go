@@ -76,6 +76,10 @@ type fillOllamaModel struct {
 	client *ollama.Client
 }
 
+func (m *fillOllamaModel) WithModel(modelID string) condense.ModelPort {
+	return &fillOllamaModel{client: m.client.WithModel(modelID).(*ollama.Client)}
+}
+
 func (m *fillOllamaModel) Condense(ctx context.Context, prompt string, maxOutputTokens int) (condense.Completion, error) {
 	result, err := m.client.Condense(ctx, prompt, maxOutputTokens)
 	if err != nil {

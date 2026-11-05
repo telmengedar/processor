@@ -151,6 +151,21 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			selected := *turn
 			selected.Model = selector.WithModel(*req.Model)
 			selected.ModelID = *req.Model
+			if turn.Fill != nil {
+				fillSelector, ok := turn.Fill.(interface {
+					WithModel(string) (loop.FillPort, error)
+				})
+				if !ok {
+					writeError(w, http.StatusBadRequest, codeInvalidRequest, "the configured fill adapter does not support per-run model selection")
+					return
+				}
+				var err error
+				selected.Fill, err = fillSelector.WithModel(*req.Model)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, codeInvalidRequest, err.Error())
+					return
+				}
+			}
 			runTurn = &selected
 		}
 
@@ -197,7 +212,7 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 
 		reply := replyFor(record)
 		if verbose {
-			receipt := turn.File(runCtx, record, started)
+			receipt := runTurn.File(runCtx, record, started)
 			w.Header().Set("Content-Type", jsonContentType)
 			w.WriteHeader(http.StatusOK)
 			response := verboseResponse{Record: record, Written: receipt, Reply: reply}
@@ -209,7 +224,7 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 		}
 
 		sendComplete(w, chatResponse{Reply: reply, Produced: record.Outcome.Produced, Silent: record.Outcome.Silent, NoteDecision: record.NoteDecision})
-		turn.File(runCtx, record, started)
+		runTurn.File(runCtx, record, started)
 	}
 }
 
