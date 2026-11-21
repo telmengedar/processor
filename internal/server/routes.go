@@ -12,14 +12,20 @@ import (
 	"strings"
 
 	"github.com/telmengedar/processor/internal/loop"
+	"github.com/telmengedar/processor/internal/process"
 	"github.com/telmengedar/processor/internal/runconfig"
 )
 
 // NewHandler builds the routes for GET /health and POST /runs over turn.
-func NewHandler(turn *loop.Turn) http.Handler {
+func NewHandler(turn *loop.Turn, engines ...*process.Engine) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(turn.Build))
 	mux.HandleFunc("POST /runs", handleRuns(turn))
+	var engine *process.Engine
+	if len(engines) > 0 {
+		engine = engines[0]
+	}
+	mux.HandleFunc("POST /process-runs", handleProcessRuns(engine))
 	return mux
 }
 

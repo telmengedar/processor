@@ -41,6 +41,7 @@ type wireMessage struct {
 }
 
 type wireToolCall struct {
+	ID       string           `json:"id,omitempty"`
 	Function wireFunctionCall `json:"function"`
 }
 
