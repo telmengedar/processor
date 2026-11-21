@@ -44,11 +44,8 @@ type Publication struct {
 
 func Import(ctx context.Context, p Publisher, b Blueprint) (Publication, error) {
 	staged := &draftGraph{nodes: map[int64]loop.Anchor{}}
-	preview, err := publish(ctx, staged, b)
+	_, err := publish(ctx, staged, b)
 	if err != nil {
-		return Publication{}, err
-	}
-	if _, err = Load(ctx, staged, Request{ProcessID: preview.ProcessID}); err != nil {
 		return Publication{}, err
 	}
 	return publish(ctx, p, b)
@@ -140,6 +137,7 @@ func publish(ctx context.Context, p Publisher, b Blueprint) (Publication, error)
 		r.Members[node.Symbol] = id
 	}
 	d := Definition{Version: 1, Entry: r.Members[b.Entry], Inputs: b.Inputs, Outputs: b.Outputs, Members: []Member{}}
+	resolved := &draftGraph{nodes: map[int64]loop.Anchor{r.ProcessID: {ID: r.ProcessID, Type: "process", Name: b.Name}}}
 	for _, node := range b.Nodes {
 		body, err := resolveSymbols(jsonValue(node.Body), r.Members)
 		if err != nil {
@@ -149,9 +147,8 @@ func publish(ctx context.Context, p Publisher, b Blueprint) (Publication, error)
 		if err != nil {
 			return r, err
 		}
-		if err = p.SetProcessContent(ctx, r.Members[node.Symbol], string(encoded)); err != nil {
-			return r, err
-		}
+		id := r.Members[node.Symbol]
+		resolved.nodes[id] = loop.Anchor{ID: id, Type: node.Type, Name: node.Name, Content: string(encoded)}
 		d.Members = append(d.Members, Member{ID: r.Members[node.Symbol], SHA256: Hash(string(encoded))})
 	}
 	edges := make([]Edge, 0, len(b.Edges))
@@ -164,15 +161,30 @@ func publish(ctx context.Context, p Publisher, b Blueprint) (Publication, error)
 		if _, _, err := transition(edge); err != nil {
 			return r, err
 		}
-		if err = p.LinkProcessNodes(ctx, edge); err != nil {
-			return r, err
-		}
 		edges = append(edges, edge)
 	}
 	d.TransitionsSHA256 = TransitionHash(edges)
 	root, err := json.Marshal(d)
 	if err != nil {
 		return r, err
+	}
+	node := resolved.nodes[r.ProcessID]
+	node.Content = string(root)
+	resolved.nodes[r.ProcessID] = node
+	resolved.edges = edges
+	if _, err = Load(ctx, resolved, Request{ProcessID: r.ProcessID}); err != nil {
+		return r, err
+	}
+	for _, node := range b.Nodes {
+		id := r.Members[node.Symbol]
+		if err = p.SetProcessContent(ctx, id, resolved.nodes[id].Content); err != nil {
+			return r, err
+		}
+	}
+	for _, edge := range edges {
+		if err = p.LinkProcessNodes(ctx, edge); err != nil {
+			return r, err
+		}
 	}
 	if err = p.SetProcessContent(ctx, r.ProcessID, string(root)); err != nil {
 		return r, err

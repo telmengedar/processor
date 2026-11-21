@@ -300,7 +300,8 @@ func stepMessages(step Step, input any, args, state map[string]any, s *Snapshot,
 		encoded, _ := json.Marshal(values[i])
 		costs[i] = len(encoded) + len(item.Key) + 8
 		if item.ToolResult && round != nil && reflect.DeepEqual(jsonValue(values[i]), jsonValue(roundValue)) {
-			costs[i] += len(round.Call.Arguments) + len(round.Call.Name) + len(round.Text)
+			messages, _ := json.Marshal(toolRoundMessages(round))
+			costs[i] = len(messages)
 		}
 		valid[i] = err == nil
 		if item.ToolResult {
@@ -332,7 +333,7 @@ func stepMessages(step Step, input any, args, state map[string]any, s *Snapshot,
 			budget -= costs[i]
 		}
 		if item.ToolResult {
-			roundMessages = []completion.Message{{Role: "assistant", Content: round.Text, Calls: []completion.Call{round.Call}}, {Role: "tool", Content: string(round.Result), CallID: round.Call.ID, ToolName: round.Call.Name}}
+			roundMessages = toolRoundMessages(round)
 		} else {
 			data[item.Key] = value
 		}
@@ -340,6 +341,10 @@ func stepMessages(step Step, input any, args, state map[string]any, s *Snapshot,
 	encoded, _ = json.Marshal(data)
 	messages := []completion.Message{{Role: "system", Content: step.Prompt}, {Role: "user", Content: string(encoded)}}
 	return append(messages, roundMessages...), admissions, nil
+}
+
+func toolRoundMessages(round *selectedCall) []completion.Message {
+	return []completion.Message{{Role: "assistant", Content: round.Text, Calls: []completion.Call{round.Call}}, {Role: "tool", Content: string(round.Result), CallID: round.Call.ID, ToolName: round.Call.Name}}
 }
 
 func (e *Engine) tool(ctx context.Context, tool Tool, args map[string]any) any {
