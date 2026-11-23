@@ -212,3 +212,37 @@ func TestCheckedDraftTemplateReferencesFailBeforeEffects(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckedDraftDroppedTransportCannotBeRebound(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, step, path string
+		calls            int
+	}{
+		{"persona after draft", "check_draft", "persona", 2},
+		{"original draft after repair", "check_repair", "draft", 4},
+		{"feedback after repair", "check_repair", "feedback", 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b := checkedBlueprint(t)
+			body := draftBody(&b, tc.step)
+			body["context"] = append(body["context"].([]any), map[string]any{"key": "forbidden_rebind", "value": binding("transport", tc.path), "required": true})
+			g, p := authored(t, b)
+			calls := 0
+			m := modelFunc(func(context.Context, completion.Request) (completion.Result, error) {
+				calls++
+				if calls > tc.calls {
+					t.Fatal("dropped transport reached the probing checker")
+				}
+				return completion.Result{Text: "nonaccepting fixture text"}, nil
+			})
+			r := (&process.Engine{Graph: g, Model: m}).Run(context.Background(), process.Request{ProcessID: p.ProcessID, Arguments: map[string]any{"message": "hi", "persona": 90}})
+			if calls != tc.calls || len(r.Trace) == 0 || r.Trace[len(r.Trace)-1].StepID != p.Members[tc.step] || g.recalls != 1 {
+				t.Fatalf("projection probe not reached: %+v calls=%d", r, calls)
+			}
+			if r.Status != "failed" || r.Error == nil || r.Error.Code != "invalid_binding" || len(r.Output) != 0 {
+				t.Fatalf("dropped %s remained readable: %+v", tc.path, r)
+			}
+		})
+	}
+}
