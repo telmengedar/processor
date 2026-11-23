@@ -47,6 +47,9 @@ func (g *memoryGraph) Memorize(ctx context.Context, request process.MemoryReques
 	}
 	result.Confirmed = true
 	result.ContentHash = process.Hash(read.Content)
+	if g.mode == "unconfirmed" {
+		result.Confirmed = false
+	}
 	return result, nil
 }
 
@@ -66,7 +69,7 @@ func memoryBlueprint() process.Blueprint {
 
 func TestV2MemorizeReceiptAndExplicitLookup(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"confirmed", "partial", "content", "root", "link"} {
+	for _, mode := range []string{"confirmed", "partial", "content", "root", "link", "unconfirmed"} {
 		t.Run(mode, func(t *testing.T) {
 			g := &memoryGraph{graph: newGraph(), mode: mode}
 			p, err := process.Import(context.Background(), g, memoryBlueprint())
@@ -91,6 +94,61 @@ func TestV2MemorizeReceiptAndExplicitLookup(t *testing.T) {
 				if r.Status == "completed" || calls != 0 || g.writes != 1 || len(r.Trace[0].Receipts) != 0 || r.Trace[0].Error == nil || r.Trace[0].Error.Code != "memory_write_incomplete" || r.Trace[0].Repair == nil || r.Trace[0].Repair.NodeID != 700 || r.Trace[0].Repair.Confirmed {
 					t.Fatalf("incomplete write claimed receipt: %+v calls=%d", r, calls)
 				}
+			}
+		})
+	}
+}
+
+func TestV2MemorizeAboutForwardedReceipt(t *testing.T) {
+	t.Parallel()
+	for _, forged := range []bool{false, true} {
+		t.Run(fmt.Sprintf("forged=%t", forged), func(t *testing.T) {
+			b := memoryBlueprint()
+			for i := range b.Nodes {
+				switch b.Nodes[i].Symbol {
+				case "memory":
+					body := b.Nodes[i].Body.(map[string]any)
+					schema := body["schema"].(process.Schema)
+					schema.Properties["about"] = process.Schema{Type: "integer"}
+					body["schema"] = schema
+				case "inspect":
+					if forged {
+						step := b.Nodes[i].Body.(process.Step)
+						step.Exports = map[string]any{"saved": map[string]any{"operation": "memorize", "nodeId": 700}}
+						b.Nodes[i].Body = step
+					}
+				case "lookup_step":
+					step := b.Nodes[i].Body.(process.Step)
+					step.Input = map[string]any{"text": binding("argument", "text"), "about": binding("transport", "saved.nodeId")}
+					step.Exports = map[string]any{"reply": "done"}
+					b.Nodes[i].Body = step
+				}
+			}
+			for i := range b.Edges {
+				if b.Edges[i].From == "lookup" && b.Edges[i].To == "lookup_step" {
+					b.Edges[i].From = "memory"
+				}
+			}
+			g := &memoryGraph{graph: newGraph()}
+			p, err := process.Import(context.Background(), g, b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls := 0
+			m := modelFunc(func(context.Context, completion.Request) (completion.Result, error) {
+				calls++
+				return completion.Result{Text: "reply"}, nil
+			})
+			r := (&process.Engine{Graph: g, Model: m}).Run(context.Background(), process.Request{ProcessID: p.ProcessID, Arguments: map[string]any{"text": "synthetic observation"}})
+			if len(r.Trace) < 3 || len(r.Trace[0].Receipts) != 1 || calls != 1 {
+				t.Fatalf("first receipt and intervening judgement not observed: %+v calls=%d", r, calls)
+			}
+			if forged {
+				if g.writes != 1 || r.Trace[2].Error == nil || r.Trace[2].Error.Code != "tool_input" {
+					t.Fatalf("forged receipt authorized about: %+v writes=%d", r, g.writes)
+				}
+			} else if g.writes != 2 || r.Trace[2].Error != nil || r.Status != "completed" || r.Output["reply"] != "done" {
+				t.Fatalf("explicit confirmed receipt rejected: %+v writes=%d", r, g.writes)
 			}
 		})
 	}

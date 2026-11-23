@@ -42,6 +42,26 @@ func binding(source, path string) map[string]any {
 }
 func symbolic(symbol string) map[string]any { return map[string]any{"nodeRef": symbol} }
 
+func TestV2RequiredRenderedContextBoundBeforeProvider(t *testing.T) {
+	t.Parallel()
+	b := v2Blueprint(t)
+	for i := range b.Nodes {
+		if b.Nodes[i].Symbol == "assessment_template" {
+			b.Nodes[i].Body = strings.Repeat("{{context.message}}", 400)
+		}
+	}
+	g, _ := authored(t, b)
+	calls := 0
+	m := modelFunc(func(context.Context, completion.Request) (completion.Result, error) {
+		calls++
+		return completion.Result{Text: "reply"}, nil
+	})
+	r := (&process.Engine{Graph: g, Model: m}).Run(context.Background(), process.Request{Process: "Gangolf Chat v2", Arguments: map[string]any{"message": strings.Repeat("x", 100), "persona": 90}})
+	if r.Error == nil || r.Error.Code != "context_bound" || calls != 0 {
+		t.Fatalf("oversized rendered context reached provider: error=%v calls=%d", r.Error, calls)
+	}
+}
+
 func TestGangolfV2EndToEndWithPrivateFixture(t *testing.T) {
 	t.Parallel()
 	b := v2Blueprint(t)
