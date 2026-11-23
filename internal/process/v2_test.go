@@ -80,13 +80,19 @@ func TestGangolfV2EndToEndWithPrivateFixture(t *testing.T) {
 			}
 			return completion.Result{Text: "public-brief-sentinel"}, nil
 		}
+		if calls == 3 {
+			if len(r.Tools) != 0 || strings.Contains(text, "memory-sentinel") || strings.Contains(text, "persona-sentinel") || !strings.Contains(text, "final-v2-reply") {
+				t.Fatalf("checker scope wrong: %s", text)
+			}
+			return completion.Result{Text: "ACCEPT"}, nil
+		}
 		if len(r.Tools) != 0 || strings.Contains(text, "memory-sentinel") || !strings.Contains(text, "public-brief-sentinel") || !strings.Contains(text, "persona-sentinel") || !strings.Contains(r.Messages[0].Content, "# Persona") {
 			t.Fatalf("response scope wrong: %s", text)
 		}
 		return completion.Result{Text: "final-v2-reply"}, nil
 	})
 	status, r := request(t, g, m, `{"process":"Gangolf Chat v2","arguments":{"message":"hello","persona":90}}`)
-	if status != 200 || r.Status != "completed" || r.Output["reply"] != "final-v2-reply" || calls != 2 || g.recalls != 1 {
+	if status != 200 || r.Status != "completed" || r.Output["reply"] != "final-v2-reply" || calls != 3 || g.recalls != 1 {
 		t.Fatalf("%d %+v calls=%d", status, r, calls)
 	}
 	keys := []string{}
@@ -96,7 +102,7 @@ func TestGangolfV2EndToEndWithPrivateFixture(t *testing.T) {
 			t.Fatal("transport trace hash missing")
 		}
 	}
-	if !reflect.DeepEqual(keys, []string{"recall_context", "assess_situation", "load_persona", "compose_response", "reply"}) || r.Trace[1].TemplateHash == "" || r.Trace[3].TemplateHash == r.Trace[1].TemplateHash {
+	if !reflect.DeepEqual(keys, []string{"recall_context", "assess_situation", "load_persona", "compose_response", "check_draft", "return_draft"}) || r.Trace[1].TemplateHash == "" || r.Trace[3].TemplateHash == r.Trace[1].TemplateHash {
 		t.Fatalf("wrong graph trace: %+v", r.Trace)
 	}
 	calls = 0
@@ -124,7 +130,7 @@ func TestV2TemplateMutationAndInsertedPlaceholderDataRemainGraphOwned(t *testing
 					t.Fatal("template changed or inserted text recursively rendered")
 				}
 			}
-			return completion.Result{Text: "reply"}, nil
+			return completion.Result{Text: "ACCEPT"}, nil
 		})
 		status, r := request(t, g, m, `{"process":"Gangolf Chat v2","arguments":{"message":"{{context.persona}}","persona":90}}`)
 		if status != 200 {
@@ -282,11 +288,11 @@ func TestV2NativeRoundRequiresExportedProvenance(t *testing.T) {
 						t.Fatal("consumed call leaked into later stage")
 					}
 				}
-				return completion.Result{Text: "reply"}, nil
+				return completion.Result{Text: "ACCEPT"}, nil
 			})
 			status, r := request(t, g, m, `{"process":"Gangolf Chat v2","arguments":{"message":"hi","persona":90}}`)
 			if mode == "explicit" {
-				if status != 200 || calls != 3 {
+				if status != 200 || calls != 4 {
 					t.Fatalf("explicit loop failed: %d %+v", status, r)
 				}
 			} else if mode == "oversized" {
@@ -347,6 +353,11 @@ func TestV2GraphTemplatesReachActualProviderWireWithoutRuntimeInstructions(t *te
 				t.Fatal("assessment template/wire wrong")
 			}
 			_, _ = w.Write([]byte(`{"message":{"content":"wire public brief"},"done_reason":"stop"}`))
+		} else if calls == 3 {
+			if len(body.Tools) != 0 || strings.Contains(body.Messages[0].Content, "persona-sentinel") || !strings.Contains(body.Messages[0].Content, "wire final reply") {
+				t.Fatal("checker template/wire wrong")
+			}
+			_, _ = w.Write([]byte(`{"message":{"content":"ACCEPT"},"done_reason":"stop"}`))
 		} else {
 			if len(body.Tools) != 0 || !strings.Contains(body.Messages[0].Content, "wire public brief") || !strings.Contains(body.Messages[0].Content, "persona-sentinel") || strings.Contains(body.Messages[0].Content, "memory-sentinel") {
 				t.Fatal("response template/wire wrong")
@@ -356,7 +367,7 @@ func TestV2GraphTemplatesReachActualProviderWireWithoutRuntimeInstructions(t *te
 	}))
 	defer srv.Close()
 	status, response := request(t, g, ollama.NewClient(srv.URL, "gemma4:latest", "", loop.Sampling{}, srv.Client()), `{"process":"Gangolf Chat v2","arguments":{"message":"hi","persona":90}}`)
-	if status != 200 || response.Output["reply"] != "wire final reply" || calls != 2 {
+	if status != 200 || response.Output["reply"] != "wire final reply" || calls != 3 {
 		t.Fatalf("wire pipeline failed: %d %+v", status, response)
 	}
 }
@@ -397,7 +408,7 @@ func TestV2TemplateEscapesAndMissingFieldsOrInvalidUnicode(t *testing.T) {
 				if calls == 1 && r.Messages[0].Content != "{{literal}} hi" {
 					t.Fatal("escape rendering changed")
 				}
-				return completion.Result{Text: "reply"}, nil
+				return completion.Result{Text: "ACCEPT"}, nil
 			})
 			message := "hi"
 			if mode == "invalid_value" {
@@ -405,7 +416,7 @@ func TestV2TemplateEscapesAndMissingFieldsOrInvalidUnicode(t *testing.T) {
 			}
 			response := (&process.Engine{Graph: g, Model: m}).Run(context.Background(), process.Request{ProcessID: p.ProcessID, Arguments: map[string]any{"message": message, "persona": 90}})
 			if mode == "escapes" {
-				if response.Status != "completed" || calls != 2 {
+				if response.Status != "completed" || calls != 3 {
 					t.Fatal(response.Error)
 				}
 			} else if response.Status == "completed" || calls != 0 || response.Error.Code != "invalid_template" {

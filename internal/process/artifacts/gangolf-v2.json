@@ -341,7 +341,11 @@
           }
         ],
         "exports": {
-          "reply": {
+          "assessment": {
+            "source": "transport",
+            "path": "assessment"
+          },
+          "draft": {
             "source": "result",
             "path": "reply"
           }
@@ -349,17 +353,191 @@
       }
     },
     {
-      "symbol": "reply",
+      "symbol": "checker_template",
+      "type": "process-prompt-template",
+      "name": "checker_template",
+      "body": "checker-v2.md"
+    },
+    {
+      "symbol": "repair_template",
+      "type": "process-prompt-template",
+      "name": "repair_template",
+      "body": "repair-v2.md"
+    },
+    {
+      "symbol": "check_draft",
       "type": "process-step",
-      "name": "reply",
+      "name": "check_draft",
       "body": {
         "version": 2,
-        "key": "reply",
+        "key": "check_draft",
+        "kind": "judgement",
+        "context": [
+          {
+            "key": "message",
+            "value": {
+              "source": "argument",
+              "path": "message"
+            },
+            "required": true
+          },
+          {
+            "key": "assessment",
+            "value": {
+              "source": "transport",
+              "path": "assessment"
+            },
+            "required": true
+          },
+          {
+            "key": "candidate",
+            "value": {
+              "source": "transport",
+              "path": "draft"
+            },
+            "required": true
+          }
+        ],
+        "exports": {
+          "assessment": {
+            "source": "transport",
+            "path": "assessment"
+          },
+          "draft": {
+            "source": "transport",
+            "path": "draft"
+          },
+          "feedback": {
+            "source": "result",
+            "path": "reply"
+          }
+        }
+      }
+    },
+    {
+      "symbol": "return_draft",
+      "type": "process-step",
+      "name": "return_draft",
+      "body": {
+        "version": 2,
+        "key": "return_draft",
         "kind": "return",
         "output": {
           "reply": {
             "source": "transport",
+            "path": "draft"
+          }
+        }
+      }
+    },
+    {
+      "symbol": "repair_response",
+      "type": "process-step",
+      "name": "repair_response",
+      "body": {
+        "version": 2,
+        "key": "repair_response",
+        "kind": "judgement",
+        "context": [
+          {
+            "key": "message",
+            "value": {
+              "source": "argument",
+              "path": "message"
+            },
+            "required": true
+          },
+          {
+            "key": "assessment",
+            "value": {
+              "source": "transport",
+              "path": "assessment"
+            },
+            "required": true
+          },
+          {
+            "key": "candidate",
+            "value": {
+              "source": "transport",
+              "path": "draft"
+            },
+            "required": true
+          },
+          {
+            "key": "feedback",
+            "value": {
+              "source": "transport",
+              "path": "feedback"
+            },
+            "required": true
+          }
+        ],
+        "exports": {
+          "assessment": {
+            "source": "transport",
+            "path": "assessment"
+          },
+          "candidate": {
+            "source": "result",
             "path": "reply"
+          }
+        }
+      }
+    },
+    {
+      "symbol": "check_repair",
+      "type": "process-step",
+      "name": "check_repair",
+      "body": {
+        "version": 2,
+        "key": "check_repair",
+        "kind": "judgement",
+        "context": [
+          {
+            "key": "message",
+            "value": {
+              "source": "argument",
+              "path": "message"
+            },
+            "required": true
+          },
+          {
+            "key": "assessment",
+            "value": {
+              "source": "transport",
+              "path": "assessment"
+            },
+            "required": true
+          },
+          {
+            "key": "candidate",
+            "value": {
+              "source": "transport",
+              "path": "candidate"
+            },
+            "required": true
+          }
+        ],
+        "exports": {
+          "candidate": {
+            "source": "transport",
+            "path": "candidate"
+          }
+        }
+      }
+    },
+    {
+      "symbol": "return_repaired",
+      "type": "process-step",
+      "name": "return_repaired",
+      "body": {
+        "version": 2,
+        "key": "return_repaired",
+        "kind": "return",
+        "output": {
+          "reply": {
+            "source": "transport",
+            "path": "candidate"
           }
         }
       }
@@ -474,11 +652,55 @@
       "default": true
     },
     {
+      "from": "checker_template",
+      "to": "check_draft",
+      "role": "prompt"
+    },
+    {
+      "from": "checker_template",
+      "to": "check_repair",
+      "role": "prompt"
+    },
+    {
+      "from": "repair_template",
+      "to": "repair_response",
+      "role": "prompt"
+    },
+    {
       "from": "compose_response",
-      "to": "reply",
+      "to": "check_draft",
       "when": {
         "path": "kind",
         "equals": "reply"
+      }
+    },
+    {
+      "from": "check_draft",
+      "to": "return_draft",
+      "when": {
+        "path": "reply",
+        "equals": "ACCEPT"
+      }
+    },
+    {
+      "from": "check_draft",
+      "to": "repair_response",
+      "default": true
+    },
+    {
+      "from": "repair_response",
+      "to": "check_repair",
+      "when": {
+        "path": "kind",
+        "equals": "reply"
+      }
+    },
+    {
+      "from": "check_repair",
+      "to": "return_repaired",
+      "when": {
+        "path": "reply",
+        "equals": "ACCEPT"
       }
     }
   ]
