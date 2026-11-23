@@ -28,8 +28,6 @@ func exposedNodeIDs(value any) []int64 {
 				walk(v)
 			}
 		default:
-			// Normalize graph-port structs without serializing away runtime
-			// receipt authority inside the transport containers above.
 			switch normalized := jsonValue(v).(type) {
 			case map[string]any:
 				walk(normalized)
