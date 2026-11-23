@@ -58,24 +58,27 @@ type ContextItem struct {
 }
 
 type Step struct {
-	Version int           `json:"version"`
-	Key     string        `json:"key"`
-	Kind    string        `json:"kind"`
-	Input   any           `json:"input,omitempty"`
-	Context []ContextItem `json:"context,omitempty"`
-	Tools   []int64       `json:"tools,omitempty"`
-	Prompt  string        `json:"prompt,omitempty"`
-	Tool    int64         `json:"tool,omitempty"`
-	Output  any           `json:"output,omitempty"`
+	Version    int           `json:"version"`
+	Key        string        `json:"key"`
+	Kind       string        `json:"kind"`
+	Input      any           `json:"input,omitempty"`
+	Context    []ContextItem `json:"context,omitempty"`
+	Tools      []int64       `json:"tools,omitempty"`
+	Prompt     string        `json:"prompt,omitempty"`
+	Tool       int64         `json:"tool,omitempty"`
+	Output     any           `json:"output,omitempty"`
+	Exports    any           `json:"exports,omitempty"`
+	templateID int64
 }
 
 type Tool struct {
-	Version     int    `json:"version"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Schema      Schema `json:"schema"`
-	Builtin     string `json:"builtin,omitempty"`
-	Python      string `json:"python,omitempty"`
+	Version     int           `json:"version"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Schema      Schema        `json:"schema"`
+	Builtin     string        `json:"builtin,omitempty"`
+	Python      string        `json:"python,omitempty"`
+	Memory      *MemoryTarget `json:"memory,omitempty"`
 }
 
 type Predicate struct {
@@ -121,20 +124,55 @@ type Admission struct {
 }
 
 type Trace struct {
-	Ordinal   int            `json:"ordinal"`
-	StepID    int64          `json:"stepId"`
-	Key       string         `json:"key"`
-	Kind      string         `json:"kind"`
-	Hash      string         `json:"hash"`
-	InputHash string         `json:"inputHash"`
-	Context   []Admission    `json:"context"`
-	Offered   []int64        `json:"offered"`
-	Outcome   string         `json:"outcome"`
-	Error     *Error         `json:"error,omitempty"`
-	Edge      *Edge          `json:"edge,omitempty"`
-	Usage     *loop.Usage    `json:"usage,omitempty"`
-	Provider  *loop.Provider `json:"provider,omitempty"`
-	ElapsedMS int64          `json:"elapsedMs"`
+	Ordinal       int             `json:"ordinal"`
+	StepID        int64           `json:"stepId"`
+	Key           string          `json:"key"`
+	Kind          string          `json:"kind"`
+	Hash          string          `json:"hash"`
+	InputHash     string          `json:"inputHash"`
+	Context       []Admission     `json:"context"`
+	Offered       []int64         `json:"offered"`
+	Outcome       string          `json:"outcome"`
+	Error         *Error          `json:"error,omitempty"`
+	Edge          *Edge           `json:"edge,omitempty"`
+	Usage         *loop.Usage     `json:"usage,omitempty"`
+	Provider      *loop.Provider  `json:"provider,omitempty"`
+	ElapsedMS     int64           `json:"elapsedMs"`
+	TemplateHash  string          `json:"templateHash,omitempty"`
+	TransportHash string          `json:"transportHash,omitempty"`
+	Receipts      []MemoryReceipt `json:"receipts,omitempty"`
+	Repair        *MemoryResult   `json:"repair,omitempty"`
+}
+
+type MemoryTarget struct {
+	Root   int64  `json:"root"`
+	Type   string `json:"type"`
+	Anchor int64  `json:"anchor"`
+}
+
+type MemoryRequest struct {
+	Target MemoryTarget
+	Text   string
+	About  int64
+}
+
+type MemoryResult struct {
+	State       string `json:"state"`
+	NodeID      int64  `json:"nodeId,omitempty"`
+	ContentHash string `json:"contentHash,omitempty"`
+	Confirmed   bool   `json:"confirmed"`
+}
+
+type MemoryWriter interface {
+	Memorize(context.Context, MemoryRequest) (MemoryResult, error)
+}
+
+type MemoryReceipt struct {
+	Operation   string `json:"operation"`
+	NodeID      int64  `json:"nodeId"`
+	ContentHash string `json:"contentHash"`
+	StepID      int64  `json:"stepId"`
+	Visit       int    `json:"visit"`
 }
 
 type Response struct {
@@ -173,4 +211,5 @@ type selectedCall struct {
 	Text      string
 	Allowed   []int64
 	Result    json.RawMessage
+	Exposed   []int64
 }

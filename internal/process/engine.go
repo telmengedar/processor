@@ -26,6 +26,10 @@ func (e *Engine) Run(ctx context.Context, request Request) Response {
 		return response
 	}
 	state := map[string]any{}
+	var transport *transportRuntime
+	if s.Definition.Version == 2 {
+		transport = &transportRuntime{data: map[string]any{}}
+	}
 	current := s.Definition.Entry
 	calls, dispatches := 0, 0
 	var pending *selectedCall
@@ -38,12 +42,22 @@ func (e *Engine) Run(ctx context.Context, request Request) Response {
 			return response
 		}
 		step := s.Steps[current]
+		if transport != nil {
+			transport.step = current
+			transport.visit = visit + 1
+		}
 		started := time.Now()
 		trace := Trace{Ordinal: visit + 1, StepID: current, Key: step.Key, Kind: step.Kind, Hash: s.Hashes[current], Context: []Admission{}, Offered: append([]int64{}, step.Tools...)}
 		if step.Kind == "action" {
 			trace.Offered = []int64{step.Tool}
 		}
-		input, bindErr := bind(step.Input, request.Arguments, state)
+		resolve := func(value any) (any, error) { return bind(value, request.Arguments, state) }
+		if transport != nil {
+			resolve = func(value any) (any, error) { return transport.resolve(value, request.Arguments) }
+			trace.TemplateHash = s.Hashes[step.templateID]
+			trace.TransportHash = hashJSON(transport.data)
+		}
+		input, bindErr := resolve(step.Input)
 		trace.InputHash = hashJSON(input)
 		var value any
 		if bindErr != nil {
@@ -57,7 +71,11 @@ func (e *Engine) Run(ctx context.Context, request Request) Response {
 					break
 				}
 				tool := s.Tools[step.Tool]
-				if tool.Schema.validate(args) != nil {
+				checked := any(args)
+				if transport != nil {
+					checked = jsonValue(args)
+				}
+				if tool.Schema.validate(checked) != nil {
 					err = failure("tool_input", "action input does not satisfy tool schema")
 					break
 				}
@@ -67,6 +85,23 @@ func (e *Engine) Run(ctx context.Context, request Request) Response {
 				}
 				dispatches++
 				if tool.Builtin == "execute_selected_tool" {
+					if transport != nil {
+						cap, ok := args["capability"].(*capability)
+						if !ok || cap.used || cap.phase != "selection" || cap.call.StepID != previous || !reflect.DeepEqual(jsonValue(args["selection"]), jsonValue(selectedValue(cap.call))) {
+							err = failure("tool_not_allowed", "selected tool requires its exported originating capability")
+							break
+						}
+						if dispatches >= MaxDispatches {
+							err = failure("dispatch_limit", "tool dispatch bound reached")
+							break
+						}
+						dispatches++
+						cap.used = true
+						observed := e.toolV2(ctx, s.Tools[cap.call.ToolID], cap.call.Arguments, transport, cap.call.Exposed)
+						cap.call.Result, _ = json.Marshal(observed)
+						value = map[string]any{"observation": observed, "capability": newCapability(cap.call, "round")}
+						break
+					}
 					if pending == nil || pending.StepID != previous || !reflect.DeepEqual(jsonValue(args), jsonValue(selectedValue(pending))) || !slices.Contains(pending.Allowed, pending.ToolID) {
 						err = failure("tool_not_allowed", "selected tool has no valid originating judgement")
 						break
@@ -82,7 +117,11 @@ func (e *Engine) Run(ctx context.Context, request Request) Response {
 					roundValue = value
 					pending = nil
 				} else {
-					value = e.tool(ctx, tool, args)
+					if transport != nil {
+						value = e.toolV2(ctx, tool, args, transport, exposedNodeIDs(transport.data))
+					} else {
+						value = e.tool(ctx, tool, args)
+					}
 				}
 			case "judgement":
 				if calls >= MaxJudgements {
@@ -90,7 +129,12 @@ func (e *Engine) Run(ctx context.Context, request Request) Response {
 					break
 				}
 				var messages []completion.Message
-				messages, trace.Context, err = stepMessages(step, input, request.Arguments, state, s, lastRound, roundValue)
+				var exposed []int64
+				if transport != nil {
+					messages, trace.Context, exposed, err = v2Messages(step, input, request.Arguments, s, transport)
+				} else {
+					messages, trace.Context, err = stepMessages(step, input, request.Arguments, state, s, lastRound, roundValue)
+				}
 				if err != nil {
 					break
 				}
@@ -114,8 +158,13 @@ func (e *Engine) Run(ctx context.Context, request Request) Response {
 				trace.Usage = result.Usage
 				trace.Provider = &result.Provider
 				value, pending, err = decision(s, step, current, result)
+				if transport != nil && pending != nil && err == nil {
+					pending.Exposed = exposed
+					value.(map[string]any)["capability"] = newCapability(pending, "selection")
+					pending = nil
+				}
 			case "return":
-				value, err = bind(step.Output, request.Arguments, state)
+				value, err = resolve(step.Output)
 				if err != nil {
 					err = failure("invalid_binding", err.Error())
 					break
@@ -134,9 +183,14 @@ func (e *Engine) Run(ctx context.Context, request Request) Response {
 			}
 		}
 		if err == nil && step.Kind != "return" {
-			state[step.Key] = jsonValue(value)
+			if transport == nil {
+				state[step.Key] = jsonValue(value)
+			}
 			var edge Edge
-			edge, err = nextEdge(s.Edges[current], state[step.Key])
+			edge, err = nextEdge(s.Edges[current], jsonValue(value))
+			if err == nil && transport != nil {
+				err = transport.advance(step.Exports, request.Arguments, value)
+			}
 			if err == nil {
 				trace.Edge = &edge
 				previous = current
@@ -144,11 +198,30 @@ func (e *Engine) Run(ctx context.Context, request Request) Response {
 			}
 		}
 		trace.ElapsedMS = time.Since(started).Milliseconds()
+		if transport != nil {
+			for _, receipt := range transport.fresh {
+				trace.Receipts = append(trace.Receipts, receipt.MemoryReceipt)
+			}
+			if err == nil {
+				for _, receipt := range transport.receipts {
+					if receipt.StepID == trace.StepID && receipt.Visit == visit+1 {
+						trace.Receipts = append(trace.Receipts, receipt.MemoryReceipt)
+					}
+				}
+			}
+		}
 		trace.Outcome = "completed"
-		if result, ok := value.(map[string]any); ok && result["ok"] == false {
+		observedValue := value
+		if wrapped, ok := value.(map[string]any); ok && wrapped["observation"] != nil {
+			observedValue = wrapped["observation"]
+		}
+		if result, ok := observedValue.(map[string]any); ok && result["ok"] == false {
 			trace.Outcome = "tool_error"
 			if toolError, ok := result["error"].(*Error); ok {
 				trace.Error = toolError
+			}
+			if repair, ok := result["repair"].(MemoryResult); ok && repair.NodeID > 0 {
+				trace.Repair = &repair
 			}
 		}
 		if err != nil {

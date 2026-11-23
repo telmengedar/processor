@@ -1,0 +1,485 @@
+{
+  "version": 2,
+  "name": "Gangolf Chat v2",
+  "entry": "recall_context",
+  "inputs": {
+    "message": {
+      "type": "string"
+    },
+    "persona": {
+      "type": "nodeRef",
+      "nodeType": "OWNER_SUPPLIED"
+    }
+  },
+  "outputs": {
+    "reply": {
+      "type": "string"
+    }
+  },
+  "nodes": [
+    {
+      "symbol": "select",
+      "type": "process-tool",
+      "name": "select",
+      "body": {
+        "version": 2,
+        "name": "select",
+        "description": "Return explicitly supplied data.",
+        "schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": true
+        },
+        "builtin": "select"
+      }
+    },
+    {
+      "symbol": "read",
+      "type": "process-tool",
+      "name": "read",
+      "body": {
+        "version": 2,
+        "name": "read_node",
+        "description": "Read one memory node by positive integer ID.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "builtin": "read_node"
+      }
+    },
+    {
+      "symbol": "recall",
+      "type": "process-tool",
+      "name": "recall",
+      "body": {
+        "version": 2,
+        "name": "recall",
+        "description": "Find relevant memories from a short semantic query.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "additionalProperties": false
+            },
+            "filter": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false
+        },
+        "builtin": "recall"
+      }
+    },
+    {
+      "symbol": "dispatch",
+      "type": "process-tool",
+      "name": "dispatch",
+      "body": {
+        "version": 2,
+        "name": "execute_selected_tool",
+        "description": "Execute the validated tool selection using its runtime capability.",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "capability": {
+              "type": "string",
+              "additionalProperties": false
+            },
+            "selection": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": true
+            }
+          },
+          "required": [
+            "capability",
+            "selection"
+          ],
+          "additionalProperties": false
+        },
+        "builtin": "execute_selected_tool"
+      }
+    },
+    {
+      "symbol": "assessment_template",
+      "type": "process-prompt-template",
+      "name": "assessment_template",
+      "body": "assessment-v2.md"
+    },
+    {
+      "symbol": "response_template",
+      "type": "process-prompt-template",
+      "name": "response_template",
+      "body": "response-v2.md"
+    },
+    {
+      "symbol": "recall_context",
+      "type": "process-step",
+      "name": "recall_context",
+      "body": {
+        "version": 2,
+        "key": "recall_context",
+        "kind": "action",
+        "input": {
+          "query": {
+            "source": "argument",
+            "path": "message"
+          }
+        },
+        "exports": {
+          "recalled": {
+            "source": "result",
+            "path": "value"
+          }
+        }
+      }
+    },
+    {
+      "symbol": "assess_situation",
+      "type": "process-step",
+      "name": "assess_situation",
+      "body": {
+        "version": 2,
+        "key": "assess_situation",
+        "kind": "judgement",
+        "context": [
+          {
+            "key": "message",
+            "value": {
+              "source": "argument",
+              "path": "message"
+            },
+            "required": true
+          },
+          {
+            "key": "recalled",
+            "value": {
+              "source": "transport",
+              "path": "recalled"
+            },
+            "required": true
+          }
+        ],
+        "exports": {
+          "decision": {
+            "source": "result",
+            "path": ""
+          }
+        }
+      }
+    },
+    {
+      "symbol": "execute_tool",
+      "type": "process-step",
+      "name": "execute_tool",
+      "body": {
+        "version": 2,
+        "key": "execute_tool",
+        "kind": "action",
+        "input": {
+          "capability": {
+            "source": "transport",
+            "path": "decision.capability"
+          },
+          "selection": {
+            "kind": {
+              "source": "transport",
+              "path": "decision.kind"
+            },
+            "toolId": {
+              "source": "transport",
+              "path": "decision.toolId"
+            },
+            "args": {
+              "source": "transport",
+              "path": "decision.args"
+            }
+          }
+        },
+        "exports": {
+          "round": {
+            "source": "result",
+            "path": "capability"
+          }
+        }
+      }
+    },
+    {
+      "symbol": "refresh_context",
+      "type": "process-step",
+      "name": "refresh_context",
+      "body": {
+        "version": 2,
+        "key": "refresh_context",
+        "kind": "action",
+        "input": {
+          "round": {
+            "source": "transport",
+            "path": "round"
+          }
+        },
+        "exports": {
+          "round": {
+            "source": "result",
+            "path": "round"
+          }
+        }
+      }
+    },
+    {
+      "symbol": "assess_again",
+      "type": "process-step",
+      "name": "assess_again",
+      "body": {
+        "version": 2,
+        "key": "assess_again",
+        "kind": "judgement",
+        "context": [
+          {
+            "key": "message",
+            "value": {
+              "source": "argument",
+              "path": "message"
+            },
+            "required": true
+          },
+          {
+            "key": "recalled",
+            "value": {
+              "source": "transport",
+              "path": "round"
+            },
+            "required": true,
+            "toolResult": true
+          }
+        ],
+        "exports": {
+          "decision": {
+            "source": "result",
+            "path": ""
+          }
+        }
+      }
+    },
+    {
+      "symbol": "load_persona",
+      "type": "process-step",
+      "name": "load_persona",
+      "body": {
+        "version": 2,
+        "key": "load_persona",
+        "kind": "action",
+        "input": {
+          "id": {
+            "source": "argument",
+            "path": "persona"
+          }
+        },
+        "exports": {
+          "assessment": {
+            "source": "transport",
+            "path": "decision.reply"
+          },
+          "persona": {
+            "source": "result",
+            "path": "value.content"
+          }
+        }
+      }
+    },
+    {
+      "symbol": "compose_response",
+      "type": "process-step",
+      "name": "compose_response",
+      "body": {
+        "version": 2,
+        "key": "compose_response",
+        "kind": "judgement",
+        "context": [
+          {
+            "key": "message",
+            "value": {
+              "source": "argument",
+              "path": "message"
+            },
+            "required": true
+          },
+          {
+            "key": "assessment",
+            "value": {
+              "source": "transport",
+              "path": "assessment"
+            },
+            "required": true
+          },
+          {
+            "key": "persona",
+            "value": {
+              "source": "transport",
+              "path": "persona"
+            },
+            "required": true
+          }
+        ],
+        "exports": {
+          "reply": {
+            "source": "result",
+            "path": "reply"
+          }
+        }
+      }
+    },
+    {
+      "symbol": "reply",
+      "type": "process-step",
+      "name": "reply",
+      "body": {
+        "version": 2,
+        "key": "reply",
+        "kind": "return",
+        "output": {
+          "reply": {
+            "source": "transport",
+            "path": "reply"
+          }
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "recall",
+      "to": "recall_context",
+      "role": "tool"
+    },
+    {
+      "from": "dispatch",
+      "to": "execute_tool",
+      "role": "tool"
+    },
+    {
+      "from": "select",
+      "to": "refresh_context",
+      "role": "tool"
+    },
+    {
+      "from": "read",
+      "to": "load_persona",
+      "role": "tool"
+    },
+    {
+      "from": "assessment_template",
+      "to": "assess_situation",
+      "role": "prompt"
+    },
+    {
+      "from": "read",
+      "to": "assess_situation",
+      "role": "tool"
+    },
+    {
+      "from": "recall",
+      "to": "assess_situation",
+      "role": "tool"
+    },
+    {
+      "from": "assessment_template",
+      "to": "assess_again",
+      "role": "prompt"
+    },
+    {
+      "from": "read",
+      "to": "assess_again",
+      "role": "tool"
+    },
+    {
+      "from": "recall",
+      "to": "assess_again",
+      "role": "tool"
+    },
+    {
+      "from": "response_template",
+      "to": "compose_response",
+      "role": "prompt"
+    },
+    {
+      "from": "recall_context",
+      "to": "assess_situation",
+      "default": true
+    },
+    {
+      "from": "assess_situation",
+      "to": "execute_tool",
+      "when": {
+        "path": "kind",
+        "equals": "tool"
+      }
+    },
+    {
+      "from": "assess_situation",
+      "to": "load_persona",
+      "when": {
+        "path": "kind",
+        "equals": "reply"
+      }
+    },
+    {
+      "from": "assess_again",
+      "to": "execute_tool",
+      "when": {
+        "path": "kind",
+        "equals": "tool"
+      }
+    },
+    {
+      "from": "assess_again",
+      "to": "load_persona",
+      "when": {
+        "path": "kind",
+        "equals": "reply"
+      }
+    },
+    {
+      "from": "execute_tool",
+      "to": "refresh_context",
+      "default": true
+    },
+    {
+      "from": "refresh_context",
+      "to": "assess_again",
+      "default": true
+    },
+    {
+      "from": "load_persona",
+      "to": "compose_response",
+      "default": true
+    },
+    {
+      "from": "compose_response",
+      "to": "reply",
+      "when": {
+        "path": "kind",
+        "equals": "reply"
+      }
+    }
+  ]
+}

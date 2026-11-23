@@ -104,7 +104,7 @@ func Load(ctx context.Context, g Graph, request Request) (*Snapshot, error) {
 		return nil, failure("invalid_definition", "invalid process body")
 	}
 	d := s.Definition
-	if d.Version != 1 || len(d.Members) == 0 || len(d.Members) > MaxMembers || len(d.Inputs) == 0 || len(d.Outputs) == 0 {
+	if (d.Version != 1 && d.Version != 2) || len(d.Members) == 0 || len(d.Members) > MaxMembers || len(d.Inputs) == 0 || len(d.Outputs) == 0 {
 		return nil, failure("invalid_definition", "unsupported version or declaration bounds")
 	}
 	for _, decls := range []map[string]Declaration{d.Inputs, d.Outputs} {
@@ -142,21 +142,32 @@ func Load(ctx context.Context, g Graph, request Request) (*Snapshot, error) {
 		switch node.Type {
 		case "process-step":
 			var step Step
-			if decode(node.Content, &step) != nil || step.Version != 1 || !pathKey.MatchString(step.Key) {
+			if decode(node.Content, &step) != nil || step.Version != d.Version || !pathKey.MatchString(step.Key) {
 				return nil, failure("invalid_definition", "invalid step")
 			}
 			s.Steps[member.ID] = step
 		case "process-tool":
 			var tool Tool
-			if decode(node.Content, &tool) != nil || tool.Version != 1 || !pathKey.MatchString(tool.Name) || strings.TrimSpace(tool.Description) == "" || tool.Schema.Type != "object" || tool.Schema.check() != nil || (tool.Builtin == "") == (tool.Python == "") {
+			if decode(node.Content, &tool) != nil || tool.Version != d.Version || !pathKey.MatchString(tool.Name) || strings.TrimSpace(tool.Description) == "" || tool.Schema.Type != "object" || tool.Schema.check() != nil || (tool.Builtin == "") == (tool.Python == "") || d.Version == 2 && tool.Python != "" || d.Version == 1 && tool.Memory != nil {
 				return nil, failure("invalid_definition", "invalid tool")
 			}
 			switch tool.Builtin {
 			case "", "read_node", "recall", "select", "execute_selected_tool":
+			case "memorize":
+				if d.Version != 2 || tool.Memory == nil {
+					return nil, failure("invalid_definition", "memorize requires v2 authored placement")
+				}
 			default:
 				return nil, failure("invalid_definition", "unknown builtin")
 			}
 			s.Tools[member.ID] = tool
+		case "process-prompt-template":
+			if d.Version != 2 {
+				return nil, failure("invalid_definition", "template requires v2")
+			}
+			if _, err := templatePaths(node.Content); err != nil {
+				return nil, failure("invalid_definition", "invalid prompt template")
+			}
 		}
 	}
 	if _, ok := s.Steps[d.Entry]; !ok {
@@ -171,6 +182,20 @@ func Load(ctx context.Context, g Graph, request Request) (*Snapshot, error) {
 	}
 	var edges []Edge
 	pairs := map[[2]int64]bool{}
+	if d.Version == 2 {
+		refs, err := resolveReferences(ctx, g, s)
+		if err != nil {
+			return nil, err
+		}
+		edges = append(edges, refs...)
+		for _, edge := range refs {
+			pairs[[2]int64{min(edge.Source, edge.Target), max(edge.Source, edge.Target)}] = true
+			total += len(edge.Context)
+		}
+		if len(edges) > MaxTransitions || total > MaxDefinitionBytes {
+			return nil, failure("invalid_definition", "reference bounds exceeded")
+		}
+	}
 	for id, step := range s.Steps {
 		if err := validateStep(step, s, keys); err != nil {
 			return nil, failure("invalid_definition", err.Error())
@@ -239,6 +264,12 @@ func Load(ctx context.Context, g Graph, request Request) (*Snapshot, error) {
 }
 
 func validateStep(step Step, s *Snapshot, keys map[string]bool) error {
+	if s.Definition.Version == 2 {
+		return validateStepV2(step, s)
+	}
+	if step.Exports != nil {
+		return fmt.Errorf("v1 does not support exports")
+	}
 	for _, v := range []any{step.Input, step.Output} {
 		if err := checkBinding(v, s.Definition.Inputs, keys); err != nil {
 			return err

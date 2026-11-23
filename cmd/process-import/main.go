@@ -20,7 +20,7 @@ func run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 	flags := flag.NewFlagSet("process-import", flag.ContinueOnError)
 	flags.SetOutput(diagnostic)
 	example := flags.String("example", "", "gangolf-chat or python")
-	personaType := flags.String("persona-type", "knowledge", "expected persona node type")
+	personaType := flags.String("persona-type", "", "observed persona node type (required for v2 example)")
 	printOnly := flags.Bool("print", false, "print blueprint without publishing")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
@@ -28,7 +28,12 @@ func run(args []string, input io.Reader, output, diagnostic io.Writer) int {
 	var blueprint process.Blueprint
 	switch *example {
 	case "gangolf-chat":
-		blueprint = process.GangolfChat(*personaType)
+		var err error
+		blueprint, err = process.GangolfV2(*personaType)
+		if err != nil {
+			fmt.Fprintln(diagnostic, "explicit persona node type required or example unavailable")
+			return 2
+		}
 	case "python":
 		blueprint = process.PythonExample()
 	case "":
