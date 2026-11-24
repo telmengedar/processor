@@ -75,6 +75,10 @@ func (c *Client) SetProcessContent(ctx context.Context, id int64, content string
 	return c.post(ctx, fmt.Sprintf("/api/nodes/%d/content", id), "application/json; charset=utf-8", []byte(content), nil)
 }
 
+func (c *Client) SetProcessTextContent(ctx context.Context, id int64, content string) error {
+	return c.post(ctx, fmt.Sprintf("/api/nodes/%d/content", id), "text/markdown; charset=utf-8", []byte(content), nil)
+}
+
 func (c *Client) LinkProcessNodes(ctx context.Context, edge process.Edge) error {
 	q := url.Values{"linkType": {edge.LinkType}, "context": {edge.Context}}
 	body, err := json.Marshal(edge.Target)

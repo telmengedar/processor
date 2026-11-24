@@ -13,7 +13,7 @@ func TestPrintAuthoredExamplesDoesNotRequireGraphConfiguration(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"gangolf-chat", "python"} {
 		var output, diagnostic bytes.Buffer
-		if exit := run([]string{"-example", name, "-print"}, strings.NewReader(""), &output, &diagnostic); exit != 0 {
+		if exit := run([]string{"-example", name, "-persona-type", "knowledge", "-print"}, strings.NewReader(""), &output, &diagnostic); exit != 0 {
 			t.Fatal(diagnostic.String())
 		}
 		var b process.Blueprint

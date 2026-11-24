@@ -1,0 +1,1 @@
+Write the actual conversational reply to the current message in the supplied persona. Use the public assessment as context. Return only the reply, without discussing internal stages.
