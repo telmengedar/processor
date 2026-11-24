@@ -21,7 +21,7 @@ func (e *Engine) Run(ctx context.Context, request Request) Response {
 		return response
 	}
 	response.Process = Identity{ID: s.ID, Name: s.Name, Hash: s.Hash}
-	if err = e.arguments(ctx, s.Definition.Inputs, request.Arguments); err != nil {
+	if err = e.arguments(ctx, s.Definition.Inputs, request.Arguments, false); err != nil {
 		response.Error = asError(err, "invalid_arguments")
 		return response
 	}
@@ -174,7 +174,7 @@ func (e *Engine) Run(ctx context.Context, request Request) Response {
 					err = failure("invalid_output", "process output must be an object")
 					break
 				}
-				if err = e.arguments(ctx, s.Definition.Outputs, output); err != nil {
+				if err = e.arguments(ctx, s.Definition.Outputs, output, s.Definition.Version == 2); err != nil {
 					err = failure("invalid_output", "output does not satisfy process declaration")
 					break
 				}
@@ -246,7 +246,7 @@ func asError(err error, code string) *Error {
 	return failure(code, "process operation failed")
 }
 
-func (e *Engine) arguments(ctx context.Context, decls map[string]Declaration, args map[string]any) error {
+func (e *Engine) arguments(ctx context.Context, decls map[string]Declaration, args map[string]any, allowBlankStrings bool) error {
 	if len(args) != len(decls) {
 		return failure("invalid_arguments", "argument set does not match declaration")
 	}
@@ -268,7 +268,7 @@ func (e *Engine) arguments(ctx context.Context, decls map[string]Declaration, ar
 		}
 		if decl.Type == "string" {
 			text, ok := v.(string)
-			if !ok || strings.TrimSpace(text) == "" {
+			if !ok || !allowBlankStrings && strings.TrimSpace(text) == "" {
 				return failure("invalid_arguments", "string argument must be nonblank")
 			}
 			continue
