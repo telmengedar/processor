@@ -68,7 +68,7 @@ func (c *Client) Links(ctx context.Context, id int64) ([]process.Edge, error) {
 }
 
 func (c *Client) CreateProcessNode(ctx context.Context, nodeType, name string) (int64, error) {
-	return c.createNode(ctx, nodeType, name, 0, true, "process definition")
+	return c.createNode(ctx, nodeType, name, 0, true, "process definition", nil)
 }
 
 func (c *Client) SetProcessContent(ctx context.Context, id int64, content string) error {
