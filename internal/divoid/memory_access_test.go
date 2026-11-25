@@ -143,3 +143,30 @@ func TestMemorizeRejectsInvalidRequestedAccessBeforeHTTP(t *testing.T) {
 		})
 	}
 }
+
+func TestMemorizeRejectsInvalidTypedAccessBeforeHTTP(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		access int
+	}{
+		{"negative", -1},
+		{"unknown_bits", 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.WriteHeader(http.StatusInternalServerError)
+			}))
+			defer srv.Close()
+			request := process.MemoryRequest{
+				Target: process.MemoryTarget{Root: 700, Type: "fixture-fact", Anchor: 701, Access: &tc.access},
+				Text:   "synthetic memory",
+			}
+			result, err := NewClient(srv.URL, "", srv.Client(), nil).Memorize(context.Background(), request)
+			if err == nil || result.Confirmed || result.NodeID != 0 || calls != 0 {
+				t.Fatalf("invalid typed access reached HTTP: result=%+v err=%v calls=%d", result, err, calls)
+			}
+		})
+	}
+}
