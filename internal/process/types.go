@@ -148,6 +148,7 @@ type MemoryTarget struct {
 	Root   int64  `json:"root"`
 	Type   string `json:"type"`
 	Anchor int64  `json:"anchor"`
+	Access *int   `json:"access,omitempty"`
 }
 
 type MemoryRequest struct {

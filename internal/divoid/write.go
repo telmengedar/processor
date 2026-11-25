@@ -45,6 +45,7 @@ type createNodeRequest struct {
 	RootNodeID int64 `json:"rootNodeId,omitempty"`
 
 	SkipEmbedding bool `json:"skipEmbedding,omitempty"`
+	Access        *int `json:"access,omitempty"`
 }
 
 type createNodeResponse struct {
@@ -109,11 +110,11 @@ func (c *Client) discardShell(ctx context.Context, id int64) {
 }
 
 func (c *Client) createRunNode(ctx context.Context, name string, root int64) (int64, error) {
-	return c.createNode(ctx, RunNodeType, name, root, true, "run node")
+	return c.createNode(ctx, RunNodeType, name, root, true, "run node", nil)
 }
 
-func (c *Client) createNode(ctx context.Context, nodeType, name string, root int64, skipEmbedding bool, what string) (int64, error) {
-	reqBody, err := json.Marshal(createNodeRequest{Type: nodeType, Name: name, RootNodeID: root, SkipEmbedding: skipEmbedding})
+func (c *Client) createNode(ctx context.Context, nodeType, name string, root int64, skipEmbedding bool, what string, access *int) (int64, error) {
+	reqBody, err := json.Marshal(createNodeRequest{Type: nodeType, Name: name, RootNodeID: root, SkipEmbedding: skipEmbedding, Access: access})
 	if err != nil {
 		return 0, fmt.Errorf("divoid: encode %s create: %w", what, err)
 	}
@@ -127,7 +128,11 @@ func (c *Client) createNode(ctx context.Context, nodeType, name string, root int
 
 // WriteNote files the note as one node with its text as content, linked to the subject and, when the request names one, to a second node, and reports how far it got.
 func (c *Client) WriteNote(ctx context.Context, request loop.NoteRequest) loop.WriteReceipt {
-	id, err := c.createNode(ctx, request.Type, request.Name, request.Root, false, "note node")
+	return c.writeNote(ctx, request, nil)
+}
+
+func (c *Client) writeNote(ctx context.Context, request loop.NoteRequest, access *int) loop.WriteReceipt {
+	id, err := c.createNode(ctx, request.Type, request.Name, request.Root, false, "note node", access)
 	if err != nil {
 		c.log().Error(logNoteFailed, "subject", request.Subject, "error", err)
 		return loop.WriteReceipt{State: loop.NotStored}

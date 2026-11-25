@@ -2,10 +2,29 @@ package process
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"unicode/utf8"
 )
+
+func (m *MemoryTarget) UnmarshalJSON(data []byte) error {
+	type target MemoryTarget
+	var value target
+	if err := decode(string(data), &value); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(fields["access"])) == "null" || value.Access != nil && (*value.Access < 0 || *value.Access > 3) {
+		return fmt.Errorf("memory access must be an integer from 0 to 3")
+	}
+	*m = MemoryTarget(value)
+	return nil
+}
 
 func exposedNodeIDs(value any) []int64 {
 	ids := []int64{}
