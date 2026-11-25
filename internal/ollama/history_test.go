@@ -29,7 +29,7 @@ func TestOllamaHistoryPreservesNativeSpeakerRolesAndCurrentLoopContext(t *testin
 				now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 				input := loop.JudgeInput{
 					System: "identity and framework", Block: "MEMORY", Input: "viewer: Again: whose claim was the secret-code part?", History: fixture.history,
-					Now: now, Window: loop.UpdateWindow{From: now.AddDate(0, 0, -1), To: now}, Clause: "RECALL CLAUSE", Trailer: "LOOP TRAILER", MaxOutputTokens: 173, Offered: []string{loop.ToolReadNode},
+					Now: now, Clause: "RECALL CLAUSE", Trailer: "LOOP TRAILER", MaxOutputTokens: 173, Offered: []string{loop.ToolReadNode},
 				}
 				switch mode {
 				case "structured read":
@@ -51,7 +51,7 @@ func TestOllamaHistoryPreservesNativeSpeakerRolesAndCurrentLoopContext(t *testin
 					t.Fatal(err)
 				}
 				wantRoles := append(append([]string{"system"}, fixture.roles...), "user")
-				wantContent := append(append([]string{"identity and framework"}, fixture.content...), "===== INPUT =====\nviewer: Again: whose claim was the secret-code part?\n\n===== NOW =====\n2026-11-04T12:00:00Z\nretrieval is limited to nodes updated 2026-11-03 … 2026-11-03\n\n\nMEMORY\nRECALL CLAUSE\n\n===== INPUT =====\nviewer: Again: whose claim was the secret-code part?\n\nLOOP TRAILER")
+				wantContent := append(append([]string{"identity and framework"}, fixture.content...), "===== INPUT =====\nviewer: Again: whose claim was the secret-code part?\n\n===== NOW =====\n2026-11-04T12:00:00Z\n\n\nMEMORY\nRECALL CLAUSE\n\n===== INPUT =====\nviewer: Again: whose claim was the secret-code part?\n\nLOOP TRAILER")
 				var roles, contents []string
 				for _, message := range got.Messages {
 					roles = append(roles, message.Role)

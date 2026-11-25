@@ -1,5 +1,7 @@
 # Scope and authority
 
+> **Current U1 integration (2026-11-25):** PR #192 supersedes the date/window portions of this historical design. Selected conversation context remains. Current signatures are `DerivationPrompt(input string) string`, `DeriveQueries(ctx context.Context, model ModelPort, input string) ([]string, *Sampling, error)`, `derivationPromptWithConversation(input string, conversation string) string` and `deriveQueriesWithConversation(ctx context.Context, model ModelPort, input string, conversation string, bound time.Duration, thinking bool) ([]string, *Sampling, error)`. Derivation has no NOW block, DATES output or derived retrieval window; it retains the global ban on dates, months, years and day-words in query lines. Judgement still receives the current instant, and explicitly configured retrieval filters (including `updatedFrom`/`updatedTo`) remain supported. Per-call thinking and conversation selection remain unchanged. The text below records the earlier design; its date-related instructions and old signatures no longer describe the U1 implementation.
+
 Toni's current explicit request selects latest-only derivation omission as the Processor fix target (#24255). This supersedes the older decision to defer conversation-aware derivation (#22800 Q2) for this scoped task. #16679's prohibition against mechanically concatenating history into graph queries remains intact. No general derivation-count/date redesign, persona tuning, speaker parsing or history ownership changes.
 
 ## Observed defect and bounded behavior

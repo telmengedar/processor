@@ -131,7 +131,7 @@ func testModel(t *testing.T) *httptest.Server {
 		body, _ := io.ReadAll(r.Body)
 		content := modelAnswer
 		if strings.Contains(string(body), "===== REQUEST =====") {
-			content = "DATES: none\nwhich part of the repository changes?"
+			content = "which part of the repository changes?"
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"model":"ai/test-served","choices":[{"message":{"content":%q},"finish_reason":"stop"}]}`, content)

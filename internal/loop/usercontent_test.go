@@ -18,7 +18,7 @@ const userContentTestInstantRFC3339 = "2026-03-04T05:06:07+02:00"
 func TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy(t *testing.T) {
 	t.Parallel()
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{}, "", "", "")
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, "", "", "")
 
 	want := "===== INPUT =====\n" + userContentTestInput +
 		"\n\n===== NOW =====\n" + userContentTestInstantRFC3339 + "\n\n\n" +
@@ -33,7 +33,7 @@ func TestRenderUserContentOpensWithTheRequestAndKeepsTheTailCopy(t *testing.T) {
 func TestTheAssembledPromptStatesTheInstantInTheZoneItWasRead(t *testing.T) {
 	t.Parallel()
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{}, "", "", "")
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, "", "", "")
 
 	if !strings.Contains(got, userContentTestInstantRFC3339) {
 		t.Fatalf("user content does not state %q, so a task saying \"today\" has nothing to resolve it against; content=%q",
@@ -47,7 +47,7 @@ func TestTheAssembledPromptStatesTheInstantInTheZoneItWasRead(t *testing.T) {
 func TestRenderUserContentGivenNoInstantIsByteIdenticalToTheDatelessLayout(t *testing.T) {
 	t.Parallel()
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, time.Time{}, UpdateWindow{}, "", "", "")
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, time.Time{}, "", "", "")
 
 	want := "===== INPUT =====\n" + userContentTestInput + "\n\n\n" +
 		userContentTestBlock +
@@ -58,10 +58,10 @@ func TestRenderUserContentGivenNoInstantIsByteIdenticalToTheDatelessLayout(t *te
 	}
 }
 
-func TestAZeroWindowRendersTheUserContentByteIdenticallyToTheNoWindowLayout(t *testing.T) {
+func TestRenderUserContentStatesTheInstantAloneInTheNowSpan(t *testing.T) {
 	t.Parallel()
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, UpdateWindow{}, "", "", "")
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, "", "", "")
 
 	want := "===== INPUT =====\n" + userContentTestInput +
 		"\n\n===== NOW =====\n" + userContentTestInstantRFC3339 + "\n\n\n" +
@@ -69,28 +69,17 @@ func TestAZeroWindowRendersTheUserContentByteIdenticallyToTheNoWindowLayout(t *t
 		"\n===== INPUT =====\n" + userContentTestInput
 
 	if got != want {
-		t.Fatalf("a zero window changed the layout: got=\n%q\nwant\n%q", got, want)
+		t.Fatalf("the NOW span holds more than the instant: got=\n%q\nwant\n%q", got, want)
 	}
 }
 
-func TestANonZeroWindowAddsExactlyOneLineInsideTheExistingNowSpan(t *testing.T) {
+func TestTheUserMessageCarriesNoWindowLine(t *testing.T) {
 	t.Parallel()
 
-	window := UpdateWindow{
-		From: time.Date(2026, 3, 4, 0, 0, 0, 0, time.UTC),
-		To:   time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC),
-	}
+	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, "", "", "")
 
-	got := RenderUserContent(userContentTestBlock, userContentTestInput, userContentTestInstant, window, "", "", "")
-
-	want := "===== INPUT =====\n" + userContentTestInput +
-		"\n\n===== NOW =====\n" + userContentTestInstantRFC3339 +
-		"\nretrieval is limited to nodes updated 2026-03-04 … 2026-03-04\n\n\n" +
-		userContentTestBlock +
-		"\n===== INPUT =====\n" + userContentTestInput
-
-	if got != want {
-		t.Fatalf("user content with a window =\n%q\nwant\n%q", got, want)
+	if strings.Contains(got, "retrieval is limited") {
+		t.Fatalf("the user message states a retrieval window nothing derives any more: %q", got)
 	}
 }
 
@@ -102,7 +91,7 @@ func TestRenderUserContentPlacesExactlyTwoVerbatimRequestCopiesTheFirstAtTheHead
 		input  = "Ship it.\r\n\tsecond line — 100% \"done\" <&> %s %%\n\tlast"
 	)
 
-	got := RenderUserContent(userContentTestBlock, input, userContentTestInstant, UpdateWindow{}, "", "", "")
+	got := RenderUserContent(userContentTestBlock, input, userContentTestInstant, "", "", "")
 
 	sections := strings.Split(got, marker)
 	if len(sections) != 3 {

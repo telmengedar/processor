@@ -714,23 +714,20 @@ func TestRenderSummaryPrintsEveryDerivedQueryUnderItsOwnIndexAndCountsThem(t *te
 	}
 }
 
-func TestRenderSummaryPrintsTheWindowOnTheAssemblyLineWhenPresent(t *testing.T) {
+func TestRenderSummaryStatesNoWindowForARecordThatCarriesTheOldWindowFields(t *testing.T) {
 	t.Parallel()
 
-	record := summaryRecord()
-	record.Window = UpdateWindow{
-		From: time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC),
-		To:   time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC),
+	var record Record
+	if err := json.Unmarshal([]byte(`{"input":"i","queries":["q"],"window":{"from":"2026-09-07T00:00:00Z","to":"2026-09-08T00:00:00Z"},"windowDiscarded":"DATES 2024-05-01..2024-05-02 discarded"}`), &record); err != nil {
+		t.Fatalf("a record written while a derived window existed no longer decodes: %v", err)
 	}
 
-	with := RenderSummary(record, summaryInstant())
-	without := RenderSummary(summaryRecord(), summaryInstant())
+	summary := RenderSummary(record, summaryInstant())
 
-	if !strings.Contains(with, "retrieval is limited to nodes updated 2026-09-07 … 2026-09-07") {
-		t.Fatalf("the summary of a windowed run does not state its window.\nsummary:\n%s", with)
-	}
-	if strings.Contains(without, "retrieval is limited to nodes updated") {
-		t.Fatalf("the summary of an unbounded run states a window it never had.\nsummary:\n%s", without)
+	for _, forbidden := range []string{"retrieval is limited", "window:"} {
+		if strings.Contains(summary, forbidden) {
+			t.Fatalf("the summary states a window (%q) for a record whose window fields are no longer read.\nsummary:\n%s", forbidden, summary)
+		}
 	}
 }
 

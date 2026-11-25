@@ -183,7 +183,7 @@ func buildMessages(in loop.JudgeInput) []wireMessage {
 			messages = append(messages, wireMessage{Role: "assistant", Content: exchange.Reply})
 		}
 	}
-	return append(messages, wireMessage{Role: "user", Content: loop.RenderUserContent(in.Block, in.Input, in.Now, in.Window, "", in.Clause, in.Trailer)})
+	return append(messages, wireMessage{Role: "user", Content: loop.RenderUserContent(in.Block, in.Input, in.Now, "", in.Clause, in.Trailer)})
 }
 
 type toolBinding struct {

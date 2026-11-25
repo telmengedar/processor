@@ -276,8 +276,8 @@ func TestAMeasuredRunsReadsStillReachTheGraphAndItsBlockCarriesWhatTheyReturned(
 	}
 }
 
-func TestAMeasuredRunsRecallsCarryTheSameQueriesLimitAndWindowAnUndecoratedRunCarries(t *testing.T) {
-	const derivation = "DATES: 2026-09-01..2026-09-10\na second phrasing of the task?"
+func TestAMeasuredRunsRecallsCarryTheSameQueriesAndLimitAnUndecoratedRunCarriesAndNoFilterOfTheirOwn(t *testing.T) {
+	const derivation = "a second phrasing of the task?"
 	measuredLive := newRecordingGraph()
 	_, runner := measuredRunnerWith(measuredLive, &answeringModel{derivation: derivation})
 	if _, err := runner.Run(context.Background(), testInput, 101); err != nil {
@@ -297,14 +297,8 @@ func TestAMeasuredRunsRecallsCarryTheSameQueriesLimitAndWindowAnUndecoratedRunCa
 	if len(measured) != len(shipped) {
 		t.Fatalf("the measured run issued %d recalls, the undecorated run %d", len(measured), len(shipped))
 	}
-	windowed := 0
-	for _, recall := range shipped {
-		if from, to := recall.Window.From.Format(time.DateOnly), recall.Window.To.Format(time.DateOnly); from == "2026-09-01" && to == "2026-09-11" {
-			windowed++
-		}
-	}
-	if windowed == 0 {
-		t.Fatalf("no undecorated recall carries the derived window, got %+v: the fixture must carry a window for this comparison to see one", shipped)
+	if len(shipped[0].Queries) < 2 {
+		t.Fatalf("the undecorated first recall carries %q, want the input and the derived phrasing: the fixture must derive a query for this comparison to see one", shipped[0].Queries)
 	}
 	for i := range measured {
 		if !reflect.DeepEqual(measured[i], shipped[i]) {
