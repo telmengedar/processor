@@ -9,11 +9,11 @@ import (
 
 const identityText = "You are a participant named Quill.\n\nSpeak as yourself."
 
-func layeredSystem(offered []string, _, _ bool, _ Form) string {
+func layeredSystem(offered []string, _, _ bool, _ Form, _ ResponseMode) string {
 	return "product for " + strings.Join(offered, ",") + "\n\nsecond paragraph"
 }
 
-func runWithIdentity(t *testing.T, graph *fakeGraph, model *fakeModel, system func([]string, bool, bool, Form) string, view *View, settings RunSettings) Record {
+func runWithIdentity(t *testing.T, graph *fakeGraph, model *fakeModel, system func([]string, bool, bool, Form, ResponseMode) string, view *View, settings RunSettings) Record {
 	t.Helper()
 
 	turn := NewTurn(graph, model, nil, system, "test-model", testLogger())
@@ -37,7 +37,7 @@ func TestEveryJudgementCallCarriesTheIdentityThenABlankLineThenTheProductText(t 
 		t.Fatalf("the last call offered %v, want the reserved call that offers no tool", last.Offered)
 	}
 	for i, call := range model.calls {
-		want := identityText + "\n\n" + layeredSystem(call.Offered, false, false, FormSubstance)
+		want := identityText + "\n\n" + layeredSystem(call.Offered, false, false, FormSubstance, "")
 		if call.System != want {
 			t.Errorf("call %d carried the system text %q, want %q", i, call.System, want)
 		}
@@ -58,7 +58,7 @@ func TestALongMultibyteIdentityReachesEveryJudgementCallVerbatim(t *testing.T) {
 		t.Errorf("the record's perspective does not carry the identity verbatim")
 	}
 	for i, call := range model.calls {
-		if want := identity + "\n\n" + layeredSystem(call.Offered, false, false, FormSubstance); call.System != want {
+		if want := identity + "\n\n" + layeredSystem(call.Offered, false, false, FormSubstance, ""); call.System != want {
 			t.Errorf("call %d carried a system text of %d bytes, want the identity verbatim then the product text (%d bytes)", i, len(call.System), len(want))
 		}
 	}
@@ -75,7 +75,7 @@ func TestWithoutAnIdentityTheSystemTextIsTheProductTextByteForByte(t *testing.T)
 			t.Fatalf("%s: the run made %d calls, want 2", name, len(model.calls))
 		}
 		for i, call := range model.calls {
-			if want := layeredSystem(call.Offered, false, false, FormSubstance); call.System != want {
+			if want := layeredSystem(call.Offered, false, false, FormSubstance, ""); call.System != want {
 				t.Errorf("%s: call %d carried %q, want %q with no leading separator", name, i, call.System, want)
 			}
 		}

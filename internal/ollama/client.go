@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/telmengedar/processor/internal/loop"
 	"github.com/telmengedar/processor/internal/redacturl"
@@ -20,7 +21,7 @@ const DefaultTimeout = 5 * time.Minute
 
 const adapterName = "ollama"
 
-// ThinkingSuppression names the control this adapter sends on every request to keep the model's reasoning channel off.
+// ThinkingSuppression names the control this adapter sends by default to keep the model's reasoning channel off.
 const ThinkingSuppression = "think=false"
 
 // ThinkingSuppressionStanding states where that control comes from, which for this adapter is the chat protocol itself.
@@ -72,6 +73,13 @@ func NewClient(baseURL, modelID, apiKey string, sampling loop.Sampling, httpClie
 	}
 }
 
+// WithModel returns a client requesting modelID with the same endpoint, credentials and sampling.
+func (c *Client) WithModel(modelID string) loop.ModelPort {
+	selected := *c
+	selected.modelID = modelID
+	return &selected
+}
+
 func defaultHTTPClient() *http.Client {
 	return &http.Client{Timeout: DefaultTimeout}
 }
@@ -103,14 +111,20 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		Model:    c.modelID,
 		Messages: buildMessages(in),
 		Stream:   false,
-		Think:    thinkingOff,
+		Think:    in.Thinking,
 		Options: wireOptions{
 			NumPredict:  in.MaxOutputTokens,
 			Temperature: sampling.Temperature,
 			TopP:        sampling.TopP,
 		},
 	}
-	reqBody.Tools = declaredTools(in.Offered)
+	if in.NoteDecisionOutput {
+		reqBody.Format = loop.NoteDecisionSchema()
+	} else if in.StructuredAllowedActions != nil {
+		reqBody.Format = loop.StructuredReadSchema(in.StructuredAllowedActions)
+	} else {
+		reqBody.Tools = declaredTools(in.Offered)
+	}
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -138,11 +152,27 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 	}
 
 	var wire chatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
+	if in.NoteDecisionOutput || in.StructuredAllowedActions != nil {
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return loop.JudgeResult{}, len(body), fmt.Errorf("read structured response: %w", err)
+		}
+		if !utf8.Valid(raw) {
+			return loop.JudgeResult{}, len(body), fmt.Errorf("structured response is not UTF-8")
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			return loop.JudgeResult{}, len(body), fmt.Errorf("decode response: %w", err)
+		}
+	} else if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
 		return loop.JudgeResult{}, len(body), fmt.Errorf("decode response: %w", err)
 	}
 
-	result := translate(wire, in.Offered)
+	var result loop.JudgeResult
+	if in.NoteDecisionOutput || in.StructuredAllowedActions != nil {
+		result = loop.JudgeResult{Answer: wire.Message.Content, RawReason: wire.DoneReason, Reason: loop.Answered, ReasoningBytes: len(wire.Message.Thinking), Usage: translateUsage(wire.PromptEvalCount, wire.EvalCount), UnofferedToolCalls: len(wire.Message.ToolCalls)}
+	} else {
+		result = translate(wire, in.Offered)
+	}
 	result.Sampling = sampling
 	result.Provider = loop.Provider{Adapter: adapterName, Endpoint: redacturl.URL(endpoint)}
 	return result, len(body), nil

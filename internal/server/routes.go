@@ -12,14 +12,20 @@ import (
 	"strings"
 
 	"github.com/telmengedar/processor/internal/loop"
+	"github.com/telmengedar/processor/internal/process"
 	"github.com/telmengedar/processor/internal/runconfig"
 )
 
 // NewHandler builds the routes for GET /health and POST /runs over turn.
-func NewHandler(turn *loop.Turn) http.Handler {
+func NewHandler(turn *loop.Turn, engines ...*process.Engine) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(turn.Build))
 	mux.HandleFunc("POST /runs", handleRuns(turn))
+	var engine *process.Engine
+	if len(engines) > 0 {
+		engine = engines[0]
+	}
+	mux.HandleFunc("POST /process-runs", handleProcessRuns(engine))
 	return mux
 }
 
@@ -37,11 +43,13 @@ func handleHealth(build string) http.HandlerFunc {
 }
 
 type runRequest struct {
-	Input   string          `json:"input"`
-	Subject int64           `json:"subject"`
-	History []loop.Exchange `json:"history"`
+	NoteSource json.RawMessage `json:"noteSource"`
+	Input      string          `json:"input"`
+	Subject    int64           `json:"subject"`
+	History    []loop.Exchange `json:"history"`
 
-	Config *int64 `json:"config"`
+	Config *int64  `json:"config"`
+	Model  *string `json:"model"`
 }
 
 const jsonContentType = "application/json; charset=utf-8"
@@ -61,19 +69,21 @@ const messageInvalidHistory = "history must be an array of exchanges, each with 
 const fallbackReply = "Sorry — I couldn't put an answer together for that just now. Could you say a bit more, or ask it another way?"
 
 type chatResponse struct {
-	Reply    string `json:"reply"`
-	Produced bool   `json:"produced"`
-	Silent   bool   `json:"silent,omitempty"`
+	Reply        string             `json:"reply"`
+	Produced     bool               `json:"produced"`
+	Silent       bool               `json:"silent,omitempty"`
+	NoteDecision *loop.NoteDecision `json:"noteDecision,omitempty"`
 }
 
 type verboseResponse struct {
 	loop.Record
-	Written loop.WriteReceipt `json:"written"`
-	Reply   string            `json:"reply"`
+	Written  loop.WriteReceipt `json:"written"`
+	Reply    string            `json:"reply"`
+	Produced *bool             `json:"produced,omitempty"`
 }
 
 func replyFor(record loop.Record) string {
-	if record.Outcome.Silent {
+	if record.NoteDecision != nil || record.Outcome.Silent {
 		return ""
 	}
 	if record.Outcome.Produced {
@@ -131,6 +141,40 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			return
 		}
 
+		runTurn := turn
+		if req.Model != nil {
+			if strings.TrimSpace(*req.Model) == "" {
+				writeError(w, http.StatusBadRequest, codeInvalidRequest, "model must not be empty")
+				return
+			}
+			selector, ok := turn.Model.(interface {
+				WithModel(string) loop.ModelPort
+			})
+			if !ok {
+				writeError(w, http.StatusBadRequest, codeInvalidRequest, "the configured model adapter does not support per-run model selection")
+				return
+			}
+			selected := *turn
+			selected.Model = selector.WithModel(*req.Model)
+			selected.ModelID = *req.Model
+			if turn.Fill != nil {
+				fillSelector, ok := turn.Fill.(interface {
+					WithModel(string) (loop.FillPort, error)
+				})
+				if !ok {
+					writeError(w, http.StatusBadRequest, codeInvalidRequest, "the configured fill adapter does not support per-run model selection")
+					return
+				}
+				var err error
+				selected.Fill, err = fillSelector.WithModel(*req.Model)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, codeInvalidRequest, err.Error())
+					return
+				}
+			}
+			runTurn = &selected
+		}
+
 		runCtx, cancel := context.WithTimeout(r.Context(), RunBound)
 		defer cancel()
 
@@ -142,11 +186,22 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 			}
 		}
 
-		record, started, err := turn.Answer(runCtx, loop.RunOptions{Input: req.Input, Subject: req.Subject, History: req.History, Settings: loop.DefaultSettings(), View: view})
+		var source *loop.NoteSource
+		if len(req.NoteSource) > 0 {
+			source = &loop.NoteSource{}
+			if json.Unmarshal(req.NoteSource, source) != nil {
+				writeError(w, http.StatusBadRequest, codeInvalidRequest, "noteSource must contain a Unicode speaker and text")
+				return
+			}
+		}
+
+		record, started, err := runTurn.Answer(runCtx, loop.RunOptions{NoteSource: source, Input: req.Input, Subject: req.Subject, History: req.History, Settings: loop.DefaultSettings(), View: view})
 		if err != nil {
 			switch {
 			case errors.Is(runCtx.Err(), context.DeadlineExceeded):
 				writeError(w, http.StatusGatewayTimeout, codeRunDeadlineExceeded, "the run did not produce an answer within the service's time limit")
+			case errors.Is(err, loop.ErrInvalidNoteSource):
+				writeError(w, http.StatusBadRequest, codeInvalidRequest, err.Error())
 			case errors.Is(err, loop.ErrSubjectNotFound):
 				writeError(w, http.StatusNotFound, codeSubjectNotFound, "the subject node was not found")
 			case errors.Is(err, loop.ErrRunTimeExhausted):
@@ -163,15 +218,19 @@ func handleRuns(turn *loop.Turn) http.HandlerFunc {
 
 		reply := replyFor(record)
 		if verbose {
-			receipt := turn.File(runCtx, record, started)
+			receipt := runTurn.File(runCtx, record, started)
 			w.Header().Set("Content-Type", jsonContentType)
 			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(verboseResponse{Record: record, Written: receipt, Reply: reply})
+			response := verboseResponse{Record: record, Written: receipt, Reply: reply}
+			if record.NoteDecision != nil {
+				response.Produced = new(bool)
+			}
+			_ = json.NewEncoder(w).Encode(response)
 			return
 		}
 
-		sendComplete(w, chatResponse{Reply: reply, Produced: record.Outcome.Produced, Silent: record.Outcome.Silent})
-		turn.File(runCtx, record, started)
+		sendComplete(w, chatResponse{Reply: reply, Produced: record.Outcome.Produced, Silent: record.Outcome.Silent, NoteDecision: record.NoteDecision})
+		runTurn.File(runCtx, record, started)
 	}
 }
 
@@ -201,7 +260,7 @@ func resolveConfig(ctx context.Context, w http.ResponseWriter, turn *loop.Turn, 
 		writeError(w, http.StatusBadRequest, codeInvalidConfig, loop.BoundCause(err.Error()))
 		return nil, true
 	}
-	return &loop.View{Config: id, Filter: config.Filter, Silence: config.Silence, Identity: config.Identity, Note: config.Note, Temperature: config.Temperature, Form: config.Form, Root: node.RootNodeID}, false
+	return &loop.View{Config: id, Thinking: config.Thinking, Filter: config.Filter, Silence: config.Silence, Identity: config.Identity, Note: config.Note, Temperature: config.Temperature, Form: config.Form, Root: node.RootNodeID, ResponseMode: config.ResponseMode}, false
 }
 
 type errorEnvelope struct {

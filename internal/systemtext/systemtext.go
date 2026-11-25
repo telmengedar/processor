@@ -52,14 +52,27 @@ const answerTail = ` in the answer.`
 
 // Compose returns the system text for one call offering exactly the tools in offered: the base, one paragraph per offered tool, the conversation paragraph when conversation is set, the silence paragraph when silence is set, and the answer paragraph; form selects whether parts are described as content or as substance.
 func Compose(offered []string, conversation, silence bool, form loop.Form) string {
+	return ComposeForMode(offered, conversation, silence, form, "")
+}
+
+// ComposeForMode composes the native framework unchanged unless a structured read response is requested.
+func ComposeForMode(offered []string, conversation, silence bool, form loop.Form, mode loop.ResponseMode) string {
 	shown, read := shownAsSubstance, readParagraph
 	if form == loop.FormContent {
 		shown, read = shownAsContent, contentReadParagraph
 	}
+	recall, silent, answerStart := recallParagraph, silenceParagraph, answerLead
+	if mode == loop.ResponseStructuredRead {
+		recall = strings.Replace(recallParagraph, "A recall tool is available. It searches", "A recall action is available. It searches", 1)
+		recall = strings.Replace(recall, "When you use it, write the query as", "When you select it, write query as", 1)
+		read = strings.Replace(read, "A read tool is available. It returns", "A read action is available. It returns", 1)
+		silent = strings.Replace(silenceParagraph, "To stay silent, write NOREPLY as your whole answer, with nothing before or after it.", "To stay silent, choose answer with text NOREPLY.", 1)
+		answerStart = "For answer, write text as plain prose for a person to read. Be direct and specific. Base it on "
+	}
 	paragraphs := []string{baseLead + shown + baseTail}
 
 	for _, tool := range []struct{ name, paragraph string }{
-		{loop.ToolRecall, recallParagraph},
+		{loop.ToolRecall, recall},
 		{loop.ToolReadNode, read},
 		{loop.ToolWriteFile, fileParagraph},
 		{loop.ToolNote, noteParagraph},
@@ -76,14 +89,17 @@ func Compose(offered []string, conversation, silence bool, form loop.Form) strin
 	}
 
 	if silence {
-		paragraphs = append(paragraphs, silenceParagraph)
+		paragraphs = append(paragraphs, silent)
 	}
 
-	answer := answerLead + basis + answerRest
+	answer := answerStart + basis + answerRest
 	if slices.Contains(offered, loop.ToolRecall) || slices.Contains(offered, loop.ToolReadNode) {
 		answer += searchProcess
 	}
 	paragraphs = append(paragraphs, answer+answerTail)
 
+	if mode == loop.ResponseStructuredRead {
+		paragraphs = append(paragraphs, loop.StructuredReadInstructions(loop.StructuredReadActions(offered)))
+	}
 	return strings.Join(paragraphs, "\n\n")
 }

@@ -12,15 +12,27 @@ type Filter map[string][]string
 // NoteConfig is the note capability a config enables: the node type every note of the run is filed as.
 type NoteConfig struct {
 	Type string `json:"type"`
+	Mode string `json:"mode,omitempty"`
 }
+
+// NoteModeDecision selects a private one-call write-or-skip decision.
+const NoteModeDecision = "decision"
+
+// ResponseMode selects an opt-in judgement response contract; empty retains native tools and prose.
+type ResponseMode string
+
+// ResponseStructuredRead restricts judgement output to answer, recall and addressed read decisions.
+const ResponseStructuredRead ResponseMode = "structuredRead"
 
 // View is the config a run was held to: the node that supplied it, the filter it forwarded, whether it offered the model a chosen silence, the identity text it put first, verbatim, the note capability it enabled, nil for none, and the temperature it asked its judgement calls to be sent with, nil where it asked none.
 type View struct {
-	Config   int64       `json:"config"`
-	Filter   Filter      `json:"filter,omitempty"`
-	Silence  bool        `json:"silence,omitempty"`
-	Identity string      `json:"identity,omitempty"`
-	Note     *NoteConfig `json:"note,omitempty"`
+	Thinking     bool         `json:"thinking,omitempty"`
+	Config       int64        `json:"config"`
+	Filter       Filter       `json:"filter,omitempty"`
+	Silence      bool         `json:"silence,omitempty"`
+	Identity     string       `json:"identity,omitempty"`
+	Note         *NoteConfig  `json:"note,omitempty"`
+	ResponseMode ResponseMode `json:"responseMode,omitempty"`
 
 	// Form is the representation the config asked every part to render as, empty when it asked none and substance applies.
 	Form Form `json:"form,omitempty"`
@@ -49,11 +61,13 @@ type Anchor struct {
 // Candidate is one row recall returned, in the rank order the graph
 // reported it — before assembly has decided whether it fits the budget.
 type Candidate struct {
-	ID         int64
-	Type       string
-	Name       string
-	Similarity float64
-	Content    string
+	RootNodeID      int64
+	DirectSubjectID int64
+	ID              int64
+	Type            string
+	Name            string
+	Similarity      float64
+	Content         string
 
 	// Substance is the node's condensed form, empty when none has been generated.
 	Substance string
@@ -203,12 +217,14 @@ const (
 	ToolNote = "note"
 )
 
-// ToolSource is the closed set of ways an adapter can have obtained a tool call from one response.
+// ToolSource is the closed set of ways a response becomes a dispatched action.
 type ToolSource string
 
 const (
 	// ToolSourceNative is a call the endpoint itself reported in its own tool-call field.
 	ToolSourceNative ToolSource = "native"
+	// ToolSourceStructured is an action selected by a validated structured response contract.
+	ToolSourceStructured ToolSource = "structured"
 	// ToolSourceContent is a call the adapter recovered from the response text because the endpoint reported none.
 	ToolSourceContent ToolSource = "content"
 	// ToolSourceTextual is a call the adapter recovered from an answer that opened with an offered retrieval tool's call written as text.
@@ -421,6 +437,10 @@ type Record struct {
 	Trailers []TrailerKind `json:"trailers"`
 	// Offered carries one entry per model call, in call order: the tools that call offered, in the loop's tool names and in offer order, an empty list for a call that offered none, absent on a record that predates the field.
 	Offered [][]string `json:"offered"`
+	// StructuredAllowedActions records the permitted JSON actions per call, absent for native response mode.
+	StructuredAllowedActions [][]string `json:"structuredAllowedActions,omitempty"`
+	// NoteDecision is the private decision receipt, absent on ordinary chat runs.
+	NoteDecision *NoteDecision `json:"noteDecision,omitempty"`
 	// NoteAcks carries one entry per model call, in call order: which acknowledgement of a note round that call's closing carried, absent on a record that predates the field.
 	NoteAcks []NoteAck `json:"noteAcks"`
 	// LastResponse is present exactly when the turn's last judgement call returned a response; absent means either that call returned none, or the record predates this field.
@@ -467,9 +487,10 @@ type ToolExchange struct {
 
 // JudgeInput is everything one judgement step needs.
 type JudgeInput struct {
-	System string
-	Block  string
-	Input  string
+	Thinking bool
+	System   string
+	Block    string
+	Input    string
 
 	// Conversation is the rendered earlier exchanges, identical on every call of a turn, empty when the turn has none.
 	Conversation string
@@ -486,8 +507,14 @@ type JudgeInput struct {
 	// MaxOutputTokens is the call's output limit, 0 for none; an adapter sends no limit key for 0.
 	MaxOutputTokens int
 
-	// Offered is the loop's names of the tools this call offers and the only ones it can dispatch; empty leaves prose as the only terminal the call can reach.
+	// Offered names the native tools declared on this call; structured calls leave it empty and authorize actions separately.
 	Offered []string
+
+	// StructuredAllowedActions is the permitted structured action domain, nil for a native response.
+	StructuredAllowedActions []string
+
+	// NoteDecisionOutput requests the private write-or-skip JSON contract, without native tools.
+	NoteDecisionOutput bool
 
 	// Temperature replaces the adapter's configured temperature for this call alone, nil for the configured one; 0 is a temperature.
 	Temperature *float64

@@ -3,6 +3,7 @@ package fill
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"slices"
 	"sync"
@@ -21,9 +22,28 @@ type Port struct {
 	Now   func() time.Time
 	Log   *slog.Logger
 
-	mu     sync.Mutex
-	queued []int64
-	wake   chan struct{}
+	mu       sync.Mutex
+	queued   []fillJob
+	wake     chan struct{}
+	deferred *Port
+}
+
+type fillJob struct {
+	id   int64
+	port *Port
+}
+
+// WithModel selects modelID for synchronous and deferred fills using the shared queue.
+func (p *Port) WithModel(modelID string) (loop.FillPort, error) {
+	selector, ok := p.Model.(interface {
+		WithModel(string) condense.ModelPort
+	})
+	if !ok {
+		return nil, fmt.Errorf("the configured fill adapter does not support per-run model selection")
+	}
+	selected := New(p.Graph, selector.WithModel(modelID), p.Now, p.Log)
+	selected.deferred = p
+	return selected, nil
 }
 
 // New builds a Port over graph and model, defaulting now to time.Now and logger to a discarding logger when nil.
@@ -53,11 +73,19 @@ func (p *Port) Fill(ctx context.Context, id int64) (loop.FillResult, error) {
 	return loop.FillResult{Reason: "fill produced no outcome"}, nil
 }
 
-// Defer queues id for the worker unless it is already queued; it never blocks.
+// Defer queues id for this port unless already queued; it never blocks.
 func (p *Port) Defer(id int64) {
+	if p.deferred != nil {
+		p.deferred.enqueue(fillJob{id: id, port: p})
+		return
+	}
+	p.enqueue(fillJob{id: id, port: p})
+}
+
+func (p *Port) enqueue(job fillJob) {
 	p.mu.Lock()
-	if !slices.Contains(p.queued, id) {
-		p.queued = append(p.queued, id)
+	if !slices.Contains(p.queued, job) {
+		p.queued = append(p.queued, job)
 	}
 	p.mu.Unlock()
 
@@ -74,7 +102,7 @@ func (p *Port) Start(ctx context.Context) {
 
 func (p *Port) work(ctx context.Context) {
 	for {
-		id, ok := p.next()
+		job, ok := p.next()
 		if !ok {
 			select {
 			case <-ctx.Done():
@@ -86,7 +114,7 @@ func (p *Port) work(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		p.fillDeferred(ctx, id)
+		job.port.fillDeferred(ctx, job.id)
 	}
 }
 
@@ -102,16 +130,17 @@ func (p *Port) fillDeferred(ctx context.Context, id int64) {
 	p.Log.Warn("deferred substance not written", "node", id, "model", result.Model, "elapsed", elapsed, "reason", result.Reason)
 }
 
-func (p *Port) next() (int64, bool) {
+func (p *Port) next() (fillJob, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if len(p.queued) == 0 {
-		return 0, false
+		return fillJob{}, false
 	}
-	id := p.queued[0]
+	job := p.queued[0]
+	p.queued[0] = fillJob{}
 	p.queued = p.queued[1:]
-	return id, true
+	return job, true
 }
 
 func skipReason(skip condense.Skip) string {

@@ -39,14 +39,14 @@ func (m *probeModel) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeR
 	return loop.JudgeResult{Answer: "done", Reason: loop.Answered, RawReason: "stop"}, nil
 }
 
-func (m *probeModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (m *probeModel) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	return loop.DeriveResult{}, nil
 }
 
 func TestTurnBuiltByAnExternalKeyedLiteralSurvivesTheNilLoggerBranch(t *testing.T) {
 	t.Parallel()
 
-	turn := loop.Turn{Graph: &probeGraph{}, Model: &probeModel{}, System: func([]string, bool, bool, loop.Form) string { return "sys" }, ModelID: "m"}
+	turn := loop.Turn{Graph: &probeGraph{}, Model: &probeModel{}, System: func([]string, bool, bool, loop.Form, loop.ResponseMode) string { return "sys" }, ModelID: "m"}
 
 	rec, receipt, err := turn.Run(context.Background(), "hello", 42)
 	if err != nil {
@@ -64,7 +64,7 @@ func TestATurnBuiltByAnExternalKeyedLiteralStatesARealInstantRatherThanTheZeroTi
 	t.Parallel()
 
 	model := &probeModel{}
-	turn := loop.Turn{Graph: &probeGraph{}, Model: model, System: func([]string, bool, bool, loop.Form) string { return "sys" }, ModelID: "m"}
+	turn := loop.Turn{Graph: &probeGraph{}, Model: model, System: func([]string, bool, bool, loop.Form, loop.ResponseMode) string { return "sys" }, ModelID: "m"}
 
 	if _, _, err := turn.Run(context.Background(), "what changed today", 42); err != nil {
 		t.Fatalf("Run: %v", err)

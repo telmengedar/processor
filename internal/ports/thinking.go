@@ -15,7 +15,7 @@ type Suppression struct {
 	Standing string
 }
 
-// ThinkingSuppression returns the control the protocol's adapter sends on every request to keep the model's reasoning channel off.
+// ThinkingSuppression returns the control the protocol's adapter sends by default to keep the model's reasoning channel off.
 func ThinkingSuppression(protocol string) (Suppression, error) {
 	switch protocol {
 	case boot.ProtocolOpenAICompat:
@@ -32,7 +32,11 @@ func StateThinkingSuppression(logger *slog.Logger, path, protocol string) error 
 	if err != nil {
 		return err
 	}
-	logger.Info("thinking suppressed on every model call",
+	message := "thinking suppressed on every model call"
+	if path == "judgement" {
+		message = "chat thinking off by default; per-config thinking=true enables native Ollama derivation and judgement"
+	}
+	logger.Info(message,
 		"path", path, "protocol", protocol, "control", suppression.Control, "standing", suppression.Standing)
 	return nil
 }

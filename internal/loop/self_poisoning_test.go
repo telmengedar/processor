@@ -61,7 +61,7 @@ func (answeringModel) Judge(context.Context, loop.JudgeInput) (loop.JudgeResult,
 	return loop.JudgeResult{Answer: "an answer", Reason: loop.Answered, RawReason: "stop"}, nil
 }
 
-func (answeringModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (answeringModel) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	return loop.DeriveResult{}, nil
 }
 
@@ -78,7 +78,7 @@ func TestTurnRunIsNotPoisonedByItsOwnPreviousRecord(t *testing.T) {
 		},
 	}
 	model := answeringModel{}
-	turn := loop.NewTurn(graph, model, nil, func([]string, bool, bool, loop.Form) string { return "system" }, "test-model", nil)
+	turn := loop.NewTurn(graph, model, nil, func([]string, bool, bool, loop.Form, loop.ResponseMode) string { return "system" }, "test-model", nil)
 
 	first, _, err := turn.Run(context.Background(), input, 42)
 	if err != nil {

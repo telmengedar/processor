@@ -169,6 +169,6 @@ func TestOpenAICompatDeriveRedactsTheCredentialFromTheRequestFailedError(t *test
 	t.Parallel()
 
 	c := NewClient(unreachableBase, "model-x", "", loop.Sampling{}, refusingClient())
-	_, err := c.Derive(context.Background(), "prompt", 64)
+	_, err := c.Derive(context.Background(), "prompt", 64, false)
 	assertCredentialRedacted(t, err, unreachableBase+completionsRouteUnderTest, unreachableAuthority)
 }

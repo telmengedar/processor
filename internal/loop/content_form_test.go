@@ -56,7 +56,7 @@ func bareContentGraph() *fakeGraph {
 	}
 }
 
-func formReportingSystem(offered []string, _, _ bool, form Form) string {
+func formReportingSystem(offered []string, _, _ bool, form Form, _ ResponseMode) string {
 	return "form=" + string(form)
 }
 

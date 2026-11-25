@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -78,10 +79,11 @@ var ErrWriteRejected = errors.New("write rejected")
 
 // RecallRequest is one recall: queries ranked by mean similarity, at most Limit rows counted after exclusion, Exclude ids and every run record left out, and Filter, nil for none, the run's config filter the graph applies before it counts.
 type RecallRequest struct {
-	Queries []string
-	Limit   int
-	Exclude []int64
-	Filter  Filter
+	NoteContextSubject int64
+	Queries            []string
+	Limit              int
+	Exclude            []int64
+	Filter             Filter
 }
 
 // GraphPort is the seam between the loop and the graph. Declared here,
@@ -111,8 +113,8 @@ type ModelPort interface {
 	// Judge runs one judgement step. One attempt; no retry.
 	Judge(ctx context.Context, in JudgeInput) (JudgeResult, error)
 
-	// Derive runs one query-derivation call on the deployment's sampling, which it reports; it takes no temperature, so no run's choice can reach it.
-	Derive(ctx context.Context, prompt string, maxOutputTokens int) (DeriveResult, error)
+	// Derive runs query derivation with per-call thinking and deployment sampling, which it reports.
+	Derive(ctx context.Context, prompt string, maxOutputTokens int, thinking bool) (DeriveResult, error)
 }
 
 // Turn is one run: anchor, recall, assemble, judge, write back.
@@ -130,7 +132,7 @@ type Turn struct {
 	Fill FillPort
 
 	// System composes the system text of one judgement call from the tools that call offers, whether the turn carries a conversation section, whether the run offers silence, and the form the run renders parts as.
-	System func(offered []string, conversation, silence bool, form Form) string
+	System func(offered []string, conversation, silence bool, form Form, mode ResponseMode) string
 
 	// ModelID is the model id sent with every judgement step, echoed into Record.Model.
 	ModelID string
@@ -143,11 +145,13 @@ type Turn struct {
 
 	clock func() time.Time
 
+	memoryOutcome *memoryOutcome
+
 	logger *slog.Logger
 }
 
 // NewTurn builds a Turn over graph, model and files, judging with system and modelID.
-func NewTurn(graph GraphPort, model ModelPort, files FilePort, system func(offered []string, conversation, silence bool, form Form) string, modelID string, logger *slog.Logger) *Turn {
+func NewTurn(graph GraphPort, model ModelPort, files FilePort, system func(offered []string, conversation, silence bool, form Form, mode ResponseMode) string, modelID string, logger *slog.Logger) *Turn {
 	return &Turn{Graph: graph, Model: model, Files: files, System: system, ModelID: modelID, clock: time.Now, logger: logger}
 }
 
@@ -189,8 +193,39 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	input, subject, history, settings := options.Input, options.Subject, options.History, options.Settings
 	settings.Form = options.form()
 	filter, silence, identity := options.filter(), options.silence(), options.identity()
+	mode := ResponseMode("")
+	if options.View != nil {
+		mode = options.View.ResponseMode
+	}
 	started := time.Now()
+	run := *t
+	t = &run
+	t.memoryOutcome = &memoryOutcome{runID: rand.Text(), outcome: "error", status: "run_failed", nodeType: noteScopeOf(options.View).nodeType}
+	defer t.logMemoryOutcome()
+	scope := noteScopeOf(options.View)
+	memoryAttrs := []any{
+		"runID", t.memoryOutcome.runID,
+		"memoryEnabled", scope.enabled,
+		"noteType", scope.nodeType,
+		"filterTypes", append([]string{}, filter["type"]...),
+	}
+	if options.View != nil && options.View.Config > 0 {
+		memoryAttrs = append(memoryAttrs, "config", options.View.Config)
+	}
+	t.log().Info("run memory policy", memoryAttrs...)
 	ctx = withPrepaid(ctx)
+	if err := options.NoteSource.validate(options.View); err != nil {
+		return t.failed(subject, started, err)
+	}
+	if err := validateResponseMode(options.View); err != nil {
+		return t.failed(subject, started, err)
+	}
+	if mode == ResponseStructuredRead && t.System == nil {
+		return t.failed(subject, started, fmt.Errorf("%w: structuredRead requires a system composer", ErrInvalidConfig))
+	}
+	if noteDecisionMode(options.View) {
+		settings.judgementExtraPromptBytes = len(noteDecisionInstructions) + len(NoteDecisionSchema())
+	}
 	t.log().Info("run started", "subject", subject, "inputLength", len(input))
 
 	anchor, found, err := t.Graph.Node(ctx, subject, nil)
@@ -209,10 +244,14 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 			"subject", subject, "supplied", len(history), "used", len(used), "bytes", len(conversation), "safetyLimit", settings.HistorySafetyLimit)
 	}
 
-	queries, derivationSampling, derivationError := t.derive(ctx, input, subject)
+	queries, derivationSampling, derivationError := t.derive(ctx, input, subject, conversation, options.thinking())
 	notPhrase := inputNotPhraseNote(input)
 
-	candidates, err := Retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, filter, t.log())
+	noteContextSubject := int64(0)
+	if noteDecisionMode(options.View) {
+		noteContextSubject = subject
+	}
+	candidates, err := retrieve(ctx, t.Graph, anchor, queries, settings.CandidateLimit, filter, t.log(), noteContextSubject)
 	if err != nil {
 		if len(filter) > 0 && errors.Is(err, ErrGraphRejected) {
 			return t.failed(subject, started, fmt.Errorf("%w: %v", ErrInvalidConfig, err))
@@ -246,14 +285,23 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	memory := newWorkingMemory(settings.PromptCeiling(), anchor, len(candidates) > 0, includedCandidates(candidates, dispositions), dispositions, settings.Form)
 	memory.charge(len(conversation))
 	memory.charge(len(identity))
+	if mode == ResponseStructuredRead {
+		memory.charge(t.structuredReadCharge(conversation != "", silence, settings.Form))
+	}
 
-	judged, err := t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, filter, silence, noteScopeOf(options.View), options.temperature(), dispositions)
+	var judged judgement
+	if noteDecisionMode(options.View) {
+		judged, err = t.judgeNoteDecision(ctx, settings, memory, input, conversation, identity, subject, now, noteScopeOf(options.View), options.temperature(), options.thinking(), options.NoteSource)
+	} else {
+		judged, err = t.judge(ctx, settings, memory, input, queries, conversation, identity, subject, now, filter, silence, noteScopeOf(options.View), options.temperature(), options.thinking(), dispositions, mode)
+	}
 	record.Fills = append(record.Fills, judged.fills...)
 	if err != nil {
 		t.deferFills(record.Fills)
 		return t.failed(subject, started, err)
 	}
 
+	record.NoteDecision = judged.noteDecision
 	record.Answer = judged.answer
 	record.NonReply = judged.nonReply
 	record.Silent = silence && choseSilence(judged.answer)
@@ -270,11 +318,19 @@ func (t *Turn) Answer(ctx context.Context, options RunOptions) (Record, time.Tim
 	record.Usage = judged.usages
 	record.Trailers = judged.trailers
 	record.Offered = judged.offered
+	record.StructuredAllowedActions = judged.structuredAllowedActions
 	record.NoteAcks = judged.noteAcks
 	record.LastResponse = judged.lastResponse
 	record.StopReason = judged.stop
 	record.Sampling = judged.sampling
 	record.Outcome = ComputeOutcome(record)
+	if t.memoryOutcome.status == "run_failed" {
+		status := "not_requested"
+		if !scope.enabled {
+			status = "disabled"
+		}
+		t.setMemoryOutcome("skip", status, 0)
+	}
 
 	return record, started, nil
 }
@@ -303,9 +359,9 @@ func (t *Turn) fillInitial(ctx context.Context, settings RunSettings, anchor Anc
 	return anchor, withCreated(candidates, created), fills
 }
 
-func (t *Turn) derive(ctx context.Context, input string, subject int64) ([]string, *Sampling, string) {
+func (t *Turn) derive(ctx context.Context, input string, subject int64, conversation string, thinking bool) ([]string, *Sampling, string) {
 	started := time.Now()
-	derived, sampling, err := DeriveQueries(ctx, t.Model, input)
+	derived, sampling, err := deriveQueriesWithConversation(ctx, t.Model, input, conversation, DerivationBound, thinking)
 	elapsed := time.Since(started)
 
 	if err != nil {
@@ -426,6 +482,7 @@ func summarizeUsage(usages []*Usage) (reports, inTokens, outTokens int) {
 }
 
 type judgement struct {
+	noteDecision  *NoteDecision
 	answer        string
 	stop          StopReason
 	toolCalls     []ToolCallRecord
@@ -440,13 +497,14 @@ type judgement struct {
 
 	reservedCall ReservedCall
 
-	usages       []*Usage
-	trailers     []TrailerKind
-	offered      [][]string
-	noteAcks     []NoteAck
-	lastResponse *LastResponse
-	sampling     Sampling
-	provider     Provider
+	usages                   []*Usage
+	trailers                 []TrailerKind
+	offered                  [][]string
+	structuredAllowedActions [][]string
+	noteAcks                 []NoteAck
+	lastResponse             *LastResponse
+	sampling                 Sampling
+	provider                 Provider
 }
 
 func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) string {
@@ -468,7 +526,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		return ""
 	}
 
-	prompt := fmt.Sprintf("%d prompt bytes at the declared floor of %g bytes per second", settings.PromptCeiling(), floors.PromptBytesPerSecond)
+	prompt := fmt.Sprintf("%d prompt bytes at the declared floor of %g bytes per second", settings.PromptCeiling()+settings.judgementExtraPromptBytes, floors.PromptBytesPerSecond)
 	if settings.JudgementBudget > 0 {
 		prompt = fmt.Sprintf("%d output tokens at the declared floor of %g tokens per second, plus %s", settings.JudgementBudget, floors.TokensPerSecond, prompt)
 	}
@@ -476,7 +534,7 @@ func (t *Turn) judgementShortfall(ctx context.Context, settings RunSettings) str
 		errRunTimeShort, remaining.Round(time.Millisecond), need.Round(time.Millisecond), prompt))
 }
 
-func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input string, queries []string, conversation, identity string, subject int64, now time.Time, filter Filter, silence bool, note noteScope, temperature *float64, admitted []Disposition) (judgement, error) {
+func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingMemory, input string, queries []string, conversation, identity string, subject int64, now time.Time, filter Filter, silence bool, note noteScope, temperature *float64, thinking bool, admitted []Disposition, mode ResponseMode) (judgement, error) {
 	var judged judgement
 	var exchanges []ToolExchange
 
@@ -511,10 +569,21 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		judged.modelCalls++
 
 		offered := t.offeredTools(reserved != "", note.enabled && notesFiled < NotesPerTurn)
-		search, trailerKind := trailerFor(offered, searches)
+		logical := offered
+		var allowed []string
+		if mode == ResponseStructuredRead {
+			logical = structuredReadTools(offered, account.closed())
+			allowed = StructuredReadActions(logical)
+			offered = []string{}
+			judged.structuredAllowedActions = append(judged.structuredAllowedActions, append([]string{}, allowed...))
+		}
+		search, trailerKind := trailerFor(logical, searches)
 		clause := ""
 		if trailerKind == TrailerClause {
 			clause, search = search, ""
+			if mode == ResponseStructuredRead {
+				clause = structuredRecallClause
+			}
 		}
 		trailer := composeClosing(search, acknowledgement(ack, ackedText))
 		judged.noteAcks = append(judged.noteAcks, ack)
@@ -522,17 +591,22 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 		judged.offered = append(judged.offered, append([]string{}, offered...))
 
 		result, jerr := t.Model.Judge(ctx, JudgeInput{
-			System:          t.composeSystem(identity, offered, conversation != "", silence, settings.Form),
-			Block:           memory.render(),
-			Input:           input,
-			Conversation:    conversation,
-			Clause:          clause,
-			Trailer:         trailer,
-			Now:             now,
-			MaxOutputTokens: outputBudget(settings, reserved),
-			Offered:         offered,
-			Temperature:     temperature,
+			System:                   t.composeSystem(identity, logical, conversation != "", silence, settings.Form, mode),
+			Block:                    memory.render(),
+			Input:                    input,
+			Conversation:             conversation,
+			Clause:                   clause,
+			Trailer:                  trailer,
+			Now:                      now,
+			MaxOutputTokens:          outputBudget(settings, reserved),
+			Offered:                  offered,
+			StructuredAllowedActions: allowed,
+			Temperature:              temperature,
+			Thinking:                 thinking,
 		})
+		if jerr == nil && mode == ResponseStructuredRead {
+			result, jerr = decodeReadDecision(result, allowed)
+		}
 		if jerr != nil {
 			if reserved == "" {
 				return judgement{fills: judged.fills}, fmt.Errorf("%w: %v", ErrModelUnavailable, jerr)
@@ -550,7 +624,7 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 			judged.reservedCall.State = ReservedCallCompleted
 		}
 
-		if result.ReasoningBytes > 0 {
+		if result.ReasoningBytes > 0 && !thinking {
 			t.log().Warn("the response carried reasoning on a request that suppressed it: the endpoint took the control and ignored it",
 				"adapter", result.Provider.Adapter, "reasoningBytes", result.ReasoningBytes)
 		}
@@ -560,8 +634,11 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 				"adapter", result.Provider.Adapter, "unofferedToolCalls", result.UnofferedToolCalls)
 		}
 
-		result = referenceRead(result, offered, memory)
-		result, echoShape := echoes.recovered(result, trailerKind, silence)
+		echoShape := ""
+		if mode != ResponseStructuredRead {
+			result = referenceRead(result, offered, memory)
+			result, echoShape = echoes.recovered(result, trailerKind, silence)
+		}
 		if echoShape != "" {
 			t.log().Info("the answer to the recall clause was a query rather than a reply: the loop reads it as the recall the clause asked for",
 				"call", judged.modelCalls, "shape", echoShape)
@@ -578,6 +655,9 @@ func (t *Turn) judge(ctx context.Context, settings RunSettings, memory *workingM
 
 		if reserved != "" {
 			if wantsTool(result.Reason) {
+				if result.Reason == WantsNote {
+					t.setMemoryOutcome("invalid", "not_offered", 0)
+				}
 				refused := undispatchedExchange(result, errReservedCallRefused)
 				refused.ToolSource = result.ToolSource
 				exchanges = append(exchanges, refused)
@@ -683,11 +763,11 @@ func (t *Turn) offeredTools(reserved, noteOpen bool) []string {
 
 const paragraphBreak = "\n\n"
 
-func (t *Turn) composeSystem(identity string, offered []string, conversation, silence bool, form Form) string {
+func (t *Turn) composeSystem(identity string, offered []string, conversation, silence bool, form Form, mode ResponseMode) string {
 	if t.System == nil {
 		return identity
 	}
-	product := t.System(offered, conversation, silence, form)
+	product := t.System(offered, conversation, silence, form, mode)
 	if identity == "" {
 		return product
 	}

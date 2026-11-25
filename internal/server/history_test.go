@@ -14,7 +14,7 @@ type conversationRecordingModel struct {
 	conversations []string
 }
 
-func (m *conversationRecordingModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (m *conversationRecordingModel) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	return loop.DeriveResult{}, nil
 }
 

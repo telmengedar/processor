@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/telmengedar/processor/internal/loop"
 	"github.com/telmengedar/processor/internal/redacturl"
@@ -77,6 +78,9 @@ func (c *Client) client() *http.Client {
 
 // Judge runs one judgement step against the endpoint.
 func (c *Client) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeResult, error) {
+	if in.Thinking {
+		return loop.JudgeResult{}, fmt.Errorf("openaicompat: thinking=true is unsupported")
+	}
 	started := time.Now()
 	endpoint := c.baseURL + chatCompletionsRoute
 
@@ -99,7 +103,13 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 		Temperature:     sampling.Temperature,
 		TopP:            sampling.TopP,
 	}
-	reqBody.Tools = declaredTools(in.Offered)
+	if in.NoteDecisionOutput {
+		reqBody.ResponseFormat = &wireResponseFormat{Type: "json_schema", JSONSchema: wireJSONSchema{Name: "note_decision", Strict: true, Schema: loop.NoteDecisionSchema()}}
+	} else if in.StructuredAllowedActions != nil {
+		reqBody.ResponseFormat = &wireResponseFormat{Type: "json_schema", JSONSchema: wireJSONSchema{Name: "structured_read", Strict: true, Schema: loop.StructuredReadSchema(in.StructuredAllowedActions)}}
+	} else {
+		reqBody.Tools = declaredTools(in.Offered)
+	}
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
@@ -127,13 +137,37 @@ func (c *Client) judge(ctx context.Context, in loop.JudgeInput, endpoint string)
 	}
 
 	var wire chatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
+	if in.NoteDecisionOutput || in.StructuredAllowedActions != nil {
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return loop.JudgeResult{}, len(body), fmt.Errorf("read structured response: %w", err)
+		}
+		if !utf8.Valid(raw) {
+			return loop.JudgeResult{}, len(body), fmt.Errorf("structured response is not UTF-8")
+		}
+		if err := json.Unmarshal(raw, &wire); err != nil {
+			return loop.JudgeResult{}, len(body), fmt.Errorf("decode response: %w", err)
+		}
+	} else if err := json.NewDecoder(resp.Body).Decode(&wire); err != nil {
 		return loop.JudgeResult{}, len(body), fmt.Errorf("decode response: %w", err)
 	}
 
-	result, err := translate(wire, in.Offered)
-	if err != nil {
-		return loop.JudgeResult{}, len(body), err
+	var result loop.JudgeResult
+	if in.NoteDecisionOutput || in.StructuredAllowedActions != nil {
+		if len(wire.Choices) == 0 {
+			return loop.JudgeResult{}, len(body), fmt.Errorf("response has no choices")
+		}
+		choice := wire.Choices[0]
+		var content string
+		if choice.Message.Content != nil {
+			content = *choice.Message.Content
+		}
+		result = loop.JudgeResult{Answer: content, RawReason: choice.FinishReason, Reason: loop.Answered, ReasoningBytes: len(choice.Message.Reasoning), Usage: translateUsage(wire.Usage), UnofferedToolCalls: len(choice.Message.ToolCalls)}
+	} else {
+		result, err = translate(wire, in.Offered)
+		if err != nil {
+			return loop.JudgeResult{}, len(body), err
+		}
 	}
 	result.Sampling = sampling
 	result.Provider = loop.Provider{Adapter: adapterName, Endpoint: redacturl.URL(endpoint)}

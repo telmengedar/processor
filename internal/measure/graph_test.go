@@ -26,7 +26,7 @@ const (
 	eventTurnCompleted = "turnCompleted"
 )
 
-func testSystem([]string, bool, bool, loop.Form) string { return "the system text" }
+func testSystem([]string, bool, bool, loop.Form, loop.ResponseMode) string { return "the system text" }
 
 const (
 	testModelID = "test-model-id"
@@ -118,7 +118,7 @@ func (m *answeringModel) Judge(_ context.Context, in loop.JudgeInput) (loop.Judg
 	}, nil
 }
 
-func (m *answeringModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (m *answeringModel) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	if m.derivation != "" {
 		return loop.DeriveResult{Text: m.derivation}, nil
 	}

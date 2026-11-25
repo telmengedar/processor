@@ -11,9 +11,11 @@ import (
 	"syscall"
 
 	"github.com/telmengedar/processor/internal/boot"
+	"github.com/telmengedar/processor/internal/completion"
 	"github.com/telmengedar/processor/internal/divoid"
 	"github.com/telmengedar/processor/internal/loop"
 	"github.com/telmengedar/processor/internal/ports"
+	"github.com/telmengedar/processor/internal/process"
 	"github.com/telmengedar/processor/internal/server"
 	"github.com/telmengedar/processor/internal/systemtext"
 	"github.com/telmengedar/processor/internal/workspace"
@@ -108,7 +110,7 @@ func run(human io.Writer) int {
 	}
 
 	graph := divoid.NewClient(graphCfg.URL, graphCfg.Key, nil, logger)
-	turn := loop.NewTurn(graph, model, files, systemtext.Compose, modelCfg.ID, logger)
+	turn := loop.NewTurn(graph, model, files, systemtext.ComposeForMode, modelCfg.ID, logger)
 	turn.Build = build
 	turn.Floors = floors
 	turn.Notes = graph
@@ -125,7 +127,8 @@ func run(human io.Writer) int {
 
 	fillPort.Start(ctx)
 
-	if err := server.Serve(ctx, ln, server.NewHandler(turn), logger); err != nil {
+	engine := &process.Engine{Graph: graph, Model: model.(completion.Model)}
+	if err := server.Serve(ctx, ln, server.NewHandler(turn, engine), logger); err != nil {
 		logger.Error("serve", "error", err)
 		return 1
 	}

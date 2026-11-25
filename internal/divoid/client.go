@@ -106,14 +106,15 @@ func (c *Client) now() time.Time {
 // One struct covers both operations' projections; fields absent from a
 // given response's fields= projection simply decode to their zero value.
 type row struct {
-	ID          int64   `json:"id"`
-	Type        string  `json:"type"`
-	Name        string  `json:"name"`
-	ContentType string  `json:"contentType"`
-	Similarity  float64 `json:"similarity"`
-	Content     string  `json:"content"`
-	Substance   string  `json:"substance"`
-	RootNodeID  *int64  `json:"rootNodeId"`
+	ID          int64           `json:"id"`
+	Type        string          `json:"type"`
+	Name        string          `json:"name"`
+	ContentType string          `json:"contentType"`
+	Similarity  float64         `json:"similarity"`
+	Content     string          `json:"content"`
+	Substance   string          `json:"substance"`
+	RootNodeID  *int64          `json:"rootNodeId"`
+	Access      json.RawMessage `json:"access"`
 }
 
 // listingResponse is the shape of GET /api/nodes, regardless of query.
@@ -163,33 +164,37 @@ func appendFilter(q url.Values, filter loop.Filter, recall bool) {
 // arbitrary row would leave Record.Subject reporting the requested id
 // while the anchor body came from a different node entirely.
 func (c *Client) Node(ctx context.Context, id int64, filter loop.Filter) (loop.Anchor, bool, error) {
+	r, found, err := c.nodeRow(ctx, id, filter, nodeFields)
+	if err != nil || !found {
+		return loop.Anchor{}, false, err
+	}
+	anchor := loop.Anchor{
+		ID: r.ID, Type: r.Type, Name: r.Name, Content: r.Content, Substance: r.Substance,
+	}
+	if r.RootNodeID != nil {
+		anchor.RootNodeID = *r.RootNodeID
+	}
+	return anchor, true, nil
+}
+
+func (c *Client) nodeRow(ctx context.Context, id int64, filter loop.Filter, fields string) (row, bool, error) {
 	q := url.Values{}
 	appendFilter(q, filter, false)
 	q.Set("id", strconv.FormatInt(id, 10))
-	q.Set("fields", nodeFields)
+	q.Set("fields", fields)
 
 	var resp listingResponse
 	if err := c.get(ctx, nodesPath, q, &resp); err != nil {
-		return loop.Anchor{}, false, err
+		return row{}, false, err
 	}
 
 	for _, r := range resp.Result {
 		if r.ID != id {
 			continue
 		}
-		anchor := loop.Anchor{
-			ID:        r.ID,
-			Type:      r.Type,
-			Name:      r.Name,
-			Content:   r.Content,
-			Substance: r.Substance,
-		}
-		if r.RootNodeID != nil {
-			anchor.RootNodeID = *r.RootNodeID
-		}
-		return anchor, true, nil
+		return r, true, nil
 	}
-	return loop.Anchor{}, false, nil
+	return row{}, false, nil
 }
 
 // Recall returns the graph's top candidates for the request in its own rank order, never re-sorted; several queries are one request ranked by their mean similarity, and a request without a query or a positive limit fails before any request is sent.
@@ -210,6 +215,11 @@ func (c *Client) Recall(ctx context.Context, request loop.RecallRequest) ([]loop
 	}
 	q.Set("count", strconv.Itoa(request.Limit))
 	q.Set("fields", candidateFields)
+	directSubject := int64(0)
+	if values := request.Filter["linkedto"]; request.NoteContextSubject > 0 && len(values) == 1 && values[0] == strconv.FormatInt(request.NoteContextSubject, 10) {
+		directSubject = request.NoteContextSubject
+		q.Set("fields", candidateFields+",rootNodeId")
+	}
 	for _, id := range request.Exclude {
 		q.Add(excludeIDParam, strconv.FormatInt(id, 10))
 	}
@@ -231,6 +241,12 @@ func (c *Client) Recall(ctx context.Context, request loop.RecallRequest) ([]loop
 			Content:      r.Content,
 			Substance:    r.Substance,
 			SelfProduced: IsRunRecord(r.Type, r.Name),
+		}
+		if directSubject > 0 {
+			candidates[i].DirectSubjectID = directSubject
+			if r.RootNodeID != nil {
+				candidates[i].RootNodeID = *r.RootNodeID
+			}
 		}
 	}
 	return candidates, nil
