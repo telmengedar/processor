@@ -74,7 +74,7 @@ type stubModel struct {
 	calls int
 }
 
-func (s *stubModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (s *stubModel) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	return loop.DeriveResult{Text: s.derivedText}, s.deriveErr
 }
 

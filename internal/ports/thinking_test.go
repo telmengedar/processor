@@ -141,3 +141,19 @@ func TestTheStatedLineNamesTheCallPathTheControlGovernsSoTwoConfiguredProtocolsA
 		t.Fatalf("a stated line names the control belonging to the other path; judgement=%s fill=%s", judgement, fill)
 	}
 }
+
+func TestStartupThinkingStatementDescribesDefault(t *testing.T) {
+	chat := statedLine(t, "judgement", boot.ProtocolOllama)
+	for _, text := range []string{"off by default", "per-config thinking=true", "derivation and judgement"} {
+		if !strings.Contains(chat, text) {
+			t.Errorf("chat missing %q: %s", text, chat)
+		}
+	}
+	if strings.Contains(chat, "every model call") {
+		t.Errorf("chat makes unconditional suppression claim: %s", chat)
+	}
+	fill := statedLine(t, "fill", boot.ProtocolOllama)
+	if !strings.Contains(fill, "suppressed on every model call") || !strings.Contains(fill, "think=false") {
+		t.Errorf("fill statement=%s", fill)
+	}
+}

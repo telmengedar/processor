@@ -25,7 +25,7 @@ func (bareGraph) WriteRun(context.Context, loop.Record) loop.WriteReceipt {
 
 type systemRecorder struct{ systems []string }
 
-func (m *systemRecorder) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (m *systemRecorder) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	return loop.DeriveResult{}, nil
 }
 

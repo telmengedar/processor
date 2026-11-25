@@ -57,16 +57,16 @@ type condenseResponse struct {
 
 // Condense runs one offline condensation call: a single user message, no tools, the repetition penalties pinned to zero, and the reasoning stream switched off.
 func (c *Client) Condense(ctx context.Context, prompt string, maxOutputTokens int) (CondenseResult, error) {
-	result, _, err := c.condense(ctx, prompt, maxOutputTokens)
+	result, _, err := c.condense(ctx, prompt, maxOutputTokens, thinkingOff)
 	return result, err
 }
 
-func (c *Client) condense(ctx context.Context, prompt string, maxOutputTokens int) (CondenseResult, bool, error) {
+func (c *Client) condense(ctx context.Context, prompt string, maxOutputTokens int, thinking bool) (CondenseResult, bool, error) {
 	body, err := json.Marshal(condenseRequest{
 		Model:    c.modelID,
 		Messages: []wireMessage{{Role: "user", Content: prompt}},
 		Stream:   false,
-		Think:    thinkingOff,
+		Think:    thinking,
 		Options: condenseOptions{
 			NumPredict:       maxOutputTokens,
 			Temperature:      c.sampling.Temperature,
@@ -118,8 +118,8 @@ func (c *Client) condense(ctx context.Context, prompt string, maxOutputTokens in
 }
 
 // Derive runs one query-derivation call on the configured sampling, returning its text and the sampling its request carried, also beside an error once the request was issued.
-func (c *Client) Derive(ctx context.Context, prompt string, maxOutputTokens int) (loop.DeriveResult, error) {
-	result, sent, err := c.condense(ctx, prompt, maxOutputTokens)
+func (c *Client) Derive(ctx context.Context, prompt string, maxOutputTokens int, thinking bool) (loop.DeriveResult, error) {
+	result, sent, err := c.condense(ctx, prompt, maxOutputTokens, thinking)
 	var derived loop.DeriveResult
 	if sent {
 		derived.Sampling = &loop.Sampling{Temperature: result.Sampling.Temperature, TopP: result.Sampling.TopP}

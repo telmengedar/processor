@@ -258,15 +258,15 @@ func DeriveQueries(ctx context.Context, model ModelPort, input string, now time.
 }
 
 func deriveQueries(ctx context.Context, model ModelPort, input string, now time.Time, bound time.Duration) ([]string, UpdateWindow, string, *Sampling, error) {
-	return deriveQueriesWithConversation(ctx, model, input, now, "", bound)
+	return deriveQueriesWithConversation(ctx, model, input, now, "", bound, false)
 }
 
-func deriveQueriesWithConversation(ctx context.Context, model ModelPort, input string, now time.Time, conversation string, bound time.Duration) ([]string, UpdateWindow, string, *Sampling, error) {
+func deriveQueriesWithConversation(ctx context.Context, model ModelPort, input string, now time.Time, conversation string, bound time.Duration, thinking bool) ([]string, UpdateWindow, string, *Sampling, error) {
 	bounded, cancel := context.WithTimeoutCause(ctx, bound, errDerivationBound)
 	defer cancel()
 
 	started := time.Now()
-	result, err := model.Derive(bounded, derivationPromptWithConversation(input, now, conversation), noOutputLimit)
+	result, err := model.Derive(bounded, derivationPromptWithConversation(input, now, conversation), noOutputLimit, thinking)
 	elapsed := time.Since(started).Round(time.Millisecond)
 	if err != nil {
 		return nil, UpdateWindow{}, "", result.Sampling, derivationFailure(bounded, bound, elapsed, err)

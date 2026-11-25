@@ -39,7 +39,7 @@ func (m *probeModel) Judge(ctx context.Context, in loop.JudgeInput) (loop.JudgeR
 	return loop.JudgeResult{Answer: "done", Reason: loop.Answered, RawReason: "stop"}, nil
 }
 
-func (m *probeModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (m *probeModel) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	return loop.DeriveResult{}, nil
 }
 

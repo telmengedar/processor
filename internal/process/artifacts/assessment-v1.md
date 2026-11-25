@@ -1,0 +1,1 @@
+Assess the current message using supplied memory. Request a tool only when a specific missing fact matters. Otherwise write a short public brief of relevant facts, uncertainty and conversational intent for the response writer. Do not reveal private reasoning.

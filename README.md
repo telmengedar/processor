@@ -285,12 +285,14 @@ ordered by similarity, each is shown to the model with its similarity, and none 
 earlier exchanges, oldest first, each `{"input": "…", "reply": "…"}` with a non-blank `input` and an
 optional `reply` (an exchange without one stands for a line the bot did not answer). The service keeps no
 conversation state and has no conversation id. The turn is shown the newest **four** exchanges
-(`limits.historyExchangeLimit`) as one self-labelled section, `===== EARLIER IN THIS CONVERSATION =====`,
-of verbatim `user said:` and `you replied:` lines, placed after the context block (and after the recall paragraph, when the call carries one), directly before the request is repeated,
-in the one user message of **every** judgement call of the turn, the reserved answering call included. The system text of
-those calls then also says a conversation is present; a call whose rendered section is empty gets the same system text and
-user message as a request without `history`. The section counts against the same prompt ceiling as the
-working memory, so it never grows a call past it. Only a safety limit of 8,000 bytes
+(`limits.historyExchangeLimit`) in **every** judgement call, the reserved answering call included:
+each historical input is a native `user` message, and each nonempty reply is a native `assistant`
+message. Unanswered inputs have no assistant placeholder. The current user message follows the
+history and carries the current request and loop context without repeating the historical transcript.
+The system text also says a conversation is present; empty selected history preserves the no-history
+provider payload. History charges the working-memory prompt ceiling by the greater of its rendered
+transcript bytes and its native role framing plus content bytes; this is content-byte accounting,
+not a tokenizer or exact escaped-JSON measurement. A safety limit of 8,000 rendered bytes
 (`limits.historySafetyLimit`) can cut further: it drops the oldest whole exchanges, never truncates one,
 and logs a warning. The record keeps the exchanges the turn used (`history`) and how many it did not
 (`historyCut`); both are absent when there is nothing to report, and a request without `history` produces

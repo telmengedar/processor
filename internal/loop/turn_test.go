@@ -140,7 +140,7 @@ type fakeModel struct {
 	derivePrompts []string
 }
 
-func (f *fakeModel) Derive(ctx context.Context, prompt string, _ int) (DeriveResult, error) {
+func (f *fakeModel) Derive(ctx context.Context, prompt string, _ int, thinking bool) (DeriveResult, error) {
 	f.derivePrompts = append(f.derivePrompts, prompt)
 	if f.deriveHold != nil {
 		select {

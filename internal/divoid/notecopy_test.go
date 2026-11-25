@@ -99,7 +99,7 @@ func (m *exactCopyModel) Judge(_ context.Context, input loop.JudgeInput) (loop.J
 	return loop.JudgeResult{Answer: `{"action":"write","text":"nora seems genuinely dedicated to community work, like the bicycle repairs.","about":71}`, Reason: loop.Answered}, nil
 }
 
-func (*exactCopyModel) Derive(context.Context, string, int) (loop.DeriveResult, error) {
+func (*exactCopyModel) Derive(context.Context, string, int, bool) (loop.DeriveResult, error) {
 	return loop.DeriveResult{}, nil
 }
 

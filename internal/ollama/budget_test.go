@@ -65,7 +65,7 @@ func TestTheNativeAdapterSendsNoNumPredictKeyForACondensationOrDerivationCallCar
 		t.Fatalf("the read-back reports %d max tokens for a call that sent none", result.Sampling.MaxTokens)
 	}
 
-	if _, err := c.Derive(context.Background(), "derive from this", 0); err != nil {
+	if _, err := c.Derive(context.Background(), "derive from this", 0, false); err != nil {
 		t.Fatalf("Derive: %v", err)
 	}
 	if _, present := sentOptions(t, captured.Body)["num_predict"]; present {
