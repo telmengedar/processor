@@ -159,7 +159,7 @@ func TestAFloorTheDeploymentDeclaresNothingUsableForFallsBackToTheProductsOwnDec
 func TestTheDerivationPromptCeilingLeavesRoomForARunsInputBesideItsOwnInstructions(t *testing.T) {
 	t.Parallel()
 
-	instructions := len(DerivationPrompt("", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+	instructions := len(DerivationPrompt(""))
 
 	if instructions >= DerivationPromptCeiling {
 		t.Fatalf("the derivation's own instructions are %d bytes against a declared ceiling of %d, so the ceiling prices no input at all", instructions, DerivationPromptCeiling)

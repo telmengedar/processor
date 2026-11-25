@@ -158,7 +158,7 @@ func TestDecisionScopeRequestIsInitialAndModeOnly(t *testing.T) {
 		}
 	}
 	graph := noteGraph()
-	_, err := Retrieve(context.Background(), graph, Anchor{ID: noteSubject}, []string{"query"}, 10, UpdateWindow{}, nil, testLogger())
+	_, err := Retrieve(context.Background(), graph, Anchor{ID: noteSubject}, []string{"query"}, 10, nil, testLogger())
 	if err != nil || len(graph.recallCalls) != 1 || graph.recallCalls[0].NoteContextSubject != 0 {
 		t.Fatalf("native Retrieve changed: %v %+v", err, graph.recallCalls)
 	}

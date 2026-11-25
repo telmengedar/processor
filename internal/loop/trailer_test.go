@@ -32,7 +32,7 @@ func answer() JudgeResult {
 }
 
 func userContentOf(call JudgeInput) string {
-	return RenderUserContent(call.Block, call.Input, call.Now, call.Window, call.Conversation, call.Clause, call.Trailer)
+	return RenderUserContent(call.Block, call.Input, call.Now, call.Conversation, call.Clause, call.Trailer)
 }
 
 func TestTheClauseIsTheParagraphBeforeTheFinalRequestWhenRecallIsOffered(t *testing.T) {
@@ -272,7 +272,7 @@ func TestRenderUserContentWithoutATrailerIsByteIdenticalToTheLayoutBeforeTheTrai
 
 	instant := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
 	for _, conversation := range []string{"", "===== EARLIER IN THIS CONVERSATION =====\nuser said: hi"} {
-		got := RenderUserContent("BLOCK\n", trailerTestRequest, instant, UpdateWindow{}, conversation, "", "")
+		got := RenderUserContent("BLOCK\n", trailerTestRequest, instant, conversation, "", "")
 
 		want := "===== INPUT =====\n" + trailerTestRequest + "\n\n===== NOW =====\n2026-03-04T05:06:07Z\n\n\nBLOCK\n"
 		if conversation != "" {
@@ -290,8 +290,8 @@ func TestRenderUserContentPutsTheTrailerAfterTheRequestAndChangesNothingBeforeIt
 	t.Parallel()
 
 	instant := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
-	plain := RenderUserContent("BLOCK\n", trailerTestRequest, instant, UpdateWindow{}, "", "", "")
-	got := RenderUserContent("BLOCK\n", trailerTestRequest, instant, UpdateWindow{}, "", "", "TRAILER")
+	plain := RenderUserContent("BLOCK\n", trailerTestRequest, instant, "", "", "")
+	got := RenderUserContent("BLOCK\n", trailerTestRequest, instant, "", "", "TRAILER")
 
 	if want := plain + "\n\nTRAILER"; got != want {
 		t.Fatalf("user content =\n%q\nwant\n%q", got, want)

@@ -130,7 +130,7 @@ func TestADerivedLineLongerThanAPhraseIsDroppedAndTheOthersKeepTheirOrder(t *tes
 	atBound := phraseOf(MaxPhraseBytes)
 	text := "short one?\n" + phraseOf(MaxPhraseBytes+1) + "\n" + atBound + "\nshort two?"
 
-	derived, _ := ParseDerivation(text, "the input", nil)
+	derived := ParseDerivation(text, "the input")
 
 	if want := []string{"short one?", atBound, "short two?"}; !slices.Equal(derived, want) {
 		t.Fatalf("derived = %q, want the over-long line dropped, the line at the bound kept, and the order unchanged: %q", derived, want)
@@ -145,7 +145,7 @@ func TestAnOverlongDerivedLineDoesNotCountTowardTheDerivedQueryCap(t *testing.T)
 		lines = append(lines, "phrase "+string(rune('a'+i))+"?")
 	}
 
-	derived, _ := ParseDerivation(strings.Join(lines, "\n"), "the input", nil)
+	derived := ParseDerivation(strings.Join(lines, "\n"), "the input")
 
 	if len(derived) != MaxDerivedQueries {
 		t.Fatalf("derived %d queries from %d lines of which one was over-long, want %d", len(derived), len(lines), MaxDerivedQueries)
