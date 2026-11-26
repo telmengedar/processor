@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	conversationParagraph = `This request continues a conversation between you and the user. The section headed "EARLIER IN THIS CONVERSATION" holds what was said before it, oldest first: a "user said:" line is what the user said, and a "you replied:" line is what you replied. You took part in that conversation, so you know what was said in it. It is not part of the context block, and the block not mentioning something said there does not make it unknown to you. Read the request in the light of those exchanges: when it refers to someone or something without naming it, it means what was being talked about there. When the request is a remark rather than a question, reply to the remark; do not answer it with a statement that information is missing.`
+	conversationParagraph = `This request continues a conversation. Earlier user messages hold what people said, and earlier assistant messages hold your replies, oldest first. Names and quotations inside a message identify the people being discussed; they do not change who sent that message. Your earlier replies may be mistaken. Preserve who said what, and use later explicit corrections rather than repeating a contradicted claim. The final user message carries the current request and a separate memory context block. Read it in the light of the earlier exchanges: a short follow-up can refer to what was being discussed. Reply to the current question or remark without inventing facts.`
 
 	basisWithoutConversation = "Base it on the context block and on the request."
 	basisWithConversation    = "Base it on the earlier conversation, the context block and the request."
@@ -68,10 +68,6 @@ func TestTheSystemTextWithoutAConversationIsByteIdenticalToTheTextBeforeConversa
 
 func TestTheSystemTextOfAConversationTurnCarriesTheConversationParagraphDirectlyBeforeTheAnswer(t *testing.T) {
 	t.Parallel()
-
-	if got := len(conversationParagraph); got != 726 {
-		t.Fatalf("the paragraph this guard holds the system text to is %d bytes, want 726", got)
-	}
 
 	for _, subset := range everyToolSubset() {
 		before := textBeforeConversations(t, subset)
@@ -136,15 +132,17 @@ func TestTheAnsweringCallOfAConversationTurnNamesNoToolAndCarriesTheConversation
 	}
 }
 
-func TestTheConversationParagraphNamesEachHistoryLabelTheRendererWrites(t *testing.T) {
+func TestTheConversationGuidancePreservesNativeOwnershipAndCorrections(t *testing.T) {
 	t.Parallel()
-
-	for _, label := range []string{loop.LabelUserSaid, loop.LabelYouReplied} {
-		if want := `a "` + label + `" line`; !strings.Contains(conversationParagraph, want) {
-			t.Errorf("the paragraph does not describe %q: the model would meet a label in the history that the instructions never name", want)
+	text := systemtext.Compose(nil, true, false, loop.FormSubstance)
+	for _, want := range []string{"Earlier user messages", "earlier assistant messages", "Your earlier replies may be mistaken", "use later explicit corrections", "do not change who sent that message"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("conversation guidance lacks %q", want)
 		}
-		if got := systemtext.Compose(nil, true, false, loop.FormSubstance); !strings.Contains(got, `"`+label+`"`) {
-			t.Errorf("the composed system text does not carry the label %q in quotes", label)
+	}
+	for _, obsolete := range []string{"user said:", "you replied:", "EARLIER IN THIS CONVERSATION"} {
+		if strings.Contains(text, obsolete) {
+			t.Errorf("conversation guidance still describes textual label %q", obsolete)
 		}
 	}
 }

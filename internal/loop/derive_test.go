@@ -2,8 +2,10 @@ package loop
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"slices"
@@ -91,7 +93,7 @@ func TestTheDerivationPromptAsksForExactlyAsManyLinesAsTheCapWillKeep(t *testing
 	prompt := DerivationPrompt("what did the split change")
 
 	for _, want := range []string{
-		"produce 5 additional queries",
+		"Produce 5 additional queries",
 		"Output exactly 5 lines total:",
 		"The first 4 lines are distinct",
 		"Output ONLY those 5 lines.",
@@ -575,6 +577,25 @@ func TestDeriveQueriesRefusesATextThatParsesToNoQueryAtAll(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "no usable query") {
 			t.Fatalf("the cause for %q reads %q, which does not say the text was unusable", text, err)
+		}
+	}
+}
+
+func TestDerivationInstructionsMatchTheFrozenFactualSearchCandidate(t *testing.T) {
+	t.Parallel()
+	frozen, err := os.ReadFile("testdata/derivation_instructions.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(frozen) != derivationInstructions || len(frozen) != 1975 || fmt.Sprintf("%x", sha256.Sum256(frozen)) != "483e9d7630955ae85aeddfe482dd4f9b7ced181098f7759c2ea3c0eb298c33d6" {
+		t.Fatal("derivation instructions differ from the frozen candidate bytes")
+	}
+	if strings.Count(derivationInstructions, "%d") != 4 {
+		t.Fatal("instruction substitution count changed")
+	}
+	for _, want := range []string{"Produce 5 additional queries", "Output exactly 5 lines total:", "The first 4 lines are distinct, standalone search phrases", "Output ONLY those 5 lines."} {
+		if !strings.Contains(DerivationPrompt("input"), want) {
+			t.Errorf("formatted prompt lacks %q", want)
 		}
 	}
 }

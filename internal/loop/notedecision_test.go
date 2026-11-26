@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -157,5 +158,44 @@ func TestPrivateNoteContractTimeIsReservedBeforeWaitingForSubstance(t *testing.T
 	privateWait := turn.fillWait(ctx, settings)
 	if nativeWait != time.Second || privateWait != 0 {
 		t.Fatalf("native wait=%s private wait=%s", nativeWait, privateWait)
+	}
+}
+
+func TestPrivateNoteSkipReceivesSelectedHistoryAndThinking(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		thinking bool
+	}{{"off", false}, {"on", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			supplied := []Exchange{{Input: "CLIPPED earlier topic", Reply: "CLIPPED reply"}, {Input: "Lena: the earlier statement was incorrect", Reply: "I acknowledge that correction."}, {Input: "Noah: keep the correction in force"}}
+			expected := []Exchange{{Input: "Lena: the earlier statement was incorrect", Reply: "I acknowledge that correction."}, {Input: "Noah: keep the correction in force"}}
+			graph := noteGraph()
+			model := &fakeModel{results: []JudgeResult{decisionResult(`{"action":"skip","text":"","about":null}`)}}
+			notes := &fakeNotes{}
+			turn := NewTurn(graph, model, nil, fixedSystem("system"), "test-model", testLogger())
+			turn.Notes = notes
+			settings := DefaultSettings()
+			settings.HistoryExchangeLimit = 2
+			view := decisionView()
+			view.Thinking = tc.thinking
+			record, _, err := turn.Answer(context.Background(), RunOptions{Input: "Noah: nothing new to remember", Subject: noteSubject, History: supplied, Settings: settings, View: view})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(model.calls) != 1 {
+				t.Fatalf("judgement calls=%d, want 1", len(model.calls))
+			}
+			call := model.calls[0]
+			if !slices.Equal(call.History, expected) || !slices.Equal(record.History, expected) {
+				t.Fatalf("private call history=%+v record history=%+v, want %+v", call.History, record.History, expected)
+			}
+			if call.Thinking != tc.thinking || !call.NoteDecisionOutput || call.Input != "Noah: nothing new to remember" {
+				t.Fatalf("private thinking=%t mode=%t input=%q", call.Thinking, call.NoteDecisionOutput, call.Input)
+			}
+			if len(notes.requests) != 0 || graph.writeRunCalled || record.NoteDecision == nil || record.NoteDecision.State != "abstained" || record.NoteDecision.Created != 0 || record.Answer != "" || record.Outcome.Produced {
+				t.Fatalf("skip writes=%d archival=%t decision=%+v answer=%q produced=%t", len(notes.requests), graph.writeRunCalled, record.NoteDecision, record.Answer, record.Outcome.Produced)
+			}
+		})
 	}
 }

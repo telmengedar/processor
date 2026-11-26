@@ -9,14 +9,14 @@ import (
 	"testing"
 )
 
-func TestDerivationWithoutConversationKeepsTheWindowFreePrompt(t *testing.T) {
+func TestDerivationWithoutConversationUsesTheFrozenWindowFreeFactualSearchPrompt(t *testing.T) {
 	t.Parallel()
 	model := &deriveFake{text: "resolved phrase"}
 	if _, _, err := DeriveQueries(context.Background(), model, "and what about that?"); err != nil {
 		t.Fatal(err)
 	}
-	if got := fmt.Sprintf("%x", sha256.Sum256([]byte(model.prompts[0]))); got != "b404a7fcf232e898131af4c75325b9f916391c97a311fce90dfc41df6cbf4cf6" {
-		t.Fatalf("no-history prompt digest = %s, want immutable window-free digest", got)
+	if got := fmt.Sprintf("%x", sha256.Sum256([]byte(model.prompts[0]))); got != "c7ac4882df7b40446f2bee409ec98e78f01f61319cc449373c8dd772493c991f" {
+		t.Fatalf("no-history prompt digest = %s, want frozen window-free factual search digest", got)
 	}
 }
 
@@ -78,8 +78,8 @@ func TestDerivationUsesOnlyTheSelectedConversationAndNeverMechanicallySearchesIt
 				t.Fatalf("judgement calls = %d, graph recall calls = %d, want exactly one each", len(model.calls), len(graph.recallCalls))
 			}
 			for _, call := range model.calls {
-				if call.Conversation != section {
-					t.Errorf("judge conversation = %q, want selected %q", call.Conversation, section)
+				if renderConversation(call.History) != section {
+					t.Errorf("judge conversation = %q, want selected %q", renderConversation(call.History), section)
 				}
 			}
 			if !slices.Equal(record.History, tc.want) {

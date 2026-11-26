@@ -347,7 +347,7 @@ func fieldsOfACall(call JudgeInput) map[string]string {
 		"system":       call.System,
 		"block":        call.Block,
 		"input":        call.Input,
-		"conversation": call.Conversation,
+		"conversation": renderConversation(call.History),
 		"clause":       call.Clause,
 		"trailer":      call.Trailer,
 		"offered":      strings.Join(call.Offered, "\n"),
